@@ -38,3 +38,20 @@ describe("call barge-in", () => {
     expect(isInterimCallBargeIn("")).toBe(false);
   });
 });
+
+describe("CJK call barge-in", () => {
+  afterEach(() => {
+    spokenMemory.clear();
+  });
+  it("does not cut playback on the reply's own Chinese echo", () => {
+    spokenMemory.remember("好的，我来帮你查一下。今天天气不错。");
+    expect(isInterimCallBargeIn("好的，我来")).toBe(false);
+    expect(isCallBargeIn("好的，我来帮你查一下")).toBe(false);
+  });
+  it("lets a real Chinese sentence or a stop word interrupt", () => {
+    spokenMemory.remember("好的，我来帮你查查天气。");
+    expect(isInterimCallBargeIn("帮我看看明天的会议")).toBe(true);
+    expect(isCallBargeIn("等一下")).toBe(true);
+    expect(isInterimCallBargeIn("嗯嗯")).toBe(false);
+  });
+});
