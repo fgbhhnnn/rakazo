@@ -42,7 +42,7 @@ import {
   selectedSpaceId,
   signOut,
 } from "../../lib/api";
-import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
+import { getAppVersionInfo } from "../../lib/app-version";
 import {
   getCachedAppearancePreference,
   mobileTokens,
@@ -160,8 +160,7 @@ export default function Account() {
   const stackOptions = useStackedSettings();
   const styles = useThemedStyles(createAccountStyles);
   const versionInfo = getAppVersionInfo();
-  const updateLabel = formatUpdateLabel(versionInfo.update, t);
-  const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
+  const versionAccessibility = versionInfo.nativeLabel;
 
   useEffect(() => {
     void rpc<MobileMe>("me")
@@ -702,16 +701,13 @@ export default function Account() {
 
         <View style={styles.about}>
           <AppMark />
-          {versionInfo.nativeLabel || updateLabel ? (
+          {versionInfo.nativeLabel ? (
             <View
               accessibilityLabel={versionAccessibility}
               accessibilityRole="summary"
               style={styles.versionFooter}
             >
-              {versionInfo.nativeLabel ? (
-                <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
-              ) : null}
-              {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
+              <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
             </View>
           ) : null}
         </View>
