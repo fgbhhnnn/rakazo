@@ -6,10 +6,15 @@
   "build": {
     "preview": {
       "distribution": "internal",
-      "environment": "preview",
       "channel": "preview",
       "ios": {
         "image": "macos-tahoe-26.5-xcode-26.6"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://rakazo.lllltt.com"
       }
     },
     "production": {
