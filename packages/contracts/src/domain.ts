@@ -1394,6 +1394,13 @@ export const DeploymentSettingsSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
+  /** Only the owner changes models, voice and integrations. Absent from older servers. */
+  lockMemberSettings: z.boolean().default(false),
+  /** Members without their own model or voice use the owner's. */
+  shareOwnerModels: z.boolean().default(false),
+  turnstileEnabled: z.boolean().default(false),
+  turnstileSiteKey: z.string().nullable().default(null),
+  hasTurnstileSecret: z.boolean().default(false),
 });
 
 export const ServerUpdateSourceSchema = z.object({
@@ -1523,6 +1530,8 @@ export const MeSchema = z.object({
   timezone: z.string().nullable().optional(),
   /** True when this deployment bills and the user is not the deployment owner. */
   billingEnabled: z.boolean(),
+  /** The owner manages models, voice and integrations; hide those settings. */
+  memberSettingsLocked: z.boolean().default(false),
 });
 export type Me = z.infer<typeof MeSchema>;
 
