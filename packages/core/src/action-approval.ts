@@ -230,7 +230,10 @@ export function outboundSiteGate(input: {
   site: string;
   trusted: boolean;
   rules: ActionApprovalRule[];
+  /** Deployment opted out of new-site gating (RAKAZO_TRUST_ALL_FETCH_SITES). */
+  trustAll?: boolean;
 }): "allow" | "new" {
+  if (input.trustAll) return "allow";
   return input.trusted || siteAlwaysAllowed(input.rules, input.site) ? "allow" : "new";
 }
 
@@ -244,6 +247,11 @@ export function newSiteOutcome(input: {
 }): "ask" | "allow" | "deny" {
   if (input.decision === "allow") return "allow";
   return input.trigger === "webhook" ? "deny" : "ask";
+}
+
+/** Parses a truthy env-style flag: 1, true, yes or on (case-insensitive). */
+export function truthyFlag(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
 }
 
 export function siteAlwaysAllowed(rules: ActionApprovalRule[], site: string): boolean {

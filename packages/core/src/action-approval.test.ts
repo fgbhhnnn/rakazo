@@ -10,6 +10,7 @@ import {
   isSecretAskBlock,
   newSiteOutcome,
   outboundSiteGate,
+  truthyFlag,
   planActionGate,
   resolveActionApproval,
   resolveActionApprovalDetail,
@@ -542,6 +543,20 @@ describe("outboundSiteGate", () => {
       "allow",
     );
     expect(outboundSiteGate({ site: "other.com", trusted: false, rules: [siteRule] })).toBe("new");
+  });
+
+  it("allows every site when the deployment trusts all fetch sites", () => {
+    expect(
+      outboundSiteGate({ site: "attacker.test", trusted: false, rules: [], trustAll: true }),
+    ).toBe("allow");
+    expect(
+      outboundSiteGate({ site: "attacker.test", trusted: false, rules: [], trustAll: false }),
+    ).toBe("new");
+  });
+
+  it("parses truthy flags", () => {
+    for (const v of ["1", "true", "YES", " on "]) expect(truthyFlag(v)).toBe(true);
+    for (const v of [undefined, "", "0", "false", "no"]) expect(truthyFlag(v)).toBe(false);
   });
 
   it("matches site rules ahead of tool rules", () => {

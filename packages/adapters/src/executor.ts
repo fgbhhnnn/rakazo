@@ -91,6 +91,7 @@ import {
   nextCronDateAcross,
   nextFence,
   outboundSiteGate,
+  truthyFlag,
   planActionGate,
   promptInvokesSkill,
   redactSecrets,
@@ -4939,6 +4940,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   trusted:
                     searchResultUrls.has(fetchUrl) || (await loadTrustedSites()).has(fetchSite),
                   rules: await loadApprovalRules(),
+                  trustAll: truthyFlag(process.env.RAKAZO_TRUST_ALL_FETCH_SITES),
                 })
               : "allow";
           const connectorReadGated =
