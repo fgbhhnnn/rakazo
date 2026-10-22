@@ -22,6 +22,7 @@ import {
   findModelCredential,
   recordUsage,
   retireModelCredential,
+  sharedModelScope,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -218,7 +219,10 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const settings = await this.deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
     });
-    const scope = { userId: bot.userId, spaceId: bot.spaceId };
+    const scope = await sharedModelScope(this.deps.prisma, {
+      userId: bot.userId,
+      spaceId: bot.spaceId,
+    });
     const defaultCredential = await findDefaultModelCredential(this.deps.prisma, scope);
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
@@ -255,7 +259,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     }
 
     const secret = await this.deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: bot.userId, spaceId: null },
+      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
     });
     if (!secret) return null;
     const persist = async (plaintext: string) => {
@@ -264,8 +268,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         {
           operationId: "team-chat-judge-credential",
           traceId: "team-chat-judge-credential",
-          spaceId: bot.spaceId,
-          userId: bot.userId,
+          spaceId: scope.spaceId,
+          userId: scope.userId,
           botId: bot.id,
           signal: new AbortController().signal,
         },

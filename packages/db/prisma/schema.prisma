@@ -338,6 +338,14 @@ model DeploymentSettings {
   defaultModelId                  String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
+  /// Null falls back to RAKAZO_LOCK_MEMBER_SETTINGS.
+  lockMemberSettings              Boolean?
+  /// Null falls back to RAKAZO_SHARE_OWNER_MODELS, then to lockMemberSettings.
+  shareOwnerModels                Boolean?
+  /// Null falls back to whether TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are set.
+  turnstileEnabled                Boolean?
+  turnstileSiteKey                String?
+  turnstileSecretCipher           String?
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 
