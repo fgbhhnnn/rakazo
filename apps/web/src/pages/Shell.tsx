@@ -4008,13 +4008,19 @@ function SpaceShell() {
             onConnectedAppsChange={setFooterLogos}
             activeBotId={activeBotId.current}
             onClose={() => setPluginsOpen(false)}
-            onOpenMcp={() => {
-              setPluginsOpen(false);
-              setMcpOpen(true);
-            }}
+            onOpenMcp={
+              bootstrapMe?.memberSettingsLocked
+                ? undefined
+                : () => {
+                    setPluginsOpen(false);
+                    setMcpOpen(true);
+                  }
+            }
           />
         ) : null}
-        {mcpOpen ? <McpServersOverlay onClose={() => setMcpOpen(false)} /> : null}
+        {mcpOpen && !bootstrapMe?.memberSettingsLocked ? (
+          <McpServersOverlay onClose={() => setMcpOpen(false)} />
+        ) : null}
         {messagingSettingsOpen ? (
           <MessagingSettingsOverlay onClose={() => setMessagingSettingsOpen(false)} />
         ) : null}
@@ -4034,6 +4040,7 @@ function SpaceShell() {
             initialSection={settingsSection}
             avatarStyle={bootstrapMe?.avatarStyle ?? "organic"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
+            memberSettingsLocked={bootstrapMe?.memberSettingsLocked === true}
             billingEnabled={bootstrapMe?.billingEnabled === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
             onSandboxProviderChange={(sandboxProvider) =>

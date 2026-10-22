@@ -25,6 +25,7 @@ import { AccountAccess } from "../components/AccountAccess";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
+import { MemberAccessSettings } from "../components/MemberAccessSettings";
 import { PasskeySettings } from "../components/PasskeySettings";
 import type { ServerUpdateLoad } from "../components/SoftwareUpdateSection";
 import { hasServerUpdates, SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
@@ -322,6 +323,8 @@ export function GeneralSettingsPanels({
           <Trans>Server integrations</Trans>
         </Link>
       ) : null}
+
+      {isDeploymentOwner ? <MemberAccessSettings /> : null}
 
       <Disclosure
         data-testid="advanced-settings"

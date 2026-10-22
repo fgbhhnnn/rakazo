@@ -62,6 +62,7 @@ import type {
 import { captureApiRequestContext, rpc, selectedSpaceId } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
+import { withMemberSettingsGuard } from "../../lib/member-settings-guard";
 import { presentMessageActionSheet } from "../../lib/message-action-sheet";
 import {
   cancelModelOAuthAttempt,
@@ -111,7 +112,7 @@ type ModelSelection = {
 
 type FeedbackAnchor = "probe" | "model" | "connection" | "limits";
 
-export default function Models() {
+function ModelsScreen() {
   const styles = useThemedStyles(createModelsStyles);
   const router = useRouter();
   const pickerRequestRef = useRef<string | null>(null);
@@ -1929,3 +1930,5 @@ function createModelsStyles() {
     },
   });
 }
+
+export default withMemberSettingsGuard(ModelsScreen);

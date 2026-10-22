@@ -1,4 +1,5 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Your administrator manages this setting.": "Этим параметром управляет администратор.",
   "Add an AI model to keep chatting": "Добавьте ИИ-модель, чтобы продолжить общение",
   "Not Now": "Не сейчас",
   "Add Model": "Добавить модель",

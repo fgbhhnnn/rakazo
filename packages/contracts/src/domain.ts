@@ -1531,7 +1531,7 @@ export const MeSchema = z.object({
   /** True when this deployment bills and the user is not the deployment owner. */
   billingEnabled: z.boolean(),
   /** The owner manages models, voice and integrations; hide those settings. */
-  memberSettingsLocked: z.boolean().default(false),
+  memberSettingsLocked: z.boolean().optional(),
 });
 export type Me = z.infer<typeof MeSchema>;
 

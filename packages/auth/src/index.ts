@@ -586,7 +586,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           ) {
             throw new APIError("BAD_REQUEST", {
               code: "CAPTCHA_FAILED",
-              message: "Complete the human check and try again.",
+              message:
+                "Complete the human check and try again. In the mobile app, create your account on the website first.",
             });
           }
         }
