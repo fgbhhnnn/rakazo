@@ -1293,6 +1293,10 @@ msgstr ""
 msgid "Complete"
 msgstr "완료"
 
+#: src/pages/Auth.tsx
+msgid "Complete the security check first"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
@@ -2979,6 +2983,7 @@ msgid "Loading voice providers…"
 msgstr "음성 서비스를 불러오는 중…"
 
 #: src/App.tsx
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -3118,6 +3123,14 @@ msgstr "멤버"
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
+msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members and sign-up"
+msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members without their own model or voice use my defaults"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -3612,6 +3625,10 @@ msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
+msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
@@ -4175,6 +4192,10 @@ msgstr ""
 msgid "Request a new code"
 msgstr "새 코드를 요청하세요"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Require a Cloudflare Turnstile check to create an account"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr ""
@@ -4358,6 +4379,10 @@ msgstr "저장"
 msgid "Save credential"
 msgstr ""
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Save keys"
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
@@ -4372,10 +4397,15 @@ msgstr "작업 공간을 저장하고 최신 소프트웨어를 설치합니다.
 msgid "Saved"
 msgstr "저장됨"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Saved — enter to replace"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "저장했지만 목록을 새로고침하지 못했습니다."
 
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "저장되었습니다."
@@ -5127,6 +5157,14 @@ msgstr "다시 시도"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "테스트를 다시 시도하세요."
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile secret key"
+msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile site key"
+msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"

@@ -242,6 +242,12 @@ export const appContract = {
           signupsEnabled: z.boolean().optional(),
           signupAllowlist: z.array(z.string()).optional(),
           computerHost: z.enum(["docker", "this-mac"]).nullable().optional(),
+          lockMemberSettings: z.boolean().optional(),
+          shareOwnerModels: z.boolean().optional(),
+          turnstileEnabled: z.boolean().optional(),
+          turnstileSiteKey: z.string().trim().max(200).optional(),
+          /** Write-only. Empty clears the stored key. */
+          turnstileSecretKey: z.string().trim().max(200).optional(),
         }),
       )
       .output(DeploymentSettingsSchema),

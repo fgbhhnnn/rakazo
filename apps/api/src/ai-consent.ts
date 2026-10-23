@@ -13,6 +13,7 @@ import {
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findModelCredential,
+  sharedModelScope,
 } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
@@ -32,6 +33,7 @@ export async function aiConsentStatus(
       ? [target.botId]
       : target.memberBotIds
     : undefined;
+  const modelScope = modelsEnabled ? await sharedModelScope(deps.prisma, actor) : actor;
   const [
     preferences,
     backups,
@@ -45,17 +47,17 @@ export async function aiConsentStatus(
   ] = await Promise.all([
     modelsEnabled
       ? deps.prisma.spaceModelPreference.findMany({
-          where: { userId: actor.userId, spaceId: actor.spaceId },
+          where: { userId: modelScope.userId, spaceId: modelScope.spaceId },
           include: { credential: true },
         })
       : [],
     modelsEnabled
       ? deps.prisma.spaceBackupModel.findMany({
-          where: { userId: actor.userId, spaceId: actor.spaceId },
+          where: { userId: modelScope.userId, spaceId: modelScope.spaceId },
           orderBy: { position: "asc" },
         })
       : [],
-    modelsEnabled ? findDefaultModelCredential(deps.prisma, actor) : null,
+    modelsEnabled ? findDefaultModelCredential(deps.prisma, modelScope) : null,
     modelsEnabled
       ? deps.prisma.bot.findMany({
           where: {

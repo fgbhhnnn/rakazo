@@ -232,6 +232,7 @@ import {
   listSpaceBackupModels,
   listTicketComments,
   lockOwnedGroup,
+  memberSettingsPolicy,
   modelCredentialProviderFilter,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -253,6 +254,8 @@ import {
   SpaceNotFoundError,
   selectSpaceModelPreference,
   selectSpaceVoicePreference,
+  sharedModelScope,
+  sharedVoiceScope,
   toBoardDto,
   toTicketCommentDto,
   toTicketDto,
@@ -286,6 +289,10 @@ import {
 } from "./mcp-approval.js";
 import type { McpSecretMaterial } from "./mcp-material.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
+import {
+  assertMemberSettingsUnlocked,
+  memberAndSignupCheckUpdate,
+} from "./member-settings-guard.js";
 import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
@@ -331,6 +338,7 @@ import {
   threadHead,
   threadSnapshot,
 } from "./thread-target.js";
+import { turnstileView } from "./turnstile-settings.js";
 import {
   disconnectVoiceCredential,
   listVoiceCatalog,
@@ -1066,6 +1074,12 @@ export function createRouter(deps: RouterDeps) {
       return result;
     });
 
+  /** Model, voice and MCP changes a locked deployment reserves for its owner. */
+  const ownerManaged = authed.use(async ({ context, next }) => {
+    await assertMemberSettingsUnlocked(deps.prisma, context.actor);
+    return next();
+  });
+
   const callsEnabled = authed.use(async ({ next }) => {
     if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
     return next();
@@ -1410,6 +1424,7 @@ export function createRouter(deps: RouterDeps) {
               ? {}
               : { signupPolicyInitialized: true }),
             ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
+            ...(await memberAndSignupCheckUpdate(deps.secrets, context.actor, input)),
           },
         });
         return deploymentDto(deps.prisma, deps.env.sandboxProvider);
@@ -1447,7 +1462,10 @@ export function createRouter(deps: RouterDeps) {
     },
     models: {
       list: authed.models.list.handler(async ({ context }) => {
-        const catalog = await catalogForSpace(context.actor);
+        const catalog = await catalogForSpace({
+          ...context.actor,
+          ...(await sharedModelScope(deps.prisma, context.actor)),
+        });
         // The scripted fixture only exists to drive the scripted runtime; a real
         // runtime cannot execute it, so it stays out of the user-facing catalog.
         return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
@@ -1507,7 +1525,7 @@ export function createRouter(deps: RouterDeps) {
       backups: authed.models.backups.handler(async ({ context }) =>
         listSpaceBackupModels(deps.prisma, context.actor),
       ),
-      setBackups: authed.models.setBackups.handler(async ({ context, input }) => {
+      setBackups: ownerManaged.models.setBackups.handler(async ({ context, input }) => {
         if (input.length > 0) {
           const catalog = await catalogForSpace(context.actor);
           for (const choice of input) {
@@ -1548,7 +1566,7 @@ export function createRouter(deps: RouterDeps) {
         await replaceSpaceBackupModels(deps.prisma, context.actor, input);
         return { ok: true as const };
       }),
-      connect: authed.models.connect.handler(async ({ context, input }) => {
+      connect: ownerManaged.models.connect.handler(async ({ context, input }) => {
         let plaintext: string;
         try {
           let previousPlaintext: string | undefined;
@@ -1611,7 +1629,7 @@ export function createRouter(deps: RouterDeps) {
           codexCatalog,
         );
       }),
-      probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
+      probeOpenAiCompatible: ownerManaged.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           let apiKey = input.apiKey;
           if (!apiKey?.trim()) {
@@ -1669,7 +1687,7 @@ export function createRouter(deps: RouterDeps) {
           }
         },
       ),
-      probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
+      probeCatalog: ownerManaged.models.probeCatalog.handler(async ({ context, input }) => {
         try {
           const models = await probeCatalogProviderModels(
             { provider: input.provider, apiKey: input.apiKey },
@@ -1683,7 +1701,7 @@ export function createRouter(deps: RouterDeps) {
           });
         }
       }),
-      beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+      beginOAuth: ownerManaged.models.beginOAuth.handler(async ({ context, input }) => {
         return deps.oauthLogins.begin({
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
@@ -1694,17 +1712,17 @@ export function createRouter(deps: RouterDeps) {
           signal: context.signal,
         });
       }),
-      submitOAuthCode: authed.models.submitOAuthCode.handler(async ({ context, input }) => {
+      submitOAuthCode: ownerManaged.models.submitOAuthCode.handler(async ({ context, input }) => {
         return deps.oauthLogins.submit(input.loginId, context.actor, input.code);
       }),
-      completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
+      completeOAuth: ownerManaged.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, {
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
         });
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
-      finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
+      finishOAuth: ownerManaged.models.finishOAuth.handler(async ({ context, input }) => {
         throwIfAborted(context.signal);
         const result = await deps.oauthLogins.finish(
           input.loginId,
@@ -1739,7 +1757,7 @@ export function createRouter(deps: RouterDeps) {
         await deps.oauthLogins.cancel(input.loginId, context.actor);
         return { ok: true as const };
       }),
-      setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
+      setDefault: ownerManaged.models.setDefault.handler(async ({ context, input }) => {
         const loadSpaceModelState = async (
           client: Pick<PrismaClient, "spaceModelPreference" | "userModelCredential">,
         ) => {
@@ -1913,7 +1931,7 @@ export function createRouter(deps: RouterDeps) {
         });
         return { ok: true as const };
       }),
-      disconnect: authed.models.disconnect.handler(async ({ context, input }) => {
+      disconnect: ownerManaged.models.disconnect.handler(async ({ context, input }) => {
         // Retire pending sign-ins in every space first — the credentials are
         // account-wide, so a finishing OAuth session anywhere could otherwise
         // re-persist a credential the delete below just removed.
@@ -4622,7 +4640,7 @@ export function createRouter(deps: RouterDeps) {
             ),
           );
         }),
-        create: authed.mcp.servers.create.handler(async ({ context, input }) => {
+        create: ownerManaged.mcp.servers.create.handler(async ({ context, input }) => {
           await assertMcpRemoteEndpoint(
             "endpoint" in input ? input.endpoint : null,
             context.actor,
@@ -4686,7 +4704,7 @@ export function createRouter(deps: RouterDeps) {
           const oauth = await mcpOAuth.summaryFor(row, context.actor);
           return mcpServerDto(await beginMcpProbe(row, context.actor, oauth), oauth);
         }),
-        update: authed.mcp.servers.update.handler(async ({ context, input }) => {
+        update: ownerManaged.mcp.servers.update.handler(async ({ context, input }) => {
           for (let attempt = 0; attempt < 5; attempt++) {
             const { existing, existingSecret } = await deps.prisma.$transaction(async (tx) => {
               const existing = await tx.mcpServer.findFirst({
@@ -4892,7 +4910,7 @@ export function createRouter(deps: RouterDeps) {
           if (!fresh) throw new IsolationError();
           return mcpServerDto(fresh, oauth);
         }),
-        remove: authed.mcp.servers.remove.handler(async ({ context, input }) => {
+        remove: ownerManaged.mcp.servers.remove.handler(async ({ context, input }) => {
           const server = await deps.prisma.mcpServer.findFirst({
             where: {
               id: input.id,
@@ -4959,7 +4977,7 @@ export function createRouter(deps: RouterDeps) {
           });
           return rows.map(mcpAssignmentDto);
         }),
-        approve: authed.mcp.assignments.approve.handler(async ({ context, input }) => {
+        approve: ownerManaged.mcp.assignments.approve.handler(async ({ context, input }) => {
           const row = await resolveMcpApprovalCards(
             onboardingDeps,
             context.actor,
@@ -5020,7 +5038,7 @@ export function createRouter(deps: RouterDeps) {
           });
           return { ok: true as const };
         }),
-        replace: authed.mcp.assignments.replace.handler(async ({ context, input }) => {
+        replace: ownerManaged.mcp.assignments.replace.handler(async ({ context, input }) => {
           const { rows, seqs } = await deps.prisma.$transaction(async (tx) => {
             const bot = await tx.bot.findFirst({
               where: {
@@ -5097,7 +5115,7 @@ export function createRouter(deps: RouterDeps) {
         }),
       },
       oauth: {
-        begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
+        begin: ownerManaged.mcp.oauth.begin.handler(async ({ context, input }) => {
           try {
             const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
             if (new URL(input.redirectUri).toString() !== expectedRedirect) {
@@ -5114,7 +5132,7 @@ export function createRouter(deps: RouterDeps) {
             });
           }
         }),
-        complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
+        complete: ownerManaged.mcp.oauth.complete.handler(async ({ context, input }) => {
           try {
             // complete() consumes the session, so which server it belongs to is read first.
             const session = deps.mcp
@@ -5161,7 +5179,7 @@ export function createRouter(deps: RouterDeps) {
             });
           }
         }),
-        disconnect: authed.mcp.oauth.disconnect.handler(async ({ context, input }) => {
+        disconnect: ownerManaged.mcp.oauth.disconnect.handler(async ({ context, input }) => {
           await mcpOAuth.disconnect({
             ...input,
             spaceId: context.actor.spaceId,
@@ -6752,7 +6770,10 @@ export function createRouter(deps: RouterDeps) {
     voice: {
       catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
       status: authed.voice.status.handler(async ({ context }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
+        const cred = await findDefaultVoiceCredential(
+          deps.prisma,
+          await sharedVoiceScope(deps.prisma, context.actor),
+        );
         return toVoiceStatus(cred);
       }),
       credentials: authed.voice.credentials.handler(async ({ context }) => {
@@ -6778,7 +6799,7 @@ export function createRouter(deps: RouterDeps) {
           }),
         );
       }),
-      connect: authed.voice.connect.handler(async ({ context, input }) =>
+      connect: ownerManaged.voice.connect.handler(async ({ context, input }) =>
         persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
@@ -6790,10 +6811,10 @@ export function createRouter(deps: RouterDeps) {
           signal: context.signal,
         }),
       ),
-      disconnect: authed.voice.disconnect.handler(async ({ context, input }) =>
+      disconnect: ownerManaged.voice.disconnect.handler(async ({ context, input }) =>
         disconnectVoiceCredential(deps, context.actor, { provider: input.provider }),
       ),
-      setVoice: authed.voice.setVoice.handler(async ({ context, input }) => {
+      setVoice: ownerManaged.voice.setVoice.handler(async ({ context, input }) => {
         const cred = await withSerializableRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
@@ -6825,7 +6846,7 @@ export function createRouter(deps: RouterDeps) {
         );
         return toVoiceStatus(cred);
       }),
-      setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
+      setSpeechModel: ownerManaged.voice.setSpeechModel.handler(async ({ context, input }) =>
         updateVoiceSpeechModel(deps, context.actor, input),
       ),
       voices: authed.voice.voices.handler(async ({ context, input }) => {
@@ -6837,7 +6858,7 @@ export function createRouter(deps: RouterDeps) {
             ? loaded
             : await loadVoiceCredential(deps, context.actor, providerId);
         if (!row) return [];
-        return (await voiceProviderFor(deps, context.actor, row.cred.provider)).listVoices(
+        return (await voiceProviderFor(deps, row.actor, row.cred.provider)).listVoices(
           row.apiKey,
           voiceContext(context.actor, context.signal),
         );
@@ -7091,6 +7112,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     avatarStyle: user.avatarStyle === "robot" ? "robot" : "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing) && !actor.isDeploymentOwner,
+    memberSettingsLocked: !actor.isDeploymentOwner && memberSettingsPolicy(setup.settings).locked,
   };
 }
 
@@ -7101,7 +7123,7 @@ function requireBilling(deps: RouterDeps): BillingService {
 
 async function modelSetup(deps: RouterDeps, actor: Actor) {
   const [credential, settings] = await Promise.all([
-    findDefaultModelCredential(deps.prisma, actor),
+    findDefaultModelCredential(deps.prisma, await sharedModelScope(deps.prisma, actor)),
     deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
   ]);
   const funding =
@@ -7414,6 +7436,9 @@ async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
     computerHost: computerHostFor(settings?.computerHost, sandboxProvider),
     canChooseHostComputer: sandboxProvider === "docker",
     sandboxProvider,
+    lockMemberSettings: memberSettingsPolicy(settings).locked,
+    shareOwnerModels: memberSettingsPolicy(settings).shareOwner,
+    ...turnstileView(settings),
   };
 }
 

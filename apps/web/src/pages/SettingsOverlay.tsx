@@ -82,6 +82,7 @@ export function SettingsOverlay({
   timezone,
   onTimezoneChange,
   isDeploymentOwner = false,
+  memberSettingsLocked = false,
   billingEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
@@ -113,6 +114,8 @@ export function SettingsOverlay({
   timezone: string | null;
   onTimezoneChange: (timezone: string) => Promise<void>;
   isDeploymentOwner?: boolean;
+  /** The deployment owner manages models and voice for this member. */
+  memberSettingsLocked?: boolean;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
@@ -201,6 +204,11 @@ export function SettingsOverlay({
   }, [billingEnabled, section]);
 
   useEffect(() => {
+    if (memberSettingsLocked && (section === "models" || section === "voice"))
+      setSection("general");
+  }, [memberSettingsLocked, section]);
+
+  useEffect(() => {
     if (!showUpdates && !serverUpdate.loading && section === "updates") setSection("general");
   }, [showUpdates, serverUpdate.loading, section]);
 
@@ -218,9 +226,9 @@ export function SettingsOverlay({
 
   const navItems: NavItem[] = [
     { id: "general", label: t`General`, icon: Settings },
-    { id: "models", label: t`Models`, icon: Cpu },
+    ...(memberSettingsLocked ? [] : [{ id: "models" as const, label: t`Models`, icon: Cpu }]),
     { id: "memory", label: t`Memory`, icon: Brain },
-    { id: "voice", label: t`Voice`, icon: Volume2 },
+    ...(memberSettingsLocked ? [] : [{ id: "voice" as const, label: t`Voice`, icon: Volume2 }]),
     { id: "confirmations", label: t`Confirmations`, icon: ShieldCheck },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(showComputer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
@@ -446,7 +454,7 @@ export function SettingsOverlay({
                 {section === "updates" && showUpdates ? (
                   <UpdatesSettingsPanel serverUpdate={serverUpdate} />
                 ) : null}
-                {section === "models" ? (
+                {section === "models" && !memberSettingsLocked ? (
                   <ModelSettingsOverlay embedded onClose={requestClose} />
                 ) : null}
                 {section === "memory" && otherSpace && otherMemoryError ? (
@@ -468,7 +476,7 @@ export function SettingsOverlay({
                     onBusyChange={setMemoryBusy}
                   />
                 ) : null}
-                {section === "voice" ? (
+                {section === "voice" && !memberSettingsLocked ? (
                   <VoiceSettingsOverlay
                     embedded
                     onClose={requestClose}

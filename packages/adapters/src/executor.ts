@@ -91,7 +91,6 @@ import {
   nextCronDateAcross,
   nextFence,
   outboundSiteGate,
-  truthyFlag,
   planActionGate,
   promptInvokesSkill,
   redactSecrets,
@@ -104,6 +103,7 @@ import {
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
   truncatedPlainText,
+  truthyFlag,
   unattendedTriggerToolRequiresApproval,
   userTurnMessageForRun,
 } from "@rakazo/core";
@@ -137,6 +137,7 @@ import {
   SpaceLimitError,
   searchHistory,
   settleReleasedTakeoverCards,
+  sharedModelScope,
   validateInstructionProposal,
   writeBotInstructions,
 } from "@rakazo/db";
@@ -3070,6 +3071,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
     registerSecrets?: (values: string[]) => void,
     requireStoredSecret = false,
   ): Promise<AgentRunRequest["model"]> => {
+    scope = await sharedModelScope(deps.prisma, scope);
     const hostedProvider = (await modelCreditBillingEnabled(deps))
       ? resolveDeploymentModel().provider
       : undefined;
@@ -3153,17 +3155,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })
         : null;
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
+      const modelScope = await sharedModelScope(deps.prisma, scope);
       const [overrideCredential, defaultCredential, settings] = await Promise.all([
         hasOverride
           ? findConnectedModelCredential(
               deps.prisma,
               deps.secretStore,
-              scope,
+              modelScope,
               override!.modelProvider!,
               override!.modelId,
             )
           : Promise.resolve(null),
-        findDefaultModelCredential(deps.prisma, scope),
+        findDefaultModelCredential(deps.prisma, modelScope),
         deps.prisma.deploymentSettings.findUnique({
           where: { id: "default" },
         }),
@@ -3189,8 +3192,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // The key is resolved for the provider that won above, not before it is known.
       const resolved = await resolveModelKey(
         deps,
-        scope.userId,
-        scope.spaceId,
+        modelScope.userId,
+        modelScope.spaceId,
         credential,
         provider,
         id,
@@ -3731,6 +3734,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : undefined;
         const channelId = messagingChannelId(sourceBlocks);
         const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
+        const modelScope = await sharedModelScope(deps.prisma, run);
         const [
           bot,
           thread,
@@ -3767,7 +3771,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               status: true,
             },
           }),
-          findDefaultModelCredential(deps.prisma, run),
+          findDefaultModelCredential(deps.prisma, modelScope),
           deps.prisma.deploymentSettings.findUnique({
             where: { id: "default" },
           }),
@@ -3815,7 +3819,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? await findConnectedModelCredential(
                 deps.prisma,
                 deps.secretStore,
-                run,
+                modelScope,
                 modelChoice.modelProvider,
                 modelChoice.modelId,
               )
@@ -4045,8 +4049,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         try {
           resolved = await resolveModelKey(
             deps,
-            run.userId,
-            run.spaceId,
+            modelScope.userId,
+            modelScope.spaceId,
             credential,
             runModelProvider,
             runModelId,
@@ -5098,14 +5102,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   const reviewCredential = await findConnectedModelCredential(
                     deps.prisma,
                     deps.secretStore,
-                    { userId: run.userId, spaceId: run.spaceId },
+                    modelScope,
                     checker!.provider,
                     checker!.model,
                   );
                   const judgeKey = await resolveModelKey(
                     deps,
-                    run.userId,
-                    run.spaceId,
+                    modelScope.userId,
+                    modelScope.spaceId,
                     reviewCredential,
                     checker!.provider,
                     checker!.model,
@@ -7549,7 +7553,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (!scripted) {
           try {
             fallbackModels = await deps.prisma.spaceBackupModel.findMany({
-              where: { userId: run.userId, spaceId: run.spaceId },
+              where: { userId: modelScope.userId, spaceId: modelScope.spaceId },
               orderBy: { position: "asc" },
               select: { provider: true, modelId: true },
             });
@@ -8736,7 +8740,7 @@ function fleetPrepareDeps(
         ),
       defaultModel: async () => {
         const [defaultCredential, settings] = await Promise.all([
-          findDefaultModelCredential(deps.prisma, scope),
+          findDefaultModelCredential(deps.prisma, await sharedModelScope(deps.prisma, scope)),
           deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
         ]);
         const selected = selectConfiguredModel({

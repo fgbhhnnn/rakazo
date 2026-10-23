@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Your administrator manages this setting.": "此设置由管理员统一管理。",
   "Add an AI model to keep chatting": "添加一个 AI 模型以继续聊天",
   "Not Now": "暂不",
   "Add Model": "添加模型",

@@ -110,6 +110,16 @@ export function speakable(input: string): string {
 const BOUNDARY =
   /(?<!\b(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms|No|approx))(?<![.\d])([.!?])(["')\]]*)\s+/g;
 
+/** Chinese and Japanese sentence ends take no trailing space. */
+const CJK_BOUNDARY = /([。！？；!?;．])(["'”’」』）)\]]*)\s*/g;
+const HAS_CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
+
+/** CJK characters carry about a word each, so they count double toward a fragment's length. */
+function weight(text: string): number {
+  return text.length + (text.match(CJK_CHAR)?.length ?? 0);
+}
+
 /**
  * Split speakable text into utterances a synthesizer can start on.
  * Short fragments are glued onto their neighbour so the voice keeps context.
@@ -122,6 +132,9 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
   const rough = text
     .replace(BOUNDARY, `$1$2${MARK}`)
     .split(MARK)
+    .flatMap((piece) =>
+      HAS_CJK.test(piece) ? piece.replace(CJK_BOUNDARY, `$1$2${MARK}`).split(MARK) : [piece],
+    )
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -130,8 +143,8 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
     const parts = piece.length <= maxChars ? [piece] : splitLong(piece, maxChars);
     for (const part of parts) {
       const prev = out[out.length - 1];
-      if (prev && (prev.length < minChars || part.length < minChars)) {
-        out[out.length - 1] = `${prev} ${part}`;
+      if (prev && (weight(prev) < minChars || weight(part) < minChars)) {
+        out[out.length - 1] = HAS_CJK.test(prev.slice(-2)) ? `${prev}${part}` : `${prev} ${part}`;
       } else {
         out.push(part);
       }

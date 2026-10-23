@@ -168,3 +168,16 @@ describe("spokenDecision", () => {
     expect(spokenDecision("")).toBeNull();
   });
 });
+
+describe("toUtterances with Chinese", () => {
+  it("splits on full-width sentence ends", () => {
+    expect(toUtterances("好的，我来帮你查一下。今天天气不错。我们继续下一步。")).toEqual([
+      "好的，我来帮你查一下。",
+      "今天天气不错。",
+      "我们继续下一步。",
+    ]);
+  });
+  it("glues a very short Chinese fragment", () => {
+    expect(toUtterances("好。我们继续下一步吧！")).toEqual(["好。我们继续下一步吧！"]);
+  });
+});
