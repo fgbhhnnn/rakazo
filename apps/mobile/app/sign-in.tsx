@@ -383,22 +383,6 @@ export default function SignIn() {
                           color: tokens.foreground,
                         }}
                       />
-                      {mode === "up" && !codeStep && reset.turnstileSiteKey ? (
-                        <TurnstileWidget
-                          key={`${captchaRound}:${apiBase}`}
-                          siteKey={reset.turnstileSiteKey}
-                          baseUrl={apiBase}
-                          dark={appearance === "dark"}
-                          onToken={setCaptchaToken}
-                          onError={() =>
-                            setError(
-                              t(
-                                "Security check failed. Check your connection and try again.",
-                              ),
-                            )
-                          }
-                        />
-                      ) : null}
                       {error ? (
                         <Text
                           style={{ color: tokens.destructive, marginTop: 12 }}
@@ -484,6 +468,22 @@ export default function SignIn() {
                             padding: 16,
                             color: tokens.foreground,
                           }}
+                        />
+                      ) : null}
+                      {mode === "up" && !codeStep && reset.turnstileSiteKey ? (
+                        <TurnstileWidget
+                          key={`${captchaRound}:${apiBase}`}
+                          siteKey={reset.turnstileSiteKey}
+                          baseUrl={apiBase}
+                          dark={appearance === "dark"}
+                          onToken={setCaptchaToken}
+                          onError={() =>
+                            setError(
+                              t(
+                                "Security check failed. Check your connection and try again.",
+                              ),
+                            )
+                          }
                         />
                       ) : null}
                       {error ? (
