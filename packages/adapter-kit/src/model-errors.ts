@@ -47,8 +47,17 @@ export function isProviderTimeout(error: unknown): boolean {
 }
 
 /** Only provider availability failures may advance the user's explicit chain. */
+/** Gateway-wide "too many requests in flight" errors: always clear once other calls finish. */
+export function isProviderConcurrencyLimitError(error: unknown): boolean {
+  return /concurrency limit|too many concurrent|concurrent requests? (?:limit|exceeded)/.test(
+    errorFacts(error).text,
+  );
+}
+
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
+  // Whatever status the gateway attaches, an in-flight concurrency limit is transient.
+  if (isProviderConcurrencyLimitError(error)) return true;
   if (statuses.has(400) || statuses.has(401)) return false;
   // Kimi For Coding reports an exhausted usage window as HTTP 403. errorFacts lowercases text.
   if (

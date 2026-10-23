@@ -129,6 +129,10 @@ function catalogModels(): Models {
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
 const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
+/** About 65 s in total before jitter; used only for gateway concurrency limits. */
+const CONCURRENCY_LIMIT_RETRY_DELAYS_MS = [
+  1_000, 2_000, 4_000, 8_000, 12_000, 12_000, 12_000, 14_000,
+] as const;
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
 // that provider quirk from making a long task look complete after one step.
@@ -2665,8 +2669,19 @@ function fallbackAwareModelStream(
               if (isProviderConcurrencyLimit(event.error)) noteProviderConcurrencyLimit();
               if (isTransientModelError(event.error)) {
                 firstRetryableError ??= event;
-                // Every retry, including its backoff, shares the original budget.
-                const delay = MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
+                // Every retry, including its backoff, shares the original budget. A gateway
+                // concurrency limit clears as other calls finish: retry it for about a minute
+                // with jittered backoff instead of failing the reply.
+                const concurrencyLimited = isProviderConcurrencyLimit(event.error);
+                const base = concurrencyLimited
+                  ? CONCURRENCY_LIMIT_RETRY_DELAYS_MS[retries]
+                  : MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
+                const delay =
+                  base === undefined
+                    ? undefined
+                    : concurrencyLimited
+                      ? Math.round(base * (0.75 + Math.random() * 0.5))
+                      : base;
                 if (delay !== undefined && Date.now() - startedAt + delay < timeoutMs) {
                   retries += 1;
                   await abortableDelay(delay, signal);

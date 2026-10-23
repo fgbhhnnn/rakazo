@@ -202,7 +202,8 @@ describe("provider availability classification", () => {
         message:
           "You've reached your concurrent request limit. Please wait for your ongoing requests to finish and try again.",
       },
-      false,
+      // Concurrency limits clear once in-flight calls finish, so they are retried.
+      true,
     ],
     [
       "generic 403 permission_error",
@@ -227,5 +228,21 @@ describe("provider availability classification", () => {
     ["transient server failure", { status: 503, message: "service unavailable" }, true],
   ])("classifies %s", (_label, error, expected) => {
     expect(isRetryableProviderUnavailable(error)).toBe(expected);
+  });
+});
+
+describe("gateway concurrency limit", () => {
+  it("is transient whatever status comes with it", async () => {
+    const { isTransientModelError, isRetryableProviderUnavailable } = await import(
+      "./model-errors.js"
+    );
+    for (const error of [
+      new Error("Concurrency limit exceeded for account, please retry later"),
+      { status: 400, message: "Concurrency limit exceeded for account, please retry later" },
+      { status: 403, errorMessage: "Concurrency limit exceeded for account, please retry later" },
+    ]) {
+      expect(isRetryableProviderUnavailable(error)).toBe(true);
+      expect(isTransientModelError(error)).toBe(true);
+    }
   });
 });

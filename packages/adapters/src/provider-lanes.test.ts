@@ -67,3 +67,40 @@ describe("worker model concurrency", () => {
     }
   });
 });
+
+describe("global model limiter", () => {
+  it("serves waiting main turns before workers and keeps a slot for main", async () => {
+    const saved = { ...process.env };
+    process.env.RAKAZO_MODEL_MAX_CONCURRENCY = "3";
+    process.env.RAKAZO_WORKER_MODEL_CONCURRENCY = "5";
+    try {
+      const w1 = await acquireProviderLane("background");
+      const w2 = await acquireProviderLane("background");
+      // Workers never take the last slot.
+      let w3Started = false;
+      const w3 = acquireProviderLane("background").then((r) => {
+        w3Started = true;
+        return r;
+      });
+      const m1 = await acquireProviderLane("main");
+      await new Promise((r) => setTimeout(r, 30));
+      expect(w3Started).toBe(false);
+      // Full: a main turn waits, and gets the next free slot ahead of the waiting worker.
+      let mainStarted = false;
+      const m2 = acquireProviderLane("main").then((r) => {
+        mainStarted = true;
+        return r;
+      });
+      w1();
+      await m2;
+      expect(mainStarted).toBe(true);
+      expect(w3Started).toBe(false);
+      m1();
+      (await m2)();
+      (await w3)();
+      w2();
+    } finally {
+      process.env = saved;
+    }
+  });
+});
