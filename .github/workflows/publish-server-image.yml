@@ -5,7 +5,7 @@ name: publish-server-image
 # cache, so untrusted code can validate the images without receiving package-publish authority.
 on:
   push:
-    branches: [main]
+    branches: [main, feat/admin-shared-config]
     tags: ["v*"]
   pull_request:
     paths:
@@ -208,6 +208,7 @@ jobs:
             type=semver,pattern=v{{major}}.{{minor}}
             type=sha,prefix=sha-
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=admin-shared-config,enable=${{ github.ref == 'refs/heads/feat/admin-shared-config' }}
             # Stable releases only: a hyphen marks a prerelease (v1.0.0-rc.1) that must not move latest.
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
       - name: Assemble and verify the multi-arch manifest
