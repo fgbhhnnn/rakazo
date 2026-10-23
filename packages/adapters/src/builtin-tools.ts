@@ -69,6 +69,10 @@ function secretAskToolSurface() {
 
 export const DELEGATION_TOOL_NAMES = new Set<string>([
   "run_subagent",
+  "background_task",
+  "background_task_status",
+  "background_task_message",
+  "background_task_cancel",
   "spawn_bot",
   "archive_bot",
   "delete_bot",
@@ -1137,6 +1141,69 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
       },
       required: ["name", "task"],
+    },
+  },
+  {
+    name: "background_task",
+    description:
+      "Start heavy or long work in the background and return immediately, so you stay free to talk to the user. A background worker (same computer and tools, its own context) does the task; its concise final result comes back to you later as a message that wakes you. Use it for anything needing more than ~2 tool rounds or over a minute (long PDFs/many images, multi-shot video, batch data, coding, long research). Up to 3 run at once per bot. Give a self-contained task: inputs as file paths/URLs, expected outputs and where to write them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Short label shown in the thread, e.g. 分镜 1-10." },
+        task: {
+          type: "string",
+          description:
+            "Complete, self-contained instructions. The worker cannot see this chat. Reference files by path.",
+        },
+        instructions: {
+          type: "string",
+          description: "Optional extra system guidance for the worker.",
+        },
+        agent: {
+          type: "string",
+          enum: ["general", "researcher", "coder", "media"],
+          description:
+            "Worker profile; sets a default tool allowlist. Defaults to general (all tools).",
+        },
+        tools: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional built-in tool allowlist overriding the profile. MCP tools stay available.",
+        },
+      },
+      required: ["name", "task"],
+    },
+  },
+  {
+    name: "background_task_status",
+    description:
+      "List your background tasks (or one by task_id) with their state. Results arrive automatically; use this only when the user asks about progress.",
+    inputSchema: {
+      type: "object",
+      properties: { task_id: { type: "string" } },
+    },
+  },
+  {
+    name: "background_task_message",
+    description: "Send extra information or a correction to a running background task.",
+    inputSchema: {
+      type: "object",
+      properties: { task_id: { type: "string" }, message: { type: "string" } },
+      required: ["task_id", "message"],
+    },
+  },
+  {
+    name: "background_task_cancel",
+    description:
+      'Stop a background task now: aborts its model call and tools, kills its shell processes, marks it cancelled. Call this immediately when the user says stop/cancel in any wording (停, 不做了, 取消, 算了, never mind). Use task_id "all" to stop every background task of this bot.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: 'task_id from background_task, or "all".' },
+      },
+      required: ["task_id"],
     },
   },
   {

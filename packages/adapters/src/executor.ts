@@ -44,6 +44,7 @@ import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts
 import {
   ATTACHMENT_MAX_BYTES,
   BotSecretName,
+  BUILTIN_TOOL_NAMES,
   botSecretSubmissionSchema,
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
@@ -193,6 +194,12 @@ import {
   resolveAutoReviewProviderKind,
 } from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
+import {
+  backgroundTaskMessage,
+  backgroundTaskStatus,
+  cancelBackgroundTask,
+  launchBackgroundTask,
+} from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import {
@@ -497,6 +504,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "browser_snapshot",
   "list_secrets",
   "cloud_agent_status",
+  "background_task_status",
 ]);
 /** Added to the turn prompt when the user spoke this message on a live voice call. */
 const VOICE_CALL_BASE_INSTRUCTION =
@@ -3717,9 +3725,30 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
       }, 60_000);
       heartbeat.unref?.();
+      // Stop (the button, or a dispatcher's background_task_cancel) only flips the run to
+      // cancelled. Notice it within seconds even while a tool or MCP call is pending, and
+      // abort the model call and tools instead of waiting for the next event or heartbeat.
+      let cancelCheckBusy = false;
+      const cancelWatch = setInterval(() => {
+        if (runCompleted || cancelCheckBusy) return;
+        cancelCheckBusy = true;
+        void deps.prisma.run
+          .findUnique({ where: { id: runId }, select: { status: true } })
+          .then((current) => {
+            if (runCompleted || current?.status !== "cancelled") return;
+            leaseValid = false;
+            runAbortController?.abort();
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            cancelCheckBusy = false;
+          });
+      }, runCancelPollMs());
+      cancelWatch.unref?.();
       const stopHeartbeatAfterCompletion = () => {
         runCompleted = true;
         clearInterval(heartbeat);
+        clearInterval(cancelWatch);
       };
 
       const runSecrets = [...deps.secrets];
@@ -7220,6 +7249,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 : { ok: true },
             );
           }
+          if (name.startsWith("background_task")) {
+            const dispatchRun = { ...run, sourceMessageId: run.sourceMessageId };
+            const dispatcher = { id: bot.id, name: bot.name, computerId: bot.computerId };
+            if (name === "background_task") {
+              const launched = await launchBackgroundTask(deps, dispatchRun, dispatcher, args, {
+                builtinToolNames: BUILTIN_TOOL_NAMES,
+                deliveryKey: effectKey,
+              });
+              if ("task_id" in launched && launched.task_id) {
+                try {
+                  await publishMessage(deps, run, "bot", [
+                    {
+                      kind: "child_bot",
+                      botId: launched.task_id,
+                      name: `后台任务：${launched.name}`,
+                      title: `${launched.worker} · 点开看实时进度`,
+                      status: "created",
+                    },
+                  ]);
+                } catch (error) {
+                  getLogger().error("background task notice", error);
+                }
+              }
+              return finish(launched);
+            }
+            if (name === "background_task_status")
+              return finish(await backgroundTaskStatus(deps, dispatchRun, dispatcher, args));
+            if (name === "background_task_message")
+              return finish(
+                await backgroundTaskMessage(deps, dispatchRun, dispatcher, args, effectKey),
+              );
+            if (name === "background_task_cancel")
+              return finish(await cancelBackgroundTask(deps, dispatchRun, dispatcher, args));
+          }
           if (name === "message_bot") {
             const sent = await messageBot(
               deps,
@@ -8440,6 +8503,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
         detachShutdown?.();
         clearInterval(heartbeat);
+        clearInterval(cancelWatch);
         if (!retainComputerLease) {
           if (screenRelease) {
             const releaseContext = screenRelease.keepWarm
@@ -9177,6 +9241,12 @@ export function userTurnInstructions(parts: {
       "run_subagent",
       "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
     ),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
+      "background_task",
+      BACKGROUND_DISPATCH_GUIDANCE,
+    ),
+    offeredBuiltinClause(parts.disabledBuiltinTools, "message_user", STEERING_REPLY_GUIDANCE),
     parts.botDirectory,
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
@@ -9305,6 +9375,19 @@ export function mayOpenModelStream(
 }
 
 export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply, stripStrayNoResponse };
+
+/** How often a running run checks whether it was stopped. RAKAZO_RUN_CANCEL_POLL_MS overrides. */
+export function runCancelPollMs(env: Record<string, string | undefined> = process.env): number {
+  const parsed = Number(env.RAKAZO_RUN_CANCEL_POLL_MS);
+  return Number.isFinite(parsed) && parsed >= 200 ? Math.floor(parsed) : 2_000;
+}
+
+/** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
+export const BACKGROUND_DISPATCH_GUIDANCE =
+  'You are a dispatcher. A main turn is: reply to the user, then dispatch (background_task), redirect (background_task_message), check (background_task_status) or cancel (background_task_cancel), then end the turn — so you are always idle and see the next user message at once. Do not do the work yourself and avoid long tool calls in the main turn; only trivial answers (a fact, one quick look-up) are done inline. When the user says stop or cancel in any wording (停, 不做了, 取消, 算了, 别弄了, never mind), immediately call background_task_cancel (task_id "all" if unclear which), then confirm in one sentence. When the user changes or adds requirements for running work, pass them on with background_task_message. Anything that needs more than about two tool rounds or more than a minute (long PDFs or many images, multi-shot video, batch data, coding projects, long research) goes to background_task: write a self-contained task (inputs as file paths/URLs, expected outputs and where to write them), split independent parts into parallel tasks (up to 3), tell the user in one or two sentences what you dispatched, and end your turn. Do not wait or poll; each worker\'s final result wakes you as a message. Then check the artifacts it names (open the files) instead of trusting the summary, and report to the user. Keep your own turns short. Never sit in long shell waits: start long commands in the background (nohup … &, log to a file) and check later.';
+/** Mid-run user messages get an acknowledgement before the bot goes back to work. */
+export const STEERING_REPLY_GUIDANCE =
+  "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";
 
 export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
   return `Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;

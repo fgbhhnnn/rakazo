@@ -5,7 +5,52 @@ import {
   isRunningShellCommand,
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
+  shellForegroundMaxMs,
 } from "./shell-command-stream.js";
+
+describe("shell foreground cap", () => {
+  it("reads RAKAZO_SHELL_FOREGROUND_MAX_MS", () => {
+    expect(shellForegroundMaxMs({})).toBe(60_000);
+    expect(shellForegroundMaxMs({ RAKAZO_SHELL_FOREGROUND_MAX_MS: "5000" })).toBe(5000);
+    expect(shellForegroundMaxMs({ RAKAZO_SHELL_FOREGROUND_MAX_MS: "0" })).toBe(0);
+    expect(shellForegroundMaxMs({ RAKAZO_SHELL_FOREGROUND_MAX_MS: "x" })).toBe(60_000);
+  });
+
+  it("returns a silent long command as running after maxWaitMs", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const observed = await observeShellCommand(
+      (async function* () {
+        await gate;
+        yield { type: "stdout" as const, data: "late\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [], idleMs: 10_000, maxWaitMs: 30 },
+    );
+    expect(observed.result).toMatchObject({ code: null, running: true });
+    release();
+    await expect(observed.completion).resolves.toMatchObject({ stdout: "late\n", code: 0 });
+  });
+
+  it("returns a continuously chatty command as running after maxWaitMs", async () => {
+    let stop = false;
+    const observed = await observeShellCommand(
+      (async function* () {
+        while (!stop) {
+          yield { type: "stdout" as const, data: "." };
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [], idleMs: 1000, maxWaitMs: 40 },
+    );
+    expect(observed.result).toMatchObject({ running: true });
+    stop = true;
+    await observed.completion;
+  });
+});
 
 describe("observeShellCommand", () => {
   it("redacts provider errors before they reach the runtime", async () => {

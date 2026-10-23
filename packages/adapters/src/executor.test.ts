@@ -7,6 +7,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
   appendToolCompletionAudit,
+  BACKGROUND_DISPATCH_GUIDANCE,
   createRunExecutor,
   createRunWorkspaceCheckpoint,
   dockerComputerToolInstruction,
@@ -17,6 +18,7 @@ import {
   persistentComputerInstruction,
   REACTION_SILENT_REPLY_GUIDANCE,
   runNotificationsEnabled,
+  STEERING_REPLY_GUIDANCE,
   selectBuiltinToolsForRun,
   settleSteeringAttachmentLoads,
   threadContextForRun,
@@ -1246,6 +1248,8 @@ describe("userTurnInstructions", () => {
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
     "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+    BACKGROUND_DISPATCH_GUIDANCE,
+    STEERING_REPLY_GUIDANCE,
   ];
   const archiveBot =
     "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";

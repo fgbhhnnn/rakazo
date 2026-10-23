@@ -228,6 +228,28 @@ export function inferScript(
   if (childEdit) {
     return [{ assistant: "updating your bots.", toolCalls: childEdit, complete: true }];
   }
+  // Dispatcher fixtures: launch, redirect and stop background workers in plain words.
+  const dispatched = /\bdispatch in background:\s*([^\n]+)/i.exec(prompt);
+  if (dispatched && !prompt.includes("【后台任务】")) {
+    return [
+      {
+        assistant: "dispatched to a background worker.",
+        toolCalls: [
+          { name: "background_task", args: { name: "job", task: dispatched[1]!.trim() } },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  if (/(cancel all background tasks|不做了|取消|算了|^\s*停\s*$)/im.test(prompt)) {
+    return [
+      {
+        assistant: "stopped.",
+        toolCalls: [{ name: "background_task_cancel", args: { task_id: "all" } }],
+        complete: true,
+      },
+    ];
+  }
   const fleet = fleetCall(prompt);
   if (fleet) {
     return [{ assistant: "updating your bots.", toolCalls: [fleet], complete: true }];
@@ -648,6 +670,10 @@ function shouldFail(prompt: string): boolean {
 /** How long a scripted run keeps working before it finishes; undefined runs its script. */
 function hangDuration(prompt: string): number | undefined {
   const lower = prompt.toLowerCase();
+  // Dispatching hanging work makes the background worker hang, not the dispatcher.
+  if (/\bdispatch in background:/i.test(prompt) && !prompt.includes("【后台任务】")) {
+    return undefined;
+  }
   // Asking another bot to keep working makes that bot's run hang, not this one.
   if (lower.includes("message the bot named") || lower.includes("message bot named")) {
     return undefined;

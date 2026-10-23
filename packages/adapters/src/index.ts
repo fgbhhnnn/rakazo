@@ -144,6 +144,7 @@ export * from "./task-catalog.js";
 export * from "./teaching-session.js";
 export * from "./team-chat-messaging.js";
 export * from "./third-party-connector-emulator.js";
+export * from "./thread-stop.js";
 export * from "./ticket-changes.js";
 export * from "./ticket-tools.js";
 export { dispatcherFetch } from "./undici-fetch.js";

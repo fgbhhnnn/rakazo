@@ -11,6 +11,20 @@ import { clipToolResultText } from "./pi-runtime-limits.js";
  */
 export const SHELL_STREAM_IDLE_MS = 1_000;
 
+/**
+ * Longest a shell call holds the turn, output or not. After this the command keeps running and
+ * its final output is delivered later, so a long build or render never blocks the bot from
+ * replying. RAKAZO_SHELL_FOREGROUND_MAX_MS overrides it; 0 disables the cap.
+ */
+export const SHELL_FOREGROUND_MAX_MS = 60_000;
+export function shellForegroundMaxMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.RAKAZO_SHELL_FOREGROUND_MAX_MS?.trim();
+  const parsed = raw ? Number(raw) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : SHELL_FOREGROUND_MAX_MS;
+}
+
 export const SHELL_STILL_RUNNING_NOTICE =
   "Still running. Tell the user any one-time code or sign-in URL in the output.";
 
@@ -110,6 +124,8 @@ export async function observeShellCommand(
   options: {
     secrets: string[];
     idleMs?: number;
+    /** Return a still-running result after this long even without output; 0 = no cap. */
+    maxWaitMs?: number;
     onOutput?: (snapshot: ShellCommandSnapshot) => void;
   },
 ): Promise<{
@@ -175,13 +191,23 @@ export async function observeShellCommand(
     return { ...redact({ stdout, stderr }, false), code: code ?? 0 };
   })();
 
+  const maxWaitMs = options.maxWaitMs ?? shellForegroundMaxMs();
+  let maxTimer: ReturnType<typeof setTimeout> | undefined;
+  const maxWait =
+    maxWaitMs > 0
+      ? new Promise<"idle">((resolve) => {
+          maxTimer = setTimeout(() => resolve("idle"), maxWaitMs);
+        })
+      : new Promise<never>(() => undefined);
   const reason = await Promise.race([
     idlePromise,
+    maxWait,
     done.then(
       () => "done" as const,
       () => "done" as const,
     ),
   ]);
+  if (maxTimer) clearTimeout(maxTimer);
   if (reason === "done" || finished || code !== undefined) {
     return { result: await done };
   }

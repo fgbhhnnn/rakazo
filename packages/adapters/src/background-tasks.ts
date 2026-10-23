@@ -1,0 +1,428 @@
+import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH } from "@rakazo/core";
+import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { messageBot } from "./bot-messages.js";
+import { spawnBot } from "./child-bots.js";
+import type { ExecutorDeps } from "./executor.js";
+import { stopThreadRunsForBots } from "./thread-stop.js";
+
+/**
+ * Background tasks: the bot hands heavy work to a worker and stays free to talk.
+ *
+ * A worker is a hidden child bot of the dispatcher, one per slot, reused across tasks. It shares
+ * the dispatcher's computer, has its own thread and context window, and gets the task as a
+ * bot-to-bot request. Everything else is the existing delegation machinery: the worker's run is
+ * durable (the job reconciler repairs lost wakes), its terminal outcome is returned to the
+ * dispatcher automatically (bounded by the bot-message limit), and that reply wakes the dispatcher.
+ */
+export const BACKGROUND_TASK_TOOL_NAMES = [
+  "background_task",
+  "background_task_status",
+  "background_task_message",
+  "background_task_cancel",
+] as const;
+
+export function backgroundTaskConcurrency(env: Record<string, string | undefined> = process.env) {
+  const parsed = Number(env.RAKAZO_BACKGROUND_TASKS_PER_BOT?.trim() || Number.NaN);
+  return Number.isFinite(parsed) && parsed >= 1 ? Math.min(10, Math.floor(parsed)) : 3;
+}
+
+export const BACKGROUND_WORKER_SPAWN_PREFIX = "bg-worker:";
+export function backgroundWorkerSpawnKey(botId: string, slot: number) {
+  return `${BACKGROUND_WORKER_SPAWN_PREFIX}${botId}:${slot}`;
+}
+
+/** Tools a worker never gets: no recursion, no fleet changes, no talking to the user directly. */
+const WORKER_ALWAYS_DISABLED = [
+  ...BACKGROUND_TASK_TOOL_NAMES,
+  "spawn_bot",
+  "archive_bot",
+  "update_bot",
+  "handoff_to_bot",
+  "call_user",
+  "end_call",
+  "create_space",
+  "propose_instructions_update",
+  "list_fleet",
+  "create_group",
+  "update_group",
+  "organize_bot",
+  "set_child_instructions",
+  "set_child_bot_model",
+  "create_child_routine",
+];
+
+export const BACKGROUND_AGENT_PROFILES = {
+  general: {
+    prompt: "通用后台执行者：按任务说明完成工作。",
+    tools: undefined as string[] | undefined,
+  },
+  researcher: {
+    prompt: "调研员：搜索、阅读、核实来源，输出结论和出处链接。不改文件以外的任何东西。",
+    tools: [
+      "web_search",
+      "web_fetch",
+      "read_file",
+      "write_file",
+      "list_files",
+      "shell",
+      "run_subagent",
+      "recall_memory",
+      "search_history",
+      "read_history",
+      "skill_read",
+      "attach_file",
+    ],
+  },
+  coder: {
+    prompt: "程序员：在电脑上写代码、跑测试，完成后汇报改了哪些文件和测试结果。",
+    tools: [
+      "shell",
+      "read_file",
+      "write_file",
+      "list_files",
+      "open_path",
+      "web_search",
+      "web_fetch",
+      "run_subagent",
+      "skill_read",
+      "attach_file",
+    ],
+  },
+  media: {
+    prompt:
+      "媒体制作：生成/处理图片、视频、音频（可用 MCP 生成工具和 ffmpeg），产物存文件，关键产物用 attach_file 预览。",
+    tools: [
+      "shell",
+      "read_file",
+      "write_file",
+      "list_files",
+      "attach_file",
+      "run_subagent",
+      "web_fetch",
+      "skill_read",
+      "render_plot",
+    ],
+  },
+} as const;
+export type BackgroundAgentProfile = keyof typeof BACKGROUND_AGENT_PROFILES;
+
+const WORKER_INSTRUCTIONS = `你是后台工作者（background worker），由主 bot 派来做一项具体任务。
+- 你有自己的上下文；主 bot 和用户看不到你的中间过程，只看到你最后的回复。
+- 只做任务说明里的事。不要问用户问题；信息不够就做合理假设并在结果里写明。
+- 大任务按 "Heavy Task Workflow" 技能来：计划清单写文件、素材存文件、看图分批交给 run_subagent。
+- 产物写到电脑上的文件里（建议 ~/jobs/<任务名>/out/），结果里给出路径。
+- 最后的回复就是交给主 bot 的结果：简洁（建议 1500 字以内），包括 完成情况 / 产物路径 / 遇到的问题 / 建议的下一步。`;
+
+type Deps = Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "sandbox">;
+type DispatchRun = {
+  id: string;
+  spaceId: string;
+  threadId: string;
+  botId: string;
+  userId: string;
+  sourceMessageId?: string | null;
+};
+type DispatchBot = { id: string; name: string; computerId?: string | null };
+
+/** Builtin tools a worker may not use, given an optional allowlist. Unknown names are ignored. */
+export function workerDisabledTools(
+  allBuiltinNames: readonly string[],
+  allowlist: readonly string[] | undefined,
+): string[] {
+  const disabled = new Set<string>(WORKER_ALWAYS_DISABLED);
+  if (allowlist && allowlist.length > 0) {
+    const allowed = new Set(allowlist);
+    for (const name of allBuiltinNames) if (!allowed.has(name)) disabled.add(name);
+  }
+  return [...disabled].filter((name) => allBuiltinNames.includes(name)).sort();
+}
+
+export function buildBackgroundTaskMessage(input: {
+  name: string;
+  task: string;
+  instructions?: string;
+  agent: BackgroundAgentProfile;
+}): string {
+  const parts = [
+    `【后台任务】${input.name}`,
+    `角色：${BACKGROUND_AGENT_PROFILES[input.agent].prompt}`,
+    input.instructions?.trim() ? `额外要求：\n${input.instructions.trim()}` : "",
+    `任务：\n${input.task.trim()}`,
+  ].filter(Boolean);
+  const text = parts.join("\n\n");
+  return text.length <= BOT_MESSAGE_MAX_LENGTH
+    ? text
+    : `${text.slice(0, BOT_MESSAGE_MAX_LENGTH - 80)}\n…[任务说明过长已截断，把完整说明写进文件再引用路径]`;
+}
+
+async function workerBots(deps: Deps, bot: DispatchBot, spaceId: string) {
+  return deps.prisma.bot.findMany({
+    where: {
+      spaceId,
+      parentBotId: bot.id,
+      spawnKey: { startsWith: `${BACKGROUND_WORKER_SPAWN_PREFIX}${bot.id}:` },
+      archivedAt: null,
+    },
+    select: { id: true, name: true, spawnKey: true, thread: { select: { id: true } } },
+  });
+}
+
+async function activeRunFor(deps: Deps, botId: string) {
+  return deps.prisma.run.findFirst({
+    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, taskId: true, status: true, createdAt: true },
+  });
+}
+
+// Parallel background_task calls in one turn must not pick the same idle slot before either
+// has queued its run, so launches for one dispatcher run one at a time in this process.
+const launchLocks = new Map<string, Promise<unknown>>();
+
+export function launchBackgroundTask(
+  deps: Deps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  args: Record<string, unknown>,
+  options: { builtinToolNames: readonly string[]; deliveryKey: string },
+) {
+  const previous = launchLocks.get(bot.id) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => launchBackgroundTaskNow(deps, run, bot, args, options));
+  launchLocks.set(bot.id, next);
+  const release = () => {
+    if (launchLocks.get(bot.id) === next) launchLocks.delete(bot.id);
+  };
+  next.then(release, release);
+  return next;
+}
+
+async function launchBackgroundTaskNow(
+  deps: Deps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  args: Record<string, unknown>,
+  options: { builtinToolNames: readonly string[]; deliveryKey: string },
+) {
+  const name =
+    String(args.name ?? "")
+      .trim()
+      .slice(0, 40) || "任务";
+  const task = String(args.task ?? "").trim();
+  if (!task) return { error: "task is required" };
+  const agentArg = String(args.agent ?? "general");
+  if (!(agentArg in BACKGROUND_AGENT_PROFILES)) {
+    return { error: `agent must be one of ${Object.keys(BACKGROUND_AGENT_PROFILES).join(", ")}` };
+  }
+  const agent = agentArg as BackgroundAgentProfile;
+  const toolsArg = Array.isArray(args.tools) ? args.tools.map(String) : undefined;
+  const allowlist = toolsArg ?? BACKGROUND_AGENT_PROFILES[agent].tools;
+
+  const limit = backgroundTaskConcurrency();
+  const existing = await workerBots(deps, bot, run.spaceId);
+  let slotBot: (typeof existing)[number] | undefined;
+  let busy = 0;
+  for (let slot = 1; slot <= limit; slot += 1) {
+    const worker = existing.find((b) => b.spawnKey === backgroundWorkerSpawnKey(bot.id, slot));
+    if (worker && (await activeRunFor(deps, worker.id))) {
+      busy += 1;
+      continue;
+    }
+    if (worker) {
+      slotBot = worker;
+      break;
+    }
+    const spawned = await spawnBot(deps, {
+      spawnedBy: { id: bot.id, name: bot.name, spaceId: run.spaceId, userId: run.userId },
+      runId: run.id,
+      spawnKey: backgroundWorkerSpawnKey(bot.id, slot),
+      name: `${bot.name} · 后台${slot}`.slice(0, 60),
+      title: "后台工作者",
+      description: `${bot.name} 的后台工作者，由 background_task 自动管理。`,
+      instructions: WORKER_INSTRUCTIONS,
+    });
+    if ("error" in spawned) return { error: spawned.error };
+    slotBot = {
+      id: spawned.botId,
+      name: spawned.name,
+      spawnKey: backgroundWorkerSpawnKey(bot.id, slot),
+      thread: { id: spawned.threadId },
+    };
+    break;
+  }
+  if (!slotBot) {
+    return {
+      error: `已有 ${busy} 个后台任务在运行（上限 ${limit}）。等其中一个完成、用 background_task_cancel 取消，或把任务合并。`,
+    };
+  }
+
+  // Per task: same computer as the dispatcher, quiet notifications, this task's tool set.
+  await deps.prisma.bot.update({
+    where: { id: slotBot.id },
+    data: {
+      notifyOnFinish: false,
+      instructions: WORKER_INSTRUCTIONS,
+      disabledBuiltinTools: workerDisabledTools(options.builtinToolNames, allowlist),
+      ...(bot.computerId ? { computerId: bot.computerId } : {}),
+    },
+  });
+
+  const sent = await messageBot(
+    deps,
+    run,
+    { id: bot.id, name: bot.name },
+    {
+      bot_id: slotBot.id,
+      message: buildBackgroundTaskMessage({
+        name,
+        task,
+        instructions: args.instructions ? String(args.instructions) : undefined,
+        agent,
+      }),
+      intent: "request",
+      deliveryKey: options.deliveryKey,
+    },
+  );
+  if (!sent.ok) return { error: sent.error };
+  return {
+    ok: true as const,
+    task_id: slotBot.id,
+    name,
+    agent,
+    worker: slotBot.name,
+    note: "已在后台开始。结果完成后会自动作为消息发回给你并唤醒你；现在先简短告诉用户已派出，然后结束本轮或继续别的事。不要轮询等待。",
+  };
+}
+
+export async function backgroundTaskStatus(
+  deps: Deps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  args: Record<string, unknown>,
+) {
+  const workers = await workerBots(deps, bot, run.spaceId);
+  const wanted = args.task_id ? String(args.task_id) : undefined;
+  const selected = wanted ? workers.filter((w) => w.id === wanted) : workers;
+  if (wanted && selected.length === 0) return { error: "no background task with that task_id" };
+  const tasks = await Promise.all(
+    selected.map(async (worker) => {
+      const latest = await deps.prisma.run.findFirst({
+        where: { botId: worker.id },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, status: true, createdAt: true, completedAt: true, error: true },
+      });
+      return {
+        task_id: worker.id,
+        worker: worker.name,
+        state: latest?.status ?? "idle",
+        started_at: latest?.createdAt?.toISOString(),
+        finished_at: latest?.completedAt?.toISOString(),
+        ...(latest?.error ? { error: String(latest.error).slice(0, 500) } : {}),
+      };
+    }),
+  );
+  return { ok: true as const, limit: backgroundTaskConcurrency(), tasks };
+}
+
+export async function backgroundTaskMessage(
+  deps: Deps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  args: Record<string, unknown>,
+  deliveryKey: string,
+) {
+  const workers = await workerBots(deps, bot, run.spaceId);
+  const worker = workers.find((w) => w.id === String(args.task_id ?? ""));
+  if (!worker) return { error: "no background task with that task_id" };
+  const text = String(args.message ?? "").trim();
+  if (!text) return { error: "message is empty" };
+  // A worker that is mid-run takes the note as steering on its next model step, the same way
+  // a user's follow-up reaches a busy bot. An idle worker gets a normal bot message instead.
+  const active = worker.thread ? await activeRunFor(deps, worker.id) : null;
+  if (active && worker.thread && active.status === "running") {
+    const threadId = worker.thread.id;
+    const steered = await deps.prisma.$transaction(async (tx) => {
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId,
+        role: "user",
+        blocks: [{ kind: "text", text: `[来自 ${bot.name} 的补充/改向指令]\n${text}` }],
+        runId: active.id,
+      });
+      await tx.steeringMessage.create({
+        data: { messageId: message.id, botId: worker.id, userId: run.userId, runId: active.id },
+      });
+      const event = await appendEventInTransaction(tx, {
+        spaceId: run.spaceId,
+        threadId,
+        botId: worker.id,
+        type: "thread.message.created",
+        runId: active.id,
+        payload: { messageId: message.id, role: "user", blocks: message.blocks },
+      });
+      return event.seq;
+    });
+    await deps.events.notify(threadId, steered).catch(() => undefined);
+    return {
+      ok: true as const,
+      task_id: worker.id,
+      note: "Delivered to the running worker; it sees it on its next step.",
+    };
+  }
+  const sent = await messageBot(
+    deps,
+    run,
+    { id: bot.id, name: bot.name },
+    { bot_id: worker.id, message: text, intent: "fyi", deliveryKey },
+  );
+  if (!sent.ok) return { error: sent.error };
+  return { ok: true as const, task_id: worker.id, note: "Worker was idle; sent as a new message." };
+}
+
+/**
+ * Stops one worker (task_id) or every worker of this bot (task_id "all"). Uses the same path
+ * as the Stop button: runs flip to cancelled (the worker's executor aborts its model call,
+ * tools and MCP polling when it sees that), its shell processes are killed on the computer,
+ * and the screen and lease are released.
+ */
+export async function cancelBackgroundTask(
+  deps: Deps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  args: Record<string, unknown>,
+  stop: (
+    actor: { spaceId: string; userId: string },
+    target: { threadId: string; botIds: readonly string[] },
+  ) => Promise<{ runIds: string[] }> = (actor, target) =>
+    stopThreadRunsForBots(deps, actor, target),
+) {
+  const startedAt = Date.now();
+  const workers = await workerBots(deps, bot, run.spaceId);
+  const wanted = String(args.task_id ?? "").trim();
+  const targets = wanted === "all" ? workers : workers.filter((w) => w.id === wanted);
+  if (targets.length === 0) {
+    return wanted === "all"
+      ? { ok: true as const, cancelled: [], note: "no background tasks" }
+      : { error: "no background task with that task_id" };
+  }
+  const cancelled: Array<{ task_id: string; name: string; cancelled_runs: number }> = [];
+  for (const worker of targets) {
+    if (!worker.thread) continue;
+    const { runIds } = await stop(
+      { spaceId: run.spaceId, userId: run.userId },
+      { threadId: worker.thread.id, botIds: [worker.id] },
+    );
+    cancelled.push({ task_id: worker.id, name: worker.name, cancelled_runs: runIds.length });
+  }
+  getLogger().info("background task cancelled", {
+    runId: run.id,
+    workers: cancelled.map((c) => c.task_id),
+    ms: Date.now() - startedAt,
+  });
+  return {
+    ok: true as const,
+    cancelled,
+    note: "Stopped. Tell the user it is cancelled.",
+  };
+}
