@@ -201,6 +201,7 @@ import {
   backgroundTaskStatus,
   cancelBackgroundTask,
   launchBackgroundTask,
+  startQueuedBackgroundTasks,
 } from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
@@ -3658,6 +3659,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // A dispatcher's main turn has no computer tools, so it never waits for the computer
       // (booting, suspending, or busy with a worker): the reply must not queue behind it.
       const dispatcherTurn = Boolean(deps.dispatcherMode) && isDispatcherBot(leaseTarget);
+      if (dispatcherTurn) {
+        // Drain this dispatcher's persisted queue first: a worker that just finished (its result
+        // is what woke this turn) or a restart may have freed a slot.
+        await startQueuedBackgroundTasks(deps, run.botId).catch((error) =>
+          getLogger().error("background queue drain", error),
+        );
+      }
       if (leaseTarget.computerSwitching && !dispatcherTurn) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
         return;
@@ -7316,7 +7324,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 builtinToolNames: BUILTIN_TOOL_NAMES,
                 deliveryKey: effectKey,
               });
-              if ("task_id" in launched && launched.task_id) {
+              if ("worker" in launched && launched.task_id) {
                 try {
                   await publishMessage(deps, run, "bot", [
                     {
@@ -9594,7 +9602,7 @@ export function isDispatcherBot(bot: {
 
 /** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
 export const BACKGROUND_DISPATCH_GUIDANCE =
-  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Pass new or changed requirements for running work with background_task_message. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake with a message to the user (never stay silent, even if it failed or was cancelled): report the result truthfully and call attach_file for every image, video or file path it lists so the user sees them inline.';
+  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker; unrelated work gets a new background_task. Usually 1-2 workers are enough. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake with a message to the user (never stay silent, even if it failed or was cancelled): report the result truthfully and call attach_file for every image, video or file path it lists so the user sees them inline.';
 /** Mid-run user messages get an acknowledgement before the bot goes back to work. */
 export const STEERING_REPLY_GUIDANCE =
   "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";

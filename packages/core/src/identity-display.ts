@@ -15,6 +15,31 @@ export type IdentityLabels = {
 
 type Project = (value: unknown) => unknown;
 
+/** Background workers are named "<main bot> · 后台<slot>" (see background-tasks.ts). */
+const WORKER_NAME = / · 后台\d+$/;
+
+/**
+ * The main bot's hand-off to a background worker and the worker's raw report are internal:
+ * the user sees the task card and the main bot's own relay, never these rows. They stay in
+ * storage (the report is what wakes the main bot) and in the worker's own thread.
+ */
+export function isWorkerRelayBlock(block: unknown): boolean {
+  if (!block || typeof block !== "object") return false;
+  const b = block as { kind?: string; toBotName?: unknown; fromBotName?: unknown };
+  const name =
+    b.kind === "bot_message_sent"
+      ? b.toBotName
+      : b.kind === "bot_message_received"
+        ? b.fromBotName
+        : undefined;
+  return typeof name === "string" && WORKER_NAME.test(name);
+}
+
+function isWorkerRelayMessage(message: unknown): boolean {
+  const blocks = (message as { blocks?: unknown } | null)?.blocks;
+  return Array.isArray(blocks) && blocks.length > 0 && blocks.every(isWorkerRelayBlock);
+}
+
 // Project only known identity fields in known RPC responses. Never walk arbitrary
 // message bodies, tool results, files or provider configuration looking for names.
 function fields(value: unknown, projections: Record<string, Project>): unknown {
@@ -46,6 +71,13 @@ export function displayIdentityEvent<T extends { type: string; payload?: Record<
   event: T,
   labels: IdentityLabels,
 ): T {
+  if (
+    (event.type === "thread.message.created" || event.type === "thread.message.updated") &&
+    isWorkerRelayMessage(event.payload)
+  ) {
+    // Clients ignore an unknown event type, so the row never renders.
+    return { ...event, type: "thread.message.internal", payload: {} };
+  }
   return {
     ...event,
     payload: fields(event.payload, {
@@ -71,11 +103,22 @@ export function displayIdentityResult(
     fields(value, {
       groupName: (name) => (name === null ? null : label(labels.group)(name)),
       members: list(member),
-      messages: list((message) =>
-        fields(message, {
-          blocks: list((block) => displayMessageBlock(block as MessageBlock, labels)),
-        }),
-      ),
+      messages: (value) => {
+        const visible = Array.isArray(value)
+          ? value.filter((message) => !isWorkerRelayMessage(message))
+          : value;
+        const projected = list((message) =>
+          fields(message, {
+            blocks: list((block) => displayMessageBlock(block as MessageBlock, labels)),
+          }),
+        )(visible);
+        return Array.isArray(value) &&
+          Array.isArray(visible) &&
+          projected === visible &&
+          visible.length === value.length
+          ? value
+          : projected;
+      },
     });
   const space: Project = (value) =>
     fields(value, {

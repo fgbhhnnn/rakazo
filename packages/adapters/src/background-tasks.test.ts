@@ -38,6 +38,19 @@ function fakeDeps(opts: { workers: ReturnType<typeof worker>[]; active?: Record<
       findMany: vi.fn(async () => opts.workers),
       update: vi.fn(async () => ({})),
     },
+    thread: { findFirst: vi.fn(async () => null), update: vi.fn(async () => ({})) },
+    message: { findFirst: vi.fn(async () => null) },
+    backgroundTaskQueue: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "q1",
+        createdAt: new Date(),
+        ...data,
+      })),
+      count: vi.fn(async () => 1),
+      findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async () => null),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
     run: {
       findFirst: vi.fn(async ({ where }: { where: { botId: string } }) =>
         opts.active?.[where.botId]
@@ -76,7 +89,7 @@ describe("background task helpers", () => {
   });
 
   it("reads the concurrency limit", () => {
-    expect(backgroundTaskConcurrency({})).toBe(3);
+    expect(backgroundTaskConcurrency({})).toBe(4);
     expect(backgroundTaskConcurrency({ RAKAZO_BACKGROUND_TASKS_PER_BOT: "5" })).toBe(5);
   });
 
@@ -114,7 +127,7 @@ describe("launchBackgroundTask", () => {
     );
   });
 
-  it("skips busy slots and refuses past the limit", async () => {
+  it("skips busy slots and queues past the limit", async () => {
     const busy = fakeDeps({
       workers: [worker(1), worker(2), worker(3)],
       active: { w1: "running", w2: "queued" },
@@ -131,8 +144,8 @@ describe("launchBackgroundTask", () => {
     );
     expect(out).toMatchObject({ task_id: "w3" });
     const full = fakeDeps({
-      workers: [worker(1), worker(2), worker(3)],
-      active: { w1: "running", w2: "running", w3: "running" },
+      workers: [worker(1), worker(2), worker(3), worker(4)],
+      active: { w1: "running", w2: "running", w3: "running", w4: "running" },
     });
     const refused = await launchBackgroundTask(
       full.deps,
@@ -144,7 +157,9 @@ describe("launchBackgroundTask", () => {
         deliveryKey: "k",
       },
     );
-    expect(refused).toHaveProperty("error");
+    expect(refused).toMatchObject({ ok: true, status: "queued", task_id: "q:q1", position: 1 });
+    expect(full.prisma.backgroundTaskQueue.create).toHaveBeenCalledTimes(1);
+    expect(messageBot).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -228,6 +243,10 @@ describe("cancelBackgroundTask", () => {
       bot: { findMany: vi.fn(async () => [worker(1)]) },
       computer: { updateMany: vi.fn(async () => ({ count: 0 })) },
       computerExecutionLease: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      backgroundTaskQueue: {
+        findMany: vi.fn(async () => []),
+        findFirst: vi.fn(async () => null),
+      },
     };
     const deps = {
       prisma,
@@ -287,5 +306,45 @@ describe("cancelBackgroundTask", () => {
     // biome-ignore lint/suspicious/noConsole: report observed cancel latency
     console.info(`[cancel latency] real shell kill: ${ms.toFixed(0)} ms`);
     expect(ms).toBeLessThan(5000);
+  });
+});
+
+describe("worker context", () => {
+  it("starts an unrelated task fresh but keeps context for a routed follow-up", async () => {
+    const { deps, prisma } = fakeDeps({ workers: [worker(1)] });
+    prisma.thread.findFirst.mockResolvedValue({ id: "t-w1", nextMessageSeq: 12 } as never);
+    await launchBackgroundTask(
+      deps,
+      run,
+      bot,
+      { name: "video", task: "make it" },
+      {
+        builtinToolNames: names,
+        deliveryKey: "k",
+      },
+    );
+    expect(prisma.thread.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "t-w1" },
+        data: expect.objectContaining({ historyCompactedUpToSeq: 11 }),
+      }),
+    );
+    prisma.thread.update.mockClear();
+    // Follow-up ("配音换成男声") to the now idle worker: same worker, history kept.
+    const out = await backgroundTaskMessage(
+      deps,
+      run,
+      bot,
+      { task_id: "w1", message: "配音换成男声" },
+      "k2",
+    );
+    expect(out).toMatchObject({ ok: true, task_id: "w1" });
+    expect(prisma.thread.update).not.toHaveBeenCalled();
+    expect(messageBot).toHaveBeenLastCalledWith(
+      deps,
+      run,
+      expect.anything(),
+      expect.objectContaining({ bot_id: "w1", message: "配音换成男声" }),
+    );
   });
 });

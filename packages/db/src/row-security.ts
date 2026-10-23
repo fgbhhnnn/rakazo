@@ -142,6 +142,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "ExternalConversation",
   "ExternalMessage",
   "SteeringMessage",
+  "BackgroundTaskQueue",
   "UsageRecord",
   "ScratchpadItem",
   "ActionApprovalRule",
