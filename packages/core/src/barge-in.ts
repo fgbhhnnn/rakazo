@@ -28,7 +28,7 @@ export const INTERIM_BARGE_IN_MS = 300;
 
 /** A sentence, or one interruption word, that is not the reply leaking back into the mic. */
 export function isCallBargeIn(text: string): boolean {
-  if (spokenMemory.isEcho(text, PLAYBACK_ECHO_RATIO)) return false;
+  if (spokenMemory.isEcho(recentPart(text), PLAYBACK_ECHO_RATIO)) return false;
   const cleaned = cleanWords(text);
   if (isCjkText(text)) {
     return INTERRUPT_WORDS.has(cleaned.replace(/\s+/g, "")) || isLongCjkTurn(text);
@@ -39,7 +39,21 @@ export function isCallBargeIn(text: string): boolean {
 /** An interim is revised word by word, so one stray word never cuts playback. */
 export function isInterimCallBargeIn(text: string): boolean {
   const longEnough = isCjkText(text) ? isLongCjkTurn(text) : cleanWords(text).includes(" ");
-  return longEnough && !spokenMemory.isEcho(text, PLAYBACK_ECHO_RATIO);
+  return longEnough && !spokenMemory.isEcho(recentPart(text), PLAYBACK_ECHO_RATIO);
+}
+
+/** Recognizer text a session has grown while the reply played; past this it stops matching as echo. */
+const RECENT_CJK_CHARS = 12;
+const RECENT_WORDS = 6;
+
+/**
+ * The newest stretch of a transcript. A recognizer left open over a long reply keeps
+ * appending the speaker to one line, and a whole line that long never counts as echo;
+ * the caller talking over it shows up at the end, so judge the end.
+ */
+function recentPart(text: string): string {
+  if (isCjkText(text)) return cjkChars(text).slice(-RECENT_CJK_CHARS);
+  return cleanWords(text).split(" ").slice(-RECENT_WORDS).join(" ");
 }
 
 function isLongCjkTurn(text: string): boolean {

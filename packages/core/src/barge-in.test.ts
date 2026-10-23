@@ -54,4 +54,14 @@ describe("CJK call barge-in", () => {
     expect(isCallBargeIn("等一下")).toBe(true);
     expect(isInterimCallBargeIn("嗯嗯")).toBe(false);
   });
+  it("keeps treating a long reply's echo as echo once the transcript grows past the cap", () => {
+    const reply =
+      "好的，我已经帮你查过了，明天上海多云，最高气温二十三度，最低十六度。出门记得带件外套，晚上可能会有点凉。还有别的需要吗？";
+    spokenMemory.remember(reply);
+    const heard =
+      "好的我已经帮你查过了明天上海多云最高气温二十三度最低十六度出门记得带件外套晚上可能会有点凉";
+    expect(isInterimCallBargeIn(heard)).toBe(false);
+    expect(isCallBargeIn(heard)).toBe(false);
+    expect(isInterimCallBargeIn(`${heard}帮我订一张去北京的机票`)).toBe(true);
+  });
 });
