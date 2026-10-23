@@ -118,3 +118,17 @@ describe("attachWorkerReportFiles", () => {
     expect(deps.sandbox.readFile).not.toHaveBeenCalled();
   });
 });
+
+describe("workerReportWorkspacePath", () => {
+  it("maps the computer's real workspace paths onto the workspace root", async () => {
+    const { workerReportWorkspacePath } = await import("./executor.js");
+    expect(workerReportWorkspacePath("/home/user/rakazo-home/bots/w1/report.csv")).toBe(
+      "/bots/w1/report.csv",
+    );
+    expect(workerReportWorkspacePath("/home/desktop/rakazo-home/shared/a.png")).toBe(
+      "/shared/a.png",
+    );
+    expect(workerReportWorkspacePath("~/jobs/x/out/a.csv")).toBe("jobs/x/out/a.csv");
+    expect(workerReportWorkspacePath("/bots/w1/a.csv")).toBe("/bots/w1/a.csv");
+  });
+});
