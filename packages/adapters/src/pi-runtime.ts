@@ -88,6 +88,7 @@ import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { recordPiTelemetryContent, withPiTelemetry, withPiTelemetrySpan } from "./pi-telemetry.js";
 import { observedPiStream } from "./pi-usage.js";
 import {
+  acquireProviderLane,
   isProviderConcurrencyLimit,
   noteProviderConcurrencyLimit,
   noteProviderOk,
@@ -2725,7 +2726,14 @@ function fallbackAwareModelStream(
     const target = state.getActive();
     finishWithThrownError(target, new Error("Model request was aborted"));
   };
-  void run().catch((error: unknown) => finishWithThrownError(state.getActive(), error));
+  void (async () => {
+    const release = await acquireProviderLane(state.request.lane, signal);
+    try {
+      await run();
+    } finally {
+      release();
+    }
+  })().catch((error: unknown) => finishWithThrownError(state.getActive(), error));
   return output;
 }
 

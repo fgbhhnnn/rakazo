@@ -44,7 +44,44 @@ export async function waitForProviderLane(
   }
 }
 
+/**
+ * Background workers share at most RAKAZO_WORKER_MODEL_CONCURRENCY (default 2) model calls at
+ * a time per process, so the rest of the account's provider concurrency stays free for the
+ * main bots' replies. Main turns are never capped here. Returns the release function.
+ */
+let activeBackground = 0;
+const waiters: Array<() => void> = [];
+
+export function workerModelConcurrency(env: Record<string, string | undefined> = process.env) {
+  const parsed = Number(env.RAKAZO_WORKER_MODEL_CONCURRENCY?.trim() || Number.NaN);
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 2;
+}
+
+export async function acquireProviderLane(
+  lane: "main" | "background" | undefined,
+  signal?: AbortSignal,
+): Promise<() => void> {
+  if (lane !== "background") return () => undefined;
+  while (activeBackground >= workerModelConcurrency()) {
+    if (signal?.aborted) return () => undefined;
+    await new Promise<void>((resolve) => {
+      waiters.push(resolve);
+      setTimeout(resolve, 1_000);
+    });
+  }
+  activeBackground += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeBackground -= 1;
+    waiters.shift()?.();
+  };
+}
+
 export function resetProviderLanesForTest() {
   workerPauseUntil = 0;
   strikes = 0;
+  activeBackground = 0;
+  waiters.length = 0;
 }
