@@ -94,6 +94,23 @@ describeIntegration("background task queue: soft max, FIFO overflow, auto-start"
       const t6 = await db.backgroundTaskQueue.findFirst({ where: { botId: bot.id, name: "t6" } });
       return t6?.status === "started";
     }, 60_000);
+    // The queued request was sent by a main run that ended long ago: the hand-off must still
+    // reach a worker (it once failed with "source run is no longer active" and reverted).
+    await waitFor(async () => {
+      const t6 = await db.backgroundTaskQueue.findFirstOrThrow({
+        where: { botId: bot.id, name: "t6" },
+      });
+      if (t6.status !== "started" || !t6.workerBotId) return false;
+      const worker = await db.bot.findUniqueOrThrow({ where: { id: t6.workerBotId } });
+      const runs = await db.run.count({
+        where: { botId: worker.id, createdAt: { gte: t6.startedAt ?? new Date() } },
+      });
+      return worker.title === "t6" && runs > 0;
+    }, 30_000);
+    const t6Row = await db.backgroundTaskQueue.findFirstOrThrow({
+      where: { botId: bot.id, name: "t6" },
+    });
+    expect(t6Row.status).toBe("started");
     const t5 = await db.backgroundTaskQueue.findFirstOrThrow({
       where: { botId: bot.id, name: "t5" },
     });

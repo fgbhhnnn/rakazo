@@ -3665,7 +3665,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (dispatcherTurn) {
         // Drain this dispatcher's persisted queue first: a worker that just finished (its result
         // is what woke this turn) or a restart may have freed a slot.
-        await startQueuedBackgroundTasks(deps, run.botId).catch((error) =>
+        await startQueuedBackgroundTasks(deps, run.botId, run).catch((error) =>
           getLogger().error("background queue drain", error),
         );
       }

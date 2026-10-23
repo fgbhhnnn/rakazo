@@ -281,6 +281,8 @@ async function launchBackgroundTaskNow(
   const duplicate = await findDuplicateTask(deps, run, bot, name, task);
   if (duplicate) return duplicate;
   const limit = backgroundTaskConcurrency();
+  // FIFO: older queued tasks take free slots before this new one.
+  if ((await queuedTasks(deps, bot.id)).length) await drainQueue(deps, bot.id, run);
   const found = await freeSlot(deps, run, bot);
   if ("error" in found) return { error: found.error };
   const { slotBot, busy } = found;
@@ -335,6 +337,7 @@ type StartSpec = {
   agent: BackgroundAgentProfile;
   disabled: string[];
   deliveryKey: string;
+  allowTerminalSource?: boolean;
 };
 
 /** Free slot bot of this dispatcher, spawning one if needed; null when all slots are busy. */
@@ -403,7 +406,7 @@ async function startOnSlot(
     });
   }
 
-  const sent = await messageBot(
+  const sendArgs = [
     deps,
     run,
     { id: bot.id, name: bot.name },
@@ -418,7 +421,10 @@ async function startOnSlot(
       intent: "request",
       deliveryKey: spec.deliveryKey,
     },
-  );
+  ] as const;
+  const sent = spec.allowTerminalSource
+    ? await messageBot(...sendArgs, { allowTerminalSource: true })
+    : await messageBot(...sendArgs);
   if (!sent.ok) return { error: sent.error };
   return {
     ok: true as const,
@@ -641,7 +647,7 @@ export async function cancelBackgroundTask(
     ms: Date.now() - startedAt,
   });
   // Freed slots go to the next queued tasks (unless everything was cancelled).
-  if (wanted !== "all") await startQueuedBackgroundTasks(deps, bot.id).catch(() => undefined);
+  if (wanted !== "all") await startQueuedBackgroundTasks(deps, bot.id, run).catch(() => undefined);
   return {
     ok: true as const,
     cancelled,
@@ -655,9 +661,15 @@ export async function cancelBackgroundTask(
  * Called when a worker run ends, after a cancel, and at the start of every dispatcher turn, so
  * the persisted queue also drains after a restart.
  */
-export function startQueuedBackgroundTasks(deps: Deps, dispatcherBotId: string) {
+export function startQueuedBackgroundTasks(
+  deps: Deps,
+  dispatcherBotId: string,
+  liveRun?: DispatchRun,
+) {
   const previous = launchLocks.get(dispatcherBotId) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(() => drainQueue(deps, dispatcherBotId));
+  const next = previous
+    .catch(() => undefined)
+    .then(() => drainQueue(deps, dispatcherBotId, liveRun));
   launchLocks.set(dispatcherBotId, next);
   const release = () => {
     if (launchLocks.get(dispatcherBotId) === next) launchLocks.delete(dispatcherBotId);
@@ -666,7 +678,7 @@ export function startQueuedBackgroundTasks(deps: Deps, dispatcherBotId: string) 
   return next;
 }
 
-async function drainQueue(deps: Deps, dispatcherBotId: string) {
+async function drainQueue(deps: Deps, dispatcherBotId: string, liveRun?: DispatchRun) {
   const started: string[] = [];
   for (;;) {
     const row = await deps.prisma.backgroundTaskQueue.findFirst({
@@ -679,13 +691,20 @@ async function drainQueue(deps: Deps, dispatcherBotId: string) {
       select: { id: true, name: true, computerId: true, archivedAt: true },
     });
     if (!bot || bot.archivedAt) break;
-    const run: DispatchRun = {
+    // The run that queued this row has usually ended by now. Hand off from the dispatcher run
+    // doing the drain when there is one; otherwise send on behalf of the ended source run.
+    const live = liveRun && liveRun.botId === bot.id ? liveRun : undefined;
+    const run: DispatchRun = live ?? {
       id: row.runId,
       spaceId: row.spaceId,
       threadId: row.threadId,
       botId: bot.id,
       userId: row.userId,
     };
+    const sourceEnded =
+      !live &&
+      (await deps.prisma.run.findUnique({ where: { id: row.runId }, select: { status: true } }))
+        ?.status !== "running";
     const found = await freeSlot(deps, run, bot);
     if ("error" in found || !found.slotBot) break;
     // Claim first so two processes never start the same row.
@@ -705,11 +724,12 @@ async function drainQueue(deps: Deps, dispatcherBotId: string) {
       agent,
       disabled: Array.isArray(a.disabled) ? a.disabled.map(String) : [...WORKER_ALWAYS_DISABLED],
       deliveryKey: `${String(a.deliveryKey ?? row.id)}:queued`,
+      allowTerminalSource: sourceEnded,
     });
     if ("error" in out) {
       getLogger().error("queued background task failed to start", {
         queueId: row.id,
-        error: out.error,
+        reason: out.error,
       });
       await deps.prisma.backgroundTaskQueue.update({
         where: { id: row.id },
