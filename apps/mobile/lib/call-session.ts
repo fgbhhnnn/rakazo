@@ -36,7 +36,7 @@ import * as dictation from "./dictation";
 import { getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
 import { errorText, voiceAccountErrorText } from "./user-error";
-import { speakText, stopSpeaking } from "./voice";
+import { setCallAudioActive, speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
 export type CallExchange = { role: "user" | "bot"; text: string };
@@ -201,6 +201,7 @@ export function startCall(
   micOpen = false;
   bargedIn = false;
   spokenMemory.clear();
+  setCallAudioActive(true);
   state = {
     botId: call.botId,
     botName: call.botName,
@@ -254,6 +255,7 @@ export function endCall(): void {
         .catch(() => undefined);
   }
   if (state) deps.waitSound("release");
+  setCallAudioActive(false);
   turn?.abort();
   turn = null;
   unwatch?.();
@@ -601,6 +603,8 @@ function speakAndListen(text: string): void {
     })
     .finally(() => {
       if (state?.botId !== botId || callId !== speakingCallId) return;
+      // The echo window runs from when the line ends, not when a long reply began.
+      spokenMemory.remember(text);
       if (blockedByConsent) return;
       // The caller cut in: the microphone is already theirs and their turn is on its way.
       if (bargedIn) return;

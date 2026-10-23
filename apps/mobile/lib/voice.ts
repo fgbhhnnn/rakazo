@@ -447,6 +447,16 @@ class HostedSession {
   }
 }
 
+/**
+ * A call keeps the microphone open while the reply plays. Switching the shared iOS audio
+ * session to plain `playback` for each clip stops that recognizer, whose restart then
+ * flips the session back mid-clip: the first reply plays, the next ones are cut or silent.
+ */
+let callAudioActive = false;
+export function setCallAudioActive(active: boolean): void {
+  callAudioActive = active;
+}
+
 export async function playMpeg(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
   if (typeof AudioCtor === "function") {
@@ -514,6 +524,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
     playsInSilentMode: true,
     interruptionMode: "mixWithOthers",
     shouldPlayInBackground: false,
+    ...(callAudioActive ? { allowsRecording: true } : {}),
   });
   const file = new File(Paths.cache, `rakazo-voice-${Date.now()}.mp3`);
   file.create({ overwrite: true });

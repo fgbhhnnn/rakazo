@@ -66,6 +66,13 @@ describe("mobile dictation", () => {
       lang: "en-US",
       interimResults: true,
       continuous: true,
+      // One shared iOS session with the reply player, with the speaker cancelled out.
+      iosCategory: {
+        category: "playAndRecord",
+        categoryOptions: ["defaultToSpeaker", "allowBluetooth", "mixWithOthers"],
+        mode: "voiceChat",
+      },
+      iosVoiceProcessingEnabled: true,
     });
 
     fake.hear("how is the");
