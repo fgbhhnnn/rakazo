@@ -233,6 +233,10 @@ async function launchBackgroundTaskNow(
   const toolsArg = Array.isArray(args.tools) ? args.tools.map(String) : undefined;
   const allowlist = toolsArg ?? BACKGROUND_AGENT_PROFILES[agent].tools;
 
+  // Never start a second copy of a task that is still running or queued (e.g. a retry after a
+  // provider error while the first attempt is in fact still going).
+  const duplicate = await findDuplicateTask(deps, run, bot, name, task);
+  if (duplicate) return duplicate;
   const limit = backgroundTaskConcurrency();
   const found = await freeSlot(deps, run, bot);
   if ("error" in found) return { error: found.error };
@@ -694,4 +698,36 @@ function lastText(blocks: unknown): string | undefined {
     .join("\n")
     .trim();
   return text ? (text.length > 300 ? `…${text.slice(-300)}` : text) : undefined;
+}
+
+async function findDuplicateTask(
+  deps: Deps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  name: string,
+  task: string,
+) {
+  const same = (a: string | null | undefined, b: string) =>
+    Boolean(a?.trim()) && a!.trim().toLowerCase() === b.trim().toLowerCase();
+  for (const worker of await workerBots(deps, bot, run.spaceId)) {
+    if (!same(worker.title, name)) continue;
+    if (!(await activeRunFor(deps, worker.id))) continue;
+    return {
+      ok: true as const,
+      status: "already_running" as const,
+      task_id: worker.id,
+      name: worker.title,
+      note: "This task is already running on that worker; nothing new was started. To change it, use background_task_message with this task_id.",
+    };
+  }
+  const queued = (await queuedTasks(deps, bot.id)).find((q) => same(q.name, name));
+  return queued
+    ? {
+        ok: true as const,
+        status: "already_queued" as const,
+        task_id: `q:${queued.id}`,
+        name: queued.name,
+        note: "This task is already queued; nothing new was started.",
+      }
+    : null;
 }

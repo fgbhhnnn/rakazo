@@ -1,15 +1,6 @@
 import type { IntegrationSetupState } from "@rakazo/contracts";
-import {
-  credentialIssue,
-  MAX_PASSWORD_LENGTH,
-  PASSWORD_RULES,
-} from "@rakazo/core";
-import {
-  Redirect,
-  useFocusEffect,
-  useLocalSearchParams,
-  useRouter,
-} from "expo-router";
+import { credentialIssue, MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
@@ -58,9 +49,7 @@ export default function SignIn() {
   const { mode: requestedMode } = useLocalSearchParams<{
     mode?: string | string[];
   }>();
-  const [mode, setMode] = useState<AuthMode>(() =>
-    initialAuthMode(requestedMode),
-  );
+  const [mode, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -124,8 +113,7 @@ export default function SignIn() {
   }, [reset]);
 
   useEffect(() => {
-    if (resetSent || codeSent)
-      AccessibilityInfo.announceForAccessibility(t("Check your email"));
+    if (resetSent || codeSent) AccessibilityInfo.announceForAccessibility(t("Check your email"));
   }, [resetSent, codeSent, t]);
 
   if (!ready) {
@@ -138,17 +126,13 @@ export default function SignIn() {
           padding: 24,
         }}
       >
-        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
-          {t("Loading…")}
-        </Text>
+        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>{t("Loading…")}</Text>
       </View>
     );
   }
   if (hasSession) return <Redirect href="/" />;
 
-  const codeFlow = Boolean(
-    reset?.passwordAuth && reset.emailCode && mode !== "forgot",
-  );
+  const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
   const usingCode = codeFlow && !usePassword;
   const codeStep = usingCode && codeSent;
 
@@ -165,8 +149,7 @@ export default function SignIn() {
     // An unfinished code would spend one of the code's three attempts.
     if (codeStep && enteredCode.length !== CODE_LENGTH) return;
     // The server checks Turnstile when this request may create an account.
-    const turnstileSiteKey =
-      mode === "up" && !codeStep ? (reset.turnstileSiteKey ?? null) : null;
+    const turnstileSiteKey = mode === "up" && !codeStep ? (reset.turnstileSiteKey ?? null) : null;
     if (turnstileSiteKey && !captchaToken) {
       setError(t("Complete the security check first"));
       return;
@@ -182,9 +165,7 @@ export default function SignIn() {
     try {
       if (mode === "forgot") {
         if (!reset?.passwordReset || !reset.resetUrl) {
-          throw new Error(
-            t("Password recovery is not configured for this server"),
-          );
+          throw new Error(t("Password recovery is not configured for this server"));
         }
         await requestPasswordReset(email.trim(), reset.resetUrl);
         setResetSent(true);
@@ -204,9 +185,7 @@ export default function SignIn() {
           trimmedEmail,
           enteredCode,
           // Only used when this creates the account.
-          mode === "up"
-            ? name.trim() || trimmedEmail.split("@")[0] || "User"
-            : undefined,
+          mode === "up" ? name.trim() || trimmedEmail.split("@")[0] || "User" : undefined,
         );
       } else if (mode === "up") {
         const trimmedEmail = email.trim();
@@ -226,9 +205,7 @@ export default function SignIn() {
       // A code can create the account from either form.
       const setup =
         mode === "up" || usingCode
-          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(
-              () => null,
-            )
+          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
           : null;
       router.replace(setup?.needsSetup ? "/integration-setup" : "/");
     } catch (err) {
@@ -267,9 +244,7 @@ export default function SignIn() {
                 paddingHorizontal: 24,
                 paddingVertical: 24,
               }}
-              keyboardDismissMode={
-                Platform.OS === "ios" ? "interactive" : "on-drag"
-              }
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
               keyboardShouldPersistTaps="handled"
             >
               <Text
@@ -319,9 +294,7 @@ export default function SignIn() {
                       </Text>
                       <NativeActionButton
                         label={t("Retry")}
-                        onPress={() =>
-                          setCapabilityAttempt((value) => value + 1)
-                        }
+                        onPress={() => setCapabilityAttempt((value) => value + 1)}
                       />
                     </View>
                   ) : !reset ? (
@@ -366,13 +339,10 @@ export default function SignIn() {
                         textContentType="oneTimeCode"
                         value={code}
                         onChangeText={(value) => {
-                          const digits = value
-                            .replace(/\D/g, "")
-                            .slice(0, CODE_LENGTH);
+                          const digits = value.replace(/\D/g, "").slice(0, CODE_LENGTH);
                           setCode(digits);
                           // iOS offers the code from Mail; a complete code signs in at once.
-                          if (digits.length === CODE_LENGTH)
-                            void submit(digits);
+                          if (digits.length === CODE_LENGTH) void submit(digits);
                         }}
                         onSubmitEditing={() => void submit()}
                         style={{
@@ -384,11 +354,7 @@ export default function SignIn() {
                         }}
                       />
                       {error ? (
-                        <Text
-                          style={{ color: tokens.destructive, marginTop: 12 }}
-                        >
-                          {error}
-                        </Text>
+                        <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
                       ) : null}
                       <NativeActionButton
                         disabled={pending || code.length < CODE_LENGTH}
@@ -444,15 +410,9 @@ export default function SignIn() {
                       />
                       {mode !== "forgot" && !usingCode ? (
                         <TextInput
-                          autoComplete={
-                            mode === "in" ? "current-password" : "new-password"
-                          }
-                          textContentType={
-                            mode === "in" ? "password" : "newPassword"
-                          }
-                          passwordRules={
-                            mode === "in" ? undefined : PASSWORD_RULES
-                          }
+                          autoComplete={mode === "in" ? "current-password" : "new-password"}
+                          textContentType={mode === "in" ? "password" : "newPassword"}
+                          passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
                           maxLength={MAX_PASSWORD_LENGTH}
                           placeholder={t("Password")}
                           placeholderTextColor={tokens.mutedForeground}
@@ -479,19 +439,13 @@ export default function SignIn() {
                           onToken={setCaptchaToken}
                           onError={() =>
                             setError(
-                              t(
-                                "Security check failed. Check your connection and try again.",
-                              ),
+                              t("Security check failed. Check your connection and try again."),
                             )
                           }
                         />
                       ) : null}
                       {error ? (
-                        <Text
-                          style={{ color: tokens.destructive, marginTop: 12 }}
-                        >
-                          {error}
-                        </Text>
+                        <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
                       ) : null}
                       <NativeActionButton
                         disabled={pending}
@@ -520,9 +474,7 @@ export default function SignIn() {
                       ) : null}
                       {codeFlow ? (
                         <NativeActionButton
-                          label={
-                            usingCode ? t("Use password") : t("Use email code")
-                          }
+                          label={usingCode ? t("Use password") : t("Use email code")}
                           prominence="quiet"
                           disabled={pending}
                           onPress={() => {
@@ -543,10 +495,7 @@ export default function SignIn() {
                           style={{ alignSelf: "center", marginTop: 16 }}
                         />
                       ) : null}
-                      {mode === "in" &&
-                      !usingCode &&
-                      reset?.passwordReset &&
-                      reset.resetUrl ? (
+                      {mode === "in" && !usingCode && reset?.passwordReset && reset.resetUrl ? (
                         <Pressable
                           accessibilityRole="button"
                           hitSlop={8}
@@ -591,9 +540,7 @@ export default function SignIn() {
                           accessibilityRole="button"
                           hitSlop={8}
                           onPress={() => {
-                            setMode((current) =>
-                              current === "in" ? "up" : "in",
-                            );
+                            setMode((current) => (current === "in" ? "up" : "in"));
                             setError(null);
                           }}
                           style={{ marginLeft: 5 }}

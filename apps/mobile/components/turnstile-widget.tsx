@@ -18,10 +18,7 @@ export function TurnstileWidget({
   onToken: (token: string | null) => void;
   onError: (code: string | undefined) => void;
 }) {
-  const html = useMemo(
-    () => turnstileHtml(siteKey, dark ? "dark" : "light"),
-    [siteKey, dark],
-  );
+  const html = useMemo(() => turnstileHtml(siteKey, dark ? "dark" : "light"), [siteKey, dark]);
   const origin = useMemo(() => {
     try {
       return new URL(baseUrl).origin + "/";
@@ -32,10 +29,7 @@ export function TurnstileWidget({
   const handlers = useRef({ onToken, onError });
   handlers.current = { onToken, onError };
   return (
-    <View
-      style={{ height: 70, marginTop: 12, overflow: "hidden" }}
-      testID="turnstile-widget"
-    >
+    <View style={{ height: 70, marginTop: 12, overflow: "hidden" }} testID="turnstile-widget">
       <WebView
         source={{ html, baseUrl: origin }}
         originWhitelist={["*"]}
@@ -50,8 +44,7 @@ export function TurnstileWidget({
           if (message.type === "token") handlers.current.onToken(message.token);
           else {
             handlers.current.onToken(null);
-            if (message.type === "error")
-              handlers.current.onError(message.code);
+            if (message.type === "error") handlers.current.onError(message.code);
           }
         }}
         onError={() => {

@@ -1,8 +1,13 @@
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import { createPool, currentDbContext, runAsTenant } from "@rakazo/db";
+import { makeWorkerUtils } from "graphile-worker";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GraphileJobPublisher, GraphileJobWorkerHost } from "./wakeup.js";
+import {
+  BACKGROUND_WORKER_JOB_FLAG,
+  GraphileJobPublisher,
+  GraphileJobWorkerHost,
+} from "./wakeup.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -49,6 +54,50 @@ async function waitFor(assertion: () => void, timeoutMs = 10_000): Promise<void>
 }
 
 describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
+  it("keeps reserved slots for main-bot runs while background workers fill the rest", async () => {
+    const host = new GraphileJobWorkerHost(testPool(), {
+      concurrency: 1,
+      reservedConcurrency: 1,
+      pollInterval: 25,
+    });
+    const release = deferred();
+    const started: string[] = [];
+    const target = handlers({
+      "run.continue": async (payload) => {
+        started.push(payload.runId);
+        if (payload.runId.startsWith("lane-bg")) await release.promise;
+      },
+    });
+    const utils = await makeWorkerUtils({ pgPool: testPool() });
+    try {
+      await host.start(target);
+      for (const runId of ["lane-bg-1", "lane-bg-2"]) {
+        await utils.addJob(
+          "run.continue",
+          { runId },
+          { flags: [BACKGROUND_WORKER_JOB_FLAG], priority: 10, jobKey: `run:${runId}` },
+        );
+      }
+      await waitFor(() => expect(started).toContain("lane-bg-1"));
+      await utils.addJob(
+        "run.continue",
+        { runId: "lane-main" },
+        { priority: -10, jobKey: "run:lane-main" },
+      );
+      // The main run starts on the reserved slot although the general slot is busy, and the
+      // second worker run cannot take the reserved slot.
+      await waitFor(() => expect(started).toContain("lane-main"));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(started.filter((id) => id.startsWith("lane-bg"))).toHaveLength(1);
+      release.resolve();
+      await waitFor(() => expect(started).toContain("lane-bg-2"));
+    } finally {
+      release.resolve();
+      await host.stop();
+      await utils.release();
+    }
+  });
+
   it("waits for an active handler during graceful shutdown", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });

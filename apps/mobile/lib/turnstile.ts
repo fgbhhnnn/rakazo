@@ -10,14 +10,8 @@ export type TurnstileMessage =
  * Page that renders one Turnstile widget and posts its outcome to the app.
  * Load it with the API origin as `baseUrl`, so Cloudflare sees the server's hostname.
  */
-export function turnstileHtml(
-  siteKey: string,
-  theme: "light" | "dark" = "light",
-): string {
-  const options = JSON.stringify({ sitekey: siteKey, theme }).replace(
-    /</g,
-    "\\u003c",
-  );
+export function turnstileHtml(siteKey: string, theme: "light" | "dark" = "light"): string {
+  const options = JSON.stringify({ sitekey: siteKey, theme }).replace(/</g, "\\u003c");
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <style>html,body{margin:0;padding:0;background:transparent;}#w{display:flex;justify-content:center;}</style>
@@ -40,11 +34,7 @@ export function parseTurnstileMessage(data: string): TurnstileMessage | null {
       token?: unknown;
       code?: unknown;
     };
-    if (
-      value.type === "token" &&
-      typeof value.token === "string" &&
-      value.token
-    )
+    if (value.type === "token" && typeof value.token === "string" && value.token)
       return { type: "token", token: value.token };
     if (value.type === "expired") return { type: "expired" };
     if (value.type === "error")
@@ -56,8 +46,6 @@ export function parseTurnstileMessage(data: string): TurnstileMessage | null {
   return null;
 }
 
-export function captchaHeaders(
-  token: string | null | undefined,
-): Record<string, string> {
+export function captchaHeaders(token: string | null | undefined): Record<string, string> {
   return token ? { [CAPTCHA_HEADER]: token } : {};
 }

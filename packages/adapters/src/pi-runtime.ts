@@ -87,6 +87,12 @@ import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { recordPiTelemetryContent, withPiTelemetry, withPiTelemetrySpan } from "./pi-telemetry.js";
 import { observedPiStream } from "./pi-usage.js";
+import {
+  isProviderConcurrencyLimit,
+  noteProviderConcurrencyLimit,
+  noteProviderOk,
+  waitForProviderLane,
+} from "./provider-lanes.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy, VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
@@ -2565,6 +2571,8 @@ function fallbackAwareModelStream(
         output.end(firstRetryableError.error);
         return;
       }
+      await waitForProviderLane(state.request.lane, signal);
+      if (signalAborted()) break;
       const attemptOptions = retries > 0 ? { ...options, timeoutMs: remainingMs } : options;
       const target = state.getActive();
       lastPartial = undefined;
@@ -2653,6 +2661,7 @@ function fallbackAwareModelStream(
               }
               // An exhausted quota or usage window can move to a backup but will not clear
               // within the retry budget, so only transient failures retry the same model.
+              if (isProviderConcurrencyLimit(event.error)) noteProviderConcurrencyLimit();
               if (isTransientModelError(event.error)) {
                 firstRetryableError ??= event;
                 // Every retry, including its backoff, shares the original budget.
@@ -2681,6 +2690,7 @@ function fallbackAwareModelStream(
             return;
           }
           if (event.type === "done") {
+            noteProviderOk();
             for (const pending of buffered) output.push(pending);
             buffered = [];
             output.push(event);

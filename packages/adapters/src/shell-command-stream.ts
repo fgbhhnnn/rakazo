@@ -26,7 +26,16 @@ export function shellForegroundMaxMs(
 }
 
 export const SHELL_STILL_RUNNING_NOTICE =
-  "Still running. Tell the user any one-time code or sign-in URL in the output.";
+  "Still running in the background; its final output is delivered to you automatically when it exits. Do not run the same command again and do not poll it with sleep. Tell the user any one-time code or sign-in URL in the output.";
+
+/** Foreground cap for hidden background workers (RAKAZO_WORKER_SHELL_FOREGROUND_MAX_MS, default 15 min). */
+export function workerShellForegroundMaxMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.RAKAZO_WORKER_SHELL_FOREGROUND_MAX_MS?.trim();
+  const parsed = raw ? Number(raw) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 15 * 60_000;
+}
 
 export interface ShellCommandSnapshot {
   stdout: string;

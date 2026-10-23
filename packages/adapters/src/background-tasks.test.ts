@@ -348,3 +348,22 @@ describe("worker context", () => {
     );
   });
 });
+
+describe("duplicate launches", () => {
+  it("does not start a second copy of a running task", async () => {
+    const running = { ...worker(1), title: "东京攻略", description: "写东京攻略" };
+    const { deps } = fakeDeps({ workers: [running as never], active: { w1: "running" } });
+    const out = await launchBackgroundTask(
+      deps,
+      run,
+      bot,
+      { name: "东京攻略", task: "再写一遍" },
+      {
+        builtinToolNames: names,
+        deliveryKey: "k",
+      },
+    );
+    expect(out).toMatchObject({ ok: true, status: "already_running", task_id: "w1" });
+    expect(messageBot).not.toHaveBeenCalled();
+  });
+});

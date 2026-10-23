@@ -5,7 +5,7 @@ import type {
   JobWorkerHost,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
-import { isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
+import { HIDDEN_BOT_SPAWN_PREFIX, isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import type { Runner, WorkerUtils } from "graphile-worker";
 import { makeWorkerUtils, run } from "graphile-worker";
@@ -16,6 +16,9 @@ import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
 // pool per graphile-worker component: three independent pools per worker process
 // (Prisma + publisher + runner) triples the connection footprint against Postgres'
 // max_connections for no benefit, since they never need isolation from each other.
+/** Graphile job flag of hidden background-worker runs (see GraphileJobPublisher.runLane). */
+export const BACKGROUND_WORKER_JOB_FLAG = "bg-worker";
+
 export class GraphileJobPublisher implements JobPublisher {
   private utils: Promise<WorkerUtils> | undefined;
   private closed = false;
@@ -29,7 +32,9 @@ export class GraphileJobPublisher implements JobPublisher {
     // and not a job locked by replaceLockedBefore: Graphile never unlocks a job
     // whose worker died, and replace detaches a locked job and inserts a new one.
     const jobKeyMode = await this.keepExistingMode(utils, job);
+    const lane = await this.runLane(job);
     await utils.addJob(job.name, wrapJobPayload(job.payload), {
+      ...lane,
       runAt: job.availableAt,
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
@@ -54,6 +59,41 @@ export class GraphileJobPublisher implements JobPublisher {
     if (this.closed) throw new Error("Background job publisher is closed");
     this.utils ??= makeWorkerUtils({ pgPool: this.pgPool });
     return this.utils;
+  }
+
+  /**
+   * Hidden background-worker runs are flagged BACKGROUND_WORKER_JOB_FLAG and sorted after
+   * everything else, so the reserved runner (which forbids that flag) always has room for the
+   * main bots' replies, routines and housekeeping, however many workers are busy.
+   */
+  private async runLane(job: BackgroundJob): Promise<{ flags?: string[]; priority?: number }> {
+    if (job.name !== "run.continue") return {};
+    const runId = (job.payload as { runId?: string }).runId;
+    if (!runId) return {};
+    try {
+      const client = await this.pgPool.connect();
+      try {
+        await client.query("BEGIN READ ONLY");
+        await client.query("SELECT set_config('app.rls_bypass', 'on', true)");
+        const found = await client.query<{ spawnKey: string | null }>(
+          `SELECT b."spawnKey" FROM runs r JOIN bots b ON b.id = r."botId" WHERE r.id = $1`,
+          [runId],
+        );
+        await client.query("COMMIT");
+        const key = found.rows[0]?.spawnKey;
+        return key?.startsWith(HIDDEN_BOT_SPAWN_PREFIX)
+          ? { flags: [BACKGROUND_WORKER_JOB_FLAG], priority: 10 }
+          : { priority: -10 };
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      getLogger().warn("job lane lookup failed; using the default lane", { runId, error });
+      return {};
+    }
   }
 
   private async keepExistingMode(
@@ -114,6 +154,7 @@ export function databaseCapacityBackoffMs(attempt: number): number {
 
 export class GraphileJobWorkerHost implements JobWorkerHost {
   private runner: Runner | undefined;
+  private reserved: Runner | undefined;
   private handlers: BackgroundJobHandlers | undefined;
   private stopping = false;
   private superviseTask: Promise<void> | undefined;
@@ -123,6 +164,11 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     private readonly pgPool: Pool,
     private readonly options: {
       concurrency?: number;
+      /**
+       * Extra runner slots that never take background-worker runs, so main-bot replies and
+       * housekeeping never wait behind long worker jobs. 0 disables the reserved runner.
+       */
+      reservedConcurrency?: number;
       pollInterval?: number;
       noHandleSignals?: boolean;
       /** Test seam: delay between 53300 restart attempts. */
@@ -145,8 +191,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     this.stopping = true;
     this.wakeSleep?.();
     try {
-      await this.runner?.stop();
+      await Promise.all([this.runner?.stop(), this.reserved?.stop().catch(() => undefined)]);
     } finally {
+      this.reserved = undefined;
       await this.superviseTask?.catch(() => undefined);
       this.runner = undefined;
       this.superviseTask = undefined;
@@ -186,6 +233,26 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       return;
     }
     this.runner = runner;
+    const reserved = this.options.reservedConcurrency ?? 0;
+    if (reserved > 0 && !this.reserved) {
+      const lane = await run({
+        pgPool: this.pgPool,
+        concurrency: reserved,
+        pollInterval: this.options.pollInterval ?? 500,
+        noHandleSignals: true,
+        taskList,
+        forbiddenFlags: [BACKGROUND_WORKER_JOB_FLAG],
+      });
+      lane.events.on("job:failed", ({ job, error }) => {
+        recordHistoryCompactAttemptsExhausted(job, error);
+      });
+      lane.promise.catch((error) => {
+        getLogger().error("reserved job runner stopped", error);
+        if (this.reserved === lane) this.reserved = undefined;
+      });
+      if (this.stopping) await lane.stop().catch(() => undefined);
+      else this.reserved = lane;
+    }
   }
 
   private delay(ms: number): Promise<void> {

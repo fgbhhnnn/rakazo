@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  captchaHeaders,
-  parseTurnstileMessage,
-  turnstileHtml,
-} from "./turnstile";
+import { captchaHeaders, parseTurnstileMessage, turnstileHtml } from "./turnstile";
 
 describe("turnstile", () => {
   it("embeds the site key safely", () => {

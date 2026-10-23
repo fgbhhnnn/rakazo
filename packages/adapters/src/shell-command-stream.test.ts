@@ -328,3 +328,16 @@ describe("deliverFinishedShells", () => {
     expect(followUps[0]).toContain("exit code: 0");
   });
 });
+
+describe("worker shell foreground cap", () => {
+  it("defaults to 15 minutes for hidden workers", async () => {
+    const { workerShellForegroundMaxMs, SHELL_STILL_RUNNING_NOTICE } = await import(
+      "./shell-command-stream.js"
+    );
+    expect(workerShellForegroundMaxMs({})).toBe(900_000);
+    expect(workerShellForegroundMaxMs({ RAKAZO_WORKER_SHELL_FOREGROUND_MAX_MS: "1000" })).toBe(
+      1000,
+    );
+    expect(SHELL_STILL_RUNNING_NOTICE).toContain("Do not run the same command again");
+  });
+});

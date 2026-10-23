@@ -410,6 +410,7 @@ import {
   isRunningShellCommand,
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
+  workerShellForegroundMaxMs,
 } from "./shell-command-stream.js";
 import {
   isExactNoResponse,
@@ -5993,6 +5994,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 ),
                 {
                   secrets: runSecrets,
+                  // A background worker has no user waiting on its turn, so it holds a long
+                  // command in the foreground instead of polling and re-running it.
+                  ...(isHiddenBot(bot) ? { maxWaitMs: workerShellForegroundMaxMs() } : {}),
                   onOutput: (snapshot) => {
                     const output = commandOutput(snapshot, true);
                     if (output) publishRunning(output);
@@ -7781,6 +7785,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     }
                   : undefined,
               },
+              lane: isHiddenBot(bot) ? "background" : "main",
               fallbackModels: fallbackModels.map(({ provider, modelId }) => ({
                 provider,
                 id: modelId,
@@ -9602,7 +9607,7 @@ export function isDispatcherBot(bot: {
 
 /** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
 export const BACKGROUND_DISPATCH_GUIDANCE =
-  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker; unrelated work gets a new background_task. Usually 1-2 workers are enough. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake with a message to the user (never stay silent, even if it failed or was cancelled): report the result truthfully and call attach_file for every image, video or file path it lists so the user sees them inline.';
+  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker; unrelated work gets a new background_task. Usually 1-2 workers are enough. If a worker reports a failure (for example a provider error), call background_task_status before retrying and relaunch only if that task is not still running or queued; never start a second copy. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake with a message to the user (never stay silent, even if it failed or was cancelled): report the result truthfully and call attach_file for every image, video or file path it lists so the user sees them inline.';
 /** Mid-run user messages get an acknowledgement before the bot goes back to work. */
 export const STEERING_REPLY_GUIDANCE =
   "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";

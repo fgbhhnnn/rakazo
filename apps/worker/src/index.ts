@@ -89,7 +89,7 @@ async function main() {
   // leadership holds an advisory-lock client for the process lifetime, and a
   // larger max just competes for Postgres max_connections (53300).
   const created = createDb(databaseUrl, {
-    poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 8),
+    poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 20),
     applicationName: "rakazo-worker",
   });
   const { pool } = created;
@@ -257,7 +257,10 @@ async function main() {
   const jobHost: JobWorkerHost =
     inMemoryJobs ??
     new GraphileJobWorkerHost(pool, {
-      concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
+      // General runner: everything, including long background-worker runs.
+      concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 8),
+      // Reserved runner: never takes background-worker runs, so main-bot replies start at once.
+      reservedConcurrency: parseNonNegativeInteger(process.env.GRAPHILE_RESERVED_CONCURRENCY, 6),
     });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -373,3 +376,8 @@ runAsSystem("worker process", main).catch(async (error) => {
   // that step does not reach here. Other startup failures still exit.
   process.exit(1);
 });
+
+function parseNonNegativeInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value?.trim() || Number.NaN);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}

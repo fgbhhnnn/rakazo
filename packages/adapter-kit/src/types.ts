@@ -472,6 +472,8 @@ export interface AgentRunRequest {
   botId: string;
   threadId: string;
   runId: string;
+  /** "background" for hidden worker runs: they back off first on provider concurrency limits. */
+  lane?: "main" | "background";
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;

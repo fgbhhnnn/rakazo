@@ -1,8 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
-  "Your administrator manages this setting.":
-    "Dein Administrator verwaltet diese Einstellung.",
-  "Add an AI model to keep chatting":
-    "Füge ein KI-Modell hinzu, um weiterzuchatten",
+  "Your administrator manages this setting.": "Dein Administrator verwaltet diese Einstellung.",
+  "Add an AI model to keep chatting": "Füge ein KI-Modell hinzu, um weiterzuchatten",
   "Not Now": "Jetzt nicht",
   "Add Model": "Modell hinzufügen",
   "Not sent · No model": "Nicht gesendet · Kein Modell",
@@ -26,8 +24,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Set your own key": "Eigenen Schlüssel hinterlegen",
   "Add your own key or pick another model.":
     "Füge deinen eigenen Schlüssel hinzu oder wähle ein anderes Modell.",
-  "Choose another model to keep chatting.":
-    "Wähle ein anderes Modell, um weiterzuchatten.",
+  "Choose another model to keep chatting.": "Wähle ein anderes Modell, um weiterzuchatten.",
   "Resets {date}.": "Wird am {date} zurückgesetzt.",
 
   "Model provider": "Modellanbieter",
@@ -57,8 +54,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your OpenAI": "Dein OpenAI",
   "Your Anthropic": "Dein Anthropic",
   "Your model provider": "Dein Modellanbieter",
-  "The model provider returned an error.":
-    "Der Modellanbieter hat einen Fehler zurückgegeben.",
+  "The model provider returned an error.": "Der Modellanbieter hat einen Fehler zurückgegeben.",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} begrenzt die Anfragerate. Versuche es gleich noch einmal.",
   "{summary} Resets {date}.": "{summary} Zurücksetzung am {date}.",
@@ -69,23 +65,16 @@ export const DE_MESSAGES: Record<string, string> = {
   "{provider} took too long to respond. Try again.":
     "{provider} hat zu lange zum Antworten gebraucht. Versuche es erneut.",
   "{provider} key hit its limit.": "{provider}: Schlüssellimit erreicht.",
-  "{provider} key hit its daily limit.":
-    "{provider}: tägliches Schlüssellimit erreicht.",
-  "{provider} key hit its weekly limit.":
-    "{provider}: wöchentliches Schlüssellimit erreicht.",
-  "{provider} key hit its monthly limit.":
-    "{provider}: monatliches Schlüssellimit erreicht.",
+  "{provider} key hit its daily limit.": "{provider}: tägliches Schlüssellimit erreicht.",
+  "{provider} key hit its weekly limit.": "{provider}: wöchentliches Schlüssellimit erreicht.",
+  "{provider} key hit its monthly limit.": "{provider}: monatliches Schlüssellimit erreicht.",
   "{provider} reached its credit limit.": "{provider}: Guthabenlimit erreicht.",
-  "{provider} reached its daily credit limit.":
-    "{provider}: tägliches Guthabenlimit erreicht.",
+  "{provider} reached its daily credit limit.": "{provider}: tägliches Guthabenlimit erreicht.",
   "{provider} reached its weekly credit limit.":
     "{provider}: wöchentliches Guthabenlimit erreicht.",
-  "{provider} reached its monthly credit limit.":
-    "{provider}: monatliches Guthabenlimit erreicht.",
-  "{provider} reached its spending limit.":
-    "{provider}: Ausgabenlimit erreicht.",
-  "{provider} reached its daily spending limit.":
-    "{provider}: tägliches Ausgabenlimit erreicht.",
+  "{provider} reached its monthly credit limit.": "{provider}: monatliches Guthabenlimit erreicht.",
+  "{provider} reached its spending limit.": "{provider}: Ausgabenlimit erreicht.",
+  "{provider} reached its daily spending limit.": "{provider}: tägliches Ausgabenlimit erreicht.",
   "{provider} reached its weekly spending limit.":
     "{provider}: wöchentliches Ausgabenlimit erreicht.",
   "{provider} reached its monthly spending limit.":
@@ -107,8 +96,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Recover computer?": "Computer wiederherstellen?",
   "Recreate a computer that is not working.":
     "Einen nicht funktionierenden Computer neu erstellen.",
-  "Restore the last saved workspace.":
-    "Den zuletzt gespeicherten Arbeitsbereich wiederherstellen.",
+  "Restore the last saved workspace.": "Den zuletzt gespeicherten Arbeitsbereich wiederherstellen.",
   "Save the workspace and install current software.":
     "Den Arbeitsbereich speichern und aktuelle Software installieren.",
   "More computer actions": "Weitere Computeraktionen",
@@ -120,10 +108,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Füge die OpenAI-kompatible Adresse deines Servers ein. Rakazo ergänzt /v1 bei Bedarf.",
   "Settings: General": "Einstellungen: Allgemein",
   "Settings: Usage": "Einstellungen: Nutzung",
-  "Sign-in did not return a session":
-    "Die Anmeldung hat keine Sitzung zurückgegeben",
-  "Sign-up did not return a session":
-    "Die Registrierung hat keine Sitzung zurückgegeben",
+  "Sign-in did not return a session": "Die Anmeldung hat keine Sitzung zurückgegeben",
+  "Sign-up did not return a session": "Die Registrierung hat keine Sitzung zurückgegeben",
   "{count} model": "{count} Modell",
   "{count} models": "{count} Modelle",
   // app/_layout.tsx
@@ -174,8 +160,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not create bot": "Bot konnte nicht erstellt werden",
   "Could not delete space": "Space konnte nicht gelöscht werden",
   "Could not load bots": "Bots konnten nicht geladen werden",
-  "Could not save the default space":
-    "Standard-Space konnte nicht gespeichert werden",
+  "Could not save the default space": "Standard-Space konnte nicht gespeichert werden",
   "Could not switch spaces": "Space konnte nicht gewechselt werden",
   Create: "Erstellen",
   "Delete space": "Space löschen",
@@ -194,19 +179,16 @@ export const DE_MESSAGES: Record<string, string> = {
   Personal: "Persönlich",
   Recent: "Kürzlich",
   Search: "Suchen",
-  "Search conversations, files, and routines":
-    "Unterhaltungen, Dateien und Routinen durchsuchen",
+  "Search conversations, files, and routines": "Unterhaltungen, Dateien und Routinen durchsuchen",
   "Searching…": "Suche…",
   "Space actions for {name}": "Space-Aktionen für {name}",
   "Tap + to create a bot": "Tippe auf +, um einen Bot zu erstellen",
-  "This removes the empty space for everyone.":
-    "Das entfernt den leeren Space für alle.",
+  "This removes the empty space for everyone.": "Das entfernt den leeren Space für alle.",
   "notifications silenced": "Benachrichtigungen stumm",
   unread: "ungelesen",
   // app/thread.tsx
   "@{name}": "@{name}",
-  "Add a voice provider in Voice settings.":
-    "Füge unter Stimme einen Sprachanbieter hinzu.",
+  "Add a voice provider in Voice settings.": "Füge unter Stimme einen Sprachanbieter hinzu.",
   Agent: "Agent",
   "Allowed once": "Einmal erlaubt",
   "Always allowed": "Immer erlaubt",
@@ -236,8 +218,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Copy: "Kopieren",
   "Could not archive bot": "Bot konnte nicht archiviert werden",
   "Could not clear conversation": "Unterhaltung konnte nicht geleert werden",
-  "Could not load earlier messages":
-    "Frühere Nachrichten konnten nicht geladen werden",
+  "Could not load earlier messages": "Frühere Nachrichten konnten nicht geladen werden",
   "Could not open file": "Datei konnte nicht geöffnet werden",
   "Could not open image": "Bild konnte nicht geöffnet werden",
   "Close image": "Bild schließen",
@@ -263,8 +244,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Diagram: "Diagramm",
   Image: "Bild",
   "Jump to latest": "Zur neuesten Nachricht springen",
-  "Jump to latest, new messages":
-    "Zur neuesten Nachricht springen, neue Nachrichten",
+  "Jump to latest, new messages": "Zur neuesten Nachricht springen, neue Nachrichten",
   New: "Neu",
   "New messages": "Neue Nachrichten",
   "Load earlier messages": "Frühere Nachrichten laden",
@@ -301,13 +281,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "All bots": "Alle Bots",
   Artifact: "Artefakt",
   Artifacts: "Artefakte",
-  "Could not delete this artifact":
-    "Dieses Artefakt konnte nicht gelöscht werden",
+  "Could not delete this artifact": "Dieses Artefakt konnte nicht gelöscht werden",
   "Could not load artifacts.": "Artefakte konnten nicht geladen werden.",
-  "Could not load this artifact.":
-    "Dieses Artefakt konnte nicht geladen werden.",
-  "Could not share this artifact":
-    "Dieses Artefakt konnte nicht geteilt werden",
+  "Could not load this artifact.": "Dieses Artefakt konnte nicht geladen werden.",
+  "Could not share this artifact": "Dieses Artefakt konnte nicht geteilt werden",
   "Long press to delete": "Zum Löschen gedrückt halten",
   "No artifacts yet": "Noch keine Artefakte",
   "No matching artifacts": "Keine passenden Artefakte",
@@ -348,8 +325,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Color: "Farbe",
   "Color {number}": "Farbe {number}",
   "Could not load bot": "Bot konnte nicht geladen werden",
-  "Could not load model settings":
-    "Modelleinstellungen konnten nicht geladen werden",
+  "Could not load model settings": "Modelleinstellungen konnten nicht geladen werden",
   "Could not save bot": "Bot konnte nicht gespeichert werden",
   "Default (medium)": "Standard (mittel)",
   "Describe what this bot does": "Beschreibe, was dieser Bot macht",
@@ -376,8 +352,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load group": "Gruppe konnte nicht geladen werden",
   "Could not save group": "Gruppe konnte nicht gespeichert werden",
   "Delete group": "Gruppe löschen",
-  "Bots and their own chats stay.":
-    "Bots und ihre eigenen Chats bleiben erhalten.",
+  "Bots and their own chats stay.": "Bots und ihre eigenen Chats bleiben erhalten.",
   "Group name": "Gruppenname",
   "Group not found": "Gruppe nicht gefunden",
   Members: "Mitglieder",
@@ -449,12 +424,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Connected. Its tools are available from your next message.":
     "Verbunden. Seine Tools sind ab deiner nächsten Nachricht verfügbar.",
   "Context limit": "Kontextlimit",
-  "Could not change the default model":
-    "Standardmodell konnte nicht geändert werden",
+  "Could not change the default model": "Standardmodell konnte nicht geändert werden",
   "Could not connect this provider": "Anbieter konnte nicht verbunden werden",
   "Could not finish sign-in": "Anmeldung konnte nicht abgeschlossen werden",
-  "Could not reach this model server":
-    "Modellserver konnte nicht erreicht werden",
+  "Could not reach this model server": "Modellserver konnte nicht erreicht werden",
   "Could not start sign-in": "Anmeldung konnte nicht gestartet werden",
   Default: "Standard",
   "Deployment default": "Bereitstellungsstandard",
@@ -489,8 +462,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Saved.": "Gespeichert.",
   "Search models": "Modelle suchen",
   "Server URL": "Server-URL",
-  "Server found. Enter a model name.":
-    "Server gefunden. Gib einen Modellnamen ein.",
+  "Server found. Enter a model name.": "Server gefunden. Gib einen Modellnamen ein.",
   "Setup help": "Einrichtungshilfe",
   "Show less": "Weniger anzeigen",
   "Sign in": "Anmelden",
@@ -508,8 +480,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Waiting for sign-in…": "Warten auf Anmeldung…",
   "exact-model-id": "exact-model-id",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
-  "http://localhost:53692/callback?code=…":
-    "http://localhost:53692/callback?code=…",
+  "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "sk-…": "sk-…",
   "this model": "dieses Modell",
   // app/(settings)/integrations.tsx
@@ -582,8 +553,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not verify or save these credentials":
     "Diese Zugangsdaten konnten nicht geprüft oder gespeichert werden",
   "Direct MCP": "Direktes MCP",
-  "Finish MCP authorization in the web app.":
-    "Schließe die MCP-Autorisierung in der Web-App ab.",
+  "Finish MCP authorization in the web app.": "Schließe die MCP-Autorisierung in der Web-App ab.",
   "Get credentials": "Zugangsdaten abrufen",
   "Open web app": "Web-App öffnen",
   "Project ID": "Projekt-ID",
@@ -594,18 +564,14 @@ export const DE_MESSAGES: Record<string, string> = {
   "Connect a voice provider first.": "Verbinde zuerst einen Sprachanbieter.",
   "Connected {name}.": "{name} verbunden.",
   "Could not disconnect": "Trennen fehlgeschlagen",
-  "Could not load voice settings":
-    "Stimmeinstellungen konnten nicht geladen werden",
+  "Could not load voice settings": "Stimmeinstellungen konnten nicht geladen werden",
   "Could not play a sample": "Beispiel konnte nicht abgespielt werden",
-  "Could not save that preference":
-    "Diese Einstellung konnte nicht gespeichert werden",
-  "Could not save that speech model":
-    "Sprachmodell konnte nicht gespeichert werden",
+  "Could not save that preference": "Diese Einstellung konnte nicht gespeichert werden",
+  "Could not save that speech model": "Sprachmodell konnte nicht gespeichert werden",
   "Could not save that voice": "Stimme konnte nicht gespeichert werden",
   "Disconnect {name}?": "{name} trennen?",
   Disconnect: "Trennen",
-  "This removes the connection from every space.":
-    "Die Verbindung wird in jedem Space entfernt.",
+  "This removes the connection from every space.": "Die Verbindung wird in jedem Space entfernt.",
   "Disconnecting…": "Verbindung wird getrennt…",
   "Hear a sample": "Beispiel anhören",
   "Hi, this is how I'll sound when I read replies out loud.":
@@ -634,8 +600,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load chats": "Chats konnten nicht geladen werden",
   "Could not restore bot": "Bot konnte nicht wiederhergestellt werden",
   "Could not sign out": "Abmeldung fehlgeschlagen",
-  "Could not update notifications":
-    "Benachrichtigungen konnten nicht aktualisiert werden",
+  "Could not update notifications": "Benachrichtigungen konnten nicht aktualisiert werden",
   "Couldn't update avatars": "Avatare konnten nicht aktualisiert werden",
   "Current password": "Aktuelles Passwort",
   Dark: "Dunkel",
@@ -765,17 +730,14 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count}h ago": "vor {count} Std.",
   "{count}m ago": "vor {count} Min.",
   // lib/api.ts
-  "Could not clear the custom server URL":
-    "Die eigene Server-URL konnte nicht gelöscht werden",
-  "Could not clear the local session":
-    "Die lokale Sitzung konnte nicht gelöscht werden",
+  "Could not clear the custom server URL": "Die eigene Server-URL konnte nicht gelöscht werden",
+  "Could not clear the local session": "Die lokale Sitzung konnte nicht gelöscht werden",
   "Could not clear the previous server session":
     "Die vorherige Serversitzung konnte nicht gelöscht werden",
   "Could not clear the previous space":
     "Die vorherige Space-Auswahl konnte nicht zurückgesetzt werden",
   "Could not save the server URL": "Server-URL konnte nicht gespeichert werden",
-  "Could not send reset email":
-    "E-Mail zum Zurücksetzen konnte nicht gesendet werden",
+  "Could not send reset email": "E-Mail zum Zurücksetzen konnte nicht gesendet werden",
   "The server changed while starting the request":
     "Der Server hat sich beim Start der Anfrage geändert",
   "Update your server to use AI data sharing in this mobile version.":
@@ -824,8 +786,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Request timed out": "Zeitüberschreitung der Anfrage",
   "Enter a password": "Gib ein Passwort ein",
   "Enter a valid email": "Gib eine gültige E-Mail-Adresse ein",
-  "Something went wrong. Try again.":
-    "Etwas ist schiefgelaufen. Versuche es erneut.",
+  "Something went wrong. Try again.": "Etwas ist schiefgelaufen. Versuche es erneut.",
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
   // app/(settings)/models.tsx
@@ -835,10 +796,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Tried in order if the active model fails.":
     "Werden der Reihe nach versucht, wenn das aktive Modell ausfällt.",
   "Backup models": "Backup-Modelle",
-  "Could not load backup models":
-    "Backup-Modelle konnten nicht geladen werden.",
-  "Could not save backup models":
-    "Backup-Modelle konnten nicht gespeichert werden.",
+  "Could not load backup models": "Backup-Modelle konnten nicht geladen werden.",
+  "Could not save backup models": "Backup-Modelle konnten nicht gespeichert werden.",
   "Space changed. Reload Models to refresh backup models.":
     "Der Space wurde gewechselt. Lade Modelle neu, um die Backups zu aktualisieren.",
   "Space changed. Reload Models before saving backups.":
@@ -858,8 +817,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Warte auf Anmeldung — der Link läuft in etwa {minutes} Minuten ab.",
   // call
-  "Allow microphone access to call a bot.":
-    "Erlaube den Mikrofonzugriff, um einen Bot anzurufen.",
+  "Allow microphone access to call a bot.": "Erlaube den Mikrofonzugriff, um einen Bot anzurufen.",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Erlaube die Spracherkennung in den Einstellungen oder verbinde ElevenLabs, OpenAI oder Fish Audio.",
   Call: "Anrufen",
@@ -916,11 +874,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "No AI services configured.": "Keine KI-Dienste eingerichtet.",
   "Privacy policy": "Datenschutzerklärung",
   "Continue with {name}": "Mit {name} fortfahren",
-  "Could not load sign-in options":
-    "Anmeldeoptionen konnten nicht geladen werden",
+  "Could not load sign-in options": "Anmeldeoptionen konnten nicht geladen werden",
   "Deletion code": "Löschcode",
-  "Email is not allowed to register":
-    "Diese E-Mail-Adresse ist nicht zur Registrierung zugelassen",
+  "Email is not allowed to register": "Diese E-Mail-Adresse ist nicht zur Registrierung zugelassen",
   "Email verification required": "E-Mail-Verifizierung erforderlich",
   "Link SSO": "SSO verknüpfen",
   "Registration is closed": "Registrierung ist geschlossen",
@@ -948,8 +904,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Restored: "Wiederhergestellt",
   Undo: "Rückgängig",
   "Update instructions?": "Anweisungen aktualisieren?",
-  "Could not restore instructions":
-    "Anweisungen konnten nicht wiederhergestellt werden",
+  "Could not restore instructions": "Anweisungen konnten nicht wiederhergestellt werden",
   "Hide chats": "Chats ausblenden",
   "Show chats": "Chats einblenden",
   "Remove photo": "Foto entfernen",
@@ -994,15 +949,12 @@ export const DE_MESSAGES: Record<string, string> = {
   Passkey: "Passkey",
   "Add passkey": "Passkey hinzufügen",
   Rename: "Umbenennen",
-  "Add a passkey for faster sign-in?":
-    "Passkey für schnellere Anmeldung hinzufügen?",
+  "Add a passkey for faster sign-in?": "Passkey für schnellere Anmeldung hinzufügen?",
   "Couldn't start the computer": "Der Computer konnte nicht gestartet werden",
   "Something went wrong while it was starting. Try again in a moment.":
     "Beim Starten ist etwas schiefgelaufen. Versuche es in einem Moment erneut.",
-  "Your voice provider is out of credit.":
-    "Dein Stimmanbieter hat kein Guthaben mehr.",
-  "Your voice provider key was rejected.":
-    "Der Schlüssel deines Stimmanbieters wurde abgelehnt.",
+  "Your voice provider is out of credit.": "Dein Stimmanbieter hat kein Guthaben mehr.",
+  "Your voice provider key was rejected.": "Der Schlüssel deines Stimmanbieters wurde abgelehnt.",
   Billing: "Abrechnung",
   "Could not load billing": "Abrechnung konnte nicht geladen werden",
   "Could not update billing": "Abrechnung konnte nicht aktualisiert werden",
@@ -1016,14 +968,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add credits": "Guthaben hinzufügen",
   "Manage billing": "Abrechnung verwalten",
   "Your API key": "Dein API-Schlüssel",
-  "Free. Pay your model provider directly.":
-    "Kostenlos. Bezahle deinen Modellanbieter direkt.",
+  "Free. Pay your model provider directly.": "Kostenlos. Bezahle deinen Modellanbieter direkt.",
   "Use my API key": "Meinen API-Schlüssel verwenden",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Monatliches Guthaben verfällt bei Verlängerung. Einmalige Aufladungen verfallen nicht.",
   "Use Rakazo credits": "Rakazo-Guthaben verwenden",
-  "Complete the security check first":
-    "Schließe zuerst die Sicherheitsprüfung ab",
+  "Complete the security check first": "Schließe zuerst die Sicherheitsprüfung ab",
   "Security check failed. Check your connection and try again.":
     "Sicherheitsprüfung fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.",
   "Security check failed. Complete it again and retry.":
