@@ -28,6 +28,7 @@ import {
   runAsTenant,
   selectSpaceVoicePreference,
   sharedVoiceScope,
+  withinScope,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
@@ -214,11 +215,15 @@ export async function loadVoiceCredential(
     ? await findVoiceCredential(deps.prisma, actor, provider)
     : await findDefaultVoiceCredential(deps.prisma, actor);
   if (!cred) return null;
-  const secret = await deps.prisma.secret.findFirst({
-    where: { id: cred.secretId, userId: actor.userId, spaceId: null },
+  // The secret is row-secured to its owner; a shared voice reads it as the owner, server-side.
+  const apiKey = await withinScope(actor, async () => {
+    const secret = await deps.prisma.secret.findFirst({
+      where: { id: cred.secretId, userId: actor.userId, spaceId: null },
+    });
+    return secret ? await deps.secrets.load(secret.ciphertext, secret.id) : null;
   });
-  if (!secret) return null;
-  return { cred, apiKey: await deps.secrets.load(secret.ciphertext, secret.id), actor };
+  if (apiKey === null) return null;
+  return { cred, apiKey, actor };
 }
 
 export async function resolveVoiceTarget(

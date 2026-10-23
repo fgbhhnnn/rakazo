@@ -33,6 +33,21 @@ export function runAsTenant<T>(
 }
 
 /**
+ * Run `fn` as the tenant that owns `scope` when the current tenant is a different user.
+ * Shared-model lookups use this: a member running on the deployment owner's models
+ * reads the owner's credential and secret rows as the owner, server-side only.
+ * Outside a tenant context (system work, tests without a context) `fn` runs unchanged.
+ */
+export function withinScope<T>(
+  scope: { spaceId: string; userId: string },
+  fn: () => T | PromiseLike<T>,
+): Promise<T> {
+  const current = storage.getStore();
+  if (current?.kind === "tenant" && current.userId !== scope.userId) return runAsTenant(scope, fn);
+  return (async () => await fn())();
+}
+
+/**
  * Run `fn` across tenants. Each call is an audited bypass of row-level
  * security, so name why: `grep -rn "runAsSystem("` lists every one.
  */

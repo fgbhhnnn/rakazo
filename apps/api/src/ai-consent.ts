@@ -14,6 +14,7 @@ import {
   findDefaultVoiceCredential,
   findModelCredential,
   sharedModelScope,
+  withinScope,
 } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
@@ -46,10 +47,12 @@ export async function aiConsentStatus(
     consents,
   ] = await Promise.all([
     modelsEnabled
-      ? deps.prisma.spaceModelPreference.findMany({
-          where: { userId: modelScope.userId, spaceId: modelScope.spaceId },
-          include: { credential: true },
-        })
+      ? withinScope(modelScope, () =>
+          deps.prisma.spaceModelPreference.findMany({
+            where: { userId: modelScope.userId, spaceId: modelScope.spaceId },
+            include: { credential: true },
+          }),
+        )
       : [],
     modelsEnabled
       ? deps.prisma.spaceBackupModel.findMany({
@@ -135,7 +138,9 @@ export async function aiConsentStatus(
       }),
     );
     // Connected models remain reachable by helpers during a targeted bot run.
-    for (const preference of preferences)
+    for (const preference of preferences) {
+      // A credential row hidden by row-level security is not a usable model.
+      if (!preference.credential) continue;
       selected.push({
         provider: preference.credential.provider,
         id: preference.modelId ?? "",
@@ -147,11 +152,12 @@ export async function aiConsentStatus(
         },
         thinkingLevel: null,
       });
+    }
     const backupModels = await Promise.all(
       backups.map(async (backup) => {
         const credential = await findModelCredential(
           deps.prisma,
-          actor,
+          modelScope,
           backup.provider,
           backup.modelId,
         );
@@ -184,22 +190,33 @@ export async function aiConsentStatus(
           ]),
       ).values(),
     ];
-    const secrets = models.length
-      ? await deps.prisma.secret.findMany({
-          where: {
-            userId: actor.userId,
-            spaceId: null,
-            id: {
-              in: models.flatMap((model) => (model.credential ? [model.credential.secretId] : [])),
-            },
-          },
-        })
+    const secretIds = models.flatMap((model) =>
+      model.credential ? [model.credential.secretId] : [],
+    );
+    // Shared models keep their keys under the owner; each owner's rows are read as that owner.
+    const owners = [...new Set([actor.userId, modelScope.userId])];
+    const secrets = secretIds.length
+      ? (
+          await Promise.all(
+            owners.map((userId) =>
+              withinScope(userId === actor.userId ? actor : modelScope, () =>
+                deps.prisma.secret.findMany({
+                  where: { userId, spaceId: null, id: { in: secretIds } },
+                }),
+              ),
+            ),
+          )
+        ).flat()
       : [];
     const baseUrls = new Map(
       await Promise.all(
         secrets.map(async (secret): Promise<[string, string | undefined]> => {
           try {
-            const parsed = parseModelSecret(await deps.secrets.load(secret.ciphertext, secret.id));
+            const parsed = parseModelSecret(
+              await withinScope(secret.userId === actor.userId ? actor : modelScope, () =>
+                deps.secrets.load(secret.ciphertext, secret.id),
+              ),
+            );
             return [secret.id, parsed.kind === "openai_compatible" ? parsed.baseUrl : undefined];
           } catch {
             // Unreadable credentials still disclose by provider; the base URL is unknown.

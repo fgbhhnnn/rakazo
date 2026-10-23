@@ -1,5 +1,6 @@
 import { canonicalPiProviderId, storedPiProviderIds, usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
+import { withinScope } from "./row-security.js";
 
 export const newestCredentialOrder = [
   { updatedAt: "desc" as const },
@@ -88,12 +89,15 @@ export async function findDefaultModelCredential(
   prisma: PrismaClient,
   scope: ModelCredentialScope,
 ) {
-  const preference = await prisma.spaceModelPreference.findFirst({
-    where: { spaceId: scope.spaceId, userId: scope.userId, isDefault: true },
-    include: { credential: true },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-  });
-  return preference ? withModelPreference(preference) : null;
+  const preference = await withinScope(scope, () =>
+    prisma.spaceModelPreference.findFirst({
+      where: { spaceId: scope.spaceId, userId: scope.userId, isDefault: true },
+      include: { credential: true },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    }),
+  );
+  // A credential row hidden by row-level security reads as no credential.
+  return preference?.credential ? withModelPreference(preference) : null;
 }
 
 export function findNewestUserModelCredential(
@@ -267,6 +271,15 @@ function credentialFromChoice<
 }
 
 export async function findModelCredential(
+  prisma: PrismaClient,
+  scope: ModelCredentialScope,
+  provider: string,
+  modelId?: string | null,
+) {
+  return withinScope(scope, () => findModelCredentialInScope(prisma, scope, provider, modelId));
+}
+
+async function findModelCredentialInScope(
   prisma: PrismaClient,
   scope: ModelCredentialScope,
   provider: string,

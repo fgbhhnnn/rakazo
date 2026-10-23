@@ -260,6 +260,7 @@ import {
   toTicketCommentDto,
   toTicketDto,
   touchGroupUpdatedAt,
+  withinScope,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-secrets.js";
@@ -1462,10 +1463,11 @@ export function createRouter(deps: RouterDeps) {
     },
     models: {
       list: authed.models.list.handler(async ({ context }) => {
-        const catalog = await catalogForSpace({
-          ...context.actor,
-          ...(await sharedModelScope(deps.prisma, context.actor)),
-        });
+        const scope = await sharedModelScope(deps.prisma, context.actor);
+        // The owner's credentials are row-secured to the owner; read them as the owner.
+        const catalog = await withinScope(scope, () =>
+          catalogForSpace({ ...context.actor, ...scope }),
+        );
         // The scripted fixture only exists to drive the scripted runtime; a real
         // runtime cannot execute it, so it stays out of the user-facing catalog.
         return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
