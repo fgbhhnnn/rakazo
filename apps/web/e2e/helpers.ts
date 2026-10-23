@@ -259,3 +259,16 @@ export async function chooseOption(trigger: Locator, option: string | { index: n
     : options.nth(option.index)
   ).click();
 }
+
+/** The composer bar while the open bot works (there is no Stop button: sending interrupts). */
+export function busyComposer(page: Page) {
+  return page.locator('[data-testid="composer-bar"][data-bot-busy="true"]');
+}
+
+/** Stop the open bot's work the way the old Stop button did, then wait for the bar to go idle. */
+export async function stopActiveWork(page: Page) {
+  await rpc(page, "threads/stop", { botId: activeBotId(page) });
+  // The API stop alone emits no terminal thread event; reload so the shell reads the new state.
+  await page.reload();
+  await expect(busyComposer(page)).toHaveCount(0, { timeout: 30_000 });
+}

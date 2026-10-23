@@ -18,7 +18,8 @@ import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
 import {
   activeRunSelection,
-  backgroundTaskCounts,
+  backgroundWorkOf,
+  backgroundWorkSelection,
   latestBotRunSelection,
   previewFromBlocks,
   rosterStatus,
@@ -196,13 +197,10 @@ export function createRepos(
           },
         },
         runs: activeRunSelection,
+        ...backgroundWorkSelection,
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
-    const background = await backgroundTaskCounts(
-      prisma,
-      bots.map((bot) => bot.id),
-    );
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
       return {
@@ -217,7 +215,7 @@ export function createRepos(
         unread: bot.thread.unread,
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
-        status: rosterStatus(bot.runs[0]?.status, background.get(bot.id)),
+        status: rosterStatus(bot.runs[0]?.status, backgroundWorkOf(bot)),
         runErrorId: rosterRunErrorId(bot.thread.runs[0], bot.runs[0]),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
@@ -376,6 +374,7 @@ export function createRepos(
             },
             runs: activeRunSelection,
             computer: { select: { scope: true } },
+            ...backgroundWorkSelection,
           },
           orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
         }),
@@ -434,10 +433,6 @@ export function createRepos(
         for (const id of missing) checkedRunIds.add(id);
       };
       await classifyRunIds(candidateRunIds);
-      const background = await backgroundTaskCounts(
-        prisma,
-        bots.map((bot) => bot.id),
-      );
       return Promise.all(
         bots.map(async (bot) => {
           let messages = bot.thread?.messages ?? [];
@@ -476,7 +471,7 @@ export function createRepos(
           return mapBot(
             bot,
             preview,
-            rosterStatus(bot.runs[0]?.status, background.get(bot.id)),
+            rosterStatus(bot.runs[0]?.status, backgroundWorkOf(bot)),
             rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
             updatedAt,
             ringingCall(

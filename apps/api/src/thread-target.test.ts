@@ -4050,8 +4050,7 @@ describe("stopThreadRuns", () => {
   });
 });
 
-/** Snapshot reads background-worker counts outside the transaction; none in these tests. */
+/** Snapshot reads the bot's background-worker counts outside the transaction; none here. */
 const noBackgroundTasks = {
-  run: { findMany: vi.fn().mockResolvedValue([]) },
-  backgroundTaskQueue: { groupBy: vi.fn().mockResolvedValue([]) },
+  bot: { findFirst: vi.fn().mockResolvedValue(null) },
 };

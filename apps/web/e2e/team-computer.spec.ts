@@ -9,6 +9,7 @@ import {
   realSandboxTimeout,
   rpc,
   signup,
+  stopActiveWork,
 } from "./helpers";
 
 test("Team Computer gives bots a home folder plus shared space while Private stays isolated", async ({
@@ -256,7 +257,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
 
   // Stop through the shell so the client refreshes computer status (API stop alone
   // does not emit a terminal thread event).
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await stopActiveWork(page);
   await waitForIdle(page, chiefId);
   await expect
     .poll(

@@ -1,6 +1,12 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import {
+  busyComposer,
+  captureScreenshot,
+  completeOnboarding,
+  signup,
+  stopActiveWork,
+} from "./helpers";
 
 /** Activity rows sit above `[data-sidebar-group]` bots; match their aria-label. */
 function activityRow(page: Page, botName: string) {
@@ -56,7 +62,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+  await expect(busyComposer(page)).toBeVisible({
     timeout: 30_000,
   });
 
@@ -68,7 +74,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "on");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+  await expect(busyComposer(page)).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
@@ -126,7 +132,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(filtersButton).toHaveAttribute("aria-expanded", "false");
   await expect(activityRow(page, "Chief")).toBeVisible();
 
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await stopActiveWork(page);
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
 
   await page.reload();

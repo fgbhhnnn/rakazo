@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   activeBotId,
+  busyComposer,
   captureScreenshot,
   completeOnboarding,
   expandAdvancedSection,
@@ -9,6 +10,7 @@ import {
   rpc,
   showPasswordForm,
   signup,
+  stopActiveWork,
 } from "./helpers";
 
 function sidebarBotButton(page: Page, name: RegExp | string) {
@@ -423,7 +425,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     .click();
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+  await expect(busyComposer(page)).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.getByTestId("composer-steering-status")).toHaveCount(0);
@@ -443,37 +445,19 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(
     page.getByTestId("transcript").getByText("Use the newer report and keep the answer short."),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect(busyComposer(page)).toBeVisible();
   await captureScreenshot(page, testInfo, "14-active-bot-work");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect(busyComposer(page)).toBeVisible();
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
   await captureScreenshot(page, testInfo, "14-active-bot-work-mobile");
   await page.setViewportSize({ width: 1280, height: 720 });
   expect(browserErrors).toEqual([]);
   expect(failedRequests).toEqual([]);
-  let releaseStopRequest: () => void = () => undefined;
-  let markStopRequestStarted: () => void = () => undefined;
-  const stopRequestStarted = new Promise<void>((resolve) => {
-    markStopRequestStarted = resolve;
-  });
-  await page.route("**/rpc/threads/stop", async (route) => {
-    markStopRequestStarted();
-    await new Promise<void>((release) => {
-      releaseStopRequest = release;
-    });
-    await route.continue();
-  });
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await stopRequestStarted;
-  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
-  releaseStopRequest();
-  // Idle Send stays disabled with an empty draft; wait for Stop to leave instead.
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0, {
-    timeout: 30_000,
-  });
+  // No Stop button: the composer stays open while the bot works and a message interrupts it.
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  await stopActiveWork(page);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
 
   await page.context().clearCookies();

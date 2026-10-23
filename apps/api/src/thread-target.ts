@@ -27,7 +27,8 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
-  backgroundTaskCounts,
+  backgroundWorkOf,
+  backgroundWorkSelection,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
@@ -338,7 +339,9 @@ export async function threadSnapshot(
   // ask message page still omits it — leaving waiting_input with no AskCard.
   if (target.kind === "bot") {
     const [background, busyBotName, core] = await Promise.all([
-      backgroundTaskCounts(deps.prisma, [target.botId]),
+      deps.prisma.bot
+        .findFirst({ where: { id: target.botId }, select: backgroundWorkSelection })
+        .then((row) => (row ? backgroundWorkOf(row) : { running: 0, queued: 0 })),
       resolveBusyBotName(deps.prisma, {
         computerId: target.bot.computer?.id,
         botId: target.botId,
@@ -432,7 +435,7 @@ export async function threadSnapshot(
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
-      backgroundTasks: background.get(target.botId) ?? { running: 0, queued: 0 },
+      backgroundTasks: background,
       computer: toComputerStatus(target.botId, target.bot.computer, busyBotName),
     };
   }

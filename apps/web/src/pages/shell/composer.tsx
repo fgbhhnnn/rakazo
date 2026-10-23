@@ -42,6 +42,7 @@ const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
 export const Composer = memo(function Composer({
   artifactTarget,
   activeName,
+  busy,
   disabled,
   pendingAttachments,
   attachmentNotice,
@@ -70,6 +71,8 @@ export const Composer = memo(function Composer({
   enterToSend,
 }: {
   activeName?: string;
+  /** The bot is working. Marks the bar for tests; nothing is locked: sending interrupts. */
+  busy?: boolean;
   disabled?: boolean;
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
@@ -586,6 +589,7 @@ export const Composer = memo(function Composer({
       <div
         ref={composerBarRef}
         data-testid="composer-bar"
+        data-bot-busy={busy ? "true" : undefined}
         data-expanded={expanded}
         className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-ring ${
           expanded ? "gap-x-2 gap-y-2 pb-[9px] pt-3" : "gap-x-3.5 py-[9px]"
