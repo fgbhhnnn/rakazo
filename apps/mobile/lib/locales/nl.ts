@@ -1,6 +1,8 @@
 export const NL_MESSAGES: Record<string, string> = {
-  "Your administrator manages this setting.": "Je beheerder beheert deze instelling.",
-  "Add an AI model to keep chatting": "Voeg een AI-model toe om verder te chatten",
+  "Your administrator manages this setting.":
+    "Je beheerder beheert deze instelling.",
+  "Add an AI model to keep chatting":
+    "Voeg een AI-model toe om verder te chatten",
   "Not Now": "Niet nu",
   "Add Model": "Model toevoegen",
   "Not sent · No model": "Niet verzonden · Geen model",
@@ -22,8 +24,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "Provider message": "Bericht van aanbieder",
   Status: "Status",
   "Set your own key": "Eigen sleutel instellen",
-  "Add your own key or pick another model.": "Voeg je eigen sleutel toe of kies een ander model.",
-  "Choose another model to keep chatting.": "Kies een ander model om verder te chatten.",
+  "Add your own key or pick another model.":
+    "Voeg je eigen sleutel toe of kies een ander model.",
+  "Choose another model to keep chatting.":
+    "Kies een ander model om verder te chatten.",
   "Resets {date}.": "Wordt gereset op {date}.",
 
   "Model provider": "Modelprovider",
@@ -51,7 +55,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your OpenAI": "Jouw OpenAI",
   "Your Anthropic": "Jouw Anthropic",
   "Your model provider": "Jouw modelaanbieder",
-  "The model provider returned an error.": "De modelaanbieder heeft een fout teruggegeven.",
+  "The model provider returned an error.":
+    "De modelaanbieder heeft een fout teruggegeven.",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} beperkt het aantal verzoeken. Probeer het zo nog eens.",
   "{summary} Resets {date}.": "{summary} Wordt gereset op {date}.",
@@ -61,19 +66,24 @@ export const NL_MESSAGES: Record<string, string> = {
     "{provider} kon het gevraagde model niet vinden.",
   "{provider} took too long to respond. Try again.":
     "{provider} deed er te lang over om te antwoorden. Probeer het opnieuw.",
-  "{provider} key hit its limit.": "De sleutel van {provider} heeft de limiet bereikt.",
-  "{provider} key hit its daily limit.": "De sleutel van {provider} heeft de daglimiet bereikt.",
-  "{provider} key hit its weekly limit.": "De sleutel van {provider} heeft de weeklimiet bereikt.",
+  "{provider} key hit its limit.":
+    "De sleutel van {provider} heeft de limiet bereikt.",
+  "{provider} key hit its daily limit.":
+    "De sleutel van {provider} heeft de daglimiet bereikt.",
+  "{provider} key hit its weekly limit.":
+    "De sleutel van {provider} heeft de weeklimiet bereikt.",
   "{provider} key hit its monthly limit.":
     "De sleutel van {provider} heeft de maandlimiet bereikt.",
-  "{provider} reached its credit limit.": "{provider} heeft de kredietlimiet bereikt.",
+  "{provider} reached its credit limit.":
+    "{provider} heeft de kredietlimiet bereikt.",
   "{provider} reached its daily credit limit.":
     "{provider} heeft de daglimiet voor krediet bereikt.",
   "{provider} reached its weekly credit limit.":
     "{provider} heeft de weeklimiet voor krediet bereikt.",
   "{provider} reached its monthly credit limit.":
     "{provider} heeft de maandlimiet voor krediet bereikt.",
-  "{provider} reached its spending limit.": "{provider} heeft de uitgavenlimiet bereikt.",
+  "{provider} reached its spending limit.":
+    "{provider} heeft de uitgavenlimiet bereikt.",
   "{provider} reached its daily spending limit.":
     "{provider} heeft de daglimiet voor uitgaven bereikt.",
   "{provider} reached its weekly spending limit.":
@@ -94,8 +104,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "Original message unavailable": "Oorspronkelijk bericht niet beschikbaar",
   "No archived chats": "Geen gearchiveerde chats",
   "Recover computer?": "Computer herstellen?",
-  "Recreate a computer that is not working.": "Maak een computer opnieuw aan die niet werkt.",
-  "Restore the last saved workspace.": "Zet de laatst opgeslagen werkruimte terug.",
+  "Recreate a computer that is not working.":
+    "Maak een computer opnieuw aan die niet werkt.",
+  "Restore the last saved workspace.":
+    "Zet de laatst opgeslagen werkruimte terug.",
   "Save the workspace and install current software.":
     "Sla de werkruimte op en installeer de huidige software.",
   "More computer actions": "Meer computeracties",
@@ -174,7 +186,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Personal: "Persoonlijk",
   Recent: "Recent",
   Search: "Zoeken",
-  "Search conversations, files, and routines": "Zoek in gesprekken, bestanden en routines",
+  "Search conversations, files, and routines":
+    "Zoek in gesprekken, bestanden en routines",
   "Searching…": "Bezig met zoeken…",
   "Space actions for {name}": "Space-acties voor {name}",
   "Tap + to create a bot": "Tik op + om een bot te maken",
@@ -183,7 +196,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "notifications silenced": "meldingen gedempt",
   unread: "ongelezen",
   "@{name}": "@{name}",
-  "Add a voice provider in Voice settings.": "Voeg een spraakanbieder toe in de steminstellingen.",
+  "Add a voice provider in Voice settings.":
+    "Voeg een spraakanbieder toe in de steminstellingen.",
   Agent: "Agent",
   "Allowed once": "Een keer toegestaan",
   "Always allowed": "Altijd toegestaan",
@@ -239,7 +253,8 @@ export const NL_MESSAGES: Record<string, string> = {
   Diagram: "Diagram",
   Image: "Afbeelding",
   "Jump to latest": "Naar het nieuwste springen",
-  "Jump to latest, new messages": "Naar het nieuwste springen, nieuwe berichten",
+  "Jump to latest, new messages":
+    "Naar het nieuwste springen, nieuwe berichten",
   New: "Nieuw",
   "New messages": "Nieuwe berichten",
   "Load earlier messages": "Eerdere berichten laden",
@@ -256,7 +271,8 @@ export const NL_MESSAGES: Record<string, string> = {
   React: "Reageren",
   "Remove mention {name}": "Vermelding {name} verwijderen",
   "Remove skill {name}": "Skill {name} verwijderen",
-  "Removed with chat, computer, and memory.": "Verwijderd samen met chat, computer en geheugen.",
+  "Removed with chat, computer, and memory.":
+    "Verwijderd samen met chat, computer en geheugen.",
   Reply: "Beantwoorden",
   "Replying to": "Antwoordt op",
   "Return to inbox": "Terug naar postvak IN",
@@ -446,7 +462,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Saved.": "Opgeslagen.",
   "Search models": "Modellen zoeken",
   "Server URL": "Server-URL",
-  "Server found. Enter a model name.": "Server gevonden. Voer een modelnaam in.",
+  "Server found. Enter a model name.":
+    "Server gevonden. Voer een modelnaam in.",
   "Setup help": "Installatiehulp",
   "Show less": "Minder tonen",
   "Sign in": "Aanmelden",
@@ -464,7 +481,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Waiting for sign-in…": "Wachten op aanmelding…",
   "exact-model-id": "exact-model-id",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
-  "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
+  "http://localhost:53692/callback?code=…":
+    "http://localhost:53692/callback?code=…",
   "sk-…": "sk-…",
   "this model": "dit model",
   "1 tool": "1 tool",
@@ -535,11 +553,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not verify or save these credentials":
     "Deze gegevens konden niet worden geverifieerd of opgeslagen",
   "Direct MCP": "Directe MCP",
-  "Finish MCP authorization in the web app.": "Rond de MCP-autorisatie af in de webapp.",
+  "Finish MCP authorization in the web app.":
+    "Rond de MCP-autorisatie af in de webapp.",
   "Get credentials": "Gegevens ophalen",
   "Open web app": "Webapp openen",
   "Project ID": "Project-ID",
-  "Set up Executor on your server in the web app.": "Stel Executor in op je server via de webapp.",
+  "Set up Executor on your server in the web app.":
+    "Stel Executor in op je server via de webapp.",
   Connect: "Verbinden",
   "Connect a voice provider first.": "Koppel eerst een spraakanbieder.",
   "Connected {name}.": "{name} gekoppeld.",
@@ -625,7 +645,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not submit answer": "Antwoord insturen mislukt",
   Deny: "Weigeren",
   "Please try again.": "Probeer het opnieuw.",
-  "Authorization timed out. Please try again.": "De autorisatie is verlopen. Probeer het opnieuw.",
+  "Authorization timed out. Please try again.":
+    "De autorisatie is verlopen. Probeer het opnieuw.",
   "Authorize {name}": "{name} autoriseren",
   "Could not authorize this app": "Deze app autoriseren mislukt",
   "{name} connection": "{name}-verbinding",
@@ -704,7 +725,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "{count}m ago": "{count}m geleden",
   "Could not clear the custom server URL": "De eigen server-URL wissen mislukt",
   "Could not clear the local session": "De lokale sessie wissen mislukt",
-  "Could not clear the previous server session": "De vorige serversessie wissen mislukt",
+  "Could not clear the previous server session":
+    "De vorige serversessie wissen mislukt",
   "Could not clear the previous space": "De vorige space wissen mislukt",
   "Could not save the server URL": "De server-URL opslaan mislukt",
   "Could not send reset email": "Herstellingsmail versturen mislukt",
@@ -738,7 +760,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Enter a server URL": "Voer een server-URL in",
   "Public servers need https://. HTTP only works on your local network.":
     "Openbare servers vereisen https://. HTTP werkt alleen op je lokale netwerk.",
-  "That URL did not look like a Rakazo server": "Die URL leek geen Rakazo-server",
+  "That URL did not look like a Rakazo server":
+    "Die URL leek geen Rakazo-server",
   "That URL is missing a host": "Die URL mist een host",
   "That doesn’t look like a URL": "Dat lijkt geen URL",
   "Use an http or https URL": "Gebruik een http- of https-URL",
@@ -747,7 +770,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Request timed out": "Time-out bij verzoek",
   "Enter a password": "Voer een wachtwoord in",
   "Enter a valid email": "Voer een geldig e-mailadres in",
-  "Something went wrong. Try again.": "Er is iets misgegaan. Probeer het opnieuw.",
+  "Something went wrong. Try again.":
+    "Er is iets misgegaan. Probeer het opnieuw.",
   "Could not play that clip.": "Dat fragment kon niet worden afgespeeld.",
   "Add backup model": "Back-upmodel toevoegen",
   "Move down": "Omlaag",
@@ -775,7 +799,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "Wachten op aanmelding — de code verloopt over ongeveer {minutes} minuten.",
   "Waiting for sign-in — the link expires in about {minutes} minutes.":
     "Wachten op aanmelding — de link verloopt over ongeveer {minutes} minuten.",
-  "Allow microphone access to call a bot.": "Sta microfoontoegang toe om een bot te bellen.",
+  "Allow microphone access to call a bot.":
+    "Sta microfoontoegang toe om een bot te bellen.",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Sta spraakherkenning toe in Instellingen, of koppel ElevenLabs, OpenAI of Fish Audio.",
   Call: "Bellen",
@@ -833,7 +858,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Continue with {name}": "Doorgaan met {name}",
   "Could not load sign-in options": "Aanmeldopties laden mislukt",
   "Deletion code": "Verwijderingscode",
-  "Email is not allowed to register": "Dit e-mailadres mag niet worden geregistreerd",
+  "Email is not allowed to register":
+    "Dit e-mailadres mag niet worden geregistreerd",
   "Email verification required": "E-mailverificatie vereist",
   "Link SSO": "SSO koppelen",
   "Registration is closed": "Registratie is gesloten",
@@ -856,7 +882,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Instruction history": "Instructiegeschiedenis",
   Instructions: "Instructies",
   "Instructions updated": "Instructies bijgewerkt",
-  "Let this bot update its own instructions": "Laat deze bot zijn eigen instructies bijwerken",
+  "Let this bot update its own instructions":
+    "Laat deze bot zijn eigen instructies bijwerken",
   Restored: "Hersteld",
   Undo: "Ongedaan maken",
   "Update instructions?": "Instructies bijwerken?",
@@ -905,12 +932,15 @@ export const NL_MESSAGES: Record<string, string> = {
   Passkey: "Passkey",
   "Add passkey": "Passkey toevoegen",
   Rename: "Naam wijzigen",
-  "Add a passkey for faster sign-in?": "Passkey toevoegen om sneller aan te melden?",
+  "Add a passkey for faster sign-in?":
+    "Passkey toevoegen om sneller aan te melden?",
   "Couldn't start the computer": "De computer kon niet worden gestart",
   "Something went wrong while it was starting. Try again in a moment.":
     "Er ging iets mis tijdens het opstarten. Probeer het over een moment opnieuw.",
-  "Your voice provider is out of credit.": "Je spraakaanbieder heeft geen tegoed meer.",
-  "Your voice provider key was rejected.": "Je spraakaanbieder heeft de sleutel geweigerd.",
+  "Your voice provider is out of credit.":
+    "Je spraakaanbieder heeft geen tegoed meer.",
+  "Your voice provider key was rejected.":
+    "Je spraakaanbieder heeft de sleutel geweigerd.",
   Billing: "Facturering",
   "Could not load billing": "Kan facturering niet laden",
   "Could not update billing": "Kan facturering niet bijwerken",
@@ -924,9 +954,15 @@ export const NL_MESSAGES: Record<string, string> = {
   "Add credits": "Tegoed toevoegen",
   "Manage billing": "Facturering beheren",
   "Your API key": "Je API-sleutel",
-  "Free. Pay your model provider directly.": "Gratis. Betaal je modelaanbieder rechtstreeks.",
+  "Free. Pay your model provider directly.":
+    "Gratis. Betaal je modelaanbieder rechtstreeks.",
   "Use my API key": "Mijn API-sleutel gebruiken",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Maandelijks tegoed vervalt bij verlenging. Los gekocht tegoed verloopt niet.",
   "Use Rakazo credits": "Rakazo-tegoed gebruiken",
+  "Complete the security check first": "Voltooi eerst de beveiligingscontrole",
+  "Security check failed. Check your connection and try again.":
+    "Beveiligingscontrole mislukt. Controleer je verbinding en probeer het opnieuw.",
+  "Security check failed. Complete it again and retry.":
+    "Beveiligingscontrole mislukt. Voltooi hem opnieuw en probeer het nog eens.",
 };
