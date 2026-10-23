@@ -9955,10 +9955,18 @@ export async function withoutMessagesOwnedByOtherLiveRuns<
  * /home/user/rakazo-home/bots/<id>/out.csv. Workspace tools treat "/" as the workspace root, so
  * the computer's real workspace prefix is removed; "~/" paths are workspace-relative.
  */
-export function workerReportWorkspacePath(file: string): string {
+const OUTSIDE_WORKSPACE_ROOTS =
+  /^\/(?:home|root|tmp|var|etc|opt|usr|mnt|media|srv|data|private|Users|Volumes)(?:\/|$)/;
+
+export function workerReportWorkspacePath(file: string): string | null {
   if (file.startsWith("~/")) return file.slice(2);
   const match = /^\/(?:[^/]+\/)*?rakazo-home(?:\/(.*))?$/.exec(file);
-  return match ? `/${match[1] ?? ""}` : file;
+  if (match) return `/${match[1] ?? ""}`;
+  // A real path outside the workspace (the shell's own home, /tmp, ...). Computer file reads are
+  // confined to the workspace, so prefixing it would name a file that does not exist; skip it.
+  if (OUTSIDE_WORKSPACE_ROOTS.test(file)) return null;
+  // Otherwise "/" is the workspace root (e.g. /bots/<id>/out.csv, /shared/a.png).
+  return file;
 }
 
 export async function attachWorkerReportFiles(input: {
@@ -9999,6 +10007,10 @@ export async function attachWorkerReportFiles(input: {
     const mimeType = inferAttachmentMimeType(file);
     if (!mimeType) continue;
     const relative = workerReportWorkspacePath(file);
+    if (relative === null) {
+      getLogger().warn("worker report file not attached: path is outside the computer workspace");
+      continue;
+    }
     try {
       const bytes = await deps.sandbox.readFile(
         computer,

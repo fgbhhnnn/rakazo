@@ -1,5 +1,12 @@
+import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
-import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
+import {
+  ComposioConnector,
+  IntegrationProviderSettings,
+  releaseWorkerRunLeases,
+  workerProcessId,
+} from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { startWorkerHealth } from "./health.js";
@@ -263,6 +270,7 @@ async function main() {
       reservedConcurrency: parseNonNegativeInteger(process.env.GRAPHILE_RESERVED_CONCURRENCY, 6),
     });
 
+  const workerId = workerProcessId(hostname(), process.pid, randomUUID().slice(0, 8));
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
@@ -271,7 +279,7 @@ async function main() {
     artifacts,
     jobs,
     events,
-    workerId: process.pid.toString(),
+    workerId,
     runtime,
     secretStore: secrets,
     memoryProviders,
@@ -332,7 +340,15 @@ async function main() {
     try {
       await stopHealth();
       await reconciler.stop();
-      await jobHost.stop();
+      // Stop taking jobs first, then hand held runs back so the next worker resumes them at
+      // once instead of after the 5-minute lease. In-flight jobs may outlive the grace period.
+      const hostStopped = jobHost.stop();
+      await releaseWorkerRunLeases({ prisma, jobs }, workerId)
+        .then((released) => {
+          if (released.length) logger.info(`released ${released.length} run lease(s) on shutdown`);
+        })
+        .catch((error) => logger.error("release run leases on shutdown", error));
+      await hostStopped;
       await jobs.close();
       await secrets.close();
       await realtime.close();

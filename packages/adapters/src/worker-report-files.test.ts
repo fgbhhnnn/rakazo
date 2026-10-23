@@ -131,4 +131,12 @@ describe("workerReportWorkspacePath", () => {
     expect(workerReportWorkspacePath("~/jobs/x/out/a.csv")).toBe("jobs/x/out/a.csv");
     expect(workerReportWorkspacePath("/bots/w1/a.csv")).toBe("/bots/w1/a.csv");
   });
+
+  it("skips real paths outside the workspace instead of re-prefixing them", async () => {
+    const { workerReportWorkspacePath } = await import("./executor.js");
+    expect(workerReportWorkspacePath("/home/user/jobs/geo-audit/out/report.md")).toBeNull();
+    expect(workerReportWorkspacePath("/tmp/out.png")).toBeNull();
+    expect(workerReportWorkspacePath("/root/a.csv")).toBeNull();
+    expect(workerReportWorkspacePath("/Users/me/a.csv")).toBeNull();
+  });
 });
