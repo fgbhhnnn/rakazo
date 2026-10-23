@@ -104,3 +104,12 @@ describe("global model limiter", () => {
     }
   });
 });
+
+describe("limiter defaults", () => {
+  it("defaults to 32 model calls with up to 24 for workers", async () => {
+    const { modelMaxConcurrency, workerModelConcurrency } = await import("./provider-lanes.js");
+    expect(modelMaxConcurrency({})).toBe(32);
+    expect(workerModelConcurrency({})).toBe(24);
+    expect(modelMaxConcurrency({ RAKAZO_MODEL_MAX_CONCURRENCY: "8" })).toBe(8);
+  });
+});

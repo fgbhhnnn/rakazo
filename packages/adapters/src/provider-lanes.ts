@@ -46,8 +46,8 @@ export async function waitForProviderLane(
 
 /**
  * Per-process model-call limiter. All model calls share RAKAZO_MODEL_MAX_CONCURRENCY slots
- * (default 4, matching a small gateway account); background workers may use at most
- * RAKAZO_WORKER_MODEL_CONCURRENCY of them (default 2) and never the last free slot, and
+ * (default 32); background workers may use at most
+ * RAKAZO_WORKER_MODEL_CONCURRENCY of them (default 24) and never the last free slot, and
  * waiting main turns are always served first. Returns the release function.
  */
 let activeMain = 0;
@@ -60,10 +60,10 @@ function envInt(name: string, fallback: number, env: Record<string, string | und
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : fallback;
 }
 export function modelMaxConcurrency(env: Record<string, string | undefined> = process.env) {
-  return envInt("RAKAZO_MODEL_MAX_CONCURRENCY", 4, env);
+  return envInt("RAKAZO_MODEL_MAX_CONCURRENCY", 32, env);
 }
 export function workerModelConcurrency(env: Record<string, string | undefined> = process.env) {
-  return envInt("RAKAZO_WORKER_MODEL_CONCURRENCY", 2, env);
+  return envInt("RAKAZO_WORKER_MODEL_CONCURRENCY", 24, env);
 }
 
 function canStart(lane: "main" | "background") {
