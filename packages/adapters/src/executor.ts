@@ -3721,6 +3721,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         | undefined;
       let runAbortController: AbortController | null = null;
       let dispatcherWatchdogClear: (() => void) | undefined;
+      let dispatcherWatchdogFired = false;
       let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
         if (runCompleted) return;
@@ -3878,15 +3879,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // hung model call. Abort it so the thread is free for the next message.
         if (dispatcherTurn) {
           const controller = runAbortController;
-          const watchdog = setTimeout(
-            () =>
-              controller.abort(
-                new Error(
-                  `The reply took longer than ${Math.round(dispatcherTurnMaxMs() / 1000)} s and was stopped. Please send the message again.`,
-                ),
-              ),
-            dispatcherTurnMaxMs(),
-          );
+          const watchdog = setTimeout(() => {
+            dispatcherWatchdogFired = true;
+            controller.abort(new DispatcherTurnTimeout(dispatcherTurnMaxMs()));
+          }, dispatcherTurnMaxMs());
           watchdog.unref?.();
           controller.signal.addEventListener("abort", () => clearTimeout(watchdog));
           const clearWatchdog = () => clearTimeout(watchdog);
@@ -8254,6 +8250,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           recordExplicitNoResponse(assistantTurnText);
           runComputer.throwIfFailed();
+          // A runtime may end quietly when aborted; a stopped main turn still failed.
+          if (dispatcherWatchdogFired) throw new DispatcherTurnTimeout(dispatcherTurnMaxMs());
           if (approvalPausePending || !leaseValid) return;
           approvedEffectReplays.assertDrained();
           pendingProgress += progressRedactor.finish();
@@ -8477,6 +8475,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await deps.jobs
               .enqueue(runContinueJob(failed.continuationRunId))
               .catch((error) => getLogger().error("steering continuation enqueue", error));
+          }
+          if (dispatcherTurn && DISPATCHER_RESTART_TRIGGERS.has(run.trigger)) {
+            // A main turn that hung or failed must not leave the user with silence: restart it
+            // on the latest messages (bounded), or say truthfully that it failed.
+            const restarted =
+              (dispatcherWatchdogFired || error instanceof DispatcherTurnTimeout) &&
+              (await restartDispatcherTurn(deps, run, Boolean(failed.continuationRunId)).catch(
+                (restartError) => {
+                  getLogger().error("dispatcher turn restart", restartError);
+                  return false;
+                },
+              ));
+            if (!restarted) {
+              const reason =
+                dispatcherWatchdogFired || error instanceof DispatcherTurnTimeout
+                  ? `回复超时（超过 ${Math.round(dispatcherTurnMaxMs() / 1000)} 秒），已重试仍未完成。请再发一次消息。`
+                  : `这次回复失败了：${message}`;
+              await publishMessage(deps, run, "bot", [{ kind: "text", text: reason }]).catch(
+                (postError) => getLogger().error("dispatcher failure message", postError),
+              );
+            }
+            return;
           }
           if (run.trigger === "bot_message") {
             await returnBotMessageOutcome(
@@ -9444,6 +9464,87 @@ export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply, stripStrayNoRespo
 
 /** How often a running run checks whether it was stopped. RAKAZO_RUN_CANCEL_POLL_MS overrides. */
 /** Longest a dispatcher's main turn may run (RAKAZO_DISPATCHER_TURN_MAX_MS, default 90 s). */
+/** Thrown into a dispatcher turn that ran past its watchdog. */
+export class DispatcherTurnTimeout extends Error {
+  constructor(ms: number) {
+    super(`The reply took longer than ${Math.round(ms / 1000)} s and was stopped.`);
+    this.name = "DispatcherTurnTimeout";
+  }
+}
+
+/** Triggers whose main turn is a reply to a person, so a hung turn is restarted for them. */
+const DISPATCHER_RESTART_TRIGGERS = new Set(["user", "follow_up", "messaging", "bot_message"]);
+export const DISPATCHER_MAX_RESTARTS = 2;
+
+/**
+ * Start a fresh main turn after the watchdog stopped one: steering the stopped turn had taken is
+ * released so the new turn answers the latest messages. Restarts chain through retryOfRunId, so
+ * a turn that keeps hanging stops after DISPATCHER_MAX_RESTARTS. Returns whether one was queued.
+ */
+async function restartDispatcherTurn(
+  deps: ExecutorDeps,
+  failed: {
+    id: string;
+    spaceId: string;
+    botId: string;
+    threadId: string;
+    taskId: string;
+    userId: string;
+    trigger: string;
+    sourceMessageId: string | null;
+  },
+  continuationQueued: boolean,
+): Promise<boolean> {
+  let depth = 0;
+  let cursor: string | null = failed.id;
+  while (cursor && depth <= DISPATCHER_MAX_RESTARTS) {
+    const row: { retryOfRunId: string | null } | null = await deps.prisma.run.findUnique({
+      where: { id: cursor },
+      select: { retryOfRunId: true },
+    });
+    cursor = row?.retryOfRunId ?? null;
+    if (cursor) depth += 1;
+  }
+  if (depth >= DISPATCHER_MAX_RESTARTS) return false;
+  const task = await deps.prisma.task.findUnique({
+    where: { id: failed.taskId },
+    select: { prompt: true },
+  });
+  if (!task) return false;
+  const queued = await deps.prisma.$transaction(async (tx) => {
+    await tx.steeringMessage.updateMany({ where: { runId: failed.id }, data: { runId: null } });
+    // A continuation already queued for newer messages answers them; it sees the stopped
+    // turn's messages too now that their claim is released.
+    if (continuationQueued) return null;
+    const retryTask = await tx.task.create({
+      data: {
+        spaceId: failed.spaceId,
+        botId: failed.botId,
+        threadId: failed.threadId,
+        userId: failed.userId,
+        prompt: task.prompt,
+        status: "queued",
+      },
+    });
+    return tx.run.create({
+      data: {
+        spaceId: failed.spaceId,
+        botId: failed.botId,
+        threadId: failed.threadId,
+        taskId: retryTask.id,
+        userId: failed.userId,
+        status: "queued",
+        trigger: failed.trigger,
+        sourceMessageId: failed.sourceMessageId,
+        retryOfRunId: failed.id,
+      },
+      select: { id: true },
+    });
+  });
+  if (queued) await deps.jobs.enqueue(runContinueJob(queued.id));
+  return true;
+}
+
 export function dispatcherTurnMaxMs(env: Record<string, string | undefined> = process.env): number {
   const parsed = Number(env.RAKAZO_DISPATCHER_TURN_MAX_MS);
   return Number.isFinite(parsed) && parsed >= 5_000 ? Math.floor(parsed) : 90_000;
@@ -9493,7 +9594,7 @@ export function isDispatcherBot(bot: {
 
 /** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
 export const BACKGROUND_DISPATCH_GUIDANCE =
-  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Pass new or changed requirements for running work with background_task_message. Do not wait or poll; each worker\'s result wakes you as a message: report it truthfully and relay its files with attach_file.';
+  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Pass new or changed requirements for running work with background_task_message. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake with a message to the user (never stay silent, even if it failed or was cancelled): report the result truthfully and call attach_file for every image, video or file path it lists so the user sees them inline.';
 /** Mid-run user messages get an acknowledgement before the bot goes back to work. */
 export const STEERING_REPLY_GUIDANCE =
   "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";
