@@ -261,7 +261,8 @@ export function inferScript(
       },
     ];
   }
-  if (/(cancel all background tasks|不做了|先不用了|不用了|取消|算了|^\s*停\s*$)/im.test(prompt)) {
+  // Scripted test model: only an explicit script command, never user stop phrases.
+  if (/cancel all background tasks/i.test(prompt)) {
     return [
       {
         assistant: "stopped.",

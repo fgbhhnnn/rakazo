@@ -116,7 +116,50 @@ const WORKER_INSTRUCTIONS = `你是后台工作者（background worker），由�
 - 只做任务说明里的事。不要问用户问题；信息不够就做合理假设并在结果里写明。
 - 大任务按 "Heavy Task Workflow" 技能来：计划清单写文件、素材存文件、看图分批交给 run_subagent。
 - 产物写到电脑上的文件里（建议 ~/jobs/<任务名>/out/），结果里给出路径。
-- 最后的回复就是交给主 bot 的结果：简洁（建议 1500 字以内），包括 完成情况 / 产物路径 / 遇到的问题 / 建议的下一步。`;
+- 最后的回复就是交给主 bot 的结果：简洁（建议 1500 字以内），包括 完成情况 / 结果正文 / 遇到的问题 / 建议的下一步。结果本身（名单、答案、文案等）直接写进回复，不要只给路径。
+- 要交给用户的产物文件，在回复最后单独列出（每行一个绝对路径，用 realpath 确认存在），格式严格如下，系统会自动把这些文件发给用户：
+文件：
+- /绝对路径/文件名.扩展名`;
+
+/** Most files the main bot attaches automatically from one worker report. */
+const MAX_REPORT_FILES = 10;
+
+/**
+ * The output files a worker lists in its report's "文件：" section (see WORKER_INSTRUCTIONS),
+ * as absolute or ~/ paths. URLs and anything else are left for the main bot to relay as text.
+ */
+export function parseWorkerReportFiles(text: string): string[] {
+  const files: string[] = [];
+  const add = (raw: string) => {
+    const value = raw
+      .trim()
+      .replace(/^[-*•]\s*|^\d+[.)]\s*/, "")
+      .replace(/^`+|`+$/g, "")
+      .replace(/^\[[^\]]*\]\((.*)\)$/, "$1")
+      .trim();
+    if (!/^(?:\/|~\/)\S/.test(value) || /\s/.test(value) || files.includes(value)) return;
+    if (files.length < MAX_REPORT_FILES) files.push(value);
+  };
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const header =
+      /^\s*(?:#+\s*)?(?:\*\*)?(?:产物文件|输出文件|文件|files?|outputs?)(?:\*\*)?\s*[:：](?:\*\*)?\s*(.*)$/i.exec(
+        lines[index] ?? "",
+      );
+    if (!header) continue;
+    if (header[1]?.trim()) for (const part of header[1].split(/[,，、]\s*/)) add(part);
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const line = lines[next] ?? "";
+      if (!line.trim()) {
+        if (files.length) break;
+        continue;
+      }
+      if (!/^\s*(?:[-*•]|\d+[.)])\s*/.test(line)) break;
+      add(line);
+    }
+  }
+  return files;
+}
 
 type Deps = Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "sandbox">;
 type DispatchRun = {

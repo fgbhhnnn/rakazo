@@ -197,10 +197,12 @@ import {
 } from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import {
+  BACKGROUND_WORKER_SPAWN_PREFIX,
   backgroundTaskMessage,
   backgroundTaskStatus,
   cancelBackgroundTask,
   launchBackgroundTask,
+  parseWorkerReportFiles,
   startQueuedBackgroundTasks,
 } from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
@@ -4182,6 +4184,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
+        // Paths this run already attached, so worker report files are never attached twice.
+        const attachedFilePaths = new Set<string>();
         const getRunComputer = async (reason: "tool" | "takeover" | "script", tool?: string) => {
           if (computerUseReason === "none") {
             computerUseReason = reason;
@@ -5886,6 +5890,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
               );
               await publishMessage(deps, run, "bot", [attached.block]);
+              attachedFilePaths.add(filePath);
               await recordComputerAction("attach_file", filePath);
               return finish({ ok: true, artifactId: attached.artifactId, path: filePath });
             } catch (error) {
@@ -8365,6 +8370,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ) {
             throw new Error(TOOL_STEPS_WITHOUT_RESPONSE);
           }
+          if (dispatcherTurn && peerMessage && deps.artifacts) {
+            await attachWorkerReportFiles({
+              deps,
+              run,
+              bot,
+              threadGroupId: thread.groupId ?? undefined,
+              report: peerMessage,
+              computerMode,
+              readComputer: () => getRunComputer("tool", "attach_file"),
+              context,
+              alreadyAttached: attachedFilePaths,
+            }).catch((error) => getLogger().error("worker report attach", error));
+          }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const botMessageOutcome =
             run.trigger === "bot_message"
@@ -9607,7 +9625,7 @@ export function isDispatcherBot(bot: {
 
 /** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
 export const BACKGROUND_DISPATCH_GUIDANCE =
-  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker; unrelated work gets a new background_task. Usually 1-2 workers are enough. If a worker reports a failure (for example a provider error), call background_task_status before retrying and relaunch only if that task is not still running or queued; never start a second copy. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake with a message to the user (never stay silent, even if it failed or was cancelled): report the result truthfully and call attach_file for every image, video or file path it lists so the user sees them inline.';
+  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message shows the user no longer wants an earlier request (judge the intent yourself, in any wording), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes, match it with background_task_status and act on that task_id only. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker; unrelated work gets a new background_task. Usually 1-2 workers are enough. If a worker reports a failure (for example a provider error), call background_task_status before retrying and relaunch only if that task is not still running or queued; never start a second copy. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake in the same turn with a message to the user (never stay silent, even if it failed or was cancelled): relay the actual result content itself (the list, answer, text or numbers the worker reported), not a promise like "我先把文件发给你", and never hand the work back to the worker just to send or format what it already reported. Files in the report "文件：" section are attached to your reply automatically; call attach_file only for other image, video or file paths the report mentions.';
 /** Mid-run user messages get an acknowledgement before the bot goes back to work. */
 export const STEERING_REPLY_GUIDANCE =
   "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";
@@ -9878,6 +9896,85 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
 
 function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+/**
+ * A worker's report lists its output files ("文件：" section). The main bot's wake turn attaches
+ * them itself, from the worker's workspace, so the user gets the files with the relay instead of
+ * a promise and a second hand-off. Paths the model already attached this run are skipped.
+ */
+export async function attachWorkerReportFiles(input: {
+  deps: ExecutorDeps;
+  run: {
+    id: string;
+    spaceId: string;
+    threadId: string;
+    botId: string;
+    userId: string;
+    trigger: string;
+  };
+  bot: { id: string };
+  threadGroupId?: string;
+  report: { fromBotId: string; text: string };
+  computerMode: ReturnType<typeof parseComputerMode>;
+  readComputer: () => Promise<Parameters<ExecutorDeps["sandbox"]["readFile"]>[0]>;
+  context: Parameters<ExecutorDeps["sandbox"]["readFile"]>[2];
+  alreadyAttached: Set<string>;
+}): Promise<string[]> {
+  const { deps, run } = input;
+  if (!deps.artifacts) return [];
+  const files = parseWorkerReportFiles(input.report.text).filter(
+    (file) => !input.alreadyAttached.has(file),
+  );
+  if (!files.length) return [];
+  const worker = await deps.prisma.bot.findFirst({
+    where: {
+      id: input.report.fromBotId,
+      spawnKey: { startsWith: `${BACKGROUND_WORKER_SPAWN_PREFIX}${input.bot.id}:` },
+    },
+    select: { id: true },
+  });
+  if (!worker) return [];
+  const computer = await input.readComputer();
+  const attached: string[] = [];
+  for (const [index, file] of files.entries()) {
+    const mimeType = inferAttachmentMimeType(file);
+    if (!mimeType) continue;
+    const relative = file.startsWith("~/") ? file.slice(2) : file;
+    try {
+      const bytes = await deps.sandbox.readFile(
+        computer,
+        resolveBotWorkspacePath(input.computerMode, worker.id, relative),
+        input.context,
+        { maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES },
+      );
+      const result = await attachWorkspaceFileToThread(
+        {
+          prisma: deps.prisma,
+          artifacts: deps.artifacts,
+          maxUploadSizeBytes: deps.maxUploadSizeBytes,
+        },
+        {
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botId: input.bot.id,
+          groupId: input.threadGroupId,
+          runId: run.id,
+          filePath: file,
+          bytes,
+          operationId: `${run.id}:worker-file:${index}`,
+        },
+      );
+      await publishMessage(deps, run, "bot", [result.block]);
+      input.alreadyAttached.add(file);
+      attached.push(file);
+    } catch (error) {
+      getLogger().warn(
+        `worker report file not attached: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return attached;
 }
 
 async function publishMessage(

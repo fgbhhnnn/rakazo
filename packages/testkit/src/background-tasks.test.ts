@@ -102,7 +102,9 @@ describeIntegration("background tasks: dispatcher stays idle, stop is immediate"
     const t1 = Date.now();
     const stop = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: chief.id,
-      text: "不做了",
+      // The scripted model takes an explicit command; real-model intent judgment over varied
+      // wordings is covered by the production routing tests.
+      text: "cancel all background tasks",
     });
     expect(stop.runId).not.toBe(sent.runId);
     await waitFor(async () => terminal(stop.runId));
@@ -206,7 +208,7 @@ describeIntegration("background tasks: dispatcher stays idle, stop is immediate"
     const t = Date.now();
     const second = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: chief.id,
-      text: "先不用了",
+      text: "cancel all background tasks",
     });
     await waitFor(async () => terminal(first.runId));
     await waitFor(async () => terminal(second.runId));

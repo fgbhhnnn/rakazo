@@ -1197,7 +1197,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "background_task_cancel",
     description:
-      'Stop a background task now: aborts its model call and tools, kills its shell processes, marks it cancelled. Call this immediately when the user says stop/cancel in any wording (停, 不做了, 取消, 算了, never mind). Use task_id "all" to stop every background task of this bot; to stop one the user describes, find its task_id with background_task_status first. Confirm only what the result reports as stopped.',
+      'Stop a background task now: aborts its model call and tools, kills its shell processes, marks it cancelled. Call this as soon as you judge the user no longer wants a task, however they phrase it. Use task_id "all" to stop every background task of this bot; to stop one the user describes, find its task_id with background_task_status first. Confirm only what the result reports as stopped.',
     inputSchema: {
       type: "object",
       properties: {
