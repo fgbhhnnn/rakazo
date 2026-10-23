@@ -5,6 +5,7 @@ export * from "./board-live.js";
 export * from "./bootstrap-user.js";
 export * from "./bot-instructions.js";
 export * from "./bot-update.js";
+export * from "./bot-visibility.js";
 export * from "./cancel-runs.js";
 export * from "./client.js";
 export * from "./computers.js";

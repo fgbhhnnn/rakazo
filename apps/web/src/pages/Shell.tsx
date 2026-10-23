@@ -320,6 +320,8 @@ function SpaceShell() {
   const userId = session.data?.user.id;
   const [groups, setGroups] = useState<Group[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  // A hidden background worker opened from its "后台任务" card: shown, never listed.
+  const [hiddenBot, setHiddenBot] = useState<Bot | null>(null);
   const botsRef = useRef(bots);
   botsRef.current = bots;
   const botOrderEpochRef = useRef(0);
@@ -778,7 +780,32 @@ function SpaceShell() {
   const autoSpokenBotId = useRef<string | null>(null);
 
   const inGroup = Boolean(groupId);
-  const active = inGroup ? undefined : (bots.find((b) => b.id === botId) ?? bots[0]);
+  const active = inGroup
+    ? undefined
+    : (bots.find((b) => b.id === botId) ??
+      (botId ? (hiddenBot?.id === botId ? hiddenBot : undefined) : bots[0]));
+  const hiddenLookupMissing =
+    initialBotsLoaded &&
+    !inGroup &&
+    Boolean(botId) &&
+    !bots.some((bot) => bot.id === botId) &&
+    hiddenBot?.id !== botId;
+  useEffect(() => {
+    if (!hiddenLookupMissing || !botId) return;
+    let cancelled = false;
+    // Not in the list: a hidden worker (open it) or a removed bot (leave).
+    void rpc.bots
+      .get({ botId })
+      .then((found) => {
+        if (!cancelled) setHiddenBot(found);
+      })
+      .catch(() => {
+        if (!cancelled) navigate(firstThreadRoute(bots, groups), { replace: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hiddenLookupMissing, botId, bots, groups, navigate]);
   const computerBot =
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
   computerOpenRef.current = computerOpen;
@@ -1016,7 +1043,8 @@ function SpaceShell() {
           return;
         }
         const currentBotId = routeBotId.current;
-        if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
+        // An unlisted bot id may be a hidden worker; the hidden-bot effect resolves or leaves it.
+        if (!currentBotId) {
           navigate(firstThreadRoute(list, groupList), { replace: true });
         }
       } finally {

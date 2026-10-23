@@ -19,6 +19,7 @@ type FakeBot = {
   spaceId?: string;
   userId?: string;
   parentBotId?: string | null;
+  spawnKey?: string | null;
   archivedAt?: Date | null;
   modelProvider?: string | null;
   modelId?: string | null;
@@ -49,8 +50,27 @@ const run: FleetRun = {
   runId: "run-1",
 };
 
+function rowMatches(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([key, condition]) => {
+    if (key === "AND") {
+      return (condition as Record<string, unknown>[]).every((part) => rowMatches(row, part));
+    }
+    if (key === "OR") {
+      return (condition as Record<string, unknown>[]).some((part) => rowMatches(row, part));
+    }
+    if (key === "NOT") return !rowMatches(row, condition as Record<string, unknown>);
+    return matches(row[key], condition);
+  });
+}
+
 function matches(value: unknown, condition: unknown): boolean {
   if (condition === undefined) return true;
+  if (condition && typeof condition === "object" && "startsWith" in condition) {
+    return (
+      typeof value === "string" &&
+      value.startsWith((condition as { startsWith: string }).startsWith)
+    );
+  }
   if (condition && typeof condition === "object" && "in" in condition) {
     return (condition as { in: unknown[] }).in.includes(value);
   }
@@ -69,6 +89,7 @@ function fakeFleet(input: {
     spaceId: "space-1",
     userId: "user-1",
     parentBotId: null,
+    spawnKey: null as string | null,
     archivedAt: null,
     modelProvider: null,
     modelId: null,
@@ -85,11 +106,7 @@ function fakeFleet(input: {
   const prisma = {
     bot: {
       findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-        bots.filter((bot) =>
-          Object.entries(where).every(([key, condition]) =>
-            matches(bot[key as keyof typeof bot], condition),
-          ),
-        ),
+        bots.filter((bot) => rowMatches(bot as Record<string, unknown>, where)),
       ),
       findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) =>
         bots.find((bot) => bot.id === where.id),
@@ -886,6 +903,24 @@ describe("listFleet", () => {
       sections: [],
       truncated: false,
     });
+  });
+
+  it("never lists hidden background workers", async () => {
+    const { deps } = fakeFleet({
+      ...fleet,
+      bots: [
+        ...fleet.bots,
+        {
+          id: "bot-bg",
+          name: "Designer · 后台1",
+          parentBotId: run.botId,
+          spawnKey: "bg-worker:x:1",
+        },
+      ],
+    });
+    const listed = (await listFleet(deps, run, {})) as { bots: Array<{ id: string }> };
+    expect(listed.bots.map((bot) => bot.id)).not.toContain("bot-bg");
+    expect(listed.bots.length).toBeGreaterThan(0);
   });
 
   it("lists only the user's active bots and groups and flags the bots the caller created", async () => {

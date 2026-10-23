@@ -8,6 +8,7 @@ import {
   ringingCall,
   userVisibleMessages,
 } from "@rakazo/core";
+import { VISIBLE_BOT_WHERE } from "./bot-visibility.js";
 import type { PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
@@ -164,6 +165,7 @@ export function createRepos(
         spaceId: { in: spaceIds },
         userId: actor.userId,
         archivedAt: null,
+        AND: [VISIBLE_BOT_WHERE],
       },
       select: {
         id: true,
@@ -343,7 +345,10 @@ export function createRepos(
       });
     },
 
-    async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
+    async listBots(
+      actor: Actor,
+      options: { archived?: boolean; includeHidden?: boolean } = {},
+    ): Promise<Bot[]> {
       const bots = await withNewestThreadMessages(
         prisma,
         await prisma.bot.findMany({
@@ -351,6 +356,7 @@ export function createRepos(
             spaceId: actor.spaceId,
             userId: actor.userId,
             archivedAt: options.archived ? { not: null } : null,
+            ...(options.includeHidden ? {} : { AND: [VISIBLE_BOT_WHERE] }),
           },
           include: {
             thread: {
@@ -675,6 +681,7 @@ export function createRepos(
             spaceId: actor.spaceId,
             userId: actor.userId,
             archivedAt: null,
+            AND: [VISIBLE_BOT_WHERE],
           },
           select: { id: true },
         });

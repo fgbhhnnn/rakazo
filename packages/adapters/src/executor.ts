@@ -125,6 +125,7 @@ import {
   findDefaultModelCredential,
   InstructionConflictError,
   InvalidSpaceNameError,
+  isHiddenBot,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
   Prisma,
@@ -139,6 +140,7 @@ import {
   searchHistory,
   settleReleasedTakeoverCards,
   sharedModelScope,
+  VISIBLE_BOT_WHERE,
   validateInstructionProposal,
   withinScope,
   writeBotInstructions,
@@ -7562,6 +7564,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     archivedAt: null,
                     id: { not: bot.id },
                     thread: { isNot: null },
+                    AND: [VISIBLE_BOT_WHERE],
                   },
                   select: {
                     id: true,
@@ -8558,11 +8561,13 @@ async function runNotice(
       userId: run.userId,
     },
     select: {
-      bot: { select: { notifyOnFinish: true } },
+      bot: { select: { notifyOnFinish: true, spawnKey: true } },
       thread: { select: { groupId: true } },
     },
   });
   if (!source) return { enabled: false, groupId: null };
+  // Hidden background workers never notify; the dispatcher's card and reply carry their result.
+  if (isHiddenBot(source.bot)) return { enabled: false, groupId: null };
   return {
     enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     groupId: source.thread.groupId,

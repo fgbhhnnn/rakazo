@@ -1221,7 +1221,7 @@ describe("run notification preference", () => {
         userId: "user-1",
       },
       select: {
-        bot: { select: { notifyOnFinish: true } },
+        bot: { select: { notifyOnFinish: true, spawnKey: true } },
         thread: { select: { groupId: true } },
       },
     });
@@ -1235,6 +1235,20 @@ describe("run notification preference", () => {
         userId: "user-1",
       }),
     ).resolves.toBe(true);
+
+    // Hidden background workers never notify, even with finish notices on.
+    source = {
+      bot: { notifyOnFinish: true, spawnKey: "bg-worker:chief:1" },
+      thread: { groupId: null },
+    } as typeof source;
+    await expect(
+      runNotificationsEnabled(prisma, {
+        botId: "bot-1",
+        threadId: "thread-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+      }),
+    ).resolves.toBe(false);
   });
 });
 

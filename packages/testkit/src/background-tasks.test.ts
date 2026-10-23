@@ -75,6 +75,27 @@ describeIntegration("background tasks: dispatcher stays idle, stop is immediate"
     );
     expect(await activeRuns([chief.id])).toBe(0);
 
+    // Workers are hidden from every listing but still open from the task card.
+    const listed = await rpc<Array<{ id: string }>>(app, cookie, "bots/list", {});
+    expect(listed.map((b) => b.id)).toContain(chief.id);
+    expect(listed.map((b) => b.id)).not.toContain(worker.id);
+    const hits = await rpc<unknown>(app, cookie, "search/query", { q: "后台" });
+    expect(JSON.stringify(hits)).not.toContain(worker.id);
+    const boot = await rpc<{ bots: Array<{ id: string }>; thread: { botId: string } | null }>(
+      app,
+      cookie,
+      "bootstrap",
+      { botId: worker.id },
+    );
+    expect(boot.bots.map((b) => b.id)).not.toContain(worker.id);
+    expect(boot.thread?.botId).toBe(worker.id);
+    const opened = await rpc<{ id: string }>(app, cookie, "bots/get", { botId: worker.id });
+    expect(opened.id).toBe(worker.id);
+    const workerThread = await rpc<{ botId: string }>(app, cookie, "threads/get", {
+      botId: worker.id,
+    });
+    expect(workerThread.botId).toBe(worker.id);
+
     // 2. Mid-task user message: a fresh main run starts (no steering into a busy run)
     //    and, being a stop request, cancels the worker.
     const t1 = Date.now();

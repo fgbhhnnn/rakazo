@@ -1,5 +1,9 @@
 import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH } from "@rakazo/core";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  HIDDEN_BOT_SPAWN_PREFIX,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { messageBot } from "./bot-messages.js";
 import { spawnBot } from "./child-bots.js";
@@ -27,7 +31,7 @@ export function backgroundTaskConcurrency(env: Record<string, string | undefined
   return Number.isFinite(parsed) && parsed >= 1 ? Math.min(10, Math.floor(parsed)) : 3;
 }
 
-export const BACKGROUND_WORKER_SPAWN_PREFIX = "bg-worker:";
+export const BACKGROUND_WORKER_SPAWN_PREFIX = HIDDEN_BOT_SPAWN_PREFIX;
 export function backgroundWorkerSpawnKey(botId: string, slot: number) {
   return `${BACKGROUND_WORKER_SPAWN_PREFIX}${botId}:${slot}`;
 }

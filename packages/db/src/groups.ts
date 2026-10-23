@@ -7,6 +7,7 @@ import {
   type SpaceGroup,
 } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
+import { VISIBLE_BOT_WHERE } from "./bot-visibility.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./computers.js";
@@ -115,6 +116,7 @@ async function assertOwnedBots(
       spaceId: actor.spaceId,
       userId: actor.userId,
       archivedAt: null,
+      AND: [VISIBLE_BOT_WHERE],
     },
     select: { id: true, name: true, color: true },
   });

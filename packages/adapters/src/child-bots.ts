@@ -23,6 +23,7 @@ import {
   expireComputerExecutionLeases,
   type Prisma,
   type PrismaClient,
+  VISIBLE_BOT_WHERE,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -229,7 +230,13 @@ export function createdByWhere(caller: {
   userId: string;
   spaceId: string;
 }): Prisma.BotWhereInput {
-  return { parentBotId: caller.botId, userId: caller.userId, spaceId: caller.spaceId };
+  // Background workers are internal; bot tools never list or archive them.
+  return {
+    parentBotId: caller.botId,
+    userId: caller.userId,
+    spaceId: caller.spaceId,
+    AND: [VISIBLE_BOT_WHERE],
+  };
 }
 
 export async function archiveSpawnedBot(

@@ -1374,7 +1374,14 @@ export function createRouter(deps: RouterDeps) {
         groupRepos.listGroups(actor, { archived: true }),
       ]);
       const { bots, groups, botSections } = navigation.current;
-      const active = bots.find((bot) => bot.id === input.botId) ?? bots[0];
+      // A hidden background worker opened from its task card: serve its thread, keep it unlisted.
+      const hiddenActive =
+        input.botId && !bots.some((bot) => bot.id === input.botId)
+          ? (await repos.listBots(actor, { includeHidden: true })).find(
+              (bot) => bot.id === input.botId,
+            )
+          : undefined;
+      const active = bots.find((bot) => bot.id === input.botId) ?? hiddenActive ?? bots[0];
       const [thread, routines] = active
         ? await Promise.all([
             resolveThreadTarget(deps.prisma, actor, { botId: active.id }).then((target) =>
@@ -1990,7 +1997,10 @@ export function createRouter(deps: RouterDeps) {
         repos.listBots(context.actor, { archived: true }),
       ),
       get: authed.bots.get.handler(async ({ context, input }) => {
-        const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
+        // Hidden background workers are not listed but stay openable from their task card.
+        const found = (await repos.listBots(context.actor, { includeHidden: true })).find(
+          (bot) => bot.id === input.botId,
+        );
         if (!found) throw new IsolationError();
         return found;
       }),

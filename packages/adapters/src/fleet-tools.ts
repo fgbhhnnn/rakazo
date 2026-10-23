@@ -28,6 +28,7 @@ import {
   InstructionConflictError,
   IsolationError,
   SpaceDeletionInProgressError,
+  VISIBLE_BOT_WHERE,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
@@ -1102,7 +1103,7 @@ const botSelect = {
 } satisfies Prisma.BotSelect;
 
 function activeBotsWhere(run: FleetRun): Prisma.BotWhereInput {
-  return { spaceId: run.spaceId, userId: run.userId, archivedAt: null };
+  return { spaceId: run.spaceId, userId: run.userId, archivedAt: null, AND: [VISIBLE_BOT_WHERE] };
 }
 
 /** Exact ids or exact names, in the order given; every one must match exactly one active bot. */
