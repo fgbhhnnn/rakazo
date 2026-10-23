@@ -433,6 +433,7 @@ export interface AgentRunModel {
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
   allowPrivateEndpoint?: boolean;
   /** Whether this custom connection accepts standard reasoning_effort. */
@@ -498,6 +499,12 @@ export interface AgentRunRequest {
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
+  /** Opaque runtime transcript, persisted only on the server. */
+  turnCheckpoint?: string;
+  /** Cheap per-call capture; serialize only when persisting that call’s human pause. */
+  onCheckpoint?: (capture: () => string, executionId: string) => Promise<void>;
+  /** Human answer or takeover outcome for the pending interaction. Never secret input. */
+  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
@@ -582,11 +589,12 @@ export type AgentRuntimeEvent =
   | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
   | {
       type: "ask";
+      executionId?: string;
       text: string;
       detail?: string;
       actions?: Array<{ id: string; label: string }>;
     }
-  | { type: "takeover"; reason: string }
+  | { type: "takeover"; reason: string; executionId?: string }
   | ({
       type: "usage";
       /** Producer-side onUsage completed; consumers must not account it again. */
@@ -735,6 +743,8 @@ export interface NotificationMessage {
   threadId: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
+  /** Unread chats to show on the app icon, when the sender knows them. */
+  badge?: number;
 }
 
 /** A product-authored transactional email, independent of its delivery vendor. */

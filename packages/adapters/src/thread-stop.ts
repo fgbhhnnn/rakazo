@@ -1,7 +1,11 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, expireComputerExecutionLeases } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  clearRunTurnCheckpoints,
+  expireComputerExecutionLeases,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { cancelComputerRunWork } from "./computer-idle.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
@@ -33,6 +37,7 @@ export async function stopThreadRunsForBots(
       select: { id: true, botId: true },
     });
     const ids = cancelled.map((run) => run.id);
+    await clearRunTurnCheckpoints(tx, ids);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: [...target.botIds] },

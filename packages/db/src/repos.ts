@@ -1,5 +1,9 @@
 import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
-import { BOT_COLORS, canonicalPiProviderId, InstructionVersionSchema } from "@rakazo/contracts";
+import {
+  canonicalPiProviderId,
+  InstructionVersionSchema,
+  initialBotMemory,
+} from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
   displayName,
@@ -8,6 +12,7 @@ import {
   ringingCall,
   userVisibleMessages,
 } from "@rakazo/core";
+import { chooseBotAvatar } from "./bot-avatar-choice.js";
 import { VISIBLE_BOT_WHERE } from "./bot-visibility.js";
 import type { PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
@@ -22,6 +27,7 @@ import {
   backgroundWorkSelection,
   latestBotRunSelection,
   previewFromBlocks,
+  primaryActiveRun,
   rosterStatus,
 } from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
@@ -167,7 +173,7 @@ export function createRepos(
 
   async function listSpaceBotsForSpaces(actor: Actor, spaceIds: string[]): Promise<SpaceBot[]> {
     if (spaceIds.length === 0) return [];
-    const bots = await prisma.bot.findMany({
+    const rows = await prisma.bot.findMany({
       where: {
         spaceId: { in: spaceIds },
         userId: actor.userId,
@@ -187,12 +193,8 @@ export function createRepos(
         parentBotId: true,
         thread: {
           select: {
+            id: true,
             unread: true,
-            messages: {
-              orderBy: { seq: "desc" },
-              take: 1,
-              select: { blocks: true, createdAt: true },
-            },
             runs: latestBotRunSelection,
           },
         },
@@ -201,8 +203,10 @@ export function createRepos(
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
+    const bots = await withNewestThreadMessages(prisma, rows, 1);
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
+      const activeRun = primaryActiveRun(bot.runs);
       return {
         id: bot.id,
         spaceId: bot.spaceId,
@@ -215,8 +219,8 @@ export function createRepos(
         unread: bot.thread.unread,
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
-        status: rosterStatus(bot.runs[0]?.status, backgroundWorkOf(bot)),
-        runErrorId: rosterRunErrorId(bot.thread.runs[0], bot.runs[0]),
+        status: rosterStatus(activeRun?.status, backgroundWorkOf(bot)),
+        runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
     });
@@ -468,11 +472,12 @@ export function createRepos(
             });
             if (messages.length === 0) break;
           }
+          const activeRun = primaryActiveRun(bot.runs);
           return mapBot(
             bot,
             preview,
-            rosterStatus(bot.runs[0]?.status, backgroundWorkOf(bot)),
-            rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
+            rosterStatus(activeRun?.status, backgroundWorkOf(bot)),
+            rosterRunErrorId(bot.thread?.runs[0], activeRun),
             updatedAt,
             ringingCall(
               bot.thread && callsByThread.has(bot.thread.id)
@@ -524,13 +529,6 @@ export function createRepos(
         };
       },
     ): Promise<Bot> {
-      let color = input.color;
-      if (color === undefined) {
-        const count = await prisma.bot.count({
-          where: { spaceId: actor.spaceId, userId: actor.userId },
-        });
-        color = BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
-      }
       let modelProvider = input.modelProvider ?? null;
       let modelId = input.modelId ?? null;
       let thinkingLevel = input.thinkingLevel ?? null;
@@ -567,6 +565,14 @@ export function createRepos(
             where: { spaceId: actor.spaceId, userId: actor.userId },
             _max: { position: true },
           });
+          // Read under the creation lock so two bots made at once still differ.
+          const avatar = chooseBotAvatar(
+            await tx.bot.findMany({
+              where: { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+              select: { id: true, color: true },
+            }),
+            input.color,
+          );
           const teamComputer = await ensureComputerRecord(tx, {
             mode: "team",
             spaceId: actor.spaceId,
@@ -575,6 +581,7 @@ export function createRepos(
           });
           const created = await tx.bot.create({
             data: {
+              id: avatar.id,
               spaceId: actor.spaceId,
               userId: actor.userId,
               name: displayName(input.name, ""),
@@ -583,7 +590,7 @@ export function createRepos(
               instructions: input.instructions,
               notifyOnFinish: input.notifyOnFinish,
               fleetManagement: input.fleetManagement,
-              color,
+              color: avatar.color,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,
@@ -632,7 +639,7 @@ export function createRepos(
               botId: created.id,
               scope: "bot",
               path: "MEMORY.md",
-              content: `# ${input.name}\n\n`,
+              content: initialBotMemory(input.name),
             },
           });
           return tx.bot.findFirstOrThrow({

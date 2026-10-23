@@ -296,7 +296,9 @@ async function setComputerMode(
 ) {
   await page.getByRole("button", { name: botName, exact: true }).last().click();
   const settings = page.getByTestId("bot-settings");
-  await expect(settings.locator("label:has-text('Name') input")).toHaveValue(botName);
+  await expect(settings.getByRole("button", { name: "Edit name", exact: true })).toHaveText(
+    botName,
+  );
   const advanced = settings.getByTestId("bot-settings-advanced");
   await expandAdvancedSection(advanced);
   await settings

@@ -29,11 +29,13 @@ import {
   appendEventInTransaction,
   backgroundWorkOf,
   backgroundWorkSelection,
+  clearRunTurnCheckpoints,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
   IsolationError,
   lockOwnedGroup,
+  primaryActiveRun,
   retireWaitingQuestionInTransaction,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -245,6 +247,10 @@ export async function cancelSupersededQueuedRuns(
     where: { id: { in: superseded.map((run) => run.id) } },
     data: { status: "cancelled", completedAt: now },
   });
+  await clearRunTurnCheckpoints(
+    tx,
+    superseded.map((run) => run.id),
+  );
   await tx.task.updateMany({
     where: { id: { in: superseded.map((run) => run.taskId) } },
     data: { status: "cancelled" },
@@ -306,7 +312,7 @@ export async function resolveThreadTarget(
       botId: member.bot.id,
       name: member.bot.name,
       color: member.bot.color,
-      status: member.bot.runs[0]?.status ?? "idle",
+      status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
     }));
     return {
       kind: "group",
@@ -363,7 +369,7 @@ export async function threadSnapshot(
                 threadId: target.threadId,
                 status: { in: [...ACTIVE_RUN_STATUSES] },
                 OR: [
-                  { trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] } },
+                  { trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] } },
                   { status: { in: ["waiting_input", "waiting_takeover"] } },
                 ],
               },
@@ -373,8 +379,8 @@ export async function threadSnapshot(
               where: {
                 botId: target.botId,
                 threadId: target.threadId,
-                // Hide peer bot_message and background ticket busy/failed noise; waiting is handled above.
-                trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+                // Background ticket work stays silent; waiting is handled above.
+                trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
                 status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
               },
               // The id tiebreak keeps ordering deterministic under equal
@@ -395,8 +401,8 @@ export async function threadSnapshot(
                   where: {
                     botId: target.botId,
                     threadId: target.threadId,
-                    // Peer bot_message and background failures must not bury a user-visible failure.
-                    trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+                    // Background failures must not bury a user-visible failure.
+                    trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
                     status: { in: ["failed", "completed", "cancelled"] },
                   },
                   orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -404,16 +410,19 @@ export async function threadSnapshot(
                 })
               : null;
           const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
+          const liveRuns = activeRuns.filter((run) => run.trigger !== "bot_message");
           const liveEvents =
-            activeRuns.length > 0
+            liveRuns.length > 0
               ? await tx.event.findMany({
                   where: {
                     threadId: target.threadId,
-                    runId: { in: activeRuns.map((run) => run.id) },
+                    runId: { in: liveRuns.map((run) => run.id) },
                     type: {
                       in: [
                         "thread.progress",
                         "thread.subagent",
+                        "run.waiting_input",
+                        "computer.takeover.requested",
                         "agent.tool.called",
                         "agent.tool.completed",
                       ],
@@ -431,7 +440,7 @@ export async function threadSnapshot(
       botId: target.botId,
       threadId: target.threadId,
       cursor: core.last?.seq ?? -1,
-      messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
+      messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents, core.activeRuns),
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
@@ -485,6 +494,8 @@ export async function threadSnapshot(
                   in: [
                     "thread.progress",
                     "thread.subagent",
+                    "run.waiting_input",
+                    "computer.takeover.requested",
                     "agent.tool.called",
                     "agent.tool.completed",
                   ],
@@ -510,7 +521,7 @@ export async function threadSnapshot(
     members: target.members,
     threadId: target.threadId,
     cursor: core.last?.seq ?? -1,
-    messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
+    messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents, core.activeRuns),
     olderCursor: core.messagePage.olderCursor,
     // Match the live reducer: a failed latest terminal stays in run even while siblings are
     // still active or start late. A newer completed/cancelled terminal clears it.
@@ -538,7 +549,8 @@ function pickPrimaryPrivateActiveRun<T extends { status: string }>(
 ): T | undefined {
   return (
     runs.find((run) => run.status === "waiting_takeover") ??
-    runs.find((run) => QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status)) ??
+    runs.find((run) => run.status === "running") ??
+    runs.find((run) => run.status === "leased") ??
     runs[0]
   );
 }
@@ -562,8 +574,9 @@ function pickLatestTerminalRun<T extends { id: string; createdAt: Date; complete
 function messagesWithLiveEvents(
   persisted: ThreadSnapshot["messages"],
   liveEvents: Parameters<typeof projectMessages>[0],
+  runs: NonNullable<Parameters<typeof projectMessages>[1]>,
 ) {
-  const live = projectMessages(liveEvents).filter((message) => {
+  const live = projectMessages(liveEvents, runs).filter((message) => {
     if (message.blocks.some((block) => block.kind === "progress" || block.kind === "steps")) {
       return true;
     }
@@ -1319,6 +1332,28 @@ export async function markThreadRead(
 /** A chat only gets a divider when its unread dot was on, so replies seen live never do. */
 function dividerSeq(thread: { unread: boolean; lastReadSeq: number }, latestSeq: number) {
   return thread.unread && thread.lastReadSeq < latestSeq ? thread.lastReadSeq : null;
+}
+
+/**
+ * Marks the thread unread from one of its messages: the read cursor moves to just before it,
+ * so the next open puts the New divider above that message.
+ */
+export async function markThreadUnreadFrom(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+  messageId: string,
+) {
+  const message = await prisma.message.findFirst({
+    where: { id: messageId, threadId: target.threadId },
+    select: { seq: true },
+  });
+  if (!message) throw new ORPCError("NOT_FOUND");
+  const result = await prisma.thread.updateMany({
+    where: { id: target.threadId, spaceId: actor.spaceId, userId: actor.userId },
+    data: { unread: true, lastReadSeq: message.seq - 1 },
+  });
+  if (result.count > 1) throw new IsolationError();
 }
 
 export async function setThreadUnreadState(

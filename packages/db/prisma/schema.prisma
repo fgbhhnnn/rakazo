@@ -330,6 +330,7 @@ model Invitation {
 model DeploymentSettings {
   modelCreditsEnabled             Boolean  @default(false)
   id                              String   @id @default("default")
+  /// Deprecated: retained for rolling-release compatibility; never authorizes app users.
   ownerUserId                     String?
   signupsEnabled                  Boolean  @default(true)
   signupAllowlist                 String   @default("")
@@ -1068,6 +1069,11 @@ model Computer {
   scopeKey                String                   @unique
   homeKey                 String                   @unique
   homeRevision            String                   @default("empty")
+  /// Object storage only: random id naming the home's objects, its data key (wrapped by the
+  /// space key) and the revision stored there. Deleting the computer deletes the key.
+  homeStorageId           String?                  @unique
+  homeStorageKey          String?
+  homeStorageRevision     String?
   kind                    String
   providerRef             String?
   state                   String                   @default("stopped")
@@ -1481,6 +1487,7 @@ model ExternalMessage {
 
   @@unique([externalConversationId, providerEventId])
   @@index([status, nextAttemptAt])
+  @@index([externalConversationId, senderIsBot, createdAt])
   @@map("external_messages")
 }
 

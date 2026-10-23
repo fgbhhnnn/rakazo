@@ -16,6 +16,7 @@ import {
   McpTransportSchema,
   parseMcpOAuthAuthorizationParams,
 } from "./mcp.js";
+import { ModelHeadersSchema } from "./model-headers.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
 
@@ -25,6 +26,10 @@ export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
+/**
+ * Deprecated: bots have one avatar style. Kept so app versions that still send or read it
+ * keep working; the server ignores a sent style and always reports "organic".
+ */
 export const AvatarStyleSchema = z.enum(["robot", "organic"]);
 
 /** True for an IANA timezone this runtime can format in, such as "Pacific/Auckland". */
@@ -1167,6 +1172,7 @@ export const ModelCredentialSchema = z.object({
   label: z.string(),
   hasKey: z.boolean(),
   isDefault: z.boolean(),
+  headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
@@ -1219,6 +1225,7 @@ export const ModelConnectInputSchema = z
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
     gatewayId: z.string().optional(),
+    headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     label: z.string().optional(),
     modelId: z.string().optional(),
@@ -1515,6 +1522,7 @@ export const MeSchema = z.object({
   email: z.string().email(),
   name: z.string(),
   spaceId: Id,
+  /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
@@ -1532,7 +1540,7 @@ export const MeSchema = z.object({
    * Absent from servers that predate it.
    */
   timezone: z.string().nullable().optional(),
-  /** True when this deployment bills and the user is not the deployment owner. */
+  /** True when this deployment bills model usage. */
   billingEnabled: z.boolean(),
   /** The owner manages models, voice and integrations; hide those settings. */
   memberSettingsLocked: z.boolean().optional(),
@@ -1540,6 +1548,7 @@ export const MeSchema = z.object({
 export type Me = z.infer<typeof MeSchema>;
 
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 5000, 10000, 20000, 50000] as const;
+export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 2000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
 );

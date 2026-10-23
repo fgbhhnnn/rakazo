@@ -1,7 +1,6 @@
 import type {
   AccountSecurity,
   AuthCapabilities,
-  AvatarStyle,
   Bot,
   BotSection,
   ComputerMode,
@@ -44,7 +43,9 @@ import {
   reduceLiveMessageBlocks,
   replyMetadata,
   runFailureError,
+  settleRunSubagents,
   signupRequiresEmailVerification,
+  stopsRunHelpers,
   takeLiveMessage,
   updateCloudAgentMessages,
   upsertMessageById,
@@ -52,7 +53,6 @@ import {
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
-import { getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
@@ -305,13 +305,11 @@ async function clearCredentialsForEndpointChange(): Promise<
       ok: true;
       previousToken: string;
       previousSpace: string;
-      previousAvatarStyle: AvatarStyle;
     }
   | { ok: false; result: EndpointResult }
 > {
   const previousToken = await snapshotSessionToken();
   const previousSpace = await snapshotSpace();
-  const previousAvatarStyle = getCachedAvatarStyle();
   if (!previousToken.ok || !previousSpace.ok) {
     return {
       ok: false,
@@ -342,11 +340,10 @@ async function clearCredentialsForEndpointChange(): Promise<
       ok: true,
       previousToken: previousToken.value,
       previousSpace: previousSpace.value,
-      previousAvatarStyle,
     };
   }
 
-  await restoreCredentials(previousToken.value, previousSpace.value, previousAvatarStyle);
+  await restoreCredentials(previousToken.value, previousSpace.value);
   return {
     ok: false,
     result: {
@@ -356,13 +353,8 @@ async function clearCredentialsForEndpointChange(): Promise<
   };
 }
 
-async function restoreCredentials(
-  previousToken: string,
-  previousSpace: string,
-  previousAvatarStyle: AvatarStyle,
-) {
+async function restoreCredentials(previousToken: string, previousSpace: string) {
   if (previousToken) await restoreSessionToken(previousToken);
-  await saveAvatarStyle(previousAvatarStyle);
   if (previousSpace) {
     cachedSpaceId = previousSpace;
     bumpSpaceSelectionGeneration();
@@ -426,7 +418,6 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     | {
         previousToken: string;
         previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
       }
     | undefined;
   if (parsed.url !== previous) {
@@ -438,11 +429,7 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
     if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
+      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
     }
     return { ok: false, error: t("Could not save the server URL") };
   }
@@ -458,7 +445,6 @@ export async function resetApiBase(): Promise<EndpointResult> {
     | {
         previousToken: string;
         previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
       }
     | undefined;
   if (url !== previous) {
@@ -470,11 +456,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
     await SecureStore.deleteItemAsync(ENDPOINT_KEY);
   } catch {
     if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
+      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
@@ -1068,13 +1050,13 @@ export type MobileMe = Pick<
   | "hostCredentialProvider"
   | "hostCredentialSource"
   | "needsModel"
-  | "avatarStyle"
   | "isDeploymentOwner"
   | "memberSettingsLocked"
 > & { billingEnabled?: boolean };
 
 export type MobileModel = ModelCatalogEntry;
 
+/** Shared DTO includes headerNames only; header values remain in the server secret. */
 export type MobileModelCredential = ModelCredential;
 
 export type MobileMessage = {
@@ -1351,6 +1333,10 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev || event.type === "heartbeat") return prev;
+  if (stopsRunHelpers(event)) {
+    const messages = settleRunSubagents(prev.messages, event.runId);
+    if (messages !== prev.messages) prev = { ...prev, messages };
+  }
   if (event.type === "thread.cleared") {
     return {
       ...prev,

@@ -32,6 +32,7 @@ import {
   anySignal,
   attachmentsForThread,
   buildComposerMentionOptions,
+  chatUserBubbleColors,
   createChatQueues,
   dismissableAskMessageIds,
   foldPeerReplies,
@@ -40,6 +41,7 @@ import {
   isRetryableError,
   isRunTerminalEvent,
   isRunWorking,
+  jumpTargetId,
   reorderBotTo,
   resolveComposerSendPlan,
   runThreadSubscription,
@@ -50,7 +52,6 @@ import {
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import {
-  AvatarStyleProvider,
   BotAvatar,
   Button,
   DropdownMenu,
@@ -385,6 +386,7 @@ function SpaceShell() {
   }, setLogOutError);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [modelFocusRequest, setModelFocusRequest] = useState(0);
   const [panel, setPanelState] = useState<Panel>(null);
   const [restoredPanelKey, setRestoredPanelKey] = useState<string | null>(null);
   const panelStorageKeyRef = useRef<string | null>(null);
@@ -399,6 +401,7 @@ function SpaceShell() {
     pendingPanelRestore.current = null;
     pendingExplicitPanel.current = panelStorageKeyRef.current === null;
     setRestoredPanelKey(panelStorageKeyRef.current);
+    setModelFocusRequest(0);
     setPanelState(next);
     const currentSearch = panelSearch.current;
     if (currentSearch.searchParams.has("routine")) {
@@ -806,6 +809,10 @@ function SpaceShell() {
       cancelled = true;
     };
   }, [hiddenLookupMissing, botId, bots, groups, navigate]);
+  const userBubble = useMemo(
+    () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),
+    [active?.color, active?.id],
+  );
   const computerBot =
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
   computerOpenRef.current = computerOpen;
@@ -875,32 +882,36 @@ function SpaceShell() {
       );
     });
   }, []);
-  // `stillWanted` lets an automatic read that waited in the queue skip once the user has left.
+  // `stillWanted` makes it an automatic read: one that waited in the queue skips once the user
+  // has left. Only an explicit read clears a Mark as Unread hold, and it does so up front, so an
+  // automatic read answering after the user marked the chat unread can't undo the hold.
   const markBotRead = useCallback(
-    async (id: string, stillWanted: () => boolean = () => true) => {
+    async (id: string, stillWanted?: () => boolean) => {
+      if (!stillWanted) manuallyUnread.current.delete(id);
       const answer = await readInOrder(`bot:${id}`, () =>
-        stillWanted() ? rpc.threads.markRead({ botId: id }) : Promise.resolve(null),
+        !stillWanted || stillWanted() ? rpc.threads.markRead({ botId: id }) : Promise.resolve(null),
       );
       if (!answer) return undefined;
-      const { unreadAfterSeq } = answer;
-      manuallyUnread.current.delete(id);
-      updateBotUnread(id, false);
-      return unreadAfterSeq;
+      if (!manuallyUnread.current.has(id)) updateBotUnread(id, false);
+      return answer.unreadAfterSeq;
     },
     [readInOrder, updateBotUnread],
   );
   const markBotUnread = useCallback(
-    async (id: string) => {
+    async (id: string, messageId?: string) => {
       manuallyUnread.current.add(id);
       try {
-        await rpc.threads.markUnread({ botId: id });
+        // Through the chat's read queue, so a read already sent lands first and this one wins.
+        await readInOrder(`bot:${id}`, () =>
+          rpc.threads.markUnread({ botId: id, ...(messageId ? { messageId } : {}) }),
+        );
       } catch (err) {
         manuallyUnread.current.delete(id);
         throw err;
       }
       updateBotUnread(id, true);
     },
-    [updateBotUnread],
+    [readInOrder, updateBotUnread],
   );
   // A bot the user marked unread by hand stays unread until they open it again,
   // otherwise the auto-read below would undo the action on the next window focus.
@@ -909,7 +920,11 @@ function SpaceShell() {
       if (manuallyUnread.current.has(id)) return;
       if (document.visibilityState === "visible" && document.hasFocus()) {
         const visit = readVisit.current.visit;
-        void markBotRead(id, () => autoReadStillWanted(readVisit.current.visit, visit))
+        void markBotRead(
+          id,
+          () =>
+            !manuallyUnread.current.has(id) && autoReadStillWanted(readVisit.current.visit, visit),
+        )
           .then((seq) => {
             if (seq !== undefined) captureReadBoundary(visit, seq);
           })
@@ -1518,13 +1533,15 @@ function SpaceShell() {
       if (
         document.visibilityState !== "visible" ||
         !document.hasFocus() ||
-        readVisibleGroups.current.has(groupId)
+        readVisibleGroups.current.has(groupId) ||
+        // A group the user marked unread stays unread until they open it again.
+        manuallyUnread.current.has(groupId)
       )
         return;
       readVisibleGroups.current.add(groupId);
       const visit = readVisit.current.visit;
       void readInOrder(`group:${groupId}`, () =>
-        autoReadStillWanted(readVisit.current.visit, visit)
+        !manuallyUnread.current.has(groupId) && autoReadStillWanted(readVisit.current.visit, visit)
           ? rpc.threads.markRead({ groupId })
           : Promise.resolve(null),
       )
@@ -1872,14 +1889,16 @@ function SpaceShell() {
     if (target.botId && activeBotId.current !== target.botId) return;
     // A reply folded under its peer marker counts: the transcript expands the marker to show it.
     const pageTranscript = foldPeerReplies(page.messages, { includePeerReceipts: true });
+    // A relay's dropped marker (e.g. a search hit) lands on its "Messaged X" receipt.
+    const messageId = jumpTargetId(pageTranscript, target.messageId);
     const targetInPage =
-      pageTranscript.markerOf.has(target.messageId) ||
-      pageTranscript.messages.some((message) => message.id === target.messageId);
+      pageTranscript.markerOf.has(messageId) ||
+      pageTranscript.messages.some((message) => message.id === messageId);
     expandedHistoryThread.current = targetInPage ? page.threadId : null;
     pinnedAroundRef.current = targetInPage
       ? {
           ...threadTarget,
-          messageId: target.messageId,
+          messageId,
           threadId: page.threadId,
           messages: page.messages,
           olderCursor: page.olderCursor,
@@ -1911,7 +1930,7 @@ function SpaceShell() {
     if (targetInPage) {
       // The transcript owns the scroll: it retries until the pinned row is
       // mounted and unfollows the tail, so live commits cannot cancel it.
-      setScrollRequest({ messageId: target.messageId, nonce: jumpId });
+      setScrollRequest({ messageId, nonce: jumpId });
     } else {
       window.requestAnimationFrame(() => {
         if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
@@ -2180,7 +2199,8 @@ function SpaceShell() {
 
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
-  const jumpToReplyMessage = useCallback((messageId: string) => {
+  const jumpToReplyMessage = useCallback((replyId: string) => {
+    const messageId = jumpTargetId(transcriptRef.current, replyId);
     const inTranscript =
       transcriptRef.current.markerOf.has(messageId) ||
       document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
@@ -2890,7 +2910,11 @@ function SpaceShell() {
     const bootInFlight = bootsInFlight.current.has(id) || targetComputer?.state === "booting";
     setComputerOpen(true);
     computerVisible.current = true;
-    if (bootInFlight && !takeControl) return true;
+    if (bootInFlight && !takeControl) {
+      // An external boot may have finished since this snapshot was cached.
+      if (!bootsInFlight.current.has(id)) await refreshComputerFor(id).catch(() => undefined);
+      return true;
+    }
     const needsTakeover = takeControl && !userHoldsComputerControl(targetComputer, id);
     const blocked = computerTakeoverBlocked(targetComputer, snapshot?.run?.status);
     try {
@@ -3023,9 +3047,12 @@ function SpaceShell() {
           const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
           void request.catch(() => undefined);
         } else {
-          const request = unread
-            ? rpc.threads.markUnread({ groupId: contextGroup!.id })
-            : rpc.threads.markRead({ groupId: contextGroup!.id });
+          const groupId = contextGroup!.id;
+          if (unread) manuallyUnread.current.add(groupId);
+          else manuallyUnread.current.delete(groupId);
+          const request = readInOrder(`group:${groupId}`, () =>
+            unread ? rpc.threads.markUnread({ groupId }) : rpc.threads.markRead({ groupId }),
+          );
           void request
             .then(() =>
               setGroups((current) =>
@@ -3034,7 +3061,10 @@ function SpaceShell() {
                 ),
               ),
             )
-            .catch(() => undefined);
+            .catch(() => {
+              // A failed Mark as Unread leaves the group as it was, readable again.
+              if (unread) manuallyUnread.current.delete(groupId);
+            });
         }
       }}
       onMoveToSection={(sectionId) => {
@@ -3513,6 +3543,7 @@ function SpaceShell() {
             running={transcriptRunning}
             workingBots={workingBots}
             backgroundTasks={activeSnapshot?.backgroundTasks}
+            userBubble={userBubble}
             onCallBack={
               bootstrapMe?.phoneCallsEnabled && !inGroup && active
                 ? () => callBot(active)
@@ -3524,6 +3555,25 @@ function SpaceShell() {
             onReply={(message) => {
               setReplyTarget(message);
               setReplyQuote(null);
+            }}
+            onMarkUnread={(message) => {
+              // The next open of this chat starts the New divider at this message.
+              if (groupId) {
+                manuallyUnread.current.add(groupId);
+                void readInOrder(`group:${groupId}`, () =>
+                  rpc.threads.markUnread({ groupId, messageId: message.id }),
+                )
+                  .then(() =>
+                    setGroups((current) =>
+                      current.map((group) =>
+                        group.id === groupId ? { ...group, unread: true } : group,
+                      ),
+                    ),
+                  )
+                  .catch(() => manuallyUnread.current.delete(groupId));
+              } else if (active) {
+                void markBotUnread(active.id, message.id).catch(() => undefined);
+              }
             }}
             onQuote={(message, quote) => {
               setReplyTarget(message);
@@ -3561,7 +3611,12 @@ function SpaceShell() {
             pendingAttachments={activePendingAttachments}
             attachmentNotice={attachmentNotice}
             sendError={sendError}
-            onOpenModels={() => openSettings("models")}
+            onOpenModels={() => {
+              if (active && !inGroup) {
+                setPanel("settings");
+                setModelFocusRequest(Date.now());
+              } else openSettings("models");
+            }}
             runError={displayedRunError}
             runErrorId={displayedRunErrorId}
             onRunErrorPresented={handleRunErrorPresented}
@@ -3617,9 +3672,7 @@ function SpaceShell() {
             panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-muted-foreground">
-                  {panel === "settings" ? (
-                    <Trans>Settings</Trans>
-                  ) : active ? (
+                  {panel === "settings" ? null : active ? (
                     (computer?.state ?? active.status)
                   ) : (
                     <Trans>Group</Trans>
@@ -3646,7 +3699,11 @@ function SpaceShell() {
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
                       className={panel === "settings" ? "text-foreground" : "text-muted-foreground"}
                     >
-                      <Settings size={16} strokeWidth={1.7} />
+                      {panel === "settings" ? (
+                        <Monitor size={16} strokeWidth={1.7} />
+                      ) : (
+                        <Settings size={16} strokeWidth={1.7} />
+                      )}
                     </Button>
                   ) : null}
                   <Button
@@ -3678,11 +3735,7 @@ function SpaceShell() {
                   holdComputerRecovery();
                 }}
                 onRecoveryDismissed={releaseComputerRecovery}
-                onOpenComputerSettings={
-                  bootstrapMe?.isDeploymentOwner === true
-                    ? () => openSettings("computer")
-                    : undefined
-                }
+                onOpenComputerSettings={() => openSettings("computer")}
                 onOpen={() => void openComputer()}
                 routines={activeRoutines}
                 runningRoutineId={
@@ -3743,6 +3796,8 @@ function SpaceShell() {
               <BotSettings
                 key={active.id}
                 bot={active}
+                focusModel={modelFocusRequest}
+                onOpenConnections={() => openSettings("models")}
                 memoryProviderConfigured={memoryProviderConfig != null}
                 onSkillsChange={setAgentSkills}
                 onSave={async ({ computerMode, ...patch }) => {
@@ -4066,7 +4121,6 @@ function SpaceShell() {
             usage={usage}
             onUsageOpen={refreshUsage}
             initialSection={settingsSection}
-            avatarStyle={bootstrapMe?.avatarStyle ?? "organic"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             memberSettingsLocked={bootstrapMe?.memberSettingsLocked === true}
             billingEnabled={bootstrapMe?.billingEnabled === true}
@@ -4078,13 +4132,6 @@ function SpaceShell() {
             onOpenMessaging={() => {
               setSettingsOpen(false);
               setMessagingSettingsOpen(true);
-            }}
-            onAvatarStyleChange={async (avatarStyle) => {
-              const nextMe = await rpc.preferences.update({ avatarStyle });
-              // Merge only the saved field: a concurrent save's response must not be undone.
-              setBootstrapMe((prev) =>
-                prev ? { ...prev, avatarStyle: nextMe.avatarStyle } : nextMe,
-              );
             }}
             timezone={bootstrapMe?.timezone ?? null}
             onTimezoneChange={async (timezone) => {
@@ -4158,9 +4205,7 @@ function SpaceShell() {
     </BotsSidebarLayout>
   );
 
-  return (
-    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "organic"}>{shell}</AvatarStyleProvider>
-  );
+  return shell;
 }
 
 function firstThreadRoute(

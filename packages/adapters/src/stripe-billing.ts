@@ -12,7 +12,7 @@ import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@ra
 import { ModelCreditAmountSchema } from "@rakazo/contracts";
 import { z } from "zod";
 
-export const STRIPE_API_VERSION = "2025-08-27.basil";
+export const STRIPE_API_VERSION = "2026-09-30.endive";
 const WEBHOOK_TOLERANCE_SECONDS = 300;
 const MAX_RETRIES = 2;
 const MAX_RETRY_DELAY_MS = 5_000;
@@ -150,8 +150,10 @@ export class StripeBillingProvider implements BillingProvider {
       line_items: [{ price: this.config.priceId, quantity: input.seats }],
       payment_method_collection: "always",
       allow_promotion_codes: true,
-      subscription_data:
-        input.trialDays === undefined ? undefined : { trial_period_days: input.trialDays },
+      subscription_data: {
+        billing_mode: { type: "classic" },
+        ...(input.trialDays === undefined ? {} : { trial_period_days: input.trialDays }),
+      },
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });
@@ -175,7 +177,7 @@ export class StripeBillingProvider implements BillingProvider {
       await this.request("POST", "/v1/checkout/sessions", {
         customer: input.customerId,
         mode: input.monthly ? "subscription" : "payment",
-        payment_method_types: ["card"],
+        allowed_payment_method_types: ["card"],
         adaptive_pricing: { enabled: false },
         line_items: [
           input.monthly
@@ -191,7 +193,7 @@ export class StripeBillingProvider implements BillingProvider {
         ],
         metadata,
         ...(input.monthly
-          ? { subscription_data: { metadata } }
+          ? { subscription_data: { metadata, billing_mode: { type: "classic" } } }
           : { payment_intent_data: { metadata }, invoice_creation: { enabled: true } }),
         success_url: input.successUrl,
         cancel_url: input.cancelUrl,

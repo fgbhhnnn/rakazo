@@ -1,10 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import type { AccountSecurity } from "@rakazo/contracts";
 import { accountDisplay, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import {
-  BotAvatar,
   Button,
-  buttonVariants,
   Field,
   FieldLabel,
   Input,
@@ -13,22 +11,18 @@ import {
   NativeSelectOption,
   OptionSelect,
   Switch,
-  Toggle,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
-import { Link } from "react-router-dom";
 import { AccountAccess } from "../components/AccountAccess";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { MemberAccessSettings } from "../components/MemberAccessSettings";
 import { PasskeySettings } from "../components/PasskeySettings";
-import type { ServerUpdateLoad } from "../components/SoftwareUpdateSection";
-import { hasServerUpdates, SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import {
@@ -64,8 +58,6 @@ import { authErrorText } from "../lib/user-error";
 export type SettingsGeneralProps = {
   email?: string | null;
   name: string;
-  avatarStyle: AvatarStyle;
-  onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
@@ -77,8 +69,6 @@ export type SettingsGeneralProps = {
 export function GeneralSettingsPanels({
   email,
   name,
-  avatarStyle,
-  onAvatarStyleChange,
   timezone = null,
   onTimezoneChange,
   messagingEnabled = false,
@@ -117,8 +107,6 @@ export function GeneralSettingsPanels({
     () => getRemoteImagesPreference() === "on",
   );
   const loadRemoteImagesId = useId();
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const timezoneId = useId();
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
@@ -132,19 +120,6 @@ export function GeneralSettingsPanels({
       if (requestId !== localeRequestRef.current) return;
       setLocale(activated);
     });
-  }
-
-  async function chooseAvatarStyle(next: AvatarStyle) {
-    if (avatarPending || next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
-    try {
-      await onAvatarStyleChange(next);
-    } catch {
-      setAvatarError(t`Couldn't update avatars`);
-    } finally {
-      setAvatarPending(false);
-    }
   }
 
   async function chooseTimezone(next: string) {
@@ -281,47 +256,6 @@ export function GeneralSettingsPanels({
             </p>
           ) : null}
         </section>
-      ) : null}
-
-      <section
-        className="rounded-xl border border-border px-4 py-4"
-        data-testid="avatar-style-select"
-      >
-        <h3 className="text-[15px] font-medium text-foreground">
-          <Trans>Avatars</Trans>
-        </h3>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {(["robot", "organic"] as const).map((style) => (
-            <Toggle
-              key={style}
-              variant="outline"
-              pressed={style === avatarStyle}
-              disabled={avatarPending}
-              onPressedChange={() => void chooseAvatarStyle(style)}
-              data-testid={`avatar-style-${style}`}
-              className="h-auto justify-start gap-3 px-3.5 py-3 text-[14px] font-normal"
-            >
-              <BotAvatar
-                color="#D9508A"
-                identity="avatar-style-preview"
-                size={32}
-                variant={style}
-              />
-              <span>{style === "robot" ? <Trans>Robot</Trans> : <Trans>Organic</Trans>}</span>
-            </Toggle>
-          ))}
-        </div>
-        {avatarError ? (
-          <p role="alert" className="mt-3 text-[12.5px] text-destructive">
-            {avatarError}
-          </p>
-        ) : null}
-      </section>
-
-      {isDeploymentOwner ? (
-        <Link to="/integrations/setup" className={buttonVariants({ variant: "outline" })}>
-          <Trans>Server integrations</Trans>
-        </Link>
       ) : null}
 
       {isDeploymentOwner ? <MemberAccessSettings /> : null}
@@ -467,11 +401,10 @@ export function ComputerSettingsPanel({
   );
 }
 
-export function UpdatesSettingsPanel({ serverUpdate }: { serverUpdate: ServerUpdateLoad }) {
+export function UpdatesSettingsPanel() {
   return (
     <div className="space-y-5">
       <DesktopUpdateSection />
-      {hasServerUpdates(serverUpdate) ? <SoftwareUpdateSection load={serverUpdate} /> : null}
     </div>
   );
 }
