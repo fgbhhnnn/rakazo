@@ -139,6 +139,7 @@ import {
   settleReleasedTakeoverCards,
   sharedModelScope,
   validateInstructionProposal,
+  withinScope,
   writeBotInstructions,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -9876,7 +9877,19 @@ async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMateria
     args[3] = null;
   }
   const credential = args[3];
-  const material = await resolveModelKeyMaterial(...args);
+  // A member on the owner's shared model reads (and refreshes) the owner's key as the owner.
+  const raw = await withinScope(scope, () => resolveModelKeyMaterial(...args));
+  const { persistOAuth, retireOAuth } = raw;
+  const material = {
+    ...raw,
+    persistOAuth: persistOAuth
+      ? (next: AgentModelOAuthCredential) => withinScope(scope, () => persistOAuth(next))
+      : undefined,
+    retireOAuth: retireOAuth
+      ? (...retire: Parameters<typeof retireOAuth>) =>
+          withinScope(scope, () => retireOAuth(...retire))
+      : undefined,
+  };
   const callObserver =
     !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;
   return { ...material, callObserver };
