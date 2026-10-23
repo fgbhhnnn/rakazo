@@ -848,6 +848,10 @@ msgstr "Atrás"
 msgid "Back to sign in"
 msgstr "Volver a iniciar sesión"
 
+#: src/pages/shell/transcript.tsx
+msgid "Background tasks running ({count})"
+msgstr ""
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "Modelos de respaldo"
@@ -4806,7 +4810,6 @@ msgstr ""
 msgid "Steps"
 msgstr "Pasos"
 
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"

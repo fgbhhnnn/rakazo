@@ -3512,6 +3512,7 @@ function SpaceShell() {
             dismissableAskIds={dismissableAskIds}
             running={transcriptRunning}
             workingBots={workingBots}
+            backgroundTasks={activeSnapshot?.backgroundTasks}
             onCallBack={
               bootstrapMe?.phoneCallsEnabled && !inGroup && active
                 ? () => callBot(active)
@@ -3555,7 +3556,6 @@ function SpaceShell() {
             draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
             enterToSend={enterToSend}
             activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
-            running={composerRunning}
             disabled={Boolean(recordingSkill)}
             pendingAttachments={activePendingAttachments}
             attachmentNotice={attachmentNotice}
@@ -3570,7 +3570,6 @@ function SpaceShell() {
             onAttachmentPick={onAttachmentPick}
             onRemoveAttachment={removeAttachment}
             onSend={sendMessage}
-            onStop={stopRun}
             phoneCallsEnabled={bootstrapMe?.phoneCallsEnabled === true}
             dictationTranscribe={voiceStatus ? Boolean(voiceStatus.transcribe) : undefined}
             artifactTarget={transcriptArtifactTarget}

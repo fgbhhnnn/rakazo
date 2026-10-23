@@ -1,4 +1,6 @@
 import { ACTIVE_RUN_STATUSES, BACKGROUND_RUN_TRIGGERS, plainTextFromMarkdown } from "@rakazo/core";
+import { HIDDEN_BOT_SPAWN_PREFIX } from "./bot-visibility.js";
+import type { PrismaClient } from "./client.js";
 
 export const activeRunStatuses = [...ACTIVE_RUN_STATUSES];
 const backgroundRunTriggers = [...BACKGROUND_RUN_TRIGGERS];
@@ -40,4 +42,62 @@ export function previewFromBlocks(blocks: unknown): string {
     }
   }
   return "";
+}
+
+/**
+ * Background work per main bot: worker runs still active plus tasks waiting in the queue.
+ * Workers are hidden bots, so without this the main bot looks idle while they work.
+ */
+export async function backgroundTaskCounts(
+  prisma: Pick<PrismaClient, "run" | "backgroundTaskQueue">,
+  botIds: readonly string[],
+): Promise<Map<string, { running: number; queued: number }>> {
+  const counts = new Map<string, { running: number; queued: number }>();
+  if (botIds.length === 0) return counts;
+  const entry = (id: string) => {
+    let value = counts.get(id);
+    if (!value) {
+      value = { running: 0, queued: 0 };
+      counts.set(id, value);
+    }
+    return value;
+  };
+  const [runs, queued] = await Promise.all([
+    prisma.run.findMany({
+      where: {
+        status: { in: activeRunStatuses },
+        bot: {
+          OR: botIds.map((id) => ({
+            spawnKey: { startsWith: `${HIDDEN_BOT_SPAWN_PREFIX}${id}:` },
+          })),
+        },
+      },
+      select: { botId: true, bot: { select: { spawnKey: true } } },
+    }),
+    prisma.backgroundTaskQueue.groupBy({
+      by: ["botId"],
+      where: { botId: { in: [...botIds] }, status: "queued" },
+      _count: { _all: true },
+    }),
+  ]);
+  const busyWorkers = new Map<string, Set<string>>();
+  for (const run of runs) {
+    const owner = run.bot.spawnKey?.slice(HIDDEN_BOT_SPAWN_PREFIX.length).split(":")[0];
+    if (!owner) continue;
+    const workers = busyWorkers.get(owner) ?? new Set<string>();
+    workers.add(run.botId);
+    busyWorkers.set(owner, workers);
+  }
+  for (const [owner, workers] of busyWorkers) entry(owner).running = workers.size;
+  for (const row of queued) entry(row.botId).queued = row._count._all;
+  return counts;
+}
+
+/** Roster status for a main bot: its own run first, else "running" while background work is on. */
+export function rosterStatus(
+  ownStatus: string | undefined,
+  background: { running: number; queued: number } | undefined,
+) {
+  if (ownStatus) return ownStatus;
+  return background && background.running + background.queued > 0 ? "running" : "idle";
 }

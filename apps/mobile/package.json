@@ -6,6 +6,11 @@
   "expo": {
     "autolinking": {
       "nativeModulesDir": "./modules"
+    },
+    "install": {
+      "exclude": [
+        "expo-notifications"
+      ]
     }
   },
   "scripts": {

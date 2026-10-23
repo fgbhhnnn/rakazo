@@ -313,6 +313,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "{name} (over {limit})": "{name} (meer dan {limit})",
   "{name} (permission denied)": "{name} (geen toestemming)",
   "{name} (unsupported type)": "{name} (niet-ondersteund type)",
+  "Background tasks running ({count})": "Achtergrondtaken bezig ({count})",
   "{name} is working": "{name} is aan het werk",
   Advanced: "Geavanceerd",
   Color: "Kleur",

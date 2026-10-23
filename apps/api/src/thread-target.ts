@@ -27,6 +27,7 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
+  backgroundTaskCounts,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
@@ -336,7 +337,8 @@ export async function threadSnapshot(
   // otherwise advance the client cursor past thread.message.created while the
   // ask message page still omits it — leaving waiting_input with no AskCard.
   if (target.kind === "bot") {
-    const [busyBotName, core] = await Promise.all([
+    const [background, busyBotName, core] = await Promise.all([
+      backgroundTaskCounts(deps.prisma, [target.botId]),
       resolveBusyBotName(deps.prisma, {
         computerId: target.bot.computer?.id,
         botId: target.botId,
@@ -430,6 +432,7 @@ export async function threadSnapshot(
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
+      backgroundTasks: background.get(target.botId) ?? { running: 0, queued: 0 },
       computer: toComputerStatus(target.botId, target.bot.computer, busyBotName),
     };
   }

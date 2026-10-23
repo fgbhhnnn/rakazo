@@ -70,6 +70,9 @@ async function main() {
     process.env.SANDBOX_PROVIDER = sandboxProvider;
     process.env.AGENT_RUNTIME = agentRuntime;
     process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
+    // Same pin as unit tests (pin-test-env.ts): specs drive a bot that uses its own tools. Dispatcher
+    // mode (main bot hands heavy work to background workers) has its own integration tests.
+    process.env.RAKAZO_DISPATCHER_MODE ??= "0";
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";

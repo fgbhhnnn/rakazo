@@ -1076,6 +1076,10 @@ export const ThreadSnapshotSchema = z.object({
   members: z.array(GroupMemberSchema).optional(),
   run: RunSchema.nullable(),
   activeRuns: z.array(RunSchema).optional(),
+  /** Hidden background workers of this main bot: busy workers and tasks waiting for a slot. */
+  backgroundTasks: z
+    .object({ running: z.number().int().nonnegative(), queued: z.number().int().nonnegative() })
+    .optional(),
   computer: ComputerStatusSchema.optional(),
 });
 export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;

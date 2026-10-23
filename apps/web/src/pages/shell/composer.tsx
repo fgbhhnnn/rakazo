@@ -12,7 +12,7 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
-import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
+import { ArrowUp, Box, Paperclip, Plus, Settings, X } from "lucide-react";
 import type { ClipboardEvent, DragEvent, RefObject } from "react";
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
@@ -42,7 +42,6 @@ const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
 export const Composer = memo(function Composer({
   artifactTarget,
   activeName,
-  running,
   disabled,
   pendingAttachments,
   attachmentNotice,
@@ -57,7 +56,6 @@ export const Composer = memo(function Composer({
   onAttachmentPick,
   onRemoveAttachment,
   onSend,
-  onStop,
   phoneCallsEnabled,
   dictationTranscribe,
   replyTarget,
@@ -72,7 +70,6 @@ export const Composer = memo(function Composer({
   enterToSend,
 }: {
   activeName?: string;
-  running: boolean;
   disabled?: boolean;
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
@@ -87,7 +84,6 @@ export const Composer = memo(function Composer({
   onAttachmentPick: (files: FileList | null) => boolean;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
-  onStop: () => Promise<void>;
   phoneCallsEnabled?: boolean;
   /** Hold-to-talk falls back to the voice provider's transcription; undefined while unknown. */
   dictationTranscribe?: boolean;
@@ -752,31 +748,6 @@ export const Composer = memo(function Composer({
         >
           {talk.recording?.locked ? (
             <HoldToTalkControls talk={talk} />
-          ) : running ? (
-            <>
-              {phoneCallsEnabled && draft.trim().length === 0 ? (
-                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
-              ) : null}
-              <Button
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || !canSend || disabled}
-                onClick={send}
-                className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={t`Stop`}
-                disabled={sending}
-                onClick={() => void onStop()}
-                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <Square size={11} strokeWidth={0} fill="currentColor" />
-              </Button>
-            </>
           ) : (
             <>
               {phoneCallsEnabled && draft.trim().length === 0 ? (

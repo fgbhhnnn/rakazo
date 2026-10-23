@@ -35,13 +35,11 @@ type ThreadComposerProps = {
   attachmentIds: string[];
   botId?: string;
   onCall: boolean;
-  working: boolean;
   sending: boolean;
   styles: { circleButton: ViewStyle; composerFill: ViewStyle };
   attachActions: MenuAction[];
   attachFrom: (source: string) => void;
   send: () => Promise<void>;
-  stop: () => Promise<void>;
   startVoiceCall: () => Promise<void>;
   onSlashAction: (action: SlashActionId) => void;
 };
@@ -57,13 +55,11 @@ export function ThreadComposer({
   attachmentIds,
   botId,
   onCall,
-  working,
   sending,
   styles,
   attachActions,
   attachFrom,
   send,
-  stop,
   startVoiceCall,
   onSlashAction,
 }: ThreadComposerProps) {
@@ -535,22 +531,6 @@ export function ThreadComposer({
             </Pressable>
           )}
         </GlassSurface>
-        {working ? (
-          <Pressable
-            accessibilityLabel={t("Stop")}
-            disabled={sending}
-            onPress={() => void stop()}
-            style={{ width: 44, height: 44, opacity: sending ? 0.5 : 1 }}
-          >
-            <GlassSurface
-              shape="circle"
-              style={styles.circleButton}
-              fallbackStyle={{ borderColor: tokens.glassStroke, borderWidth: 1 }}
-            >
-              <NativeSymbol ios="stop.fill" android="stop" size={15} color={tokens.foreground} />
-            </GlassSurface>
-          </Pressable>
-        ) : null}
       </View>
     </>
   );

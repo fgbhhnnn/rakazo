@@ -16,7 +16,13 @@ import { createThreadMessageInTransaction } from "./messages.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
-import { activeRunSelection, latestBotRunSelection, previewFromBlocks } from "./thread-listing.js";
+import {
+  activeRunSelection,
+  backgroundTaskCounts,
+  latestBotRunSelection,
+  previewFromBlocks,
+  rosterStatus,
+} from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
@@ -193,6 +199,10 @@ export function createRepos(
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
+    const background = await backgroundTaskCounts(
+      prisma,
+      bots.map((bot) => bot.id),
+    );
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
       return {
@@ -207,7 +217,7 @@ export function createRepos(
         unread: bot.thread.unread,
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
-        status: bot.runs[0]?.status ?? "idle",
+        status: rosterStatus(bot.runs[0]?.status, background.get(bot.id)),
         runErrorId: rosterRunErrorId(bot.thread.runs[0], bot.runs[0]),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
@@ -424,6 +434,10 @@ export function createRepos(
         for (const id of missing) checkedRunIds.add(id);
       };
       await classifyRunIds(candidateRunIds);
+      const background = await backgroundTaskCounts(
+        prisma,
+        bots.map((bot) => bot.id),
+      );
       return Promise.all(
         bots.map(async (bot) => {
           let messages = bot.thread?.messages ?? [];
@@ -462,7 +476,7 @@ export function createRepos(
           return mapBot(
             bot,
             preview,
-            bot.runs[0]?.status ?? "idle",
+            rosterStatus(bot.runs[0]?.status, background.get(bot.id)),
             rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
             updatedAt,
             ringingCall(

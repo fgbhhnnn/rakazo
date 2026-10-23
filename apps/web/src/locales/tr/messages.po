@@ -848,6 +848,10 @@ msgstr "Geri"
 msgid "Back to sign in"
 msgstr "Oturum açmaya geri dön"
 
+#: src/pages/shell/transcript.tsx
+msgid "Background tasks running ({count})"
+msgstr ""
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "Yedek modeller"
@@ -4806,7 +4810,6 @@ msgstr ""
 msgid "Steps"
 msgstr "Adımlar"
 
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"

@@ -168,6 +168,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "{count}h ago": "{count} ч назад",
   "{count}d ago": "{count} дн. назад",
   "{name} is using it": "{name} использует это",
+  "Background tasks running ({count})": "Фоновые задачи выполняются ({count})",
   "{name} is working": "{name} работает",
   "{name}’s computer": "Компьютер {name}",
   "{runs} runs · {tokens} tokens": "Запусков: {runs} · токенов: {tokens}",

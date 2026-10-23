@@ -1125,6 +1125,7 @@ export type MobileSnapshot = {
     error?: string | null;
   } | null;
   activeRuns?: Array<{ id: string; botId?: string; status: string }>;
+  backgroundTasks?: { running: number; queued: number };
   members?: MobileGroup["members"];
   computer?: {
     state: string;

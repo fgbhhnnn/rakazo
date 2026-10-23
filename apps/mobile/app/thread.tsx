@@ -741,7 +741,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
-  const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
+  // Hidden background workers keep the main bot visibly busy (green dot + working line).
+  const backgroundCount =
+    !inGroup && snap?.backgroundTasks
+      ? snap.backgroundTasks.running + snap.backgroundTasks.queued
+      : 0;
+  const ownRunActive = isActiveStatus(snap?.run?.status);
+  const backgroundOnly = !ownRunActive && backgroundCount > 0;
+  const currentBotStatus = snap
+    ? backgroundOnly
+      ? "running"
+      : snap.run?.status
+    : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
   const activeGroupBots = useMemo(() => {
     if (!inGroup) return [];
@@ -758,7 +769,6 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
   // card is the state: no typing dots under it.
   const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
-  const working = inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus);
 
   const speakFinishedReply = useCallback(() => {
     if (!botId || inGroup || !currentBot) return;
@@ -1881,36 +1891,6 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   afterDeliveredRef.current = afterDelivered;
   useEffect(() => subscribeDelivered((attempt) => afterDeliveredRef.current(attempt)), []);
 
-  async function stop() {
-    if (readOnly) return;
-    const targetBotId = botId;
-    const targetGroupId = groupId;
-    if ((!targetBotId && !targetGroupId) || sending) return;
-    setSending(true);
-    try {
-      await rpc(
-        "threads/stop",
-        targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
-      );
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        Alert.alert(t("Failed to stop work"), errorText(err, t("Try again.")));
-      }
-      setSending(false);
-      return;
-    }
-    try {
-      await refresh();
-    } catch (err) {
-      if (isCurrentTarget(targetBotId, targetGroupId)) {
-        const detail = errorText(err, t("Failed to refresh"));
-        setError(t("Work stopped, but the thread could not refresh: {detail}", { detail }));
-      }
-    } finally {
-      setSending(false);
-    }
-  }
-
   const answerMessage = useCallback(
     async (message: MobileMessage, answer: string, username?: string, dismiss?: boolean) => {
       const targetBotId = botId;
@@ -2454,7 +2434,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const workingFooter =
     !inGroup && currentBot && isRunWorking(currentBotStatus) && !hasLiveProgress ? (
       <View
-        accessibilityLabel={t("{name} is working", { name: currentBot.name })}
+        accessibilityLabel={
+          backgroundOnly
+            ? t("Background tasks running ({count})", { count: backgroundCount })
+            : t("{name} is working", { name: currentBot.name })
+        }
         accessibilityRole="text"
         style={{
           flexDirection: "row",
@@ -2470,7 +2454,13 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           size={28}
           status={currentBotStatus}
         />
-        <WorkingIndicator />
+        {backgroundOnly ? (
+          <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
+            {t("Background tasks running ({count})", { count: backgroundCount })}
+          </Text>
+        ) : (
+          <WorkingIndicator />
+        )}
       </View>
     ) : inGroup && workingGroupBots.length > 0 ? (
       <View
@@ -2896,13 +2886,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             attachmentIds={activePendingAttachments.map((attachment) => attachment.id)}
             botId={botId}
             onCall={onCall}
-            working={working}
             sending={sending}
             styles={styles}
             attachActions={attachActions}
             attachFrom={attachFrom}
             send={send}
-            stop={stop}
             startVoiceCall={startVoiceCall}
             onSlashAction={runSlashAction}
           />

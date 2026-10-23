@@ -64,7 +64,7 @@ describeIntegration("background task queue: soft max, FIFO overflow, auto-start"
   }
 
   it("runs 4 of 6 tasks, queues 2, cancels a queued one and auto-starts the other", async () => {
-    const { bot, send } = await setup("Queue");
+    const { app, cookie, bot, send } = await setup("Queue");
     for (let i = 1; i <= 6; i += 1) {
       const sent = await send(`dispatch in background as t${i}: work for 6 seconds`);
       await waitFor(async () => terminal(sent.runId), 10_000);
@@ -82,6 +82,15 @@ describeIntegration("background task queue: soft max, FIFO overflow, auto-start"
       ["t5", "queued"],
       ["t6", "queued"],
     ]);
+    // Hidden workers keep the main bot visibly busy while its own turn is over.
+    const snap = await rpc<{
+      run: { status: string } | null;
+      backgroundTasks?: { running: number; queued: number };
+    }>(app, cookie, "threads/get", { botId: bot.id });
+    expect(snap.backgroundTasks).toEqual({ running: 4, queued: 2 });
+    const roster = await rpc<Array<{ id: string; status: string }>>(app, cookie, "bots/list", {});
+    expect(roster.find((row) => row.id === bot.id)?.status).toBe("running");
+    expect(roster.some((row) => row.id !== bot.id && row.status === "running")).toBe(false);
     // The main bot's reply to a queued request says so with its position.
     const stopped = await send("cancel background task named t5");
     await waitFor(async () => terminal(stopped.runId), 10_000);

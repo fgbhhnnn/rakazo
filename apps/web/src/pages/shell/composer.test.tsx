@@ -68,7 +68,6 @@ function renderComposer(
   composerProps = {
     artifactTarget: { botId: "bot-1" },
     activeName: "Ada",
-    running: false,
     pendingAttachments: [],
     attachmentNotice: null,
     sendError: null,
@@ -82,7 +81,6 @@ function renderComposer(
     onAttachmentPick: () => true,
     onRemoveAttachment: () => {},
     onSend,
-    onStop: async () => {},
     draftKey: "bot:bot-1",
     enterToSend: true,
     mentionTargets: [bob],
@@ -605,4 +603,11 @@ it.each([false, true])(
 it("hides call dictation until the server enables it", () => {
   renderComposer(vi.fn().mockResolvedValue(true));
   expect(container?.querySelector('button[aria-label="Hold to talk"]')).toBeNull();
+});
+
+it("has no stop button; the user interrupts a busy bot by sending a message", () => {
+  renderComposer(async () => true);
+  expect(container?.querySelector('[aria-label="Stop"]')).toBeNull();
+  const send = container?.querySelector<HTMLButtonElement>('[aria-label="Send"]');
+  expect(send).not.toBeNull();
 });

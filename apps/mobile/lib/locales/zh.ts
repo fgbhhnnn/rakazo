@@ -147,6 +147,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{count}h ago": "{count} 小时前",
   "{count}d ago": "{count} 天前",
   "{name} is using it": "{name} 正在使用",
+  "Background tasks running ({count})": "后台任务进行中（{count}）",
   "{name} is working": "{name} 正在工作",
   "{name}’s computer": "{name} 的电脑",
   "{runs} runs · {tokens} tokens": "{runs} 次运行 · {tokens} 个 token",

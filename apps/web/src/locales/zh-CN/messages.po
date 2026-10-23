@@ -848,6 +848,10 @@ msgstr "返回"
 msgid "Back to sign in"
 msgstr "返回登录"
 
+#: src/pages/shell/transcript.tsx
+msgid "Background tasks running ({count})"
+msgstr "后台任务进行中（{count}）"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "备用模型"
@@ -4806,7 +4810,6 @@ msgstr ""
 msgid "Steps"
 msgstr "步骤"
 
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"

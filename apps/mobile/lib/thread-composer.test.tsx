@@ -121,13 +121,11 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   attachmentIds: [],
   botId: "bot-1",
   onCall: false,
-  working: false,
   sending: false,
   styles: { circleButton: {}, composerFill: {} },
   attachActions: [],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
-  stop: vi.fn(async () => {}),
   startVoiceCall: vi.fn(async () => {}),
   onSlashAction: vi.fn(),
 };
@@ -245,6 +243,11 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('[data-testid="slash-picker"]')).toBeNull();
     press("Call");
     expect(props.startVoiceCall).toHaveBeenCalledOnce();
+  });
+
+  it("has no stop button: the user interrupts by sending a message", () => {
+    expect(container.querySelector('[aria-label="Stop"]')).toBeNull();
+    expect(container.textContent ?? "").not.toContain("stop.fill");
   });
 
   it("focuses the input when its padding wrapper is pressed without adding an accessibility stop", () => {

@@ -115,6 +115,7 @@ describe("reaction messages", () => {
       run: { create: vi.fn() },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
     const jobs = { enqueue: vi.fn() };
@@ -260,6 +261,7 @@ describe("reaction turns", () => {
       },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
     const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -582,6 +584,7 @@ describe("threadSnapshot", () => {
       run: { findFirst: botRunFindFirst(runs), findMany: groupRunFindMany({ active: runs }) },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
     } as unknown as PrismaClient;
     const snapshot = await threadSnapshot({ prisma }, {
@@ -641,6 +644,7 @@ describe("threadSnapshot", () => {
       },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
     const target = {
@@ -707,6 +711,7 @@ describe("threadSnapshot", () => {
       run: { findFirst: findFirstRun, findMany: vi.fn().mockResolvedValue([]) },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
     const target = {
@@ -772,6 +777,7 @@ describe("threadSnapshot", () => {
     const snapshot = await threadSnapshot(
       {
         prisma: {
+          ...noBackgroundTasks,
           $transaction: vi.fn(async (callback: (client: unknown) => unknown) =>
             callback({
               $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
@@ -819,6 +825,7 @@ describe("threadSnapshot", () => {
       const snapshot = await threadSnapshot(
         {
           prisma: {
+            ...noBackgroundTasks,
             $transaction: vi.fn(async (callback: (client: unknown) => unknown) =>
               callback({
                 $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
@@ -891,6 +898,7 @@ describe("threadSnapshot", () => {
       run: { findFirst: findFirstRun, findMany: vi.fn().mockResolvedValue([]) },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
     const target = {
@@ -927,6 +935,7 @@ describe("threadSnapshot", () => {
       run: { findFirst: findFirstRun, findMany: vi.fn().mockResolvedValue([]) },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
     const target = {
@@ -3698,6 +3707,7 @@ describe("stopThreadRuns", () => {
       },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
         callback(transaction),
       ),
@@ -3828,6 +3838,7 @@ describe("stopThreadRuns", () => {
       },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
         callback(transaction),
       ),
@@ -3927,6 +3938,7 @@ describe("stopThreadRuns", () => {
       },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
         callback(transaction),
       ),
@@ -4002,6 +4014,7 @@ describe("stopThreadRuns", () => {
       event: { create: vi.fn(), deleteMany: vi.fn() },
     };
     const prisma = {
+      ...noBackgroundTasks,
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
         callback(transaction),
       ),
@@ -4036,3 +4049,9 @@ describe("stopThreadRuns", () => {
     expect(notify).not.toHaveBeenCalled();
   });
 });
+
+/** Snapshot reads background-worker counts outside the transaction; none in these tests. */
+const noBackgroundTasks = {
+  run: { findMany: vi.fn().mockResolvedValue([]) },
+  backgroundTaskQueue: { groupBy: vi.fn().mockResolvedValue([]) },
+};
