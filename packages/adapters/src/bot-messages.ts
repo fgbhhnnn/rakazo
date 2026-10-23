@@ -347,11 +347,8 @@ export async function returnBotMessageOutcome(
   const sourceIntent = source.intent ?? "request";
   // A hidden background worker always reports back to its dispatcher, whatever the intent of
   // the message that woke it: the dispatcher is the only way its result reaches the user.
-  if (
-    sourceIntent !== "request" &&
-    sourceIntent !== "question" &&
-    !(await isHiddenWorkerRun(deps.prisma, run.botId))
-  ) {
+  const workerTitle = await hiddenWorkerTitle(deps.prisma, run.botId);
+  if (sourceIntent !== "request" && sourceIntent !== "question" && workerTitle === undefined) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
@@ -379,7 +376,8 @@ export async function returnBotMessageOutcome(
     sender,
     {
       bot_id: source.fromBotId,
-      message: clampBotMessage(text),
+      // The dispatcher names the task by its title and #ref, never by the worker slot name.
+      message: clampBotMessage(workerTitle ? `【后台任务：${workerTitle}】\n${text}` : text),
       intent,
       // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
       deliveryKey: `auto-outcome:${run.id}`,
@@ -408,11 +406,16 @@ function isUniqueConstraintError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
-async function isHiddenWorkerRun(prisma: PrismaClient, botId: string): Promise<boolean> {
+/** A hidden worker's current task title ("" when untitled); undefined for any other bot. */
+async function hiddenWorkerTitle(prisma: PrismaClient, botId: string): Promise<string | undefined> {
   try {
-    const bot = await prisma.bot.findUnique({ where: { id: botId }, select: { spawnKey: true } });
-    return isHiddenBot({ spawnKey: bot?.spawnKey ?? null });
+    const bot = await prisma.bot.findUnique({
+      where: { id: botId },
+      select: { spawnKey: true, title: true },
+    });
+    if (!isHiddenBot({ spawnKey: bot?.spawnKey ?? null })) return undefined;
+    return bot?.title?.trim() ?? "";
   } catch {
-    return false;
+    return undefined;
   }
 }

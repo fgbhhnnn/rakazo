@@ -729,6 +729,33 @@ describe("automatic outcome return", () => {
     expect(harness.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("labels a hidden worker's result with its task title and #ref, not the slot name", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "make a cover",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "生成封面 #AB12CD34" });
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Done.",
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("【后台任务：生成封面 #AB12CD34】\\nDone.");
+  });
+
   it("skips the automatic return when a result was already sent", async () => {
     const harness = deps({
       hopBlocks: [

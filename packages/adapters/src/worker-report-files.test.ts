@@ -91,6 +91,38 @@ describe("attachWorkerReportFiles", () => {
     expect(readPath).toBe(resolveBotWorkspacePath("team", "worker1", "/out/a.md"));
     expect(Array.isArray(attached) || attached instanceof Error).toBe(true);
   });
+  it("skips a file the main bot already attached under another spelling of the same path", async () => {
+    const { deps } = base();
+    const { attachedPathKey } = await import("./executor.js");
+    // The main bot's attach_file used a relative path that resolves into its own directory.
+    const already = new Set([
+      attachedPathKey(resolveBotWorkspacePath("team", "main", "report.md")),
+    ]);
+    await attachWorkerReportFiles({
+      // biome-ignore lint/suspicious/noExplicitAny: minimal fake deps
+      deps: deps as any,
+      run: {
+        id: "r",
+        spaceId: "s",
+        threadId: "t",
+        botId: "main",
+        userId: "u",
+        trigger: "bot_message",
+      },
+      bot: { id: "main" },
+      report: {
+        fromBotId: "worker1",
+        text: "文件：\n- /home/user/rakazo-home/bots/main/report.md",
+      },
+      computerMode: "team",
+      // biome-ignore lint/suspicious/noExplicitAny: fake computer
+      readComputer: async () => ({}) as any,
+      // biome-ignore lint/suspicious/noExplicitAny: fake context
+      context: {} as any,
+      alreadyAttached: already,
+    }).catch((error) => error);
+    expect(deps.sandbox.readFile).not.toHaveBeenCalled();
+  });
   it("does nothing for a report from a bot that is not this bot's worker", async () => {
     const { deps } = base();
     deps.prisma.bot.findFirst = vi.fn(async () => null) as never;

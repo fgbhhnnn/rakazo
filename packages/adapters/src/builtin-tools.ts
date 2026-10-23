@@ -1146,7 +1146,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "background_task",
     description:
-      "Start heavy or long work in the background and return immediately, so you stay free to talk to the user. A background worker (same computer and tools, its own context) does the task; its concise final result comes back to you later as a message that wakes you. Use it for anything needing more than ~2 tool rounds or over a minute (long PDFs/many images, multi-shot video, batch data, coding, long research). Up to 3 run at once per bot. Give a self-contained task: inputs as file paths/URLs, expected outputs and where to write them.",
+      "Start heavy or long work in the background and return immediately, so you stay free to talk to the user. A background worker (same computer and tools, its own context) does the task; its concise final result comes back to you later as a message that wakes you. Use it for anything needing more than ~2 tool rounds or over a minute (long PDFs/many images, multi-shot video, batch data, coding, long research). Up to 4 run at once per bot; more are queued and start automatically. Give a self-contained task: inputs as file paths/URLs and the expected outputs. The worker has its own home directory (its shell working directory), not yours: never describe your directory as the worker's working directory. Name an output location only when the user asked for one, as an absolute path; otherwise let the worker write in its own home and list the files in its report.",
     inputSchema: {
       type: "object",
       properties: {

@@ -466,7 +466,6 @@ async function startOnSlot(
     task_ref: ref,
     name,
     agent,
-    worker: slotBot.name,
     note: "已在后台开始。结果完成后会自动作为消息发回给你并唤醒你；现在先简短告诉用户已派出，然后结束本轮或继续别的事。不要轮询等待。",
   };
 }
@@ -501,7 +500,6 @@ export async function backgroundTaskStatus(
       const finishedAt = latest?.completedAt;
       return {
         task_id: worker.id,
-        worker: worker.name,
         name: worker.title,
         task: worker.description,
         state: latest?.status ?? "idle",
