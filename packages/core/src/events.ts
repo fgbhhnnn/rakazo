@@ -337,8 +337,78 @@ const MIN_RESTATED_SENTENCE = 6;
  */
 export function withoutRestatedLeadSentences(blocks: MessageBlock[]): MessageBlock[] {
   return blocks.map((block) =>
-    block.kind === "text" ? { ...block, text: dropRestatedLeadSentences(block.text) } : block,
+    block.kind === "text"
+      ? { ...block, text: dropSupersededParagraphs(dropRestatedLeadSentences(block.text)) }
+      : block,
   );
+}
+
+function bigrams(text: string): Map<string, number> {
+  const compact = text
+    .replace(/[\s*_`#>，。！？、；：,.!?;:'"“”‘’()（）[\]【】「」-]+/g, "")
+    .toLowerCase();
+  const grams = new Map<string, number>();
+  for (let index = 0; index < compact.length - 1; index += 1) {
+    const gram = compact.slice(index, index + 2);
+    grams.set(gram, (grams.get(gram) ?? 0) + 1);
+  }
+  return grams;
+}
+
+/** Dice coefficient over character bigrams (punctuation and spacing ignored), 0..1. */
+export function textSimilarity(a: string, b: string): number {
+  const left = bigrams(a);
+  const right = bigrams(b);
+  let total = 0;
+  let shared = 0;
+  for (const count of left.values()) total += count;
+  for (const [gram, count] of right) {
+    total += count;
+    shared += Math.min(count, left.get(gram) ?? 0);
+  }
+  return total ? (2 * shared) / total : 0;
+}
+
+const SUPERSEDED_SIMILARITY = 0.6;
+const MIN_SUPERSEDED_CHARS = 16;
+const STRUCTURED_PARAGRAPH_RE = /^\s*(?:[-*•+]\s|\d+[.)、]\s?|\||```|#|>)/;
+
+/**
+ * A main turn that calls tools between replies can write the same answer again after each call,
+ * reworded ("可以，但只收官网公开的邮箱…" three times in one bubble). When a later prose paragraph is
+ * mostly the same text as an earlier one, the earlier one is superseded and dropped, so the latest
+ * wording stays. Lists, tables, code, headings, quotes and short lines are never compared, and
+ * paragraphs that differ keep their unique content.
+ */
+export function dropSupersededParagraphs(text: string): string {
+  const parts = text.split(/(\n{2,})/);
+  const paragraphs: { text: string; separator: string; dropped: boolean }[] = [];
+  for (let index = 0; index < parts.length; index += 2)
+    paragraphs.push({
+      text: parts[index] ?? "",
+      separator: parts[index + 1] ?? "",
+      dropped: false,
+    });
+  const comparable = (paragraph: string) =>
+    paragraph.trim().length >= MIN_SUPERSEDED_CHARS && !STRUCTURED_PARAGRAPH_RE.test(paragraph);
+  for (let later = paragraphs.length - 1; later > 0; later -= 1) {
+    const latest = paragraphs[later];
+    if (!latest || latest.dropped || !comparable(latest.text)) continue;
+    for (let earlier = later - 1; earlier >= 0; earlier -= 1) {
+      const candidate = paragraphs[earlier];
+      if (!candidate || candidate.dropped || !comparable(candidate.text)) continue;
+      if (textSimilarity(candidate.text, latest.text) >= SUPERSEDED_SIMILARITY)
+        candidate.dropped = true;
+    }
+  }
+  const kept = paragraphs.filter((paragraph) => !paragraph.dropped);
+  if (kept.length === paragraphs.length) return text;
+  return kept
+    .map(
+      (paragraph, index) =>
+        paragraph.text + (index < kept.length - 1 ? paragraph.separator || "\n\n" : ""),
+    )
+    .join("");
 }
 
 export function dropRestatedLeadSentences(text: string): string {

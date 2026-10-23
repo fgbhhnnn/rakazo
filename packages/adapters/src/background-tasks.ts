@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH, textSimilarity } from "@rakazo/core";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
@@ -498,6 +498,25 @@ export async function backgroundTaskStatus(
   };
 }
 
+/** Notes each main turn already sent to a worker, so a looping turn cannot send the same note 2-3x. */
+const sentThisTurn = new Map<string, string[]>();
+const MAX_TRACKED_TURNS = 500;
+const REPEATED_NOTE_SIMILARITY = 0.8;
+
+export function alreadySentThisTurn(runId: string, workerId: string, text: string): boolean {
+  const key = `${runId}:${workerId}`;
+  const sent = sentThisTurn.get(key) ?? [];
+  if (sent.some((prior) => textSimilarity(prior, text) >= REPEATED_NOTE_SIMILARITY)) return true;
+  sentThisTurn.delete(key);
+  sentThisTurn.set(key, [...sent, text]);
+  while (sentThisTurn.size > MAX_TRACKED_TURNS) {
+    const oldest = sentThisTurn.keys().next().value;
+    if (oldest === undefined) break;
+    sentThisTurn.delete(oldest);
+  }
+  return false;
+}
+
 export async function backgroundTaskMessage(
   deps: Deps,
   run: DispatchRun,
@@ -531,6 +550,12 @@ export async function backgroundTaskMessage(
   const worker = workers.find((w) => w.id === wantedId);
   if (!worker) return { error: "no background task with that task_id" };
   if (!text) return { error: "message is empty" };
+  if (alreadySentThisTurn(run.id, worker.id, text))
+    return {
+      ok: true as const,
+      task_id: worker.id,
+      note: "Already sent this to the worker in this turn; not sent again. Reply to the user once and end the turn.",
+    };
   // A worker that is mid-run takes the note as steering on its next model step, the same way
   // a user's follow-up reaches a busy bot. An idle worker gets a normal bot message instead.
   const active = worker.thread ? await activeRunFor(deps, worker.id) : null;
