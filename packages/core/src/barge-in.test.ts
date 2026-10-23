@@ -38,3 +38,30 @@ describe("call barge-in", () => {
     expect(isInterimCallBargeIn("")).toBe(false);
   });
 });
+
+describe("CJK call barge-in", () => {
+  afterEach(() => {
+    spokenMemory.clear();
+  });
+  it("does not cut playback on the reply's own Chinese echo", () => {
+    spokenMemory.remember("好的，我来帮你查一下。今天天气不错。");
+    expect(isInterimCallBargeIn("好的，我来")).toBe(false);
+    expect(isCallBargeIn("好的，我来帮你查一下")).toBe(false);
+  });
+  it("lets a real Chinese sentence or a stop word interrupt", () => {
+    spokenMemory.remember("好的，我来帮你查查天气。");
+    expect(isInterimCallBargeIn("帮我看看明天的会议")).toBe(true);
+    expect(isCallBargeIn("等一下")).toBe(true);
+    expect(isInterimCallBargeIn("嗯嗯")).toBe(false);
+  });
+  it("keeps treating a long reply's echo as echo once the transcript grows past the cap", () => {
+    const reply =
+      "好的，我已经帮你查过了，明天上海多云，最高气温二十三度，最低十六度。出门记得带件外套，晚上可能会有点凉。还有别的需要吗？";
+    spokenMemory.remember(reply);
+    const heard =
+      "好的我已经帮你查过了明天上海多云最高气温二十三度最低十六度出门记得带件外套晚上可能会有点凉";
+    expect(isInterimCallBargeIn(heard)).toBe(false);
+    expect(isCallBargeIn(heard)).toBe(false);
+    expect(isInterimCallBargeIn(`${heard}帮我订一张去北京的机票`)).toBe(true);
+  });
+});

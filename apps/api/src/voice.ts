@@ -27,6 +27,8 @@ import {
   type PrismaClient,
   runAsTenant,
   selectSpaceVoicePreference,
+  sharedVoiceScope,
+  withinScope,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
@@ -199,16 +201,29 @@ export async function loadDefaultVoiceCredential(deps: VoiceDeps, actor: Actor) 
   return loadVoiceCredential(deps, actor);
 }
 
-export async function loadVoiceCredential(deps: VoiceDeps, actor: Actor, provider?: string) {
+export async function loadVoiceCredential(
+  deps: VoiceDeps,
+  requester: Actor,
+  provider?: string,
+  { shareOwner = true }: { shareOwner?: boolean } = {},
+) {
+  // A member without a voice of their own may speak with the owner's; the key stays server-side.
+  const actor = shareOwner
+    ? { ...requester, ...(await sharedVoiceScope(deps.prisma, requester)) }
+    : requester;
   const cred = provider
     ? await findVoiceCredential(deps.prisma, actor, provider)
     : await findDefaultVoiceCredential(deps.prisma, actor);
   if (!cred) return null;
-  const secret = await deps.prisma.secret.findFirst({
-    where: { id: cred.secretId, userId: actor.userId, spaceId: null },
+  // The secret is row-secured to its owner; a shared voice reads it as the owner, server-side.
+  const apiKey = await withinScope(actor, async () => {
+    const secret = await deps.prisma.secret.findFirst({
+      where: { id: cred.secretId, userId: actor.userId, spaceId: null },
+    });
+    return secret ? await deps.secrets.load(secret.ciphertext, secret.id) : null;
   });
-  if (!secret) return null;
-  return { cred, apiKey: await deps.secrets.load(secret.ciphertext, secret.id) };
+  if (apiKey === null) return null;
+  return { cred, apiKey, actor };
 }
 
 export async function resolveVoiceTarget(
@@ -252,7 +267,9 @@ export async function persistVoiceCredential(
   const previous =
     input.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID
       ? // An unreadable old secret only means nothing is inherited; the form must be complete.
-        await loadVoiceCredential(deps, actor, input.provider).catch(() => null)
+        await loadVoiceCredential(deps, actor, input.provider, { shareOwner: false }).catch(
+          () => null,
+        )
       : null;
   const allowPrivateEndpoint = await voiceMayUsePrivateEndpoint(deps, actor, input.provider);
   const plaintext = voiceCredentialPlaintext({
@@ -490,7 +507,7 @@ export async function synthesizeVoice(
   if (text.length > MAX_SPEAK_CHARS) {
     throw new ORPCError("BAD_REQUEST", { message: "That utterance is too long to speak." });
   }
-  const provider = await voiceProviderFor(deps, actor, target.cred.provider);
+  const provider = await voiceProviderFor(deps, target.actor, target.cred.provider);
   return provider.synthesize(
     {
       text,
@@ -510,7 +527,7 @@ export async function transcribeVoice(
 ) {
   const loaded = await loadDefaultVoiceCredential(deps, actor);
   if (!loaded) throw new NoVoiceConfigured("key");
-  const provider = await voiceProviderFor(deps, actor, loaded.cred.provider);
+  const provider = await voiceProviderFor(deps, loaded.actor, loaded.cred.provider);
   if (!provider.transcribe) {
     throw new ORPCError("BAD_REQUEST", {
       message: "This voice provider does not transcribe audio. Use on-device dictation instead.",

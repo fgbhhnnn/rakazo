@@ -15,13 +15,19 @@ export function errorText(
 ): string {
   return (
     voiceAccountErrorText(error) ??
-    userErrorMessage(error, { fallback, offline: t("Could not reach the server") })
+    userErrorMessage(error, {
+      fallback,
+      offline: t("Could not reach the server"),
+    })
   );
 }
 
 /** Text for an error or `/api/voice` body whose code says the voice account needs attention. */
 export function voiceAccountErrorText(error: unknown): string | undefined {
-  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? error.code
+      : undefined;
   if (!isVoiceAccountErrorCode(code)) return undefined;
   return code === "VOICE_OUT_OF_CREDIT"
     ? t("Your voice provider is out of credit.")
@@ -34,18 +40,27 @@ export function credentialIssueText(field: CredentialField): string {
 
 /** Text for a failed auth response body. */
 export function authErrorText(body: unknown, fallback: string): string {
-  const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
-  if (code === "SSO_UNAVAILABLE") return t("SSO is temporarily unavailable. Try again.");
-  if (code === "account_not_linked") return t("Sign in to your existing account to link SSO");
+  const code =
+    body && typeof body === "object" && "code" in body ? body.code : undefined;
+  if (code === "SSO_UNAVAILABLE")
+    return t("SSO is temporarily unavailable. Try again.");
+  if (code === "account_not_linked")
+    return t("Sign in to your existing account to link SSO");
   if (code === "REGISTRATION_CLOSED") return t("Registration is closed");
-  if (code === "EMAIL_NOT_ALLOWED") return t("Email is not allowed to register");
-  if (code === "EMAIL_VERIFICATION_REQUIRED" || code === "unable_to_link_account")
+  if (code === "EMAIL_NOT_ALLOWED")
+    return t("Email is not allowed to register");
+  if (
+    code === "EMAIL_VERIFICATION_REQUIRED" ||
+    code === "unable_to_link_account"
+  )
     return t("Email verification required");
   if (code === "REAUTHENTICATION_REQUIRED") return t("Sign in again");
-  if (code === "PASSWORD_AUTH_DISABLED") return t("Password sign-in is turned off on this server");
+  if (code === "PASSWORD_AUTH_DISABLED")
+    return t("Password sign-in is turned off on this server");
   if (code === "EMAIL_DELETION_UNAVAILABLE") return t("Could not continue");
   if (code === "INVALID_OTP") return t("Invalid code");
-  if (code === "OTP_EXPIRED" || code === "TOO_MANY_ATTEMPTS") return t("Request a new code");
+  if (code === "OTP_EXPIRED" || code === "TOO_MANY_ATTEMPTS")
+    return t("Request a new code");
   return authErrorMessage(body, {
     fallback,
     email: credentialIssueText("email"),
@@ -68,12 +83,17 @@ export function authResponseErrorText(
         : status >= 500 || invalidJson
           ? t("The server had a problem. Try again in a moment.")
           : lastResort;
+  if ((body as { code?: unknown } | null)?.code === "CAPTCHA_FAILED")
+    return t("Security check failed. Complete it again and retry.");
   return authErrorText(body, fallback).trim() || fallback;
 }
 
 /** Only implementation details from local session persistence need replacement. */
 export function sessionSaveErrorText(error: unknown): string {
-  return errorText(error, t("Could not save your sign-in on this device. Try again."));
+  return errorText(
+    error,
+    t("Could not save your sign-in on this device. Try again."),
+  );
 }
 
 export type LoadFailureKind = "offline" | "session" | "server" | "other";
@@ -81,7 +101,8 @@ export type LoadFailureKind = "offline" | "session" | "server" | "other";
 /** Why a load failed, when the error says: no answer, a rejected session, or a server fault. */
 export function loadFailureKind(error: unknown): LoadFailureKind {
   if (isServerUnreachable(error)) return "offline";
-  const status = error instanceof Error ? (error as { status?: unknown }).status : undefined;
+  const status =
+    error instanceof Error ? (error as { status?: unknown }).status : undefined;
   if (status === 401) return "session";
   if (typeof status === "number" && status >= 500) return "server";
   return "other";
@@ -89,7 +110,8 @@ export function loadFailureKind(error: unknown): LoadFailureKind {
 
 /** Keep useful boot details; the screen supplies the recovery title and copy. */
 export function computerBootErrorDetail(error: unknown): string | null {
-  if (isServerUnreachable(error) || loadFailureKind(error) === "server") return null;
+  if (isServerUnreachable(error) || loadFailureKind(error) === "server")
+    return null;
   const detail = errorText(error, "");
   return !detail ||
     /^(?:internal server error|server error|http\s+5\d{2}\b|5\d{2}\b)|time[ -]?out|timed out/i.test(

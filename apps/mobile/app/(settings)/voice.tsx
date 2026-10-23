@@ -29,6 +29,7 @@ import {
 } from "../../lib/call-sounds";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
 import { useI18n } from "../../lib/i18n";
+import { withMemberSettingsGuard } from "../../lib/member-settings-guard";
 import { native, useThemedStyles } from "../../lib/native";
 import { errorText } from "../../lib/user-error";
 import { speakText } from "../../lib/voice";
@@ -56,7 +57,7 @@ type VoiceStatus = {
 };
 type VoiceInfo = { id: string; label: string; description?: string };
 
-export default function VoiceSettings() {
+function VoiceSettingsScreen() {
   const styles = useThemedStyles(createVoiceStyles);
   const { t } = useI18n();
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
@@ -610,3 +611,5 @@ function createVoiceStyles() {
     voiceLabel: { flex: 1, color: native.label, fontSize: 16 },
   });
 }
+
+export default withMemberSettingsGuard(VoiceSettingsScreen);

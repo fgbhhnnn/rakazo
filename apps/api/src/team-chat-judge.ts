@@ -22,6 +22,8 @@ import {
   findModelCredential,
   recordUsage,
   retireModelCredential,
+  sharedModelScope,
+  withinScope,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -218,7 +220,10 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const settings = await this.deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
     });
-    const scope = { userId: bot.userId, spaceId: bot.spaceId };
+    const scope = await sharedModelScope(this.deps.prisma, {
+      userId: bot.userId,
+      spaceId: bot.spaceId,
+    });
     const defaultCredential = await findDefaultModelCredential(this.deps.prisma, scope);
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
@@ -254,18 +259,22 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       return { model: { provider, id: modelId, ...(apiKey ? { apiKey } : {}), callObserver } };
     }
 
-    const secret = await this.deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: bot.userId, spaceId: null },
-    });
+    // A shared model's key is row-secured to the owner; every read and write of it runs as the owner.
+    const secret = await withinScope(scope, () =>
+      this.deps.prisma.secret.findFirst({
+        where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+      }),
+    );
     if (!secret) return null;
-    const persist = async (plaintext: string) => {
+    const persist = (plaintext: string) => withinScope(scope, () => persistAsOwner(plaintext));
+    const persistAsOwner = async (plaintext: string) => {
       const stored = await this.deps.secrets.put(
         plaintext,
         {
           operationId: "team-chat-judge-credential",
           traceId: "team-chat-judge-credential",
-          spaceId: bot.spaceId,
-          userId: bot.userId,
+          spaceId: scope.spaceId,
+          userId: scope.userId,
           botId: bot.id,
           signal: new AbortController().signal,
         },
@@ -283,18 +292,22 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       _detail: string | undefined,
       failed?: ModelCredentialFailedState,
     ) =>
-      retireModelCredential(this.deps.prisma, {
-        userId: bot.userId,
-        credentialId: credential.id,
-        secretId: credential.secretId,
-        matchesFailedSecret: failed
-          ? matchesFailedOAuthSecret(
-              (ciphertext, secretId) => this.deps.secrets.load(ciphertext, secretId),
-              failed,
-            )
-          : undefined,
-      });
-    const plaintext = await this.deps.secrets.load(secret.ciphertext, secret.id);
+      withinScope(scope, () =>
+        retireModelCredential(this.deps.prisma, {
+          userId: scope.userId,
+          credentialId: credential.id,
+          secretId: credential.secretId,
+          matchesFailedSecret: failed
+            ? matchesFailedOAuthSecret(
+                (ciphertext, secretId) => this.deps.secrets.load(ciphertext, secretId),
+                failed,
+              )
+            : undefined,
+        }),
+      );
+    const plaintext = await withinScope(scope, () =>
+      this.deps.secrets.load(secret.ciphertext, secret.id),
+    );
     const auth = await resolveModelAuth(plaintext, provider, { persist, retire });
     const parsed = auth.secret;
     const limit = parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {};

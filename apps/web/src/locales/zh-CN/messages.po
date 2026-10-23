@@ -1293,6 +1293,10 @@ msgstr ""
 msgid "Complete"
 msgstr "完成"
 
+#: src/pages/Auth.tsx
+msgid "Complete the security check first"
+msgstr "请先完成安全验证"
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
@@ -2979,6 +2983,7 @@ msgid "Loading voice providers…"
 msgstr "正在加载语音提供方…"
 
 #: src/App.tsx
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -3119,6 +3124,14 @@ msgstr "成员"
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
 msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members and sign-up"
+msgstr "成员与注册"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members without their own model or voice use my defaults"
+msgstr "没有自己模型或语音的成员使用我的默认设置"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3613,6 +3626,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
+msgstr "仅由我管理模型、语音和 MCP 服务器（成员使用我的配置且无法修改）"
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -4175,6 +4192,10 @@ msgstr ""
 msgid "Request a new code"
 msgstr "请重新获取验证码"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Require a Cloudflare Turnstile check to create an account"
+msgstr "注册账号时需要通过 Cloudflare Turnstile 验证"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr "调研和写作"
@@ -4358,6 +4379,10 @@ msgstr "保存"
 msgid "Save credential"
 msgstr ""
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Save keys"
+msgstr "保存密钥"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
@@ -4372,10 +4397,15 @@ msgstr "保存工作区并安装最新软件。"
 msgid "Saved"
 msgstr "已保存"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Saved — enter to replace"
+msgstr "已保存——输入新值可替换"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "已保存，但列表刷新失败"
 
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "已保存。"
@@ -5127,6 +5157,14 @@ msgstr "重试"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "请重试测试。"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile secret key"
+msgstr "Turnstile 密钥（Secret key）"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile site key"
+msgstr "Turnstile 站点密钥（Site key）"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"

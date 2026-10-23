@@ -15,7 +15,11 @@ import { activateUiLocale, getActiveUiLocale } from "./i18n";
 import type { UiLocale } from "./ui-locale";
 
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
-vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
+vi.mock("./voice", () => ({
+  setCallAudioActive: vi.fn(),
+  speakText: vi.fn(),
+  stopSpeaking: vi.fn(),
+}));
 vi.mock("./call-sounds", () => ({ playCallCue: vi.fn() }));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
@@ -858,7 +862,11 @@ describe("mobile call speech locales", () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(start).toHaveBeenCalledOnce();
-      expect.soft(start).toHaveBeenCalledWith({ lang, interimResults: true, continuous: true });
+      expect
+        .soft(start)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({ lang, interimResults: true, continuous: true }),
+        );
       listeners.get("result")?.({
         isFinal: false,
         results: [{ transcript: "status please" }],

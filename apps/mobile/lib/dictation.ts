@@ -13,13 +13,41 @@ const MAX_DEAD_RESTARTS = 5;
 /** Errors that mean this turn cannot recover; the rest are routine and `end` restarts. */
 const FATAL_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
 
+/**
+ * iOS: the call plays the reply while this session listens, so both share one audio
+ * session. The module's default (`measurement` mode) is set again on every restart and
+ * flips the session out from under the player, which on iOS cuts or silences the reply.
+ * Keep the same `playAndRecord` + speaker route the player uses, and let voice
+ * processing cancel the speaker so the reply is not transcribed as the caller.
+ */
+export const IOS_CALL_AUDIO = {
+  iosCategory: {
+    category: "playAndRecord",
+    categoryOptions: ["defaultToSpeaker", "allowBluetooth", "mixWithOthers"],
+    mode: "voiceChat",
+  },
+  iosVoiceProcessingEnabled: true,
+} as const;
+
+export type DictationStartOptions = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  iosCategory?: {
+    category: string;
+    categoryOptions: readonly string[];
+    mode?: string;
+  };
+  iosVoiceProcessingEnabled?: boolean;
+};
+
 type ResultEvent = { isFinal: boolean; results: { transcript: string }[] };
 type ErrorEvent = { error?: string };
 type DictationEventMap = { result: ResultEvent; end: null; error: ErrorEvent };
 
 /** The slice of `expo-speech-recognition` this module needs, so tests can drive the events. */
 export type SpeechRecognizer = {
-  start(options: { lang: string; interimResults: boolean; continuous: boolean }): void;
+  start(options: DictationStartOptions): void;
   stop(): void;
   abort(): void;
   isRecognitionAvailable(): boolean;
@@ -130,7 +158,12 @@ export async function listen(opts: {
 
 function start(session: Session): void {
   if (active !== session) return;
-  session.recognizer.start({ lang: session.lang, interimResults: true, continuous: true });
+  session.recognizer.start({
+    lang: session.lang,
+    interimResults: true,
+    continuous: true,
+    ...IOS_CALL_AUDIO,
+  });
 }
 
 function onResult(session: Session, event: ResultEvent): void {

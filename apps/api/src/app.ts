@@ -152,6 +152,7 @@ import {
   settleWithTimeout,
   TEAM_CHAT_STARTUP_SHUTDOWN_MS,
 } from "./team-chat-startup.js";
+import { activeTurnstileSecret, activeTurnstileSiteKey } from "./turnstile-settings.js";
 import { mountVoiceHttpRoutes, voiceAccountErrorStatus } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
@@ -471,6 +472,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   const auth = createAuth(prisma, {
     analytics,
+    turnstile: () => activeTurnstileSecret(prisma, secrets),
     passwordAuth: env.passwordAuth,
     breachedPasswordCheck: env.breachedPasswordCheck,
     oidc: env.oidc,
@@ -714,8 +716,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       c.header("cache-control", "no-store");
     });
   }
-  app.get("/api/auth/capabilities", (c) => {
+  app.get("/api/auth/capabilities", async (c) => {
     return c.json({
+      turnstileSiteKey: await activeTurnstileSiteKey(prisma),
       sso: env.oidc
         ? { name: env.oidc.name, availability: auth.ssoAvailability() ?? "checking" }
         : null,

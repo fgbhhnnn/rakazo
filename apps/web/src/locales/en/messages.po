@@ -1293,6 +1293,10 @@ msgstr "Compact"
 msgid "Complete"
 msgstr "Complete"
 
+#: src/pages/Auth.tsx
+msgid "Complete the security check first"
+msgstr "Complete the security check first"
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
@@ -2979,6 +2983,7 @@ msgid "Loading voice providers…"
 msgstr "Loading voice providers…"
 
 #: src/App.tsx
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -3119,6 +3124,14 @@ msgstr "Member"
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
 msgstr "Members ({0})"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members and sign-up"
+msgstr "Members and sign-up"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members without their own model or voice use my defaults"
+msgstr "Members without their own model or voice use my defaults"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3613,6 +3626,10 @@ msgstr "One-time purchase. Credits do not expire."
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr "Only empty spaces can be deleted. Delete its bots and groups first."
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
+msgstr "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -4175,6 +4192,10 @@ msgstr "Replying to {0}"
 msgid "Request a new code"
 msgstr "Request a new code"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Require a Cloudflare Turnstile check to create an account"
+msgstr "Require a Cloudflare Turnstile check to create an account"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr "Research & writing"
@@ -4358,6 +4379,10 @@ msgstr "Save"
 msgid "Save credential"
 msgstr "Save credential"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Save keys"
+msgstr "Save keys"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr "Save new value"
@@ -4372,10 +4397,15 @@ msgstr "Save the workspace and install current software."
 msgid "Saved"
 msgstr "Saved"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Saved — enter to replace"
+msgstr "Saved — enter to replace"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "Saved, but list refresh failed"
 
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "Saved."
@@ -5127,6 +5157,14 @@ msgstr "Try again"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "Try the test again."
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile secret key"
+msgstr "Turnstile secret key"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile site key"
+msgstr "Turnstile site key"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"

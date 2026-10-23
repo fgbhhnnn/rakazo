@@ -1,6 +1,15 @@
 import type { IntegrationSetupState } from "@rakazo/contracts";
-import { credentialIssue, MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  credentialIssue,
+  MAX_PASSWORD_LENGTH,
+  PASSWORD_RULES,
+} from "@rakazo/core";
+import {
+  Redirect,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
@@ -16,6 +25,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
+import { TurnstileWidget } from "../components/turnstile-widget";
 import type { PasswordResetCapabilities } from "../lib/api";
 import {
   currentApiBase,
@@ -33,7 +43,7 @@ import {
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
@@ -43,9 +53,14 @@ const CODE_LENGTH = 6;
 export default function SignIn() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
+  const appearance = useResolvedAppearance();
   const router = useRouter();
-  const { mode: requestedMode } = useLocalSearchParams<{ mode?: string | string[] }>();
-  const [mode, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));
+  const { mode: requestedMode } = useLocalSearchParams<{
+    mode?: string | string[];
+  }>();
+  const [mode, setMode] = useState<AuthMode>(() =>
+    initialAuthMode(requestedMode),
+  );
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,6 +77,8 @@ export default function SignIn() {
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -107,7 +124,8 @@ export default function SignIn() {
   }, [reset]);
 
   useEffect(() => {
-    if (resetSent || codeSent) AccessibilityInfo.announceForAccessibility(t("Check your email"));
+    if (resetSent || codeSent)
+      AccessibilityInfo.announceForAccessibility(t("Check your email"));
   }, [resetSent, codeSent, t]);
 
   if (!ready) {
@@ -120,13 +138,17 @@ export default function SignIn() {
           padding: 24,
         }}
       >
-        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>{t("Loading…")}</Text>
+        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
+          {t("Loading…")}
+        </Text>
       </View>
     );
   }
   if (hasSession) return <Redirect href="/" />;
 
-  const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
+  const codeFlow = Boolean(
+    reset?.passwordAuth && reset.emailCode && mode !== "forgot",
+  );
   const usingCode = codeFlow && !usePassword;
   const codeStep = usingCode && codeSent;
 
@@ -142,12 +164,27 @@ export default function SignIn() {
     }
     // An unfinished code would spend one of the code's three attempts.
     if (codeStep && enteredCode.length !== CODE_LENGTH) return;
+    // The server checks Turnstile when this request may create an account.
+    const turnstileSiteKey =
+      mode === "up" && !codeStep ? (reset.turnstileSiteKey ?? null) : null;
+    if (turnstileSiteKey && !captchaToken) {
+      setError(t("Complete the security check first"));
+      return;
+    }
+    const captcha = turnstileSiteKey ? (captchaToken ?? undefined) : undefined;
+    if (turnstileSiteKey) {
+      // A token is single use; render a fresh widget for the next attempt.
+      setCaptchaToken(null);
+      setCaptchaRound((round) => round + 1);
+    }
     setPending(true);
     setError(null);
     try {
       if (mode === "forgot") {
         if (!reset?.passwordReset || !reset.resetUrl) {
-          throw new Error(t("Password recovery is not configured for this server"));
+          throw new Error(
+            t("Password recovery is not configured for this server"),
+          );
         }
         await requestPasswordReset(email.trim(), reset.resetUrl);
         setResetSent(true);
@@ -155,7 +192,7 @@ export default function SignIn() {
       }
       if (usingCode && !codeSent) {
         const sentFrom = apiBase;
-        await sendSignInCode(email.trim());
+        await sendSignInCode(email.trim(), captcha);
         if (currentApiBase() !== sentFrom) return;
         setCode("");
         setCodeSent(true);
@@ -167,7 +204,9 @@ export default function SignIn() {
           trimmedEmail,
           enteredCode,
           // Only used when this creates the account.
-          mode === "up" ? name.trim() || trimmedEmail.split("@")[0] || "User" : undefined,
+          mode === "up"
+            ? name.trim() || trimmedEmail.split("@")[0] || "User"
+            : undefined,
         );
       } else if (mode === "up") {
         const trimmedEmail = email.trim();
@@ -175,6 +214,7 @@ export default function SignIn() {
           trimmedEmail,
           password,
           name.trim() || trimmedEmail.split("@")[0] || "User",
+          captcha,
         );
         if (result.verificationRequired) {
           setResetSent(true);
@@ -186,7 +226,9 @@ export default function SignIn() {
       // A code can create the account from either form.
       const setup =
         mode === "up" || usingCode
-          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
+          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(
+              () => null,
+            )
           : null;
       router.replace(setup?.needsSetup ? "/integration-setup" : "/");
     } catch (err) {
@@ -225,7 +267,9 @@ export default function SignIn() {
                 paddingHorizontal: 24,
                 paddingVertical: 24,
               }}
-              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardDismissMode={
+                Platform.OS === "ios" ? "interactive" : "on-drag"
+              }
               keyboardShouldPersistTaps="handled"
             >
               <Text
@@ -255,7 +299,13 @@ export default function SignIn() {
                       setCodeSent(false);
                     }}
                   >
-                    <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
+                    <Text
+                      style={{
+                        color: tokens.foreground,
+                        fontSize: 15,
+                        fontWeight: "600",
+                      }}
+                    >
                       {t("Back to sign in")}
                     </Text>
                   </Pressable>
@@ -269,19 +319,27 @@ export default function SignIn() {
                       </Text>
                       <NativeActionButton
                         label={t("Retry")}
-                        onPress={() => setCapabilityAttempt((value) => value + 1)}
+                        onPress={() =>
+                          setCapabilityAttempt((value) => value + 1)
+                        }
                       />
                     </View>
                   ) : !reset ? (
                     <Text
-                      style={{ color: tokens.mutedForeground, textAlign: "center", marginTop: 16 }}
+                      style={{
+                        color: tokens.mutedForeground,
+                        textAlign: "center",
+                        marginTop: 16,
+                      }}
                     >
                       {t("Loading…")}
                     </Text>
                   ) : null}
                   {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
                     <NativeActionButton
-                      label={t("Continue with {name}", { name: reset.sso.name })}
+                      label={t("Continue with {name}", {
+                        name: reset.sso.name,
+                      })}
                       disabled={pending}
                       onPress={() => void externalSignIn(continueWithSso)}
                       style={{ marginTop: 16 }}
@@ -308,10 +366,13 @@ export default function SignIn() {
                         textContentType="oneTimeCode"
                         value={code}
                         onChangeText={(value) => {
-                          const digits = value.replace(/\D/g, "").slice(0, CODE_LENGTH);
+                          const digits = value
+                            .replace(/\D/g, "")
+                            .slice(0, CODE_LENGTH);
                           setCode(digits);
                           // iOS offers the code from Mail; a complete code signs in at once.
-                          if (digits.length === CODE_LENGTH) void submit(digits);
+                          if (digits.length === CODE_LENGTH)
+                            void submit(digits);
                         }}
                         onSubmitEditing={() => void submit()}
                         style={{
@@ -323,7 +384,11 @@ export default function SignIn() {
                         }}
                       />
                       {error ? (
-                        <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
+                        <Text
+                          style={{ color: tokens.destructive, marginTop: 12 }}
+                        >
+                          {error}
+                        </Text>
                       ) : null}
                       <NativeActionButton
                         disabled={pending || code.length < CODE_LENGTH}
@@ -379,9 +444,15 @@ export default function SignIn() {
                       />
                       {mode !== "forgot" && !usingCode ? (
                         <TextInput
-                          autoComplete={mode === "in" ? "current-password" : "new-password"}
-                          textContentType={mode === "in" ? "password" : "newPassword"}
-                          passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
+                          autoComplete={
+                            mode === "in" ? "current-password" : "new-password"
+                          }
+                          textContentType={
+                            mode === "in" ? "password" : "newPassword"
+                          }
+                          passwordRules={
+                            mode === "in" ? undefined : PASSWORD_RULES
+                          }
                           maxLength={MAX_PASSWORD_LENGTH}
                           placeholder={t("Password")}
                           placeholderTextColor={tokens.mutedForeground}
@@ -399,8 +470,28 @@ export default function SignIn() {
                           }}
                         />
                       ) : null}
+                      {mode === "up" && !codeStep && reset.turnstileSiteKey ? (
+                        <TurnstileWidget
+                          key={`${captchaRound}:${apiBase}`}
+                          siteKey={reset.turnstileSiteKey}
+                          baseUrl={apiBase}
+                          dark={appearance === "dark"}
+                          onToken={setCaptchaToken}
+                          onError={() =>
+                            setError(
+                              t(
+                                "Security check failed. Check your connection and try again.",
+                              ),
+                            )
+                          }
+                        />
+                      ) : null}
                       {error ? (
-                        <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
+                        <Text
+                          style={{ color: tokens.destructive, marginTop: 12 }}
+                        >
+                          {error}
+                        </Text>
                       ) : null}
                       <NativeActionButton
                         disabled={pending}
@@ -429,7 +520,9 @@ export default function SignIn() {
                       ) : null}
                       {codeFlow ? (
                         <NativeActionButton
-                          label={usingCode ? t("Use password") : t("Use email code")}
+                          label={
+                            usingCode ? t("Use password") : t("Use email code")
+                          }
                           prominence="quiet"
                           disabled={pending}
                           onPress={() => {
@@ -441,14 +534,19 @@ export default function SignIn() {
                       ) : null}
                       {reset.sso && mode !== "forgot" ? (
                         <NativeActionButton
-                          label={t("Continue with {name}", { name: reset.sso.name })}
+                          label={t("Continue with {name}", {
+                            name: reset.sso.name,
+                          })}
                           prominence="quiet"
                           disabled={pending}
                           onPress={() => void externalSignIn(continueWithSso)}
                           style={{ alignSelf: "center", marginTop: 16 }}
                         />
                       ) : null}
-                      {mode === "in" && !usingCode && reset?.passwordReset && reset.resetUrl ? (
+                      {mode === "in" &&
+                      !usingCode &&
+                      reset?.passwordReset &&
+                      reset.resetUrl ? (
                         <Pressable
                           accessibilityRole="button"
                           hitSlop={8}
@@ -459,7 +557,11 @@ export default function SignIn() {
                           style={{ alignSelf: "center", marginTop: 16 }}
                         >
                           <Text
-                            style={{ color: tokens.foreground, fontSize: 14, fontWeight: "600" }}
+                            style={{
+                              color: tokens.foreground,
+                              fontSize: 14,
+                              fontWeight: "600",
+                            }}
                           >
                             {t("Forgot password?")}
                           </Text>
@@ -473,7 +575,12 @@ export default function SignIn() {
                           marginTop: 24,
                         }}
                       >
-                        <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+                        <Text
+                          style={{
+                            color: tokens.mutedForeground,
+                            fontSize: 15,
+                          }}
+                        >
                           {mode === "in"
                             ? t("Don’t have an account?")
                             : mode === "up"
@@ -484,13 +591,19 @@ export default function SignIn() {
                           accessibilityRole="button"
                           hitSlop={8}
                           onPress={() => {
-                            setMode((current) => (current === "in" ? "up" : "in"));
+                            setMode((current) =>
+                              current === "in" ? "up" : "in",
+                            );
                             setError(null);
                           }}
                           style={{ marginLeft: 5 }}
                         >
                           <Text
-                            style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}
+                            style={{
+                              color: tokens.foreground,
+                              fontSize: 15,
+                              fontWeight: "600",
+                            }}
                           >
                             {mode === "in"
                               ? t("Sign up")
@@ -526,7 +639,13 @@ export default function SignIn() {
                   <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>
                     {t("Custom server")}
                   </Text>
-                  <Text style={{ color: tokens.mutedForeground, fontSize: 13, marginTop: 2 }}>
+                  <Text
+                    style={{
+                      color: tokens.mutedForeground,
+                      fontSize: 13,
+                      marginTop: 2,
+                    }}
+                  >
                     {displayApiHost(apiBase)}
                   </Text>
                 </>

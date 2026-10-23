@@ -41,12 +41,18 @@ import { isCurrentOidcAccount, oidcDiscovery } from "./oidc.js";
 import { passkeyRelyingParty } from "./passkey.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
+import type { TurnstileSecret } from "./turnstile.js";
+import { CAPTCHA_HEADER, verifyTurnstileToken } from "./turnstile.js";
 
 export type { OidcConfig } from "./oidc.js";
 export { passkeyRelyingParty } from "./passkey.js";
+export type { TurnstileSecret } from "./turnstile.js";
+export { CAPTCHA_HEADER, verifyTurnstileToken } from "./turnstile.js";
 
 export interface AuthEnv {
   analytics?: ProductAnalytics;
+  /** Current Turnstile secret, or null when signup captcha is off. Read per request. */
+  turnstile?: () => Promise<TurnstileSecret | null>;
   passwordAuth?: boolean;
   /** Opt-in: rejects new passwords found in Have I Been Pwned. Calls an outside service. */
   breachedPasswordCheck?: boolean;
@@ -308,6 +314,20 @@ export function authRateLimitOptions(nodeEnv = process.env.NODE_ENV) {
   };
 }
 
+/** Password signup, or an emailed code for an address with no account yet. */
+async function signupCreatesAccount(ctx: {
+  path: string;
+  body?: { email?: unknown };
+  context: { internalAdapter: { findUserByEmail: (email: string) => Promise<unknown> } };
+}): Promise<boolean> {
+  if (ctx.path === "/sign-up/email") return true;
+  if (ctx.path !== SEND_SIGN_IN_CODE_PATH) return false;
+  const email = String(ctx.body?.email ?? "")
+    .trim()
+    .toLowerCase();
+  return !(await ctx.context.internalAdapter.findUserByEmail(email));
+}
+
 export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   if (env.passwordAuth === false && !env.oidc)
     throw new Error("Password auth requires OIDC when disabled");
@@ -552,6 +572,23 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               if (ctx.path === SEND_SIGN_IN_CODE_PATH) return ctx.json({ success: true });
               throw new APIError("BAD_REQUEST", { code: "INVALID_OTP", message: "Invalid OTP" });
             }
+          }
+        }
+        if (env.turnstile && (await signupCreatesAccount(ctx))) {
+          const turnstile = await env.turnstile();
+          if (
+            turnstile &&
+            !(await verifyTurnstileToken(
+              turnstile.secretKey,
+              ctx.request?.headers.get(CAPTCHA_HEADER) ?? ctx.headers?.get(CAPTCHA_HEADER),
+              ctx.request?.headers.get(CLIENT_IP_HEADER) ?? ctx.headers?.get(CLIENT_IP_HEADER),
+            ))
+          ) {
+            throw new APIError("BAD_REQUEST", {
+              code: "CAPTCHA_FAILED",
+              message:
+                "Complete the human check and try again. In the mobile app, create your account on the website first.",
+            });
           }
         }
         let policy =

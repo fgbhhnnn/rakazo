@@ -1293,6 +1293,10 @@ msgstr "צפוף"
 msgid "Complete"
 msgstr "הושלם"
 
+#: src/pages/Auth.tsx
+msgid "Complete the security check first"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
@@ -2979,6 +2983,7 @@ msgid "Loading voice providers…"
 msgstr "טוען ספקי קול…"
 
 #: src/App.tsx
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -3118,6 +3123,14 @@ msgstr "חבר"
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
+msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members and sign-up"
+msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members without their own model or voice use my defaults"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -3613,6 +3626,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr "אפשר למחוק רק מרחבים ריקים. יש למחוק קודם את הבוטים והקבוצות שבו."
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
+msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -4175,6 +4192,10 @@ msgstr "תשובה ל-{0}"
 msgid "Request a new code"
 msgstr "יש לבקש קוד חדש"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Require a Cloudflare Turnstile check to create an account"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr "מחקר וכתיבה"
@@ -4358,6 +4379,10 @@ msgstr "שמירה"
 msgid "Save credential"
 msgstr "שמירת פרטי הגישה"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Save keys"
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr "שמירת הערך החדש"
@@ -4372,10 +4397,15 @@ msgstr "שמירת סביבת העבודה והתקנת התוכנה העדכנ�
 msgid "Saved"
 msgstr "נשמר"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Saved — enter to replace"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "נשמר, אבל רענון הרשימה נכשל"
 
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "נשמר."
@@ -5127,6 +5157,14 @@ msgstr "לנסות שוב"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "אפשר לנסות את הבדיקה שוב."
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile secret key"
+msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile site key"
+msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"

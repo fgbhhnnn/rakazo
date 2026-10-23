@@ -42,7 +42,7 @@ import {
   selectedSpaceId,
   signOut,
 } from "../../lib/api";
-import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
+import { getAppVersionInfo } from "../../lib/app-version";
 import {
   getCachedAppearancePreference,
   mobileTokens,
@@ -160,8 +160,7 @@ export default function Account() {
   const stackOptions = useStackedSettings();
   const styles = useThemedStyles(createAccountStyles);
   const versionInfo = getAppVersionInfo();
-  const updateLabel = formatUpdateLabel(versionInfo.update, t);
-  const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
+  const versionAccessibility = versionInfo.nativeLabel ?? undefined;
 
   useEffect(() => {
     void rpc<MobileMe>("me")
@@ -623,19 +622,25 @@ export default function Account() {
               { title: t("Integrations"), href: "/integrations" },
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const
-          ).map(({ title, href }) => (
-            <SettingsRow
-              key={href}
-              accessibilityRole="button"
-              chevron="right"
-              disabled={pending}
-              // Artifacts lives on the root stack, so it closes the sheet before opening.
-              onPress={() =>
-                isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
-              }
-              title={title}
-            />
-          ))}
+          )
+            // The deployment owner manages models and voice for members when locked.
+            .filter(
+              ({ href }) =>
+                !(me?.memberSettingsLocked && (href === "/models" || href === "/voice")),
+            )
+            .map(({ title, href }) => (
+              <SettingsRow
+                key={href}
+                accessibilityRole="button"
+                chevron="right"
+                disabled={pending}
+                // Artifacts lives on the root stack, so it closes the sheet before opening.
+                onPress={() =>
+                  isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+                }
+                title={title}
+              />
+            ))}
           {me?.isDeploymentOwner ? (
             <SettingsRow
               accessibilityRole="button"
@@ -702,16 +707,13 @@ export default function Account() {
 
         <View style={styles.about}>
           <AppMark />
-          {versionInfo.nativeLabel || updateLabel ? (
+          {versionInfo.nativeLabel ? (
             <View
               accessibilityLabel={versionAccessibility}
               accessibilityRole="summary"
               style={styles.versionFooter}
             >
-              {versionInfo.nativeLabel ? (
-                <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
-              ) : null}
-              {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
+              <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
             </View>
           ) : null}
         </View>

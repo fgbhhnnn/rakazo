@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Your administrator manages this setting.": "此设置由管理员统一管理。",
   "Add an AI model to keep chatting": "添加一个 AI 模型以继续聊天",
   "Not Now": "暂不",
   "Add Model": "添加模型",
@@ -39,10 +40,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{name} asked": "{name} 问",
   Close: "关闭",
   Link: "链接",
-  "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",
-  "The server had a problem. Try again in a moment.": "服务器出现问题。请稍后重试。",
+  "Too many attempts. Try again in a few minutes.":
+    "尝试次数过多。请过几分钟再试。",
+  "The server had a problem. Try again in a moment.":
+    "服务器出现问题。请稍后重试。",
   "Password sign-in is turned off on this server": "此服务器已关闭密码登录",
-  "Could not save your sign-in on this device. Try again.": "无法在此设备上保存登录信息。请重试。",
+  "Could not save your sign-in on this device. Try again.":
+    "无法在此设备上保存登录信息。请重试。",
   "Your OpenRouter": "你的 OpenRouter",
   "Your OpenAI": "你的 OpenAI",
   "Your Anthropic": "你的 Anthropic",
@@ -53,23 +57,32 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{summary} Resets {date}.": "{summary} 将于{date}重置。",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider}拒绝了 API 密钥。请检查连接设置。",
-  "{provider} could not find the requested model.": "{provider}找不到请求的模型。",
-  "{provider} took too long to respond. Try again.": "{provider}响应超时。请重试。",
+  "{provider} could not find the requested model.":
+    "{provider}找不到请求的模型。",
+  "{provider} took too long to respond. Try again.":
+    "{provider}响应超时。请重试。",
   "{provider} key hit its limit.": "{provider}的密钥已达到限额。",
   "{provider} key hit its daily limit.": "{provider}的密钥已达到每日限额。",
   "{provider} key hit its weekly limit.": "{provider}的密钥已达到每周限额。",
   "{provider} key hit its monthly limit.": "{provider}的密钥已达到每月限额。",
   "{provider} reached its credit limit.": "{provider}已达到额度上限。",
-  "{provider} reached its daily credit limit.": "{provider}已达到每日额度上限。",
-  "{provider} reached its weekly credit limit.": "{provider}已达到每周额度上限。",
-  "{provider} reached its monthly credit limit.": "{provider}已达到每月额度上限。",
+  "{provider} reached its daily credit limit.":
+    "{provider}已达到每日额度上限。",
+  "{provider} reached its weekly credit limit.":
+    "{provider}已达到每周额度上限。",
+  "{provider} reached its monthly credit limit.":
+    "{provider}已达到每月额度上限。",
   "{provider} reached its spending limit.": "{provider}已达到支出限额。",
-  "{provider} reached its daily spending limit.": "{provider}已达到每日支出限额。",
-  "{provider} reached its weekly spending limit.": "{provider}已达到每周支出限额。",
-  "{provider} reached its monthly spending limit.": "{provider}已达到每月支出限额。",
+  "{provider} reached its daily spending limit.":
+    "{provider}已达到每日支出限额。",
+  "{provider} reached its weekly spending limit.":
+    "{provider}已达到每周支出限额。",
+  "{provider} reached its monthly spending limit.":
+    "{provider}已达到每月支出限额。",
   Details: "详情",
 
-  "Couldn't refresh — showing the last loaded messages.": "无法刷新——显示最近加载的消息。",
+  "Couldn't refresh — showing the last loaded messages.":
+    "无法刷新——显示最近加载的消息。",
   "Try Again": "重试",
   "Too many unsent messages": "未发送消息过多",
   "Not sent": "未发送",
@@ -83,13 +96,15 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Recover computer?": "恢复电脑？",
   "Recreate a computer that is not working.": "重建无法正常工作的电脑。",
   "Restore the last saved workspace.": "恢复上次保存的工作区。",
-  "Save the workspace and install current software.": "保存工作区并安装最新软件。",
+  "Save the workspace and install current software.":
+    "保存工作区并安装最新软件。",
   "More computer actions": "更多电脑操作",
   "Update your server to use AI data sharing in this mobile version.":
     "请更新服务器，以便在此移动版本中使用 AI 数据共享功能。",
   "Release computer": "释放电脑",
   "Release interrupted computer?": "释放中断的电脑？",
-  "Make sure nothing is still running on this computer.": "请确认这台电脑上没有仍在运行的任务。",
+  "Make sure nothing is still running on this computer.":
+    "请确认这台电脑上没有仍在运行的任务。",
   "Nothing is still running": "没有仍在运行的任务",
 
   "Recovery is unavailable until the previous operation has stopped.":
@@ -97,7 +112,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Continue in Background": "在后台继续",
   "Could not complete action": "无法完成操作",
   Dismiss: "关闭",
-  "Dismissed. Reconnect anytime from MCP settings.": "已暂缓。随时可在 MCP 设置中重新连接。",
+  "Dismissed. Reconnect anytime from MCP settings.":
+    "已暂缓。随时可在 MCP 设置中重新连接。",
   "Getting ready": "正在准备",
   Reconnecting: "正在重新连接",
   "Recovering Team Computer": "正在恢复团队电脑",
@@ -113,7 +129,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Updating {name}’s Computer": "正在更新 {name} 的电脑",
 
   "Server integrations": "服务器集成",
-  "Ask the server owner to configure this provider.": "请联系服务器所有者配置此服务。",
+  "Ask the server owner to configure this provider.":
+    "请联系服务器所有者配置此服务。",
   "Client ID": "客户端 ID",
   "Client secret": "客户端密钥",
   "Connect apps": "连接应用",
@@ -124,7 +141,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Get credentials": "获取凭据",
   "Open web app": "打开网页应用",
   "Project ID": "项目 ID",
-  "Set up Executor on your server in the web app.": "请在网页应用中为服务器设置 Executor。",
+  "Set up Executor on your server in the web app.":
+    "请在网页应用中为服务器设置 Executor。",
 
   "Cloud agent": "云端智能体",
   "Command variable": "命令变量",
@@ -194,7 +212,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Collapse {name}": "折叠 {name}",
   "Expand {name}": "展开 {name}",
   Archived: "已归档",
-  "Archived. Chat, memory, and files kept.": "已归档。对话、记忆和文件均已保留。",
+  "Archived. Chat, memory, and files kept.":
+    "已归档。对话、记忆和文件均已保留。",
   Asleep: "已休眠",
   Attach: "附件",
   "Attach file": "添加附件",
@@ -248,7 +267,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Confirm password": "确认密码",
   "Computer failed to boot": "电脑启动失败",
   "Computer is asleep": "电脑已休眠",
-  "Computer is asleep. Take control to wake it.": "电脑已休眠。接管控制即可唤醒。",
+  "Computer is asleep. Take control to wake it.":
+    "电脑已休眠。接管控制即可唤醒。",
   "Computer is stopped": "电脑已停止",
   "Configured by deployment": "由部署配置",
   Connect: "连接",
@@ -300,7 +320,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not load model settings": "无法加载模型设置",
   "Could not load routine": "无法加载例行任务",
   "Could not load routines": "无法加载例行任务",
-  "Get notified when this Bot finishes or needs input": "在此机器人完成或需要输入时收到通知",
+  "Get notified when this Bot finishes or needs input":
+    "在此机器人完成或需要输入时收到通知",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "无法加载桌面。此设备无法访问屏幕地址。",
   "Could not load this file.": "无法加载此文件。",
@@ -375,7 +396,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Done: "完成",
   "Disconnect {name}?": "断开 {name}？",
   Disconnect: "断开",
-  "This removes the connection from every space.": "这将从每个 Space 移除该连接。",
+  "This removes the connection from every space.":
+    "这将从每个 Space 移除该连接。",
   "Disconnecting…": "正在断开…",
   Email: "邮箱",
   Embedded: "内置",
@@ -411,7 +433,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Hear a sample": "试听示例",
   Hide: "隐藏",
   "Hide {label}": "隐藏 {label}",
-  "Hi, this is how I'll sound when I read replies out loud.": "你好，这是我朗读回复时的声音。",
+  "Hi, this is how I'll sound when I read replies out loud.":
+    "你好，这是我朗读回复时的声音。",
   "I’m done": "我完成了",
   "If you heard that, voice is ready.": "如果你听到了，说明语音已就绪。",
   Integrations: "集成",
@@ -419,7 +442,8 @@ export const ZH_MESSAGES: Record<string, string> = {
     "如果该地址已有账户，我们已发送密码重置链接。",
   "Its conversation, files, and routines will be permanently deleted. What should happen to its memories?":
     "它的对话、文件和例行任务将被永久删除。记忆要如何处理？",
-  "It could not be opened. Try again from the sidebar.": "无法打开。请从侧边栏重试。",
+  "It could not be opened. Try again from the sidebar.":
+    "无法打开。请从侧边栏重试。",
   "Jump to latest": "跳到最新",
   "Jump to latest, new messages": "跳到最新，有新消息",
   New: "新消息",
@@ -437,7 +461,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Mark as Read": "标为已读",
   "Mark as Unread": "标为未读",
   "Long press to pin or move to a section": "长按可置顶或移动到分组",
-  "Long press to pin, move, or silence notifications": "长按可置顶、移动或静音通知",
+  "Long press to pin, move, or silence notifications":
+    "长按可置顶、移动或静音通知",
   "Show less": "收起",
   Members: "成员",
   Max: "最高",
@@ -465,7 +490,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Section actions for {name}": "{name} 的分组操作",
   "Could not delete section": "无法删除分组",
   "Delete section": "删除分组",
-  "Its bots and groups are kept and leave the section.": "其中的 Bot 和群组会保留，并移出该分组。",
+  "Its bots and groups are kept and leave the section.":
+    "其中的 Bot 和群组会保留，并移出该分组。",
   "Save section name": "保存分组名称",
   "New space": "新建空间",
   "No apps match your search.": "没有符合搜索条件的应用。",
@@ -492,7 +518,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Organic: "有机",
   "Other model…": "其他模型…",
   Password: "密码",
-  "Password recovery is not configured for this server": "此服务器未配置密码找回",
+  "Password recovery is not configured for this server":
+    "此服务器未配置密码找回",
   "Passwords do not match": "两次输入的密码不一致",
   "Paste a replacement key": "粘贴替换密钥",
   "Paste your API key": "粘贴你的 API 密钥",
@@ -519,7 +546,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Remove {name}": "移除 {name}",
   "Remove mention {name}": "移除提及 {name}",
   "Remove skill {name}": "移除技能 {name}",
-  "Removed with chat, computer, and memory.": "已连同对话、电脑和记忆一起移除。",
+  "Removed with chat, computer, and memory.":
+    "已连同对话、电脑和记忆一起移除。",
   "Replies and completed work": "回复和已完成的工作",
   Reply: "回复",
   "Replying to": "正在回复",
@@ -603,7 +631,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Team: "团队",
   "Team Computer": "团队电脑",
   "That doesn’t look like a URL": "这看起来不像 URL",
-  "That URL did not look like a Rakazo server": "该地址看起来不是 Rakazo 服务器",
+  "That URL did not look like a Rakazo server":
+    "该地址看起来不是 Rakazo 服务器",
   "That URL is missing a host": "该地址缺少主机名",
   "The server changed while starting the request": "请求开始时服务器已更改",
   "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.":
@@ -675,7 +704,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Found {count} model.": "找到 {count} 个模型。",
   "Found {count} models.": "找到 {count} 个模型。",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
-  "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
+  "http://localhost:53692/callback?code=…":
+    "http://localhost:53692/callback?code=…",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
   "https://executor.example/mcp": "https://executor.example/mcp",
@@ -737,7 +767,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   High: "高",
   "This device": "本设备",
   "On · Free, works offline": "已开启 · 免费，可离线使用",
-  "Your phone's built-in voice. Free, no account needed": "手机自带的语音。免费，无需账户",
+  "Your phone's built-in voice. Free, no account needed":
+    "手机自带的语音。免费，无需账户",
   "Could not save that preference": "无法保存该设置",
   Username: "用户名",
   // app/(settings)/models.tsx
@@ -752,7 +783,8 @@ export const ZH_MESSAGES: Record<string, string> = {
     "空间已更改。重新加载“模型”以刷新备用模型。",
   "Space changed. Reload Models before saving backups.":
     "空间已更改。保存备用模型前请重新加载“模型”。",
-  "A sign-in page opened — enter this code there:": "登录页面已打开——请在其中输入此代码：",
+  "A sign-in page opened — enter this code there:":
+    "登录页面已打开——请在其中输入此代码：",
   "All providers": "所有提供商",
   Copied: "已复制",
   "Copy code": "复制代码",
@@ -772,7 +804,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Mute: "静音",
   Unmute: "取消静音",
   "Hang up": "挂断",
-  "Allow microphone access to call a bot.": "请允许使用麦克风，以便与 Bot 通话。",
+  "Allow microphone access to call a bot.":
+    "请允许使用麦克风，以便与 Bot 通话。",
   "Could not hear that.": "没有听清。",
   "Could not transcribe that.": "无法转写。",
   "Could not speak that.": "无法朗读。",
@@ -798,7 +831,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Versions: "版本",
   "No preview for this file type.": "此文件类型无法预览。",
 
-  "Your phone's built-in voice — free, no account needed": "手机自带的语音 — 免费，无需账户",
+  "Your phone's built-in voice — free, no account needed":
+    "手机自带的语音 — 免费，无需账户",
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "使用手机自带的语音朗读，而不是已连接的语音服务。",
   "Call sounds": "通话提示音",
@@ -825,7 +859,8 @@ export const ZH_MESSAGES: Record<string, string> = {
     "新的手机端操作不会向这些服务发送数据。正在执行的任务和例行任务会继续，直到你将其停止。",
   Withdraw: "撤销",
   "Share data with {name}?": "与 {name} 分享数据？",
-  "You can turn this off in Account → AI data sharing.": "你可以在账户 → AI 数据共享中关闭此功能。",
+  "You can turn this off in Account → AI data sharing.":
+    "你可以在账户 → AI 数据共享中关闭此功能。",
   Allow: "允许",
   "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines.":
     "消息、聊天记录、Bot 指令、记忆、附件、截图及已连接应用的内容会被发送，以运行你的 Bot，包括例行任务。",
@@ -935,4 +970,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "每月额度在续费时到期。单次充值额度不会过期。",
   "Use Rakazo credits": "使用 Rakazo 额度",
+  "Complete the security check first": "请先完成人机验证",
+  "Security check failed. Check your connection and try again.":
+    "人机验证失败，请检查网络后重试。",
+  "Security check failed. Complete it again and retry.":
+    "人机验证未通过，请重新验证后再试。",
 };

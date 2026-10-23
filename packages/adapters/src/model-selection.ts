@@ -7,7 +7,7 @@ import {
   usableModelId,
 } from "@rakazo/contracts";
 import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
-import { chooseModelCredential, findModelCredential } from "@rakazo/db";
+import { chooseModelCredential, findModelCredential, withinScope } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
@@ -431,6 +431,19 @@ export async function findConnectedModelCredential(
   modelId?: string | null,
   resolution: ConnectedModelResolution = {},
 ): Promise<ModelCredential> {
+  return withinScope(actor, () =>
+    findConnectedModelCredentialInScope(prisma, secretStore, actor, provider, modelId, resolution),
+  );
+}
+
+async function findConnectedModelCredentialInScope(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+  modelId?: string | null,
+  resolution: ConnectedModelResolution = {},
+): Promise<ModelCredential> {
   let selected = await findModelCredential(prisma, actor, provider, modelId);
   const replacement = resolution.replacement;
   if (
@@ -674,6 +687,19 @@ export function compatibleThinkingLevels(
 }
 
 export async function validateConnectedModelChoice(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+  modelId: string,
+  resolution: ConnectedModelResolution = {},
+) {
+  return withinScope(actor, () =>
+    validateConnectedModelChoiceInScope(prisma, secretStore, actor, provider, modelId, resolution),
+  );
+}
+
+async function validateConnectedModelChoiceInScope(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
   actor: Pick<Actor, "userId" | "spaceId">,
