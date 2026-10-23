@@ -47,7 +47,14 @@ import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareGatewayAuth } from "./cloudflare-ai-gateway.js";
-import { pruneForRebuild } from "./context-pruning.js";
+import {
+  capToolResultImages,
+  firstChangedIndex,
+  looksLikeContextOverflow,
+  OVERFLOW_RETRY_MAX_IMAGES,
+  pruneForRebuild,
+  toolImageLimit,
+} from "./context-pruning.js";
 import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { estimateModelContextTokens } from "./model-context.js";
@@ -343,7 +350,13 @@ export class PiAgentRuntime implements AgentRuntime {
           imageTokens: estimatePiImageTokens,
         });
         const usageHooks = {
-          prepareContext: contextPolicy.prepareContext,
+          prepareContext: (ctx: Context, m: Model<Api>) =>
+            withCappedImages(
+              contextPolicy.prepareContext(ctx, m),
+              toolImageLimit(
+                host.activeModel?.config.maxImagesPerPrompt ?? request.model.maxImagesPerPrompt,
+              ),
+            ),
           imageTokens: estimatePiImageTokens,
           recordUsage: request.onUsage,
           onUsage: (usage: AgentUsage) => {
@@ -392,7 +405,11 @@ export class PiAgentRuntime implements AgentRuntime {
                   },
                   {
                     ...usageHooks,
-                    prepareContext: (ctx, m) => contextPolicy.prepareContext(ctx, m),
+                    prepareContext: (ctx, m) =>
+                      withCappedImages(
+                        contextPolicy.prepareContext(ctx, m),
+                        toolImageLimit(target.config.maxImagesPerPrompt),
+                      ),
                     onProviderError: (message) => providerFailures.add(message.content),
                   },
                 ),
@@ -2316,6 +2333,8 @@ interface FallbackStreamState {
   isProviderFailure(message: AssistantMessage): boolean;
   /** Set once a provider rejected replayed thinking signatures; see thinking-signatures.ts. */
   dropThinkingBlocks?: boolean;
+  /** Set once a provider rejected an image-heavy request; later calls keep only a few images. */
+  shrinkImages?: boolean;
   /**
    * Messages written before the last switch to a backup model. Their thinking is bound to the
    * model and transcript it was written for, and the backup's policy starts with a rebuild that
@@ -2435,6 +2454,10 @@ function fallbackAwareModelStream(
   // must use that same context, or a usable backup can be skipped on discarded text.
   // A backup is judged on the context it would get after the switch, without earlier thinking.
   const requestContext = (switching = false) => {
+    if (state.shrinkImages) {
+      const base = state.dropThinkingBlocks ? withoutThinkingBlocks(context) : context;
+      return withCappedImages(base, OVERFLOW_RETRY_MAX_IMAGES);
+    }
     if (state.dropThinkingBlocks) return withoutThinkingBlocks(context);
     const before = switching ? context.messages.length : state.messagesBeforeSwitch;
     if (!before) return context;
@@ -2585,6 +2608,27 @@ function fallbackAwareModelStream(
             ) {
               // Later calls in this run skip the stale thinking up front instead of failing first.
               state.dropThinkingBlocks = true;
+              buffered = [];
+              restart = true;
+              break;
+            }
+            if (
+              !sawPartialOutput &&
+              !hasTerminalPartialOutput &&
+              event.reason === "error" &&
+              !signalAborted() &&
+              !state.shrinkImages &&
+              looksLikeContextOverflow(event.error.errorMessage, contextImageCount(context))
+            ) {
+              // Retry once with only the newest images; the run keeps the smaller budget after.
+              getLogger().warn(
+                "Model rejected an image-heavy request; retrying with fewer images",
+                {
+                  runId: state.request.runId,
+                  images: contextImageCount(context),
+                },
+              );
+              state.shrinkImages = true;
               buffered = [];
               restart = true;
               break;
@@ -3032,4 +3076,18 @@ export function reliableStreamOptions(
   }
 
   return next;
+}
+
+/**
+ * Swap the oldest tool-result images over `limit` for a note. The rewritten messages no longer
+ * match the transcript earlier thinking was signed against, so thinking from there on is dropped.
+ */
+export function withCappedImages<T extends { messages: Context["messages"] }>(
+  context: T,
+  limit: number,
+): T {
+  const capped = capToolResultImages(context.messages, limit);
+  if (capped === context.messages) return context;
+  const from = firstChangedIndex(context.messages, capped);
+  return { ...context, messages: withoutThinkingFrom(capped, Math.max(0, from)) };
 }

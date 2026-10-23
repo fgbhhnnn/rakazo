@@ -109,7 +109,11 @@ export function pruneComputerScreenshotContext(
 
 /** What a rebuild drops: stale page state, and screenshots over the default or model limit. */
 export function pruneForRebuild(messages: Message[], maxImagesPerPrompt?: number): Message[] {
-  return pruneComputerScreenshotContext(pruneStalePageStateContext(messages), maxImagesPerPrompt);
+  const capped = capToolResultImages(
+    pruneStalePageStateContext(messages),
+    toolImageLimit(maxImagesPerPrompt),
+  );
+  return pruneComputerScreenshotContext(capped, maxImagesPerPrompt);
 }
 
 /** A model's image limit as a whole number, or undefined when it has none or it isn't finite. */
@@ -134,5 +138,99 @@ function isComputerScreenshotMessage(message: Message | undefined): message is T
       typeof details === "object" &&
       "frameId" in details &&
       typeof (details as { frameId?: unknown }).frameId === "string",
+  );
+}
+
+/** Images a request may carry before the oldest tool-result images are swapped for a note. */
+export const DEFAULT_MAX_TOOL_IMAGES = 8;
+/** How many images survive after a provider rejected an image-heavy request. */
+export const OVERFLOW_RETRY_MAX_IMAGES = 2;
+
+/**
+ * The image budget for tool results: the connection's limit when set, otherwise
+ * RAKAZO_MAX_TOOL_IMAGES or the default, whichever is tighter.
+ */
+export function toolImageLimit(
+  maxImagesPerPrompt?: number,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.RAKAZO_MAX_TOOL_IMAGES?.trim();
+  const parsed = raw ? Number(raw) : Number.NaN;
+  const fallback = Number.isFinite(parsed)
+    ? Math.max(0, Math.floor(parsed))
+    : DEFAULT_MAX_TOOL_IMAGES;
+  const configured = normalizedImageLimit(maxImagesPerPrompt);
+  return configured === undefined ? fallback : Math.min(configured, fallback);
+}
+
+function removedImageNote(message: ToolResultMessage): string {
+  const details = message.details as Record<string, unknown> | undefined;
+  const path = ["path", "file", "filePath", "url"]
+    .map((key) => details?.[key])
+    .find((value): value is string => typeof value === "string" && value.length > 0);
+  const label = [message.toolName, path].filter(Boolean).join(" ");
+  return `[earlier image removed to save context${label ? `: ${label}` : ""}. Re-open the file if you still need it.]`;
+}
+
+/**
+ * Keep a request within `limit` images by replacing the oldest tool-result images with a short
+ * text note. User images are never removed (they are what the user asked about); only tool
+ * results, oldest first, so the newest views stay visible. Returns the input when nothing changes.
+ */
+export function capToolResultImages(messages: Message[], limit: number): Message[] {
+  const max = Math.max(0, Math.floor(limit));
+  let excess = messages.reduce((count, message) => count + imagePartCount(message), 0) - max;
+  if (excess <= 0) return messages;
+  let transformed: Message[] | undefined;
+  for (let index = 0; index < messages.length && excess > 0; index += 1) {
+    const message = messages[index];
+    if (message?.role !== "toolResult" || imagePartCount(message) === 0) continue;
+    const content: ToolResultMessage["content"] = [];
+    let noted = false;
+    for (const part of message.content) {
+      if (part.type === "image" && excess > 0) {
+        excess -= 1;
+        if (!noted) {
+          content.push({ type: "text", text: removedImageNote(message) });
+          noted = true;
+        }
+        continue;
+      }
+      content.push(part);
+    }
+    transformed ??= [...messages];
+    transformed[index] = { ...message, content };
+  }
+  return transformed ?? messages;
+}
+
+/** Index of the first message `capToolResultImages` changed, or -1. */
+export function firstChangedIndex(before: Message[], after: Message[]): number {
+  if (before === after) return -1;
+  return after.findIndex((message, index) => message !== before[index]);
+}
+
+/**
+ * Whether a provider error looks like the request was too big: too many/too large images or
+ * an over-long context, on a request with more images than the retry keeps. A bare "Upstream error: 400" from a gateway counts only when the request
+ * actually carried more images than the overflow retry keeps.
+ */
+export function looksLikeContextOverflow(
+  errorMessage: string | undefined,
+  imageCount: number,
+): boolean {
+  // Shrinking images is the only remedy this retry has, so text-only overflow is left alone.
+  if (imageCount <= OVERFLOW_RETRY_MAX_IMAGES) return false;
+  const message = errorMessage ?? "";
+  if (
+    /context.{0,20}(length|window|too long)|too many (images|tokens)|maximum context|prompt is too long|image.{0,40}(limit|too large|exceed|too many)|request (entity )?too large|payload too large|\b413\b/i.test(
+      message,
+    )
+  )
+    return true;
+  return (
+    imageCount > OVERFLOW_RETRY_MAX_IMAGES &&
+    /\b400\b/.test(message) &&
+    /upstream|invalid_request/i.test(message)
   );
 }
