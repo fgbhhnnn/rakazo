@@ -12,6 +12,7 @@ import {
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  isHiddenBot,
   type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -344,7 +345,13 @@ export async function returnBotMessageOutcome(
     return true;
   }
   const sourceIntent = source.intent ?? "request";
-  if (sourceIntent !== "request" && sourceIntent !== "question") {
+  // A hidden background worker always reports back to its dispatcher, whatever the intent of
+  // the message that woke it: the dispatcher is the only way its result reaches the user.
+  if (
+    sourceIntent !== "request" &&
+    sourceIntent !== "question" &&
+    !(await isHiddenWorkerRun(deps.prisma, run.botId))
+  ) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
@@ -399,4 +406,13 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
 
 function isUniqueConstraintError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+async function isHiddenWorkerRun(prisma: PrismaClient, botId: string): Promise<boolean> {
+  try {
+    const bot = await prisma.bot.findUnique({ where: { id: botId }, select: { spawnKey: true } });
+    return isHiddenBot({ spawnKey: bot?.spawnKey ?? null });
+  } catch {
+    return false;
+  }
 }

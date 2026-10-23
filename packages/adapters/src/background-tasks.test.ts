@@ -14,6 +14,7 @@ const {
   buildBackgroundTaskMessage,
   cancelBackgroundTask,
   launchBackgroundTask,
+  taskTitle,
   workerDisabledTools,
 } = await import("./background-tasks.js");
 const { BACKGROUND_WORK_LAUNCH, CANCEL_COMPUTER_RUN_WORK } = await import("./computer-idle.js");
@@ -32,7 +33,11 @@ function worker(slot: number) {
   };
 }
 
-function fakeDeps(opts: { workers: ReturnType<typeof worker>[]; active?: Record<string, string> }) {
+function fakeDeps(opts: {
+  workers: ReturnType<typeof worker>[];
+  active?: Record<string, string>;
+  undelivered?: string[];
+}) {
   const prisma = {
     bot: {
       findMany: vi.fn(async () => opts.workers),
@@ -52,15 +57,25 @@ function fakeDeps(opts: { workers: ReturnType<typeof worker>[]; active?: Record<
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     run: {
-      findFirst: vi.fn(async ({ where }: { where: { botId: string } }) =>
-        opts.active?.[where.botId]
-          ? {
-              id: `r-${where.botId}`,
-              taskId: "task",
-              status: opts.active[where.botId],
-              createdAt: new Date(),
-            }
-          : null,
+      findFirst: vi.fn(
+        async ({ where }: { where: { botId: string; status?: { notIn?: unknown } } }) =>
+          where.status?.notIn
+            ? opts.undelivered?.includes(where.botId)
+              ? {
+                  id: `done-${where.botId}`,
+                  status: "completed",
+                  completedAt: new Date(),
+                  botOutcomeReturnedAt: null,
+                }
+              : null
+            : opts.active?.[where.botId]
+              ? {
+                  id: `r-${where.botId}`,
+                  taskId: "task",
+                  status: opts.active[where.botId],
+                  createdAt: new Date(),
+                }
+              : null,
       ),
     },
   };
@@ -218,6 +233,7 @@ describe("cancelBackgroundTask", () => {
         findUnique: vi.fn(async () => ({ status: "cancelled" })),
       },
       steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       computerExecutionLease: {
         findMany: vi.fn(async () => [{ computerId: "c1", botId: "w1", runId: "r-w1", fence: 1 }]),
       },
@@ -345,6 +361,49 @@ describe("worker context", () => {
       run,
       expect.anything(),
       expect.objectContaining({ bot_id: "w1", message: "配音换成男声" }),
+    );
+  });
+});
+
+describe("result delivery", () => {
+  it("does not reuse a slot whose last result is still undelivered", async () => {
+    const { deps } = fakeDeps({ workers: [worker(1), worker(2)], undelivered: ["w1"] });
+    const out = await launchBackgroundTask(
+      deps,
+      run,
+      bot,
+      { name: "GEO", task: "t" },
+      { builtinToolNames: names, deliveryKey: "k" },
+    );
+    expect(out).toMatchObject({ task_id: "w2" });
+  });
+
+  it("labels each task with its title and a unique task ref", async () => {
+    const { deps, prisma } = fakeDeps({ workers: [worker(1)] });
+    const out = (await launchBackgroundTask(
+      deps,
+      run,
+      bot,
+      { name: "补丁", task: "t" },
+      { builtinToolNames: names, deliveryKey: "k" },
+    )) as { task_ref: string };
+    expect(out.task_ref).toMatch(/^[A-Z0-9]{4,10}$/);
+    expect(prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ title: `补丁 #${out.task_ref}` }),
+      }),
+    );
+    expect(taskTitle(`补丁 #${out.task_ref}`)).toBe("补丁");
+  });
+
+  it("sends a message to an idle worker as a request, never fyi", async () => {
+    const { deps } = fakeDeps({ workers: [worker(1)] });
+    await backgroundTaskMessage(deps, run, bot, { task_id: "w1", message: "再修一下" }, "k3");
+    expect(messageBot).toHaveBeenLastCalledWith(
+      deps,
+      run,
+      expect.anything(),
+      expect.objectContaining({ bot_id: "w1", intent: "request" }),
     );
   });
 });

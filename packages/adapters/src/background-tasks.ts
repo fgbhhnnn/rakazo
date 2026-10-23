@@ -222,6 +222,22 @@ async function workerBots(deps: Deps, bot: DispatchBot, spaceId: string) {
   });
 }
 
+const UNDELIVERED_HOLD_MS = 10 * 60_000;
+
+/** The worker's latest finished run whose outcome was not yet returned to the dispatcher. */
+async function undeliveredOutcome(deps: Deps, botId: string) {
+  const latest = await deps.prisma.run.findFirst({
+    where: { botId, status: { notIn: [...ACTIVE_RUN_STATUSES] } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, status: true, completedAt: true, botOutcomeReturnedAt: true },
+  });
+  if (!latest || latest.botOutcomeReturnedAt) return null;
+  if (latest.status !== "completed" && latest.status !== "failed") return null;
+  // Delivery normally follows within seconds; a result stuck longer must not hold the slot forever.
+  const finishedAt = latest.completedAt?.getTime() ?? 0;
+  return Date.now() - finishedAt < UNDELIVERED_HOLD_MS ? latest : null;
+}
+
 async function activeRunFor(deps: Deps, botId: string) {
   return deps.prisma.run.findFirst({
     where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
@@ -232,6 +248,16 @@ async function activeRunFor(deps: Deps, botId: string) {
 
 // Parallel background_task calls in one turn must not pick the same idle slot before either
 // has queued its run, so launches for one dispatcher run one at a time in this process.
+/** Short unique label of one background task, shown on its card and in the worker's title. */
+export function newTaskRef(): string {
+  return `T${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 5)}`.toUpperCase();
+}
+
+/** A worker title without its " #REF" task label. */
+export function taskTitle(title: string): string {
+  return title.replace(/ #[A-Z0-9]{4,10}$/, "");
+}
+
 const FRESH_TASK_SUMMARY = "此前的后台任务已结束，与接下来的新任务无关；只按新任务消息工作。";
 
 const launchLocks = new Map<string, Promise<unknown>>();
@@ -347,7 +373,12 @@ async function freeSlot(deps: Deps, run: DispatchRun, bot: DispatchBot) {
   let busy = 0;
   for (let slot = 1; slot <= limit; slot += 1) {
     const worker = existing.find((b) => b.spawnKey === backgroundWorkerSpawnKey(bot.id, slot));
-    if (worker && (await activeRunFor(deps, worker.id))) {
+    if (
+      worker &&
+      ((await activeRunFor(deps, worker.id)) || (await undeliveredOutcome(deps, worker.id)))
+    ) {
+      // Busy, or its last result has not reached the dispatcher yet: never hand the slot
+      // (and its context) to unrelated work before that result is delivered.
       busy += 1;
       continue;
     }
@@ -375,6 +406,8 @@ async function startOnSlot(
   spec: StartSpec,
 ) {
   const { name, task, agent } = spec;
+  // A slot is reused across tasks; the ref tells this task apart from the slot's earlier ones.
+  const ref = newTaskRef();
 
   // Per task: same computer as the dispatcher, quiet notifications, this task's tool set.
   await deps.prisma.bot.update({
@@ -383,7 +416,7 @@ async function startOnSlot(
       notifyOnFinish: false,
       instructions: WORKER_INSTRUCTIONS,
       // The current task, so status can name it and the user can stop "the video one".
-      title: name.slice(0, 80),
+      title: `${name.slice(0, 70)} #${ref}`,
       description: task.slice(0, 300),
       disabledBuiltinTools: spec.disabled,
       ...(bot.computerId ? { computerId: bot.computerId } : {}),
@@ -429,6 +462,7 @@ async function startOnSlot(
   return {
     ok: true as const,
     task_id: slotBot.id,
+    task_ref: ref,
     name,
     agent,
     worker: slotBot.name,
@@ -592,10 +626,15 @@ export async function backgroundTaskMessage(
     deps,
     run,
     { id: bot.id, name: bot.name },
-    { bot_id: worker.id, message: text, intent: "fyi", deliveryKey },
+    // Never fyi: an idle worker treats this as a new request and its result always comes back.
+    { bot_id: worker.id, message: text, intent: "request", deliveryKey },
   );
   if (!sent.ok) return { error: sent.error };
-  return { ok: true as const, task_id: worker.id, note: "Worker was idle; sent as a new message." };
+  return {
+    ok: true as const,
+    task_id: worker.id,
+    note: "Worker was idle; it resumes with this as a new request and its result comes back to you as a message.",
+  };
 }
 
 /**
@@ -626,7 +665,11 @@ export async function cancelBackgroundTask(
       ? workers
       : byId.length > 0 || !needle
         ? byId
-        : workers.filter((w) => w.title && w.title.toLowerCase() === needle);
+        : workers.filter(
+            (w) =>
+              w.title &&
+              (w.title.toLowerCase() === needle || taskTitle(w.title).toLowerCase() === needle),
+          );
   const queue = await queuedTasks(deps, bot.id);
   const queuedTargets =
     wanted === "all"
@@ -798,7 +841,7 @@ async function findDuplicateTask(
   const same = (a: string | null | undefined, b: string) =>
     Boolean(a?.trim()) && a!.trim().toLowerCase() === b.trim().toLowerCase();
   for (const worker of await workerBots(deps, bot, run.spaceId)) {
-    if (!same(worker.title, name)) continue;
+    if (!same(worker.title ? taskTitle(worker.title) : worker.title, name)) continue;
     if (!(await activeRunFor(deps, worker.id))) continue;
     return {
       ok: true as const,

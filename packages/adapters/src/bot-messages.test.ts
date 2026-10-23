@@ -702,6 +702,33 @@ describe("automatic outcome return", () => {
     expect(harness.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("always returns a hidden background worker's outcome, even for fyi", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "patch it",
+          hop: 1,
+          intent: "fyi",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1" });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Patched.",
+    );
+    expect(returned).toBe(true);
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
   it("skips the automatic return when a result was already sent", async () => {
     const harness = deps({
       hopBlocks: [
