@@ -286,7 +286,7 @@ import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import { connectApp } from "./connect-app.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
-import { formatCurrentTimeInstruction } from "./current-time.js";
+import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
@@ -580,6 +580,7 @@ const STATIC_SHELL_EXPANSIONS: Readonly<Record<string, string>> = {
   WORKSPACE: "/home/rakazo/workspace",
   XDG_CONFIG_HOME: "/home/rakazo/.config",
 };
+const NUMERIC_SHELL_PARAMETERS = new Set(["?", "#", "$", "!"]);
 const SAFE_SHELL_CONTROL_OPS = new Set([
   "&&",
   "||",
@@ -2628,7 +2629,11 @@ function tokenizeProtectedShellCommand(
     const separated = preserveShellCommandBoundaries(command);
     const parsed = parseShellCommand<{ expansion: string }>(
       separated,
-      (name) => literals[name] ?? STATIC_SHELL_EXPANSIONS[name] ?? { expansion: name },
+      (name) =>
+        literals[name] ??
+        STATIC_SHELL_EXPANSIONS[name] ??
+        // $? $# $$ $! always expand to digits: never a command, path or protected word.
+        (NUMERIC_SHELL_PARAMETERS.has(name) ? "0" : { expansion: name }),
       { splitUnquoted: true },
     );
     const words: string[] = [];
@@ -2750,7 +2755,9 @@ export function desktopProtectionGuardMessage(reason: string): string {
   const recovery =
     reason === "heredoc"
       ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
-      : "";
+      : reason.startsWith("unresolved variable")
+        ? " Write the value literally in the command, or put the logic in a script file (for example with the file tools) and run it with bash script.sh. $? $# $$ and $! are allowed."
+        : "";
   return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
 }
 
@@ -3620,6 +3627,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
       if (isTerminal(run.status as RunStatus)) return;
+      if (deps.dispatcherMode && run.trigger === "bot_message" && run.status === "queued") {
+        // A worker result wakes the dispatcher. Wakes for one chat run one at a time, oldest
+        // first, so each turn sees the relays already written and never repeats or contradicts them.
+        const waker = await deps.prisma.bot.findUnique({
+          where: { id: run.botId },
+          select: { spawnKey: true, disabledBuiltinTools: true },
+        });
+        if (waker && isDispatcherBot(waker)) await waitForEarlierDispatcherTurns(deps.prisma, run);
+      }
       let { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
         takeoverContinuePlan(run);
 
@@ -7735,17 +7751,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
             );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
-        let userTimeZone: string | null | undefined;
-        try {
-          userTimeZone = (
-            await deps.prisma.user.findUnique({
-              where: { id: run.userId },
-              select: { timezone: true },
-            })
-          )?.timezone;
-        } catch {
-          // Timezone is optional context; a lookup failure must not prevent a run.
-        }
+        // The user's zone, else the Space owner's, else the deployment default; never fails a run.
+        const userTimeZone = await resolveRunTimeZone(deps.prisma as never, run);
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
@@ -9847,6 +9854,40 @@ const DISPATCH_ONLY_TOOL_NAMES = [
 
 class SkipComputerLease extends Error {}
 
+const DISPATCHER_WAKE_POLL_MS = 400;
+
+/**
+ * Waits until no other turn of this bot in this chat is running and no earlier queued wake is
+ * pending. Bounded by the dispatcher turn limit, so a lost job never blocks a wake forever.
+ */
+export async function waitForEarlierDispatcherTurns(
+  prisma: Pick<ExecutorDeps["prisma"], "run">,
+  run: { id: string; botId: string; threadId: string; createdAt: Date },
+  options: { maxWaitMs?: number; pollMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<boolean> {
+  const maxWaitMs = options.maxWaitMs ?? dispatcherTurnMaxMs();
+  const pollMs = options.pollMs ?? DISPATCHER_WAKE_POLL_MS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const deadline = Date.now() + maxWaitMs;
+  for (;;) {
+    const earlier = await prisma.run.findFirst({
+      where: {
+        id: { not: run.id },
+        botId: run.botId,
+        threadId: run.threadId,
+        OR: [
+          { status: { in: ["leased", "running"] } },
+          { status: "queued", trigger: "bot_message", createdAt: { lt: run.createdAt } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!earlier) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(pollMs);
+  }
+}
+
 /** A user's own bot that can dispatch (background_task not disabled); workers never dispatch. */
 export function isDispatcherBot(bot: {
   spawnKey?: string | null;
@@ -9857,7 +9898,7 @@ export function isDispatcherBot(bot: {
 
 /** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
 export const BACKGROUND_DISPATCH_GUIDANCE =
-  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. After a tool call, continue from where your text left off; never restate or reword an answer you already wrote earlier in this reply (write the answer once; if you need a tool first, call it before answering). Send a worker the same note at most once per turn. Never tell the user that something will run or is running in the background unless you called background_task (or background_task_message) for it in this same turn; if the user asks you to do work yourself or "in the foreground" (for example a shell command), you still cannot, so start a worker for it and say so. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message shows the user no longer wants an earlier request (judge the intent yourself, in any wording), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes, match it with background_task_status and act on that task_id only. Never claim from memory whether a task is running, queued or finished: call background_task_status first and report what it returns. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker; unrelated work gets a new background_task. Usually 1-2 workers are enough. If a worker reports a failure (for example a provider error), call background_task_status before retrying and relaunch only if that task is not still running or queued; never start a second copy. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake in the same turn with a message to the user (never stay silent, even if it failed or was cancelled): relay the actual result content itself (the list, answer, text or numbers the worker reported), not a promise like "我先把文件发给你", and never hand the work back to the worker just to send or format what it already reported. Files in the report "文件：" section are attached to your reply automatically; call attach_file only for other image, video or file paths the report mentions.';
+  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. After a tool call, continue from where your text left off; never restate or reword an answer you already wrote earlier in this reply (write the answer once; if you need a tool first, call it before answering). Send a worker the same note at most once per turn. Never tell the user that something will run or is running in the background unless you called background_task (or background_task_message) for it in this same turn; if the user asks you to do work yourself or "in the foreground" (for example a shell command), you still cannot, so start a worker for it and say so. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message shows the user no longer wants an earlier request (judge the intent yourself, in any wording), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes, match it with background_task_status and act on that task_id only. Never claim from memory whether a task is running, queued or finished: call background_task_status first and report what it returns. Never say work is done, generated or ready (e.g. "已经生成了") until the worker result message has arrived or background_task_status shows it completed; before that, say it is running or queued. When woken by a worker result, relay only the result(s) in this wake message; do not repeat results you already relayed earlier in this chat, and do not contradict them. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker. Judge relatedness by meaning, not by wording or by which worker happens to be idle: a request about a different subject or deliverable is unrelated work and gets a new background_task, even when a worker is idle; when unsure, start a new background_task. Usually 1-2 workers are enough. If a worker reports a failure (for example a provider error), call background_task_status before retrying and relaunch only if that task is not still running or queued; never start a second copy. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake in the same turn with a message to the user (never stay silent, even if it failed or was cancelled): relay the actual result content itself (the list, answer, text or numbers the worker reported), not a promise like "我先把文件发给你", and never hand the work back to the worker just to send or format what it already reported. Files in the report "文件：" section are attached to your reply automatically; call attach_file only for other image, video or file paths the report mentions.';
 /** Mid-run user messages get an acknowledgement before the bot goes back to work. */
 export const STEERING_REPLY_GUIDANCE =
   "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";

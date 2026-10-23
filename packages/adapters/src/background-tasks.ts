@@ -7,6 +7,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { messageBot } from "./bot-messages.js";
 import { spawnBot } from "./child-bots.js";
+import { formatInstantForUser, resolveRunTimeZone } from "./current-time.js";
 import type { ExecutorDeps } from "./executor.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
 
@@ -477,6 +478,8 @@ export async function backgroundTaskStatus(
   args: Record<string, unknown>,
 ) {
   const workers = await workerBots(deps, bot, run.spaceId);
+  // Times go out in the user's zone (else the owner's or deployment's), with the offset shown.
+  const zone = await resolveRunTimeZone(deps.prisma as never, run);
   const wanted = args.task_id ? String(args.task_id) : undefined;
   const selected = wanted ? workers.filter((w) => w.id === wanted) : workers;
   if (wanted && !wanted.startsWith("q:") && selected.length === 0)
@@ -502,8 +505,8 @@ export async function backgroundTaskStatus(
         name: worker.title,
         task: worker.description,
         state: latest?.status ?? "idle",
-        started_at: latest?.createdAt?.toISOString(),
-        finished_at: finishedAt?.toISOString(),
+        started_at: latest?.createdAt ? formatInstantForUser(latest.createdAt, zone) : undefined,
+        finished_at: finishedAt ? formatInstantForUser(finishedAt, zone) : undefined,
         finished_recently: finishedAt ? Date.now() - finishedAt.getTime() < 30 * 60_000 : false,
         last_progress: lastText(last?.blocks),
         ...(latest?.error ? { error: String(latest.error).slice(0, 500) } : {}),
@@ -518,7 +521,7 @@ export async function backgroundTaskStatus(
       task: row.task.slice(0, 300),
       state: "queued",
       position: index + 1,
-      queued_at: row.createdAt.toISOString(),
+      queued_at: formatInstantForUser(row.createdAt, zone),
     }))
     .filter((q) => !wanted || q.task_id === wanted);
   if (wanted?.startsWith("q:") && queued.length === 0)
@@ -528,7 +531,8 @@ export async function backgroundTaskStatus(
     limit: backgroundTaskConcurrency(),
     tasks: wanted?.startsWith("q:") ? [] : tasks,
     queued,
-    note: "Decide yourself whether a new request belongs to one of these tasks (a follow-up, correction or change of a running or recently finished task): if so, send it to that task_id with background_task_message (an idle worker resumes with its context); otherwise start a new background_task.",
+    time_zone: zone ?? "UTC",
+    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. Only state "done" for a task whose state is completed here or whose result you received; running/queued tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task.`,
   };
 }
 
