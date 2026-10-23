@@ -229,6 +229,26 @@ export function inferScript(
     return [{ assistant: "updating your bots.", toolCalls: childEdit, complete: true }];
   }
   // Dispatcher fixtures: launch, redirect and stop background workers in plain words.
+  const named = /\bdispatch in background as ([\w-]+):\s*([^\n]+)/i.exec(prompt);
+  if (named && !prompt.includes("【后台任务】")) {
+    return [
+      {
+        assistant: `dispatched ${named[1]} to a background worker.`,
+        toolCalls: [{ name: "background_task", args: { name: named[1], task: named[2]!.trim() } }],
+        complete: true,
+      },
+    ];
+  }
+  const cancelNamed = /\bcancel background task named ([\w-]+)/i.exec(prompt);
+  if (cancelNamed) {
+    return [
+      {
+        assistant: `stopping ${cancelNamed[1]}.`,
+        toolCalls: [{ name: "background_task_cancel", args: { task_id: cancelNamed[1] } }],
+        complete: true,
+      },
+    ];
+  }
   const dispatched = /\bdispatch in background:\s*([^\n]+)/i.exec(prompt);
   if (dispatched && !prompt.includes("【后台任务】")) {
     return [
@@ -241,7 +261,7 @@ export function inferScript(
       },
     ];
   }
-  if (/(cancel all background tasks|不做了|取消|算了|^\s*停\s*$)/im.test(prompt)) {
+  if (/(cancel all background tasks|不做了|先不用了|不用了|取消|算了|^\s*停\s*$)/im.test(prompt)) {
     return [
       {
         assistant: "stopped.",
@@ -671,7 +691,7 @@ function shouldFail(prompt: string): boolean {
 function hangDuration(prompt: string): number | undefined {
   const lower = prompt.toLowerCase();
   // Dispatching hanging work makes the background worker hang, not the dispatcher.
-  if (/\bdispatch in background:/i.test(prompt) && !prompt.includes("【后台任务】")) {
+  if (/\bdispatch in background( as [\w-]+)?:/i.test(prompt) && !prompt.includes("【后台任务】")) {
     return undefined;
   }
   // Asking another bot to keep working makes that bot's run hang, not this one.

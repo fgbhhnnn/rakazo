@@ -43,6 +43,7 @@ import {
   deletePushToken,
   deploymentModelUsageLookup,
   destroyBot,
+  dispatcherModeEnabled,
   EmailEmulator,
   ExpoPushProvider,
   endSessionPushToken,
@@ -548,6 +549,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
   const executor = createRunExecutor({
+    dispatcherMode: dispatcherModeEnabled(process.env),
     billingEnabled: modelCreditsEnabled,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     contextStrategy,

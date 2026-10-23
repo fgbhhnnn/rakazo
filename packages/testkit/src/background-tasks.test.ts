@@ -13,6 +13,7 @@ process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";
 process.env.RAKAZO_RUN_CANCEL_POLL_MS ??= "500";
+process.env.RAKAZO_DISPATCHER_MODE = "1";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeIntegration = hasDb ? describe : describe.skip;
@@ -126,6 +127,115 @@ describeIntegration("background tasks: dispatcher stays idle, stop is immediate"
     console.info(
       `[bg latency] dispatch turn ${dispatchMs} ms; stop: main reply ${mainReplyMs} ms, worker cancelled ${workerStoppedMs} ms`,
     );
+  }, 60_000);
+
+  it("runs three tasks in parallel, stops one by name, and keeps chatting", async () => {
+    const app = handles.app as App;
+    const cookie = await signup(app, `bg3-${stamp}@rakazo.test`, "Bg3");
+    const chief = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Main",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    await waitFor(async () => (await activeRuns([chief.id])) === 0);
+    const send = async (text: string) => {
+      const t = Date.now();
+      const sent = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+        botId: chief.id,
+        text,
+      });
+      await waitFor(async () => terminal(sent.runId));
+      return { ...sent, ms: Date.now() - t };
+    };
+    const turns = [];
+    for (const name of ["image", "video", "code"]) {
+      turns.push(await send(`dispatch in background as ${name}: work until i stop`));
+    }
+    const workers = await db.bot.findMany({
+      where: { parentBotId: chief.id, spawnKey: { startsWith: "bg-worker:" } },
+      select: { id: true, title: true },
+    });
+    expect(workers.map((w) => w.title).sort()).toEqual(["code", "image", "video"]);
+    const ids = Object.fromEntries(workers.map((w) => [w.title, w.id]));
+    await waitFor(async () => (await activeRuns(workers.map((w) => w.id))) === 3);
+
+    const stop = await send("cancel background task named video");
+    await waitFor(async () => (await activeRuns([ids.video!])) === 0);
+    expect(await activeRuns([ids.image!, ids.code!])).toBe(2);
+    const chat = await send("hello, how are you?");
+    expect(await activeRuns([ids.image!, ids.code!])).toBe(2);
+
+    // The main run only talked and dispatched: no work tool ever ran on it.
+    const mainRuns = await db.run.findMany({ where: { botId: chief.id }, select: { id: true } });
+    const called = await db.event.findMany({
+      where: { runId: { in: mainRuns.map((r) => r.id) }, type: "agent.tool.called" },
+      select: { payload: true },
+    });
+    const names = called.map((e) => (e.payload as { name?: string }).name);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(name).toMatch(/^(background_task.*|message_user)$/);
+    for (const turn of [...turns, stop, chat]) expect(turn.ms).toBeLessThan(5_000);
+    console.info(
+      `[bg parallel] dispatch ${turns.map((t) => t.ms).join("/")} ms; stop one ${stop.ms} ms; chat ${chat.ms} ms`,
+    );
+    await rpc(app, cookie, "threads/send", {
+      botId: chief.id,
+      text: "cancel all background tasks",
+    });
+    await waitFor(async () => (await activeRuns(workers.map((w) => w.id))) === 0);
+  }, 60_000);
+
+  it("drops a task the user retracts a second later and confirms truthfully", async () => {
+    const app = handles.app as App;
+    const cookie = await signup(app, `bgr-${stamp}@rakazo.test`, "BgR");
+    const chief = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Retract",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    await waitFor(async () => (await activeRuns([chief.id])) === 0);
+    const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: chief.id,
+      text: "dispatch in background as boy: work until i stop",
+    });
+    await new Promise((r) => setTimeout(r, 1_000));
+    const t = Date.now();
+    const second = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: chief.id,
+      text: "先不用了",
+    });
+    await waitFor(async () => terminal(first.runId));
+    await waitFor(async () => terminal(second.runId));
+    const replyMs = Date.now() - t;
+    const worker = await db.bot.findFirstOrThrow({
+      where: { parentBotId: chief.id, spawnKey: { startsWith: "bg-worker:" } },
+    });
+    await waitFor(async () => (await activeRuns([worker.id])) === 0);
+    const workerRun = await db.run.findFirstOrThrow({
+      where: { botId: worker.id },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(workerRun.status).toBe("cancelled");
+    // The stop went through the cancel tool, whose result names what was really stopped.
+    const results = await db.event.findMany({
+      where: { runId: second.runId, type: "agent.tool.completed" },
+      select: { payload: true },
+    });
+    expect(results.map((r) => r.payload as { outcome?: string; name?: string })).toContainEqual(
+      expect.objectContaining({ name: "background_task_cancel", outcome: "succeeded" }),
+    );
+    expect(replyMs).toBeLessThan(5_000);
+    // Still responsive afterwards.
+    const after = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: chief.id,
+      text: "thanks",
+    });
+    await waitFor(async () => terminal(after.runId), 5_000);
+    console.info(`[bg retract] stop reply ${replyMs} ms`);
   }, 60_000);
 
   async function activeRuns(botIds: string[]) {

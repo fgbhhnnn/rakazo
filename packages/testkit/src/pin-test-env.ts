@@ -4,6 +4,8 @@ import { afterAll } from "vitest";
  * `pnpm test` must stay emulator-only even when a developer .env points at
  * Pi, Docker, Graphile, or live Composio. Opt-in canaries set VERIFY_PROVIDERS.
  */
+// Dispatcher mode is pinned off; suites that cover it turn it on explicitly.
+process.env.RAKAZO_DISPATCHER_MODE ??= "0";
 if (!process.env.VERIFY_PROVIDERS) {
   process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
   process.env.AGENT_RUNTIME = "scripted";

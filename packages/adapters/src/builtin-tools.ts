@@ -1179,7 +1179,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "background_task_status",
     description:
-      "List your background tasks (or one by task_id) with their state. Results arrive automatically; use this only when the user asks about progress.",
+      'List your background tasks (or one by task_id) with their name, task and state. Results arrive automatically; use this when the user asks about progress or names a task to stop or change (e.g. "the video one") so you act on the right task_id.',
     inputSchema: {
       type: "object",
       properties: { task_id: { type: "string" } },
@@ -1197,11 +1197,15 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "background_task_cancel",
     description:
-      'Stop a background task now: aborts its model call and tools, kills its shell processes, marks it cancelled. Call this immediately when the user says stop/cancel in any wording (停, 不做了, 取消, 算了, never mind). Use task_id "all" to stop every background task of this bot.',
+      'Stop a background task now: aborts its model call and tools, kills its shell processes, marks it cancelled. Call this immediately when the user says stop/cancel in any wording (停, 不做了, 取消, 算了, never mind). Use task_id "all" to stop every background task of this bot; to stop one the user describes, find its task_id with background_task_status first. Confirm only what the result reports as stopped.',
     inputSchema: {
       type: "object",
       properties: {
-        task_id: { type: "string", description: 'task_id from background_task, or "all".' },
+        task_id: {
+          type: "string",
+          description:
+            'task_id from background_task or background_task_status, the task\'s exact name, or "all".',
+        },
       },
       required: ["task_id"],
     },

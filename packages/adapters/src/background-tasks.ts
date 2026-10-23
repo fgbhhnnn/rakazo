@@ -168,7 +168,14 @@ async function workerBots(deps: Deps, bot: DispatchBot, spaceId: string) {
       spawnKey: { startsWith: `${BACKGROUND_WORKER_SPAWN_PREFIX}${bot.id}:` },
       archivedAt: null,
     },
-    select: { id: true, name: true, spawnKey: true, thread: { select: { id: true } } },
+    select: {
+      id: true,
+      name: true,
+      title: true,
+      description: true,
+      spawnKey: true,
+      thread: { select: { id: true } },
+    },
   });
 }
 
@@ -252,6 +259,8 @@ async function launchBackgroundTaskNow(
       id: spawned.botId,
       name: spawned.name,
       spawnKey: backgroundWorkerSpawnKey(bot.id, slot),
+      title: "",
+      description: "",
       thread: { id: spawned.threadId },
     };
     break;
@@ -268,6 +277,9 @@ async function launchBackgroundTaskNow(
     data: {
       notifyOnFinish: false,
       instructions: WORKER_INSTRUCTIONS,
+      // The current task, so status can name it and the user can stop "the video one".
+      title: name.slice(0, 80),
+      description: task.slice(0, 300),
       disabledBuiltinTools: workerDisabledTools(options.builtinToolNames, allowlist),
       ...(bot.computerId ? { computerId: bot.computerId } : {}),
     },
@@ -320,6 +332,8 @@ export async function backgroundTaskStatus(
       return {
         task_id: worker.id,
         worker: worker.name,
+        name: worker.title,
+        task: worker.description,
         state: latest?.status ?? "idle",
         started_at: latest?.createdAt?.toISOString(),
         finished_at: latest?.completedAt?.toISOString(),
@@ -404,7 +418,15 @@ export async function cancelBackgroundTask(
   const startedAt = Date.now();
   const workers = await workerBots(deps, bot, run.spaceId);
   const wanted = String(args.task_id ?? "").trim();
-  const targets = wanted === "all" ? workers : workers.filter((w) => w.id === wanted);
+  const byId = workers.filter((w) => w.id === wanted);
+  const needle = wanted.toLowerCase();
+  // A task name (from background_task) also works, so "the video one" can be stopped alone.
+  const targets =
+    wanted === "all"
+      ? workers
+      : byId.length > 0 || !needle
+        ? byId
+        : workers.filter((w) => w.title && w.title.toLowerCase() === needle);
   if (targets.length === 0) {
     return wanted === "all"
       ? { ok: true as const, cancelled: [], note: "no background tasks" }
@@ -417,7 +439,11 @@ export async function cancelBackgroundTask(
       { spaceId: run.spaceId, userId: run.userId },
       { threadId: worker.thread.id, botIds: [worker.id] },
     );
-    cancelled.push({ task_id: worker.id, name: worker.name, cancelled_runs: runIds.length });
+    cancelled.push({
+      task_id: worker.id,
+      name: worker.title || worker.name,
+      cancelled_runs: runIds.length,
+    });
   }
   getLogger().info("background task cancelled", {
     runId: run.id,
@@ -427,6 +453,6 @@ export async function cancelBackgroundTask(
   return {
     ok: true as const,
     cancelled,
-    note: "Stopped. Tell the user it is cancelled.",
+    note: "Tell the user exactly which tasks were stopped (cancelled_runs > 0). A task with cancelled_runs 0 had already finished or was idle: say so instead of claiming you stopped it.",
   };
 }

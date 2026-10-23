@@ -2745,6 +2745,11 @@ function runtimeFallbackModel(runtime: AgentRuntime) {
 }
 
 export interface ExecutorDeps {
+  /**
+   * Dispatcher mode: users' bots only talk and dispatch; work runs in hidden background
+   * workers. The worker and API enable it from RAKAZO_DISPATCHER_MODE (default on).
+   */
+  dispatcherMode?: boolean;
   maxUploadSizeBytes?: number;
   contextStrategy?: AgentContextStrategy;
   prisma: PrismaClient;
@@ -3645,10 +3650,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           computerId: true,
           computerSwitching: true,
           computer: { select: { scope: true } },
+          spawnKey: true,
+          disabledBuiltinTools: true,
         },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-      if (leaseTarget.computerSwitching) {
+      // A dispatcher's main turn has no computer tools, so it never waits for the computer
+      // (booting, suspending, or busy with a worker): the reply must not queue behind it.
+      const dispatcherTurn = Boolean(deps.dispatcherMode) && isDispatcherBot(leaseTarget);
+      if (leaseTarget.computerSwitching && !dispatcherTurn) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
         return;
       }
@@ -3667,6 +3677,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
+        if (dispatcherTurn) throw new SkipComputerLease();
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
           runId,
@@ -3683,9 +3694,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
         }
       } catch (error) {
-        if (!(error instanceof ComputerBusyError)) throw error;
-        await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
-        return;
+        if (!(error instanceof SkipComputerLease)) {
+          if (!(error instanceof ComputerBusyError)) throw error;
+          await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
+          return;
+        }
+        computerLease = null;
       }
       const attempt = await deps.prisma.attempt
         .create({
@@ -3706,6 +3720,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         | { computer: ComputerRef; context: AdapterContext; keepWarm: boolean }
         | undefined;
       let runAbortController: AbortController | null = null;
+      let dispatcherWatchdogClear: (() => void) | undefined;
       let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
         if (runCompleted) return;
@@ -3749,6 +3764,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       cancelWatch.unref?.();
       const stopHeartbeatAfterCompletion = () => {
         runCompleted = true;
+        dispatcherWatchdogClear?.();
         clearInterval(heartbeat);
         clearInterval(cancelWatch);
       };
@@ -3858,6 +3874,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
+        // Watchdog: a dispatcher turn only talks and dispatches, so one that runs long has a
+        // hung model call. Abort it so the thread is free for the next message.
+        if (dispatcherTurn) {
+          const controller = runAbortController;
+          const watchdog = setTimeout(
+            () =>
+              controller.abort(
+                new Error(
+                  `The reply took longer than ${Math.round(dispatcherTurnMaxMs() / 1000)} s and was stopped. Please send the message again.`,
+                ),
+              ),
+            dispatcherTurnMaxMs(),
+          );
+          watchdog.unref?.();
+          controller.signal.addEventListener("abort", () => clearTimeout(watchdog));
+          const clearWatchdog = () => clearTimeout(watchdog);
+          dispatcherWatchdogClear = clearWatchdog;
+        }
         if (deps.shutdownSignal?.aborted) runAbortController.abort(deps.shutdownSignal.reason);
         const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
         deps.shutdownSignal?.addEventListener("abort", onShutdown);
@@ -4285,9 +4319,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
         ];
-        const exposedConnectorTools = discovered.filter(
-          (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
-        );
+        // Dispatcher mode: a user's bot (never a hidden worker) that can dispatch only talks and
+        // delegates. Every work tool (shell, computer, browser, files, generation, web, MCP and
+        // plugin tools...) is withheld from the main run and refused if called, so new
+        // messages always get a short, real reply and stop cancels only workers.
+        const dispatcherRun = Boolean(deps.dispatcherMode) && isDispatcherBot(bot);
+        if (isHiddenBot(bot)) {
+          // Workers do the work themselves and never dispatch further workers.
+          for (const name of DISPATCH_ONLY_TOOL_NAMES) disabledBuiltinTools.add(name);
+        }
+        if (dispatcherRun) {
+          for (const tool of builtinAgentTools) {
+            if (!DISPATCHER_TOOL_NAMES.has(tool.name)) disabledBuiltinTools.add(tool.name);
+          }
+          for (const tool of agentConnectionTools) disabledBuiltinTools.add(tool.name);
+        }
+        const exposedConnectorTools = dispatcherRun
+          ? []
+          : discovered.filter(
+              (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
+            );
         const connectorTools = new Map(
           exposedConnectorTools.map((tool) => [tool.name, tool] as const),
         );
@@ -4423,7 +4474,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // The intro turn confirms how a bot read its own role before anyone hands it
         // real work — it must not be able to act on that reading (shell, computer,
         // scheduling, spawning another bot, ...) before the user has assigned any task.
-        const tools = run.trigger === "created" ? [] : [...builtins, ...exposedConnectorTools];
+        const tools =
+          run.trigger === "created"
+            ? []
+            : [
+                ...builtins.filter(
+                  (tool) =>
+                    !disabledBuiltinTools.has(tool.name) &&
+                    (!dispatcherRun || DISPATCHER_TOOL_NAMES.has(tool.name)),
+                ),
+                ...exposedConnectorTools,
+              ];
         const taskCatalogInstruction = tools.some((tool) => tool.name === "task_catalog")
           ? TASK_CATALOG_GUIDANCE
           : undefined;
@@ -9382,14 +9443,57 @@ export function mayOpenModelStream(
 export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply, stripStrayNoResponse };
 
 /** How often a running run checks whether it was stopped. RAKAZO_RUN_CANCEL_POLL_MS overrides. */
+/** Longest a dispatcher's main turn may run (RAKAZO_DISPATCHER_TURN_MAX_MS, default 90 s). */
+export function dispatcherTurnMaxMs(env: Record<string, string | undefined> = process.env): number {
+  const parsed = Number(env.RAKAZO_DISPATCHER_TURN_MAX_MS);
+  return Number.isFinite(parsed) && parsed >= 5_000 ? Math.floor(parsed) : 90_000;
+}
+
+/** RAKAZO_DISPATCHER_MODE=0 turns dispatcher mode off; it is on otherwise. */
+export function dispatcherModeEnabled(env: Record<string, string | undefined> = process.env) {
+  return !["0", "false", "off"].includes((env.RAKAZO_DISPATCHER_MODE ?? "").trim().toLowerCase());
+}
+
 export function runCancelPollMs(env: Record<string, string | undefined> = process.env): number {
   const parsed = Number(env.RAKAZO_RUN_CANCEL_POLL_MS);
   return Number.isFinite(parsed) && parsed >= 200 ? Math.floor(parsed) : 2_000;
 }
 
+/**
+ * Tools a dispatcher's main run keeps: talk, dispatch/steer/check/cancel workers, and relay
+ * their results. Everything that is work runs in a background worker.
+ */
+export const DISPATCHER_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "message_user",
+  "ask_user",
+  "end_call",
+  "background_task",
+  "background_task_status",
+  "background_task_message",
+  "background_task_cancel",
+  "attach_file",
+]);
+
+const DISPATCH_ONLY_TOOL_NAMES = [
+  "background_task",
+  "background_task_status",
+  "background_task_message",
+  "background_task_cancel",
+] as const;
+
+class SkipComputerLease extends Error {}
+
+/** A user's own bot that can dispatch (background_task not disabled); workers never dispatch. */
+export function isDispatcherBot(bot: {
+  spawnKey?: string | null;
+  disabledBuiltinTools?: readonly string[] | null;
+}): boolean {
+  return !isHiddenBot(bot) && !(bot.disabledBuiltinTools ?? []).includes("background_task");
+}
+
 /** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
 export const BACKGROUND_DISPATCH_GUIDANCE =
-  'You are a dispatcher. A main turn is: reply to the user, then dispatch (background_task), redirect (background_task_message), check (background_task_status) or cancel (background_task_cancel), then end the turn — so you are always idle and see the next user message at once. Do not do the work yourself and avoid long tool calls in the main turn; only trivial answers (a fact, one quick look-up) are done inline. When the user says stop or cancel in any wording (停, 不做了, 取消, 算了, 别弄了, never mind), immediately call background_task_cancel (task_id "all" if unclear which), then confirm in one sentence. When the user changes or adds requirements for running work, pass them on with background_task_message. Anything that needs more than about two tool rounds or more than a minute (long PDFs or many images, multi-shot video, batch data, coding projects, long research) goes to background_task: write a self-contained task (inputs as file paths/URLs, expected outputs and where to write them), split independent parts into parallel tasks (up to 3), tell the user in one or two sentences what you dispatched, and end your turn. Do not wait or poll; each worker\'s final result wakes you as a message. Then check the artifacts it names (open the files) instead of trusting the summary, and report to the user. Keep your own turns short. Never sit in long shell waits: start long commands in the background (nohup … &, log to a file) and check later.';
+  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message retracts or stops an earlier request (先不用了, 不做了, 停, 取消, 算了, 别弄了, never mind), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes (e.g. "视频那个不做了"), match it with background_task_status and act on that task_id only. Pass new or changed requirements for running work with background_task_message. Do not wait or poll; each worker\'s result wakes you as a message: report it truthfully and relay its files with attach_file.';
 /** Mid-run user messages get an acknowledgement before the bot goes back to work. */
 export const STEERING_REPLY_GUIDANCE =
   "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";

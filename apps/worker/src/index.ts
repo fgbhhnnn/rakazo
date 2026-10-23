@@ -26,6 +26,7 @@ import {
   createWebProvider,
   databaseCapacityBackoffMs,
   deploymentModelUsageLookup,
+  dispatcherModeEnabled,
   ExpoPushProvider,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
@@ -207,6 +208,7 @@ async function main() {
     accessToken: process.env.EXPO_ACCESS_TOKEN,
   });
   const executor = createRunExecutor({
+    dispatcherMode: dispatcherModeEnabled(process.env),
     maxUploadSizeBytes: uploadSizeFromEnv(process.env),
     prisma,
     runtime,
