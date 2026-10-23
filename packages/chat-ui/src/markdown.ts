@@ -224,7 +224,25 @@ export function remoteImageRenders(
   loadRemote: boolean,
   rejectedLink: boolean,
 ): boolean {
-  return !rejectedLink && (loadRemote || remoteImageLoaded(href));
+  return !rejectedLink && (loadRemote || remoteImageLoaded(href) || trustedImageHost(href));
+}
+
+// Our own media hosts (the generation MCP's R2 files) load without a tap: they are not third-party
+// trackers, and a generated image hidden behind a placeholder reads as a failed generation.
+const TRUSTED_IMAGE_HOST_SUFFIXES = ["lllltt.com"];
+
+export function trustedImageHost(href: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  return TRUSTED_IMAGE_HOST_SUFFIXES.some(
+    (suffix) => host === suffix || host.endsWith(`.${suffix}`),
+  );
 }
 
 export function markRemoteImageLoaded(href: string): void {

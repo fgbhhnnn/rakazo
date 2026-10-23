@@ -9,8 +9,10 @@ import {
   markdownLinkDisplayParts,
   markdownLinkRequiresConfirmation,
   plainTextLinkParts,
+  remoteImageRenders,
   sanitizeMarkdownImageUrl,
   sanitizeMarkdownUrl,
+  trustedImageHost,
 } from "./markdown";
 
 type Token = { type: string; attrGet(name: string): string | null; children: Token[] | null };
@@ -342,5 +344,19 @@ it("highlights the destination host after userinfo containing the same host text
     before: "https://docs.example:docs.example@",
     host: "docs.example",
     after: "/a",
+  });
+});
+
+describe("trusted image hosts", () => {
+  it("loads generated media from our own hosts without a tap", () => {
+    expect(trustedImageHost("https://mcp.lllltt.com/files/mcp/20261023/a.jpg")).toBe(true);
+    expect(remoteImageRenders("https://mcp.lllltt.com/files/a.jpg", false, false)).toBe(true);
+    expect(remoteImageRenders("https://mcp.lllltt.com/files/a.jpg", false, true)).toBe(false);
+  });
+
+  it("keeps other hosts behind the tap", () => {
+    expect(trustedImageHost("https://evil-lllltt.com/a.jpg")).toBe(false);
+    expect(trustedImageHost("http://mcp.lllltt.com/a.jpg")).toBe(false);
+    expect(remoteImageRenders("https://example.com/a.jpg", false, false)).toBe(false);
   });
 });
