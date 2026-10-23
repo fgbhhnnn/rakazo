@@ -10286,12 +10286,9 @@ export async function attachWorkerReportFiles(input: {
     const resolved = resolveBotWorkspacePath(input.computerMode, worker.id, relative);
     if (input.alreadyAttached.has(attachedPathKey(resolved))) continue;
     try {
-      const bytes = await deps.sandbox.readFile(
-        computer,
-        resolved,
-        input.context,
-        { maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES },
-      );
+      const bytes = await deps.sandbox.readFile(computer, resolved, input.context, {
+        maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
+      });
       const result = await attachWorkspaceFileToThread(
         {
           prisma: deps.prisma,
