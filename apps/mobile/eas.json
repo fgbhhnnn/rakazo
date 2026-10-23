@@ -47,7 +47,7 @@
     "production": {},
     "ios-testflight": {
       "ios": {
-        "ascApiKeyPath": "~/.secrets/AuthKey_Y7B24742B3.p8",
+        "ascApiKeyPath": "/home/box/.secrets/AuthKey_Y7B24742B3.p8",
         "ascApiKeyId": "Y7B24742B3",
         "ascApiKeyIssuerId": "139ab95d-9b8c-487f-a956-753057cca7c1",
         "appleTeamId": "9QL4VZ2XT7",
