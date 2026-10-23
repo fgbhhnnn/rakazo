@@ -324,6 +324,59 @@ export function endsSentence(text: string): boolean {
   return text.trim() === "" || SENTENCE_END_RE.test(text);
 }
 
+const LEAD_SENTENCE_RE = /^\s*([^\n]*?[。！？!?]|[^\n]*?\.(?=\s|$))\s*/;
+const SENTENCE_RE = /[^。！？!?\n]*?(?:[。！？!?]|\.(?=\s|$))/g;
+/** Shortest sentence treated as a restatement; short replies like "好。" may repeat on purpose. */
+const MIN_RESTATED_SENTENCE = 6;
+
+/**
+ * The text a model writes before a tool call and its text after the call are joined into one
+ * message; models often open the second part by repeating a sentence from the first
+ * ("法国的首都是巴黎。…\n\n法国的首都是巴黎。"). Drops a paragraph's leading sentences only when
+ * the same sentence, verbatim, already appeared earlier in the message. Nothing else changes.
+ */
+export function withoutRestatedLeadSentences(blocks: MessageBlock[]): MessageBlock[] {
+  return blocks.map((block) =>
+    block.kind === "text" ? { ...block, text: dropRestatedLeadSentences(block.text) } : block,
+  );
+}
+
+export function dropRestatedLeadSentences(text: string): string {
+  const paragraphs = text.split(/(\n{2,})/);
+  const seen = new Set<string>();
+  const remember = (paragraph: string) => {
+    for (const sentence of paragraph.match(SENTENCE_RE) ?? []) {
+      const key = sentence.trim();
+      if (key.length >= MIN_RESTATED_SENTENCE) seen.add(key);
+    }
+  };
+  const out: string[] = [];
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    let paragraph = paragraphs[index] ?? "";
+    if (index % 2 === 1) {
+      out.push(paragraph);
+      continue;
+    }
+    if (index > 0) {
+      for (;;) {
+        const lead = LEAD_SENTENCE_RE.exec(paragraph);
+        const sentence = lead?.[1]?.trim();
+        if (!lead || !sentence || sentence.length < MIN_RESTATED_SENTENCE || !seen.has(sentence))
+          break;
+        paragraph = paragraph.slice(lead[0].length);
+      }
+    }
+    remember(paragraph);
+    if (!paragraph.trim() && index > 0) {
+      out.pop();
+      continue;
+    }
+    out.push(paragraph);
+  }
+  const joined = out.join("");
+  return joined.trim() ? joined : text;
+}
+
 export function appendTextSegment(segments: readonly MessageBlock[], text: string): MessageBlock[] {
   if (!text) return [...segments];
   const last = segments.at(-1);
