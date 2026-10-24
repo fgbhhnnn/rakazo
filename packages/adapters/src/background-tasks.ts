@@ -1,5 +1,5 @@
-import path from "node:path";
-import type { ComputerMode } from "@rakazo/contracts";
+import { createHash } from "node:crypto";
+import type { MessageBlock } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH, textSimilarity } from "@rakazo/core";
 import {
   appendEventInTransaction,
@@ -7,9 +7,9 @@ import {
   HIDDEN_BOT_SPAWN_PREFIX,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { SLOT_HOLDING_STATUSES } from "./background-task-rows.js";
 import { messageBot } from "./bot-messages.js";
 import { spawnBot } from "./child-bots.js";
-import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { formatInstantForUser, resolveRunTimeZone } from "./current-time.js";
 import type { ExecutorDeps } from "./executor.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
@@ -58,6 +58,12 @@ const WORKER_ALWAYS_DISABLED = [
   "set_child_instructions",
   "set_child_bot_model",
   "create_child_routine",
+  // A worker never talks to the user or other bots itself: its final reply is its only output,
+  // and the dispatcher relays it. ask_user would also park the worker in waiting_input.
+  "ask_user",
+  "message_user",
+  "message_bot",
+  "message_agent",
 ];
 
 export const BACKGROUND_AGENT_PROFILES = {
@@ -141,7 +147,10 @@ export function parseWorkerReportFiles(text: string): string[] {
       .replace(/^`+|`+$/g, "")
       .replace(/^\[[^\]]*\]\((.*)\)$/, "$1")
       .trim();
-    if (!/^(?:\/|~\/)\S/.test(value) || /\s/.test(value) || files.includes(value)) return;
+    // Absolute POSIX, ~/ or Windows drive paths; spaces inside a path are allowed (one path per
+    // line). Whether it is inside the workspace is checked when the file is attached.
+    if (!/^(?:\/|~\/|[A-Za-z]:[\\/])\S/.test(value) || /^\S+:\/\//.test(value)) return;
+    if (files.includes(value)) return;
     if (files.length < MAX_REPORT_FILES) files.push(value);
   };
   const lines = text.split(/\r?\n/);
@@ -166,6 +175,7 @@ export function parseWorkerReportFiles(text: string): string[] {
 }
 
 type Deps = Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "sandbox">;
+type QueueDeps = Pick<ExecutorDeps, "prisma" | "events" | "jobs">;
 type DispatchRun = {
   id: string;
   spaceId: string;
@@ -175,6 +185,7 @@ type DispatchRun = {
   sourceMessageId?: string | null;
 };
 type DispatchBot = { id: string; name: string; computerId?: string | null };
+type AttachmentBlock = Extract<MessageBlock, { kind: "file" | "image" }>;
 
 /** Builtin tools a worker may not use, given an optional allowlist. Unknown names are ignored. */
 export function workerDisabledTools(
@@ -187,6 +198,15 @@ export function workerDisabledTools(
     for (const name of allBuiltinNames) if (!allowed.has(name)) disabled.add(name);
   }
   return [...disabled].filter((name) => allBuiltinNames.includes(name)).sort();
+}
+
+/** The builtin tools a worker actually gets for a profile (or explicit allowlist). */
+export function workerToolSurface(
+  allBuiltinNames: readonly string[],
+  allowlist: readonly string[] | undefined,
+): string[] {
+  const disabled = new Set(workerDisabledTools(allBuiltinNames, allowlist));
+  return allBuiltinNames.filter((name) => !disabled.has(name));
 }
 
 export function buildBackgroundTaskMessage(input: {
@@ -207,12 +227,12 @@ export function buildBackgroundTaskMessage(input: {
     : `${text.slice(0, BOT_MESSAGE_MAX_LENGTH - 80)}\n…[任务说明过长已截断，把完整说明写进文件再引用路径]`;
 }
 
-async function workerBots(deps: Deps, bot: DispatchBot, spaceId: string) {
+async function workerBots(deps: Pick<Deps, "prisma">, botId: string, spaceId: string) {
   return deps.prisma.bot.findMany({
     where: {
       spaceId,
-      parentBotId: bot.id,
-      spawnKey: { startsWith: `${BACKGROUND_WORKER_SPAWN_PREFIX}${bot.id}:` },
+      parentBotId: botId,
+      spawnKey: { startsWith: `${BACKGROUND_WORKER_SPAWN_PREFIX}${botId}:` },
       archivedAt: null,
     },
     select: {
@@ -226,33 +246,25 @@ async function workerBots(deps: Deps, bot: DispatchBot, spaceId: string) {
   });
 }
 
-const UNDELIVERED_HOLD_MS = 10 * 60_000;
+/**
+ * Task lifecycle. Every background_task is one durable row (the "task"), and its ref is the
+ * task_id the dispatcher uses for status, follow-ups and cancel, so a reused worker slot can
+ * never make an old handle point at a newer task.
+ *   queued   waiting for a slot, FIFO per dispatcher
+ *   claiming a slot is reserved (lease) and the hand-off to the worker is in flight
+ *   started  the worker carries it (workerRunId); the slot stays held until the result is
+ *            delivered to the dispatcher
+ *   completed | failed | cancelled  final
+ */
 
-/** The worker's latest finished run whose outcome was not yet returned to the dispatcher. */
-async function undeliveredOutcome(deps: Deps, botId: string) {
-  const latest = await deps.prisma.run.findFirst({
-    where: { botId, status: { notIn: [...ACTIVE_RUN_STATUSES] } },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, status: true, completedAt: true, botOutcomeReturnedAt: true },
-  });
-  if (!latest || latest.botOutcomeReturnedAt) return null;
-  if (latest.status !== "completed" && latest.status !== "failed") return null;
-  // Delivery normally follows within seconds; a result stuck longer must not hold the slot forever.
-  const finishedAt = latest.completedAt?.getTime() ?? 0;
-  return Date.now() - finishedAt < UNDELIVERED_HOLD_MS ? latest : null;
-}
+const ACTIVE_TASK_STATUSES = ["queued", ...SLOT_HOLDING_STATUSES];
+const CLAIM_LEASE_MS = 2 * 60_000;
+export const MAX_TASK_START_ATTEMPTS = 3;
+/** A started task whose worker run ended this long ago without delivery is closed out. */
+const UNDELIVERED_GRACE_MS = 30 * 60_000;
+const PROCESS_LEASE_OWNER = `bgq:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
 
-async function activeRunFor(deps: Deps, botId: string) {
-  return deps.prisma.run.findFirst({
-    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, taskId: true, status: true, createdAt: true },
-  });
-}
-
-// Parallel background_task calls in one turn must not pick the same idle slot before either
-// has queued its run, so launches for one dispatcher run one at a time in this process.
-/** Short unique label of one background task, shown on its card and in the worker's title. */
+/** Short unique label of one background task, shown on its card and used as its task_id. */
 export function newTaskRef(): string {
   return `T${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 5)}`.toUpperCase();
 }
@@ -262,60 +274,81 @@ export function taskTitle(title: string): string {
   return title.replace(/ #[A-Z0-9]{4,10}$/, "");
 }
 
-const FRESH_TASK_SUMMARY = "此前的后台任务已结束，与接下来的新任务无关；只按新任务消息工作。";
-
-const launchLocks = new Map<string, Promise<unknown>>();
-
 /**
- * Append the dispatcher's thread attachments to a worker task as team-root paths. A worker runs
- * in its own home, so the dispatcher's relative "attachments/<id>" would not resolve there.
+ * Identity of a task: its name plus normalized content. Same name with different content is a
+ * different task, and so is the same content under a different name (the user asked twice).
  */
-export function withDispatcherAttachments(
-  task: string,
-  files: ReadonlyArray<{ name: string; path: string; mimeType: string; size: number }>,
-  computerMode: ComputerMode,
-  dispatcherId: string,
-): string {
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const file of files) {
-    if (seen.has(file.path)) continue;
-    seen.add(file.path);
-    const where =
-      computerMode === "team"
-        ? `文件工具路径 /${path.posix.join(teamBotWorkspaceDirectory(dispatcherId), file.path)}；shell（当前目录是你自己的主目录）路径 ${path.posix.join("..", dispatcherId, file.path)}`
-        : file.path;
-    lines.push(`- ${file.name}（${file.mimeType}，${file.size} 字节）：${where}`);
-  }
-  if (!lines.length) return task;
-  return `${task}\n\n用户上传的附件（已放到电脑上，按下列路径读取）：\n${lines.join("\n")}`;
+export function backgroundTaskHash(input: {
+  name?: string;
+  task: string;
+  instructions?: string;
+  agent: string;
+}): string {
+  const normalize = (text: string | undefined) =>
+    (text ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  return createHash("sha256")
+    .update(
+      `${normalize(input.name)}\n${input.agent}\n${normalize(input.instructions)}\n${normalize(input.task)}`,
+    )
+    .digest("hex")
+    .slice(0, 32);
 }
 
-export function launchBackgroundTask(
-  deps: Deps,
-  run: DispatchRun,
-  bot: DispatchBot,
-  args: Record<string, unknown>,
-  options: { builtinToolNames: readonly string[]; deliveryKey: string },
-) {
-  const previous = launchLocks.get(bot.id) ?? Promise.resolve();
-  const next = previous
-    .catch(() => undefined)
-    .then(() => launchBackgroundTaskNow(deps, run, bot, args, options));
-  launchLocks.set(bot.id, next);
+const FRESH_TASK_SUMMARY = "此前的后台任务已结束，与接下来的新任务无关；只按新任务消息工作。";
+
+// In-process serialization only avoids needless contention; correctness comes from the
+// per-dispatcher row lock in claimSlot, which holds across API and worker processes.
+const launchLocks = new Map<string, Promise<unknown>>();
+function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const previous = launchLocks.get(key) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(work);
+  launchLocks.set(key, next);
   const release = () => {
-    if (launchLocks.get(bot.id) === next) launchLocks.delete(bot.id);
+    if (launchLocks.get(key) === next) launchLocks.delete(key);
   };
   next.then(release, release);
   return next;
 }
 
-async function launchBackgroundTaskNow(
-  deps: Deps,
+/** The user's uploads to forward to a worker as attachments (deduplicated, file/image only). */
+export function taskAttachmentBlocks(blocks: readonly MessageBlock[]): AttachmentBlock[] {
+  const seen = new Set<string>();
+  const out: AttachmentBlock[] = [];
+  for (const block of blocks) {
+    if (block.kind !== "file" && block.kind !== "image") continue;
+    if (seen.has(block.artifactId)) continue;
+    seen.add(block.artifactId);
+    out.push(block);
+  }
+  return out;
+}
+
+type TaskRow = Awaited<ReturnType<typeof findTaskRow>> & {};
+
+export function launchBackgroundTask(
+  deps: QueueDeps,
   run: DispatchRun,
   bot: DispatchBot,
   args: Record<string, unknown>,
-  options: { builtinToolNames: readonly string[]; deliveryKey: string },
+  options: {
+    builtinToolNames: readonly string[];
+    deliveryKey: string;
+    attachments?: readonly AttachmentBlock[];
+  },
+) {
+  return serialized(bot.id, () => launchBackgroundTaskNow(deps, run, bot, args, options));
+}
+
+async function launchBackgroundTaskNow(
+  deps: QueueDeps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  args: Record<string, unknown>,
+  options: {
+    builtinToolNames: readonly string[];
+    deliveryKey: string;
+    attachments?: readonly AttachmentBlock[];
+  },
 ) {
   const name =
     String(args.name ?? "")
@@ -330,20 +363,36 @@ async function launchBackgroundTaskNow(
   const agent = agentArg as BackgroundAgentProfile;
   const toolsArg = Array.isArray(args.tools) ? args.tools.map(String) : undefined;
   const allowlist = toolsArg ?? BACKGROUND_AGENT_PROFILES[agent].tools;
+  const instructions = args.instructions ? String(args.instructions) : undefined;
+  const taskHash = backgroundTaskHash({ name, task, instructions, agent });
 
-  // Never start a second copy of a task that is still running or queued (e.g. a retry after a
-  // provider error while the first attempt is in fact still going).
-  const duplicate = await findDuplicateTask(deps, run, bot, name, task);
-  if (duplicate) return duplicate;
-  const limit = backgroundTaskConcurrency();
-  // FIFO: older queued tasks take free slots before this new one.
-  if ((await queuedTasks(deps, bot.id)).length) await drainQueue(deps, bot.id, run);
-  const found = await freeSlot(deps, run, bot);
-  if ("error" in found) return { error: found.error };
-  const { slotBot, busy } = found;
-  if (!slotBot) {
-    // Over the soft max: keep the request, FIFO per dispatcher, and start it when a slot frees.
-    const queued = await deps.prisma.backgroundTaskQueue.create({
+  // Never start a second copy of the same work that is still running or queued (e.g. a retry
+  // after a provider error while the first attempt is in fact still going). Same content only.
+  const duplicate = await deps.prisma.backgroundTaskQueue.findFirst({
+    where: { botId: bot.id, taskHash, status: { in: ACTIVE_TASK_STATUSES } },
+    orderBy: { createdAt: "asc" },
+  });
+  if (duplicate) {
+    return {
+      ok: true as const,
+      status:
+        duplicate.status === "queued" ? ("already_queued" as const) : ("already_running" as const),
+      task_id: duplicate.ref ?? duplicate.id,
+      name: duplicate.name,
+      note: "This same task is already running or queued; nothing new was started. To change it, use background_task_message with this task_id.",
+    };
+  }
+  // Retried tool call (same delivery key): return the task it already created.
+  const replay = await deps.prisma.backgroundTaskQueue.findFirst({
+    where: {
+      botId: bot.id,
+      runId: run.id,
+      args: { path: ["deliveryKey"], equals: options.deliveryKey },
+    },
+  });
+  const row =
+    replay ??
+    (await deps.prisma.backgroundTaskQueue.create({
       data: {
         spaceId: run.spaceId,
         botId: bot.id,
@@ -352,99 +401,302 @@ async function launchBackgroundTaskNow(
         threadId: run.threadId,
         name,
         task,
+        ref: newTaskRef(),
+        taskHash,
         args: {
-          ...(args.instructions ? { instructions: String(args.instructions) } : {}),
+          ...(instructions ? { instructions } : {}),
           agent,
           disabled: workerDisabledTools(options.builtinToolNames, allowlist),
           deliveryKey: options.deliveryKey,
-        },
+          ...(options.attachments?.length
+            ? { attachments: options.attachments.map((block) => ({ ...block })) }
+            : {}),
+        } as never,
       },
-    });
-    const position = await deps.prisma.backgroundTaskQueue.count({
-      where: { botId: bot.id, status: "queued", createdAt: { lte: queued.createdAt } },
-    });
+    }));
+  // Every new task enters the queue, so it can never jump ahead of older queued ones (FIFO
+  // even when the head of the queue fails to start).
+  await drainQueue(deps, bot.id, run);
+  const now = await deps.prisma.backgroundTaskQueue.findUnique({ where: { id: row.id } });
+  const limit = backgroundTaskConcurrency();
+  if (now && (now.status === "started" || now.status === "claiming") && now.workerBotId) {
     return {
       ok: true as const,
-      status: "queued" as const,
-      task_id: `q:${queued.id}`,
+      status: "started" as const,
+      task_id: now.ref ?? now.id,
+      task_ref: now.ref ?? now.id,
+      worker_id: now.workerBotId,
       name,
-      position,
-      running: busy,
-      limit,
-      note: `${busy} 个后台任务正在运行（上限 ${limit}），这个任务已排队，第 ${position} 位；有空位时自动开始，结果照常发回给你。如实告诉用户“已排队，第 ${position} 位”，不要说已开始。`,
+      agent,
+      note: "已在后台开始。结果完成后会自动作为消息发回给你并唤醒你；现在先简短告诉用户已派出，然后结束本轮或继续别的事。不要轮询等待。",
     };
   }
-  return startOnSlot(deps, run, bot, slotBot, {
+  if (!now || now.status === "failed" || now.status === "cancelled") {
+    return { error: now?.error ?? "background task could not be started" };
+  }
+  const position = await deps.prisma.backgroundTaskQueue.count({
+    where: { botId: bot.id, status: "queued", createdAt: { lte: now.createdAt } },
+  });
+  const busy = await deps.prisma.backgroundTaskQueue.count({
+    where: { botId: bot.id, status: { in: SLOT_HOLDING_STATUSES } },
+  });
+  return {
+    ok: true as const,
+    status: "queued" as const,
+    task_id: now.ref ?? now.id,
     name,
-    task,
-    instructions: args.instructions ? String(args.instructions) : undefined,
-    agent,
-    disabled: workerDisabledTools(options.builtinToolNames, allowlist),
-    deliveryKey: options.deliveryKey,
+    position,
+    running: busy,
+    limit,
+    note: `${busy} 个后台任务正在运行（上限 ${limit}），这个任务已排队，第 ${position} 位；有空位时自动开始，结果照常发回给你。如实告诉用户“已排队，第 ${position} 位”，不要说已开始。`,
+  };
+}
+
+/** Whether a worker is free: no task holds it and it has no live run of its own. */
+async function workerIsFree(
+  prisma: Pick<Deps["prisma"], "backgroundTaskQueue" | "run">,
+  workerId: string,
+) {
+  const holding = await prisma.backgroundTaskQueue.findFirst({
+    where: { workerBotId: workerId, status: { in: SLOT_HOLDING_STATUSES } },
+    select: { id: true },
+  });
+  if (holding) return false;
+  const live = await prisma.run.findFirst({
+    where: { botId: workerId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    select: { id: true },
+  });
+  return !live;
+}
+
+type Claim =
+  | { kind: "claimed"; row: NonNullable<TaskRow>; workerId: string; attempts: number }
+  | { kind: "spawn"; slot: number }
+  | { kind: "none" };
+
+/**
+ * Atomically reserves a free slot for the head of this dispatcher's queue. The dispatcher's bot
+ * row is locked for the transaction, so two processes never pick the same slot or row.
+ */
+async function claimSlot(
+  deps: QueueDeps,
+  dispatcherBotId: string,
+  spaceId: string,
+): Promise<Claim> {
+  const limit = backgroundTaskConcurrency();
+  return deps.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${dispatcherBotId} FOR UPDATE`;
+    const head = await tx.backgroundTaskQueue.findFirst({
+      where: { botId: dispatcherBotId, status: "queued" },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!head) return { kind: "none" } as const;
+    const existing = await workerBots({ prisma: tx as never }, dispatcherBotId, spaceId);
+    for (let slot = 1; slot <= limit; slot += 1) {
+      const worker = existing.find(
+        (b) => b.spawnKey === backgroundWorkerSpawnKey(dispatcherBotId, slot),
+      );
+      if (!worker) return { kind: "spawn", slot } as const;
+      if (!(await workerIsFree(tx as never, worker.id))) continue;
+      const attempts = head.attempts + 1;
+      await tx.backgroundTaskQueue.update({
+        where: { id: head.id },
+        data: {
+          status: "claiming",
+          workerBotId: worker.id,
+          leaseOwner: PROCESS_LEASE_OWNER,
+          leaseExpiresAt: new Date(Date.now() + CLAIM_LEASE_MS),
+          attempts,
+          startedAt: new Date(),
+        },
+      });
+      return { kind: "claimed", row: head, workerId: worker.id, attempts } as const;
+    }
+    return { kind: "none" } as const;
   });
 }
 
-type SlotBot = { id: string; name: string };
+async function findTaskRow(deps: Pick<Deps, "prisma">, id: string) {
+  return deps.prisma.backgroundTaskQueue.findUnique({ where: { id } });
+}
+
+function taskDeliveryKey(row: { id: string }, attempts: number) {
+  return `bgtask:${row.id}:${attempts}`;
+}
+
+/**
+ * Starts queued tasks of one dispatcher, oldest first, while slots are free. Called on every
+ * new task, at the start of every dispatcher turn, after a cancel and by the job reconciler,
+ * so the persisted queue also drains after a restart. Returns how many queued tasks remain.
+ */
+export function startQueuedBackgroundTasks(
+  deps: QueueDeps,
+  dispatcherBotId: string,
+  liveRun?: DispatchRun,
+) {
+  return serialized(dispatcherBotId, () => drainQueue(deps, dispatcherBotId, liveRun));
+}
+
+async function drainQueue(deps: QueueDeps, dispatcherBotId: string, liveRun?: DispatchRun) {
+  await recoverBackgroundTasks(deps, { botId: dispatcherBotId }).catch((error) =>
+    getLogger().error("background task recovery", error),
+  );
+  const bot = await deps.prisma.bot.findUnique({
+    where: { id: dispatcherBotId },
+    select: {
+      id: true,
+      name: true,
+      spaceId: true,
+      userId: true,
+      computerId: true,
+      archivedAt: true,
+    },
+  });
+  const started: string[] = [];
+  if (!bot || bot.archivedAt) return { started, remaining: 0 };
+  for (let guard = 0; guard < 50; guard += 1) {
+    const claim = await claimSlot(deps, bot.id, bot.spaceId);
+    if (claim.kind === "none") break;
+    if (claim.kind === "spawn") {
+      const anchor = liveRun?.botId === bot.id ? liveRun : undefined;
+      const head = await deps.prisma.backgroundTaskQueue.findFirst({
+        where: { botId: bot.id, status: "queued" },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!head) break;
+      const spawned = await spawnBot(deps, {
+        spawnedBy: { id: bot.id, name: bot.name, spaceId: bot.spaceId, userId: head.userId },
+        runId: anchor?.id ?? head.runId,
+        spawnKey: backgroundWorkerSpawnKey(bot.id, claim.slot),
+        name: `${bot.name} · 后台${claim.slot}`.slice(0, 60),
+        title: "后台工作者",
+        description: `${bot.name} 的后台工作者，由 background_task 自动管理。`,
+        instructions: WORKER_INSTRUCTIONS,
+      }).catch((error: unknown) => ({
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      if ("error" in spawned) {
+        getLogger().error("background worker spawn failed", { reason: spawned.error });
+        break;
+      }
+      continue;
+    }
+    const { row, workerId, attempts } = claim;
+    const live = liveRun && liveRun.botId === bot.id ? liveRun : undefined;
+    // The run that queued this row has usually ended by now. Hand off from the dispatcher run
+    // doing the drain when there is one; otherwise send on behalf of the ended source run.
+    const run: DispatchRun = live ?? {
+      id: row.runId,
+      spaceId: row.spaceId,
+      threadId: row.threadId,
+      botId: bot.id,
+      userId: row.userId,
+    };
+    const sourceEnded =
+      !live &&
+      (await deps.prisma.run.findUnique({ where: { id: row.runId }, select: { status: true } }))
+        ?.status !== "running";
+    const a = (row.args ?? {}) as Record<string, unknown>;
+    const agent = (
+      String(a.agent ?? "general") in BACKGROUND_AGENT_PROFILES ? a.agent : "general"
+    ) as BackgroundAgentProfile;
+    let out: Awaited<ReturnType<typeof startOnSlot>>;
+    try {
+      out = await startOnSlot(deps, run, bot, workerId, {
+        ref: row.ref ?? row.id,
+        name: row.name,
+        task: row.task,
+        instructions: a.instructions ? String(a.instructions) : undefined,
+        agent,
+        disabled: Array.isArray(a.disabled) ? a.disabled.map(String) : [...WORKER_ALWAYS_DISABLED],
+        attachments: Array.isArray(a.attachments) ? (a.attachments as AttachmentBlock[]) : [],
+        deliveryKey: taskDeliveryKey(row, attempts),
+        allowTerminalSource: sourceEnded,
+      });
+    } catch (error) {
+      out = { error: error instanceof Error ? error.message : String(error) };
+    }
+    if ("error" in out) {
+      getLogger().error("queued background task failed to start", {
+        queueId: row.id,
+        attempts,
+        reason: out.error,
+      });
+      // Give the slot back. The row keeps its place at the head of the queue (FIFO), or fails
+      // for good after a few attempts so it cannot block the queue forever.
+      const giveUp = attempts >= MAX_TASK_START_ATTEMPTS;
+      await deps.prisma.backgroundTaskQueue.updateMany({
+        where: { id: row.id, status: "claiming", leaseOwner: PROCESS_LEASE_OWNER },
+        data: giveUp
+          ? {
+              status: "failed",
+              error: String(out.error).slice(0, 2000),
+              finishedAt: new Date(),
+              leaseOwner: null,
+              leaseExpiresAt: null,
+            }
+          : {
+              status: "queued",
+              startedAt: null,
+              workerBotId: null,
+              leaseOwner: null,
+              leaseExpiresAt: null,
+              error: String(out.error).slice(0, 2000),
+            },
+      });
+      if (giveUp) continue;
+      break;
+    }
+    const bound = await deps.prisma.backgroundTaskQueue.updateMany({
+      where: { id: row.id, status: "claiming", leaseOwner: PROCESS_LEASE_OWNER },
+      data: {
+        status: "started",
+        workerRunId: out.runId,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        error: null,
+      },
+    });
+    if (bound.count === 0) {
+      getLogger().warn("background task changed while starting", { queueId: row.id });
+      continue;
+    }
+    started.push(row.id);
+    getLogger().info("background task started", { queueId: row.id, worker: workerId });
+  }
+  const remaining = await deps.prisma.backgroundTaskQueue.count({
+    where: { botId: dispatcherBotId, status: "queued" },
+  });
+  return { started, remaining };
+}
+
 type StartSpec = {
+  ref: string;
   name: string;
   task: string;
   instructions?: string;
   agent: BackgroundAgentProfile;
   disabled: string[];
+  attachments: readonly AttachmentBlock[];
   deliveryKey: string;
   allowTerminalSource?: boolean;
 };
 
-/** Free slot bot of this dispatcher, spawning one if needed; null when all slots are busy. */
-async function freeSlot(deps: Deps, run: DispatchRun, bot: DispatchBot) {
-  const limit = backgroundTaskConcurrency();
-  const existing = await workerBots(deps, bot, run.spaceId);
-  let busy = 0;
-  for (let slot = 1; slot <= limit; slot += 1) {
-    const worker = existing.find((b) => b.spawnKey === backgroundWorkerSpawnKey(bot.id, slot));
-    if (
-      worker &&
-      ((await activeRunFor(deps, worker.id)) || (await undeliveredOutcome(deps, worker.id)))
-    ) {
-      // Busy, or its last result has not reached the dispatcher yet: never hand the slot
-      // (and its context) to unrelated work before that result is delivered.
-      busy += 1;
-      continue;
-    }
-    if (worker) return { slotBot: worker as SlotBot, busy };
-    const spawned = await spawnBot(deps, {
-      spawnedBy: { id: bot.id, name: bot.name, spaceId: run.spaceId, userId: run.userId },
-      runId: run.id,
-      spawnKey: backgroundWorkerSpawnKey(bot.id, slot),
-      name: `${bot.name} · 后台${slot}`.slice(0, 60),
-      title: "后台工作者",
-      description: `${bot.name} 的后台工作者，由 background_task 自动管理。`,
-      instructions: WORKER_INSTRUCTIONS,
-    });
-    if ("error" in spawned) return { error: spawned.error as string, busy };
-    return { slotBot: { id: spawned.botId, name: spawned.name } as SlotBot, busy };
-  }
-  return { slotBot: null, busy };
-}
-
 async function startOnSlot(
-  deps: Deps,
+  deps: QueueDeps,
   run: DispatchRun,
   bot: DispatchBot,
-  slotBot: SlotBot,
+  workerId: string,
   spec: StartSpec,
-) {
-  const { name, task, agent } = spec;
-  // A slot is reused across tasks; the ref tells this task apart from the slot's earlier ones.
-  const ref = newTaskRef();
-
+): Promise<{ runId: string } | { error: string }> {
+  const { name, task, agent, ref } = spec;
   // Per task: same computer as the dispatcher, quiet notifications, this task's tool set.
   await deps.prisma.bot.update({
-    where: { id: slotBot.id },
+    where: { id: workerId },
     data: {
       notifyOnFinish: false,
       instructions: WORKER_INSTRUCTIONS,
-      // The current task, so status can name it and the user can stop "the video one".
+      // Display only (cards, the worker's own chat); results are attributed through the task row.
       title: `${name.slice(0, 70)} #${ref}`,
       description: task.slice(0, 300),
       disabledBuiltinTools: spec.disabled,
@@ -454,7 +706,7 @@ async function startOnSlot(
   // An unrelated new task starts with a fresh context: earlier tasks stay visible in the
   // worker's thread but are cut from its model history (follow-ups go via background_task_message).
   const workerThread = await deps.prisma.thread.findFirst({
-    where: { botId: slotBot.id },
+    where: { botId: workerId },
     select: { id: true, nextMessageSeq: true },
   });
   if (workerThread && workerThread.nextMessageSeq > 0) {
@@ -467,98 +719,246 @@ async function startOnSlot(
       },
     });
   }
-
-  const sendArgs = [
+  const sent = await messageBot(
     deps,
     run,
     { id: bot.id, name: bot.name },
     {
-      bot_id: slotBot.id,
-      message: buildBackgroundTaskMessage({
-        name,
-        task,
-        instructions: spec.instructions,
-        agent,
-      }),
+      bot_id: workerId,
+      message: buildBackgroundTaskMessage({ name, task, instructions: spec.instructions, agent }),
       intent: "request",
       deliveryKey: spec.deliveryKey,
+      // The user's uploads travel with the task: the worker's own run copies them into its
+      // workspace, so the dispatcher never needs a computer for them.
+      attachments: spec.attachments,
     },
-  ] as const;
-  const sent = spec.allowTerminalSource
-    ? await messageBot(...sendArgs, { allowTerminalSource: true })
-    : await messageBot(...sendArgs);
+    spec.allowTerminalSource ? { allowTerminalSource: true } : undefined,
+  );
   if (!sent.ok) return { error: sent.error };
-  return {
-    ok: true as const,
-    task_id: slotBot.id,
-    task_ref: ref,
-    name,
-    agent,
-    note: "已在后台开始。结果完成后会自动作为消息发回给你并唤醒你；现在先简短告诉用户已派出，然后结束本轮或继续别的事。不要轮询等待。",
-  };
+  if (!sent.runId) return { error: "worker run was not created" };
+  return { runId: sent.runId };
 }
 
+/**
+ * Repairs task rows a crash or a lost delivery left behind:
+ * - an expired claim is bound to the worker run it already created, or requeued (failed after
+ *   MAX_TASK_START_ATTEMPTS), so a crash between claiming and starting never loses the task;
+ * - a started task whose worker run is gone, or ended long ago without its result being
+ *   delivered, is finalized so it no longer holds its slot.
+ */
+export async function recoverBackgroundTasks(
+  deps: Pick<Deps, "prisma">,
+  scope: { botId?: string } = {},
+  now = new Date(),
+) {
+  let requeued = 0;
+  let finalized = 0;
+  const expired = await deps.prisma.backgroundTaskQueue.findMany({
+    where: { ...scope, status: "claiming", leaseExpiresAt: { lt: now } },
+    take: 100,
+  });
+  for (const row of expired) {
+    const nonce = taskDeliveryKey(row, row.attempts);
+    const delivered = row.workerBotId
+      ? await deps.prisma.message.findFirst({
+          where: { clientNonce: nonce, thread: { botId: row.workerBotId } },
+          select: { runId: true },
+        })
+      : null;
+    const data = delivered?.runId
+      ? { status: "started", workerRunId: delivered.runId, leaseOwner: null, leaseExpiresAt: null }
+      : row.attempts >= MAX_TASK_START_ATTEMPTS
+        ? {
+            status: "failed",
+            error: "worker hand-off did not complete",
+            finishedAt: now,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          }
+        : {
+            status: "queued",
+            workerBotId: null,
+            startedAt: null,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          };
+    const done = await deps.prisma.backgroundTaskQueue.updateMany({
+      where: { id: row.id, status: "claiming", leaseExpiresAt: row.leaseExpiresAt },
+      data,
+    });
+    requeued += done.count;
+  }
+  const started = await deps.prisma.backgroundTaskQueue.findMany({
+    where: { ...scope, status: "started", workerRunId: { not: null } },
+    take: 200,
+  });
+  for (const row of started) {
+    const workerRun = await deps.prisma.run.findUnique({
+      where: { id: row.workerRunId! },
+      select: { status: true, completedAt: true, botOutcomeReturnedAt: true },
+    });
+    if (workerRun && ACTIVE_RUN_STATUSES.includes(workerRun.status as never)) continue;
+    // A newer run on the worker (a steering continuation) carries the task now.
+    const newer = row.workerBotId
+      ? await deps.prisma.run.findFirst({
+          where: { botId: row.workerBotId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true },
+        })
+      : null;
+    if (newer) {
+      await deps.prisma.backgroundTaskQueue.updateMany({
+        where: { id: row.id, status: "started" },
+        data: { workerRunId: newer.id },
+      });
+      continue;
+    }
+    const ended = workerRun?.completedAt?.getTime() ?? 0;
+    if (
+      workerRun &&
+      !workerRun.botOutcomeReturnedAt &&
+      now.getTime() - ended < UNDELIVERED_GRACE_MS
+    )
+      continue;
+    const done = await deps.prisma.backgroundTaskQueue.updateMany({
+      where: { id: row.id, status: "started", workerRunId: row.workerRunId },
+      data: {
+        status: !workerRun
+          ? "failed"
+          : workerRun.status === "completed"
+            ? "completed"
+            : workerRun.status === "cancelled"
+              ? "cancelled"
+              : "failed",
+        ...(workerRun ? {} : { error: "worker run is missing" }),
+        finishedAt: now,
+      },
+    });
+    finalized += done.count;
+  }
+  return { requeued, finalized };
+}
+
+/**
+ * Job-reconciler pass: repair rows, then drain dispatchers that still have queued tasks (so
+ * the queue moves even when no dispatcher turn or worker result happens).
+ */
+export async function reconcileBackgroundTasks(
+  deps: Pick<Deps, "prisma" | "jobs"> & { events?: QueueDeps["events"] },
+) {
+  await recoverBackgroundTasks(deps);
+  if (!deps.events) return;
+  const pending = await deps.prisma.backgroundTaskQueue.findMany({
+    where: { status: "queued" },
+    distinct: ["botId"],
+    select: { botId: true },
+    take: 50,
+  });
+  for (const { botId } of pending) {
+    await startQueuedBackgroundTasks(deps as QueueDeps, botId).catch((error) =>
+      getLogger().error("background queue reconcile drain", error),
+    );
+  }
+}
+
+/** Resolves a task_id: the task ref ("T1AB2C3D", "#T1AB2C3D"), "q:<row id>", or a row id. */
+async function resolveTask(deps: Pick<Deps, "prisma">, botId: string, wanted: string) {
+  const id = wanted.trim().replace(/^#/, "");
+  if (!id) return null;
+  if (id.startsWith("q:"))
+    return deps.prisma.backgroundTaskQueue.findFirst({ where: { botId, id: id.slice(2) } });
+  return (
+    (await deps.prisma.backgroundTaskQueue.findFirst({
+      where: { botId, ref: id.toUpperCase() },
+      orderBy: { createdAt: "desc" },
+    })) ?? (await deps.prisma.backgroundTaskQueue.findFirst({ where: { botId, id } }))
+  );
+}
+
+const RECENT_TASK_MS = 30 * 60_000;
+
 export async function backgroundTaskStatus(
-  deps: Deps,
+  deps: Pick<Deps, "prisma">,
   run: DispatchRun,
   bot: DispatchBot,
   args: Record<string, unknown>,
 ) {
-  const workers = await workerBots(deps, bot, run.spaceId);
   // Times go out in the user's zone (else the owner's or deployment's), with the offset shown.
   const zone = await resolveRunTimeZone(deps.prisma as never, run);
   const wanted = args.task_id ? String(args.task_id) : undefined;
-  const selected = wanted ? workers.filter((w) => w.id === wanted) : workers;
-  if (wanted && !wanted.startsWith("q:") && selected.length === 0)
-    return { error: "no background task with that task_id" };
-  const tasks = await Promise.all(
-    selected.map(async (worker) => {
-      const latest = await deps.prisma.run.findFirst({
-        where: { botId: worker.id },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, status: true, createdAt: true, completedAt: true, error: true },
+  const rows = wanted
+    ? [await resolveTask(deps, bot.id, wanted)].filter((row) => row !== null)
+    : await deps.prisma.backgroundTaskQueue.findMany({
+        where: {
+          botId: bot.id,
+          OR: [
+            { status: { in: ACTIVE_TASK_STATUSES } },
+            { finishedAt: { gte: new Date(Date.now() - RECENT_TASK_MS) } },
+          ],
+        },
+        orderBy: { createdAt: "asc" },
+        take: 30,
       });
-      const last = worker.thread
-        ? await deps.prisma.message.findFirst({
-            where: { threadId: worker.thread.id, role: { not: "user" } },
-            orderBy: { seq: "desc" },
-            select: { blocks: true },
+  if (wanted && rows.length === 0) return { error: "no background task with that task_id" };
+  const queuedOrder = (await queuedTasks(deps, bot.id)).map((row) => row.id);
+  const tasks = await Promise.all(
+    rows.map(async (row) => {
+      const workerRun = row.workerRunId
+        ? await deps.prisma.run.findUnique({
+            where: { id: row.workerRunId },
+            select: { status: true, createdAt: true, completedAt: true, error: true },
           })
         : null;
-      const finishedAt = latest?.completedAt;
+      const worker = row.workerBotId
+        ? await deps.prisma.bot.findUnique({
+            where: { id: row.workerBotId },
+            select: { thread: { select: { id: true } } },
+          })
+        : null;
+      const last =
+        worker?.thread && row.status === "started"
+          ? await deps.prisma.message.findFirst({
+              where: { threadId: worker.thread.id, role: { not: "user" } },
+              orderBy: { seq: "desc" },
+              select: { blocks: true },
+            })
+          : null;
+      const state =
+        row.status === "queued"
+          ? "queued"
+          : row.status === "claiming"
+            ? "starting"
+            : row.status === "started"
+              ? workerRun && ACTIVE_RUN_STATUSES.includes(workerRun.status as never)
+                ? workerRun.status
+                : "finishing"
+              : row.status;
+      const finishedAt = row.finishedAt ?? workerRun?.completedAt ?? undefined;
       return {
-        task_id: worker.id,
-        name: worker.title,
-        task: worker.description,
-        state: latest?.status ?? "idle",
-        started_at: latest?.createdAt ? formatInstantForUser(latest.createdAt, zone) : undefined,
-        finished_at: finishedAt ? formatInstantForUser(finishedAt, zone) : undefined,
-        finished_recently: finishedAt ? Date.now() - finishedAt.getTime() < 30 * 60_000 : false,
+        task_id: row.ref ?? row.id,
+        name: row.name,
+        task: row.task.slice(0, 300),
+        state,
+        ...(row.status === "queued" ? { position: queuedOrder.indexOf(row.id) + 1 } : {}),
+        queued_at: formatInstantForUser(row.createdAt, zone),
+        started_at: row.startedAt ? formatInstantForUser(row.startedAt, zone) : undefined,
+        finished_at:
+          finishedAt && !ACTIVE_TASK_STATUSES.includes(row.status)
+            ? formatInstantForUser(finishedAt, zone)
+            : undefined,
         last_progress: lastText(last?.blocks),
-        ...(latest?.error ? { error: String(latest.error).slice(0, 500) } : {}),
+        ...(row.error || workerRun?.error
+          ? { error: String(row.error ?? workerRun?.error).slice(0, 500) }
+          : {}),
       };
     }),
   );
-  const queue = wanted?.startsWith("q:") || !wanted ? await queuedTasks(deps, bot.id) : [];
-  const queued = queue
-    .map((row, index) => ({
-      task_id: `q:${row.id}`,
-      name: row.name,
-      task: row.task.slice(0, 300),
-      state: "queued",
-      position: index + 1,
-      queued_at: formatInstantForUser(row.createdAt, zone),
-    }))
-    .filter((q) => !wanted || q.task_id === wanted);
-  if (wanted?.startsWith("q:") && queued.length === 0)
-    return { error: "no queued task with that task_id" };
   return {
     ok: true as const,
     limit: backgroundTaskConcurrency(),
-    tasks: wanted?.startsWith("q:") ? [] : tasks,
-    queued,
+    tasks,
     time_zone: zone ?? "UTC",
-    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. Only state "done" for a task whose state is completed here or whose result you received; running/queued tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task.`,
+    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task.`,
   };
 }
 
@@ -581,97 +981,191 @@ export function alreadySentThisTurn(runId: string, workerId: string, text: strin
   return false;
 }
 
+const STEERABLE_RUN_STATUSES = ["queued", "leased", "running"];
+
 export async function backgroundTaskMessage(
-  deps: Deps,
+  deps: QueueDeps,
   run: DispatchRun,
   bot: DispatchBot,
   args: Record<string, unknown>,
   deliveryKey: string,
 ) {
-  const workers = await workerBots(deps, bot, run.spaceId);
+  return serialized(bot.id, () => backgroundTaskMessageNow(deps, run, bot, args, deliveryKey));
+}
+
+async function backgroundTaskMessageNow(
+  deps: QueueDeps,
+  run: DispatchRun,
+  bot: DispatchBot,
+  args: Record<string, unknown>,
+  deliveryKey: string,
+) {
   const text = String(args.message ?? "").trim();
-  const wantedId = String(args.task_id ?? "");
-  if (wantedId.startsWith("q:")) {
-    if (!text) return { error: "message is empty" };
-    const row = await deps.prisma.backgroundTaskQueue.findFirst({
-      where: { id: wantedId.slice(2), botId: bot.id, status: "queued" },
-    });
-    if (!row)
-      return {
-        error:
-          "no queued task with that task_id (it may have started; check background_task_status)",
-      };
-    await deps.prisma.backgroundTaskQueue.update({
-      where: { id: row.id },
+  if (!text) return { error: "message is empty" };
+  const row = await resolveTask(deps, bot.id, String(args.task_id ?? ""));
+  if (!row) return { error: "no background task with that task_id (check background_task_status)" };
+  const taskId = row.ref ?? row.id;
+  if (row.status === "queued") {
+    // CAS on the status and the text we read: a drain that claimed it meanwhile wins, and the
+    // change then goes to the started task below instead of into a row nobody reads again.
+    const updated = await deps.prisma.backgroundTaskQueue.updateMany({
+      where: { id: row.id, status: "queued", task: row.task },
       data: { task: `${row.task}\n\n[补充/改向指令]\n${text}`.slice(0, 20_000) },
     });
-    return {
-      ok: true as const,
-      task_id: wantedId,
-      note: "Queued task updated; it starts with this change.",
-    };
+    if (updated.count === 1)
+      return {
+        ok: true as const,
+        task_id: taskId,
+        note: "Queued task updated; it starts with this change.",
+      };
+    const fresh = await findTaskRow(deps, row.id);
+    if (!fresh || fresh.status === "queued")
+      return {
+        error: "the queued task changed at the same time; call background_task_message again",
+      };
+    return backgroundTaskMessageNow(deps, run, bot, args, deliveryKey);
   }
-  const worker = workers.find((w) => w.id === wantedId);
-  if (!worker) return { error: "no background task with that task_id" };
-  if (!text) return { error: "message is empty" };
-  if (alreadySentThisTurn(run.id, worker.id, text))
+  if (row.status === "claiming")
+    return {
+      error:
+        "this task is being handed to a worker right now; send the change again in a few seconds",
+    };
+  if (row.status === "cancelled")
+    return { error: "this task was cancelled; start a new background_task" };
+  if (!row.workerBotId)
+    return { error: "this task never reached a worker; start a new background_task" };
+  const workerId = row.workerBotId;
+  if (alreadySentThisTurn(run.id, workerId, text))
     return {
       ok: true as const,
-      task_id: worker.id,
+      task_id: taskId,
       note: "Already sent this to the worker in this turn; not sent again. Reply to the user once and end the turn.",
     };
-  // A worker that is mid-run takes the note as steering on its next model step, the same way
-  // a user's follow-up reaches a busy bot. An idle worker gets a normal bot message instead.
-  const active = worker.thread ? await activeRunFor(deps, worker.id) : null;
-  if (active && worker.thread && active.status === "running") {
-    const threadId = worker.thread.id;
-    const steered = await deps.prisma.$transaction(async (tx) => {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId,
-        role: "user",
-        blocks: [{ kind: "text", text: `[来自 ${bot.name} 的补充/改向指令]\n${text}` }],
-        runId: active.id,
-      });
-      await tx.steeringMessage.create({
-        data: { messageId: message.id, botId: worker.id, userId: run.userId, runId: active.id },
-      });
-      const event = await appendEventInTransaction(tx, {
-        spaceId: run.spaceId,
-        threadId,
-        botId: worker.id,
-        type: "thread.message.created",
-        runId: active.id,
-        payload: { messageId: message.id, role: "user", blocks: message.blocks },
-      });
-      return event.seq;
+  const worker = await deps.prisma.bot.findUnique({
+    where: { id: workerId },
+    select: { id: true, thread: { select: { id: true } } },
+  });
+  if (!worker?.thread) return { error: "that task's worker is no longer available" };
+  const threadId = worker.thread.id;
+  const block: MessageBlock = {
+    kind: "bot_message_received",
+    fromBotId: bot.id,
+    fromBotName: bot.name,
+    text: `[来自 ${bot.name} 的补充/改向指令]\n${text}`,
+    intent: "request",
+  };
+  // Steer the live run under a row lock on it, so the run cannot finish between the check and
+  // the write. A queued or leased run takes it too (merged, picked up on its first steps); a
+  // run that finishes later hands unclaimed steering to a continuation run, never drops it.
+  const steered = await deps.prisma.$transaction(async (tx) => {
+    const active = await tx.run.findFirst({
+      where: { botId: workerId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
     });
-    await deps.events.notify(threadId, steered).catch(() => undefined);
+    if (!active) return { kind: "idle" } as const;
+    const locked = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT status FROM runs WHERE id = ${active.id} FOR UPDATE`;
+    const status = locked[0]?.status;
+    if (status === "waiting_input" || status === "waiting_takeover")
+      return { kind: "waiting" } as const;
+    if (!status || !STEERABLE_RUN_STATUSES.includes(status)) return { kind: "retry" } as const;
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId,
+      role: "user",
+      blocks: [block],
+      runId: active.id,
+    });
+    await tx.steeringMessage.create({
+      data: { messageId: message.id, botId: workerId, userId: run.userId, runId: active.id },
+    });
+    const event = await appendEventInTransaction(tx, {
+      spaceId: run.spaceId,
+      threadId,
+      botId: workerId,
+      type: "thread.message.created",
+      runId: active.id,
+      payload: { messageId: message.id, role: "user", blocks: message.blocks },
+    });
+    if (row.workerRunId !== active.id) {
+      await tx.backgroundTaskQueue.updateMany({
+        where: { id: row.id, workerBotId: workerId },
+        data: { workerRunId: active.id, status: "started", finishedAt: null },
+      });
+    }
+    return { kind: "steered", seq: event.seq } as const;
+  });
+  if (steered.kind === "steered") {
+    await deps.events.notify(threadId, steered.seq).catch(() => undefined);
     return {
       ok: true as const,
-      task_id: worker.id,
+      task_id: taskId,
       note: "Delivered to the running worker; it sees it on its next step.",
     };
   }
+  if (steered.kind === "waiting")
+    return {
+      error: "the worker is waiting on an approval or takeover; it cannot take a change now",
+    };
+  if (steered.kind === "retry") return backgroundTaskMessageNow(deps, run, bot, args, deliveryKey);
+  // The worker is idle: resume this task on it with its context, unless the slot has already
+  // been handed to another task (then its context is gone; a new task must carry what it needs).
+  const reclaimed = await deps.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR UPDATE`;
+    const other = await tx.backgroundTaskQueue.findFirst({
+      where: { workerBotId: workerId, status: { in: SLOT_HOLDING_STATUSES }, id: { not: row.id } },
+      select: { id: true },
+    });
+    const later = await tx.backgroundTaskQueue.findFirst({
+      where: {
+        workerBotId: workerId,
+        id: { not: row.id },
+        startedAt: { gt: row.startedAt ?? row.createdAt },
+      },
+      select: { id: true },
+    });
+    if (other || later) return false;
+    await tx.backgroundTaskQueue.update({
+      where: { id: row.id },
+      data: { status: "started", finishedAt: null, error: null },
+    });
+    return true;
+  });
+  if (!reclaimed)
+    return {
+      error:
+        "that task's worker has since been reused for another task, so its context is gone; start a new background_task and include what it needs from the earlier result",
+    };
   const sent = await messageBot(
     deps,
     run,
     { id: bot.id, name: bot.name },
     // Never fyi: an idle worker treats this as a new request and its result always comes back.
-    { bot_id: worker.id, message: text, intent: "request", deliveryKey },
+    { bot_id: workerId, message: text, intent: "request", deliveryKey },
   );
-  if (!sent.ok) return { error: sent.error };
+  if (!sent.ok || !sent.runId) {
+    await deps.prisma.backgroundTaskQueue.updateMany({
+      where: { id: row.id, status: "started", workerRunId: row.workerRunId },
+      data: { status: row.status, finishedAt: row.finishedAt },
+    });
+    return { error: sent.ok ? "worker run was not created" : sent.error };
+  }
+  await deps.prisma.backgroundTaskQueue.updateMany({
+    where: { id: row.id },
+    data: { workerRunId: sent.runId },
+  });
   return {
     ok: true as const,
-    task_id: worker.id,
-    note: "Worker was idle; it resumes with this as a new request and its result comes back to you as a message.",
+    task_id: taskId,
+    note: "Worker was idle; it resumes this task with this as a new request and its result comes back to you as a message.",
   };
 }
 
 /**
- * Stops one worker (task_id) or every worker of this bot (task_id "all"). Uses the same path
- * as the Stop button: runs flip to cancelled (the worker's executor aborts its model call,
- * tools and MCP polling when it sees that), its shell processes are killed on the computer,
- * and the screen and lease are released.
+ * Stops one task (task_id or its name) or every task of this bot (task_id "all"). Uses the
+ * same path as stopping a run: runs flip to cancelled (the worker's executor aborts its model
+ * call, tools and MCP polling when it sees that), its shell processes are killed on the
+ * computer, and the screen and lease are released.
  */
 export async function cancelBackgroundTask(
   deps: Deps,
@@ -685,63 +1179,81 @@ export async function cancelBackgroundTask(
     stopThreadRunsForBots(deps, actor, target),
 ) {
   const startedAt = Date.now();
-  const workers = await workerBots(deps, bot, run.spaceId);
   const wanted = String(args.task_id ?? "").trim();
-  const byId = workers.filter((w) => w.id === wanted);
+  if (!wanted) return { error: 'task_id is required (a task\'s #ref, its name, or "all")' };
+  const active = await deps.prisma.backgroundTaskQueue.findMany({
+    where: { botId: bot.id, status: { in: ACTIVE_TASK_STATUSES } },
+    orderBy: { createdAt: "asc" },
+  });
   const needle = wanted.toLowerCase();
-  // A task name (from background_task) also works, so "the video one" can be stopped alone.
-  const targets =
-    wanted === "all"
-      ? workers
-      : byId.length > 0 || !needle
-        ? byId
-        : workers.filter(
-            (w) =>
-              w.title &&
-              (w.title.toLowerCase() === needle || taskTitle(w.title).toLowerCase() === needle),
-          );
-  const queue = await queuedTasks(deps, bot.id);
-  const queuedTargets =
-    wanted === "all"
-      ? queue
-      : queue.filter((q) => `q:${q.id}` === wanted || (needle && q.name.toLowerCase() === needle));
+  let targets: typeof active;
+  if (wanted === "all") targets = active;
+  else {
+    const byId = await resolveTask(deps, bot.id, wanted);
+    targets = byId
+      ? [byId]
+      : active.filter(
+          (row) =>
+            row.name.toLowerCase() === needle || taskTitle(row.name).toLowerCase() === needle,
+        );
+  }
   const cancelledQueued: Array<{ task_id: string; name: string }> = [];
-  for (const q of queuedTargets) {
+  const cancelled: Array<{ task_id: string; name: string; cancelled_runs: number }> = [];
+  const workers = await workerBots(deps, bot.id, run.spaceId);
+  for (const row of targets) {
+    const taskId = row.ref ?? row.id;
+    if (!ACTIVE_TASK_STATUSES.includes(row.status)) {
+      cancelled.push({ task_id: taskId, name: row.name, cancelled_runs: 0 });
+      continue;
+    }
     const done = await deps.prisma.backgroundTaskQueue.updateMany({
-      where: { id: q.id, status: "queued" },
-      data: { status: "cancelled" },
+      where: { id: row.id, status: { in: ACTIVE_TASK_STATUSES } },
+      data: { status: "cancelled", finishedAt: new Date(), leaseOwner: null, leaseExpiresAt: null },
     });
-    if (done.count) cancelledQueued.push({ task_id: `q:${q.id}`, name: q.name });
+    if (!done.count) continue;
+    if (row.status === "queued") {
+      cancelledQueued.push({ task_id: taskId, name: row.name });
+      continue;
+    }
+    const worker = workers.find((w) => w.id === row.workerBotId);
+    const runIds = worker?.thread
+      ? (
+          await stop(
+            { spaceId: run.spaceId, userId: run.userId },
+            { threadId: worker.thread.id, botIds: [worker.id] },
+          )
+        ).runIds
+      : [];
+    cancelled.push({ task_id: taskId, name: row.name, cancelled_runs: runIds.length });
   }
-  if (targets.length === 0 && cancelledQueued.length > 0) {
-    return {
-      ok: true as const,
-      cancelled: [],
-      cancelled_queued: cancelledQueued,
-      note: "These queued tasks were removed before they started.",
-    };
+  if (wanted === "all") {
+    // Workers running work no task row tracks (started before task rows existed).
+    for (const worker of workers) {
+      if (!worker.thread || targets.some((row) => row.workerBotId === worker.id)) continue;
+      const live = await deps.prisma.run.findFirst({
+        where: { botId: worker.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        select: { id: true },
+      });
+      if (!live) continue;
+      const { runIds } = await stop(
+        { spaceId: run.spaceId, userId: run.userId },
+        { threadId: worker.thread.id, botIds: [worker.id] },
+      );
+      cancelled.push({
+        task_id: worker.id,
+        name: taskTitle(worker.title || worker.name),
+        cancelled_runs: runIds.length,
+      });
+    }
   }
-  if (targets.length === 0) {
+  if (cancelled.length === 0 && cancelledQueued.length === 0) {
     return wanted === "all"
       ? { ok: true as const, cancelled: [], note: "no background tasks" }
       : { error: "no background task with that task_id" };
   }
-  const cancelled: Array<{ task_id: string; name: string; cancelled_runs: number }> = [];
-  for (const worker of targets) {
-    if (!worker.thread) continue;
-    const { runIds } = await stop(
-      { spaceId: run.spaceId, userId: run.userId },
-      { threadId: worker.thread.id, botIds: [worker.id] },
-    );
-    cancelled.push({
-      task_id: worker.id,
-      name: worker.title || worker.name,
-      cancelled_runs: runIds.length,
-    });
-  }
   getLogger().info("background task cancelled", {
     runId: run.id,
-    workers: cancelled.map((c) => c.task_id),
+    tasks: [...cancelled, ...cancelledQueued].map((c) => c.task_id),
     ms: Date.now() - startedAt,
   });
   // Freed slots go to the next queued tasks (unless everything was cancelled).
@@ -750,98 +1262,11 @@ export async function cancelBackgroundTask(
     ok: true as const,
     cancelled,
     cancelled_queued: cancelledQueued,
-    note: "Tell the user exactly which tasks were stopped (cancelled_runs > 0). A task with cancelled_runs 0 had already finished or was idle: say so instead of claiming you stopped it.",
+    note: "Tell the user exactly which tasks were stopped (cancelled_runs > 0) and which queued ones were removed. A task with cancelled_runs 0 had already finished or was idle: say so instead of claiming you stopped it.",
   };
 }
 
-/**
- * Starts queued background_task requests of one dispatcher, oldest first, while slots are free.
- * Called when a worker run ends, after a cancel, and at the start of every dispatcher turn, so
- * the persisted queue also drains after a restart.
- */
-export function startQueuedBackgroundTasks(
-  deps: Deps,
-  dispatcherBotId: string,
-  liveRun?: DispatchRun,
-) {
-  const previous = launchLocks.get(dispatcherBotId) ?? Promise.resolve();
-  const next = previous
-    .catch(() => undefined)
-    .then(() => drainQueue(deps, dispatcherBotId, liveRun));
-  launchLocks.set(dispatcherBotId, next);
-  const release = () => {
-    if (launchLocks.get(dispatcherBotId) === next) launchLocks.delete(dispatcherBotId);
-  };
-  next.then(release, release);
-  return next;
-}
-
-async function drainQueue(deps: Deps, dispatcherBotId: string, liveRun?: DispatchRun) {
-  const started: string[] = [];
-  for (;;) {
-    const row = await deps.prisma.backgroundTaskQueue.findFirst({
-      where: { botId: dispatcherBotId, status: "queued" },
-      orderBy: { createdAt: "asc" },
-    });
-    if (!row) break;
-    const bot = await deps.prisma.bot.findUnique({
-      where: { id: dispatcherBotId },
-      select: { id: true, name: true, computerId: true, archivedAt: true },
-    });
-    if (!bot || bot.archivedAt) break;
-    // The run that queued this row has usually ended by now. Hand off from the dispatcher run
-    // doing the drain when there is one; otherwise send on behalf of the ended source run.
-    const live = liveRun && liveRun.botId === bot.id ? liveRun : undefined;
-    const run: DispatchRun = live ?? {
-      id: row.runId,
-      spaceId: row.spaceId,
-      threadId: row.threadId,
-      botId: bot.id,
-      userId: row.userId,
-    };
-    const sourceEnded =
-      !live &&
-      (await deps.prisma.run.findUnique({ where: { id: row.runId }, select: { status: true } }))
-        ?.status !== "running";
-    const found = await freeSlot(deps, run, bot);
-    if ("error" in found || !found.slotBot) break;
-    // Claim first so two processes never start the same row.
-    const claimed = await deps.prisma.backgroundTaskQueue.updateMany({
-      where: { id: row.id, status: "queued" },
-      data: { status: "started", startedAt: new Date(), workerBotId: found.slotBot.id },
-    });
-    if (claimed.count === 0) continue;
-    const a = (row.args ?? {}) as Record<string, unknown>;
-    const agent = (
-      String(a.agent ?? "general") in BACKGROUND_AGENT_PROFILES ? a.agent : "general"
-    ) as BackgroundAgentProfile;
-    const out = await startOnSlot(deps, run, bot, found.slotBot, {
-      name: row.name,
-      task: row.task,
-      instructions: a.instructions ? String(a.instructions) : undefined,
-      agent,
-      disabled: Array.isArray(a.disabled) ? a.disabled.map(String) : [...WORKER_ALWAYS_DISABLED],
-      deliveryKey: `${String(a.deliveryKey ?? row.id)}:queued`,
-      allowTerminalSource: sourceEnded,
-    });
-    if ("error" in out) {
-      getLogger().error("queued background task failed to start", {
-        queueId: row.id,
-        reason: out.error,
-      });
-      await deps.prisma.backgroundTaskQueue.update({
-        where: { id: row.id },
-        data: { status: "queued", startedAt: null, workerBotId: null },
-      });
-      break;
-    }
-    started.push(row.id);
-    getLogger().info("queued background task started", { queueId: row.id, worker: out.task_id });
-  }
-  return started;
-}
-
-async function queuedTasks(deps: Deps, botId: string) {
+async function queuedTasks(deps: Pick<Deps, "prisma">, botId: string) {
   return deps.prisma.backgroundTaskQueue.findMany({
     where: { botId, status: "queued" },
     orderBy: { createdAt: "asc" },
@@ -861,34 +1286,7 @@ function lastText(blocks: unknown): string | undefined {
   return text ? (text.length > 300 ? `…${text.slice(-300)}` : text) : undefined;
 }
 
-async function findDuplicateTask(
-  deps: Deps,
-  run: DispatchRun,
-  bot: DispatchBot,
-  name: string,
-  task: string,
-) {
-  const same = (a: string | null | undefined, b: string) =>
-    Boolean(a?.trim()) && a!.trim().toLowerCase() === b.trim().toLowerCase();
-  for (const worker of await workerBots(deps, bot, run.spaceId)) {
-    if (!same(worker.title ? taskTitle(worker.title) : worker.title, name)) continue;
-    if (!(await activeRunFor(deps, worker.id))) continue;
-    return {
-      ok: true as const,
-      status: "already_running" as const,
-      task_id: worker.id,
-      name: worker.title,
-      note: "This task is already running on that worker; nothing new was started. To change it, use background_task_message with this task_id.",
-    };
-  }
-  const queued = (await queuedTasks(deps, bot.id)).find((q) => same(q.name, name));
-  return queued
-    ? {
-        ok: true as const,
-        status: "already_queued" as const,
-        task_id: `q:${queued.id}`,
-        name: queued.name,
-        note: "This task is already queued; nothing new was started.",
-      }
-    : null;
-}
+export {
+  backgroundTaskForWorkerRun,
+  finalizeBackgroundTaskForRun,
+} from "./background-task-rows.js";

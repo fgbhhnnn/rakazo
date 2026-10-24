@@ -74,11 +74,15 @@ describeIntegration("background task queue: soft max, FIFO overflow, auto-start"
       select: { id: true },
     });
     expect(workers).toHaveLength(4);
-    const queued = await db.backgroundTaskQueue.findMany({
+    // Every task is a durable row; the first four hold slots, the rest wait in FIFO order.
+    const rows = await db.backgroundTaskQueue.findMany({
       where: { botId: bot.id },
       orderBy: { createdAt: "asc" },
     });
-    expect(queued.map((q) => [q.name, q.status])).toEqual([
+    expect(rows).toHaveLength(6);
+    expect(new Set(rows.map((r) => r.ref)).size).toBe(6);
+    expect(rows.slice(0, 4).every((r) => r.status === "started" && r.workerRunId)).toBe(true);
+    expect(rows.slice(4).map((q) => [q.name, q.status])).toEqual([
       ["t5", "queued"],
       ["t6", "queued"],
     ]);
@@ -101,7 +105,7 @@ describeIntegration("background task queue: soft max, FIFO overflow, auto-start"
     // When the first workers finish, their result wakes the main bot, which starts t6.
     await waitFor(async () => {
       const t6 = await db.backgroundTaskQueue.findFirst({ where: { botId: bot.id, name: "t6" } });
-      return t6?.status === "started";
+      return t6?.status === "started" || t6?.status === "completed";
     }, 60_000);
     // The queued request was sent by a main run that ended long ago: the hand-off must still
     // reach a worker (it once failed with "source run is no longer active" and reverted).
@@ -109,17 +113,18 @@ describeIntegration("background task queue: soft max, FIFO overflow, auto-start"
       const t6 = await db.backgroundTaskQueue.findFirstOrThrow({
         where: { botId: bot.id, name: "t6" },
       });
-      if (t6.status !== "started" || !t6.workerBotId) return false;
+      if (!t6.workerBotId || !t6.workerRunId) return false;
       const worker = await db.bot.findUniqueOrThrow({ where: { id: t6.workerBotId } });
       const runs = await db.run.count({
         where: { botId: worker.id, createdAt: { gte: t6.startedAt ?? new Date() } },
       });
-      return worker.title === "t6" && runs > 0;
+      // The worker is labelled from the task row (name #ref), not a free-form title.
+      return worker.title === `t6 #${t6.ref}` && runs > 0;
     }, 30_000);
     const t6Row = await db.backgroundTaskQueue.findFirstOrThrow({
       where: { botId: bot.id, name: "t6" },
     });
-    expect(t6Row.status).toBe("started");
+    expect(["started", "completed"]).toContain(t6Row.status);
     const t5 = await db.backgroundTaskQueue.findFirstOrThrow({
       where: { botId: bot.id, name: "t5" },
     });

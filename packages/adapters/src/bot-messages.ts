@@ -17,6 +17,10 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  backgroundTaskForWorkerRun,
+  finalizeBackgroundTaskForRun,
+} from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
 
 /**
@@ -80,6 +84,8 @@ export async function messageBot(
     message: string;
     intent?: BotMessageIntent;
     deliveryKey?: string;
+    /** File/image blocks (artifacts of this space and user) delivered with the message. */
+    attachments?: readonly MessageBlock[];
   },
   options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
 ) {
@@ -128,9 +134,10 @@ export async function messageBot(
   // A tool call can be re-executed after a lease expiry, so a delivery has to be
   // replayable: without this the recipient is messaged twice and woken twice.
   const deliveryKey = input.deliveryKey ? `bot-message:${input.deliveryKey}` : undefined;
-  const replayed = () =>
+  const replayed = (runId?: string | null) =>
     ({
       ok: true as const,
+      runId: runId ?? undefined,
       botId: target.id,
       name: target.name,
       delivered: message,
@@ -161,6 +168,7 @@ export async function messageBot(
     | {
         ok: true;
         replayed: true;
+        runId: string | null;
       };
   try {
     committed = await withTransactionRetry(() =>
@@ -173,9 +181,9 @@ export async function messageBot(
         if (deliveryKey) {
           const already = await tx.message.findUnique({
             where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
-            select: { id: true },
+            select: { id: true, runId: true },
           });
-          if (already) return { ok: true as const, replayed: true as const };
+          if (already) return { ok: true as const, replayed: true as const, runId: already.runId };
         }
 
         const senderStillRunning = await tx.run.findFirst({
@@ -231,7 +239,10 @@ export async function messageBot(
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
           role: "user",
-          blocks: [inboundBlock],
+          blocks: [
+            inboundBlock,
+            ...(input.attachments ?? []).filter((b) => b.kind === "file" || b.kind === "image"),
+          ],
           replyToMessageId:
             sourceContext?.fromBotId === target.id && intent !== "fyi"
               ? sourceContext.returnToMessageId
@@ -269,7 +280,7 @@ export async function messageBot(
           botId: target.id,
           type: "thread.message.created",
           runId: nextRun.id,
-          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock] },
+          payload: { messageId: inbound.id, role: "user", blocks: inbound.blocks },
         });
         const outboundEvent = await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
@@ -294,13 +305,13 @@ export async function messageBot(
     if (deliveryKey && isUniqueConstraintError(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
-        select: { id: true },
+        select: { id: true, runId: true },
       });
-      if (winner) return replayed();
+      if (winner) return replayed(winner.runId);
     }
     throw error;
   }
-  if ("replayed" in committed) return replayed();
+  if ("replayed" in committed) return replayed(committed.runId);
   if (!committed.ok) return committed;
 
   await deps.events.notify(targetThreadId, committed.targetEventSeq).catch((error) => {
@@ -315,6 +326,7 @@ export async function messageBot(
   });
   return {
     ok: true as const,
+    runId: committed.runId,
     botId: target.id,
     name: target.name,
     delivered: message,
@@ -347,7 +359,7 @@ export async function returnBotMessageOutcome(
   const sourceIntent = source.intent ?? "request";
   // A hidden background worker always reports back to its dispatcher, whatever the intent of
   // the message that woke it: the dispatcher is the only way its result reaches the user.
-  const workerTitle = await hiddenWorkerTitle(deps.prisma, run.botId);
+  const workerTitle = await hiddenWorkerTitle(deps.prisma, run);
   if (sourceIntent !== "request" && sourceIntent !== "question" && workerTitle === undefined) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
@@ -400,20 +412,42 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
     },
     data: { botOutcomeReturnedAt: new Date() },
   });
+  // A background task is done once its worker's result reached the dispatcher; that frees its slot.
+  // Best effort: the background-task reconciler finalizes anything missed here.
+  try {
+    const ended = await prisma.run.findUnique({
+      where: { id: runId },
+      select: { id: true, botId: true, status: true },
+    });
+    if (ended && ["completed", "failed", "cancelled"].includes(ended.status)) {
+      await finalizeBackgroundTaskForRun(prisma, ended);
+    }
+  } catch (error) {
+    getLogger().error("background task finalize", error);
+  }
 }
 
 function isUniqueConstraintError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
-/** A hidden worker's current task title ("" when untitled); undefined for any other bot. */
-async function hiddenWorkerTitle(prisma: PrismaClient, botId: string): Promise<string | undefined> {
+/**
+ * The task title a hidden worker's result is labelled with ("" when unknown); undefined for any
+ * other bot. It comes from the task this run carries, never from the worker's current title: a
+ * reused slot may already show a newer task when an older result is delivered.
+ */
+async function hiddenWorkerTitle(
+  prisma: PrismaClient,
+  run: { id: string; botId: string },
+): Promise<string | undefined> {
   try {
     const bot = await prisma.bot.findUnique({
-      where: { id: botId },
+      where: { id: run.botId },
       select: { spawnKey: true, title: true },
     });
     if (!isHiddenBot({ spawnKey: bot?.spawnKey ?? null })) return undefined;
+    const task = await backgroundTaskForWorkerRun(prisma, run).catch(() => null);
+    if (task) return task.ref ? `${task.name} #${task.ref}` : task.name;
     return bot?.title?.trim() ?? "";
   } catch {
     return undefined;

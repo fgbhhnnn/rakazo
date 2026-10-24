@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseWorkerReportFiles } from "./background-tasks.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
-import { attachWorkerReportFiles } from "./executor.js";
+import { attachWorkerReportFiles, workerReportWorkspacePath } from "./executor.js";
 
 describe("parseWorkerReportFiles", () => {
   it("reads the structured 文件 section", () => {
@@ -20,6 +20,21 @@ describe("parseWorkerReportFiles", () => {
       "/home/bot/jobs/repos/out/repos.md",
       "~/jobs/repos/out/repos.csv",
     ]);
+  });
+  it("keeps paths with spaces and Windows paths, still rejects URLs", () => {
+    const text = [
+      "文件：",
+      "- /home/bot/out/My Report 2026.pdf",
+      "- `C:\\Users\\cxy\\Desktop\\a b.xlsx`",
+      "- https://example.com/x.png",
+    ].join("\n");
+    expect(parseWorkerReportFiles(text)).toEqual([
+      "/home/bot/out/My Report 2026.pdf",
+      "C:\\Users\\cxy\\Desktop\\a b.xlsx",
+    ]);
+  });
+  it("skips a Windows path the computer workspace cannot read", () => {
+    expect(workerReportWorkspacePath("C:\\Users\\cxy\\a.png")).toBeNull();
   });
   it("accepts inline and English headers, ignores reports without files", () => {
     expect(parseWorkerReportFiles("Files: /tmp/a.png, /tmp/b.png")).toEqual([

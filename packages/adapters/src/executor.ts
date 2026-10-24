@@ -44,6 +44,7 @@ import {
 import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
   BotSecretName,
   BUILTIN_TOOL_NAMES,
   botSecretSubmissionSchema,
@@ -211,7 +212,7 @@ import {
   launchBackgroundTask,
   parseWorkerReportFiles,
   startQueuedBackgroundTasks,
-  withDispatcherAttachments,
+  taskAttachmentBlocks,
 } from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
@@ -455,6 +456,7 @@ import {
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeRecentThreadFiles,
+  recentAttachmentBlocks,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
@@ -3635,7 +3637,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
           where: { id: run.botId },
           select: { spawnKey: true, disabledBuiltinTools: true },
         });
-        if (waker && isDispatcherBot(waker)) await waitForEarlierDispatcherTurns(deps.prisma, run);
+        if (waker && isDispatcherBot(waker)) {
+          const ordered = await waitForEarlierDispatcherTurns(deps.prisma, run);
+          // Still blocked after the wait: if the earlier turn is alive (live lease or still
+          // queued), defer this wake instead of running two main turns side by side. A turn
+          // whose lease expired is dead; the reconciler recovers it and this wake may proceed.
+          if (!ordered && (await earlierDispatcherTurnAlive(deps.prisma, run))) {
+            await deps.jobs.enqueue({
+              ...runContinueJob(run.id),
+              availableAt: new Date(Date.now() + DISPATCHER_WAKE_DEFER_MS),
+            });
+            getLogger().info("dispatcher wake deferred behind an earlier turn", { runId });
+            return;
+          }
+        }
       }
       let { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
         takeoverContinuePlan(run);
@@ -3696,10 +3711,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           disabledBuiltinTools: true,
         },
       });
-      if (!leaseTarget.computerId) throw new Error("Bot has no computer");
       // A dispatcher's main turn has no computer tools, so it never waits for the computer
       // (booting, suspending, or busy with a worker): the reply must not queue behind it.
       const dispatcherTurn = Boolean(deps.dispatcherMode) && isDispatcherBot(leaseTarget);
+      if (!leaseTarget.computerId && !dispatcherTurn) throw new Error("Bot has no computer");
       if (dispatcherTurn) {
         // Drain this dispatcher's persisted queue first: a worker that just finished (its result
         // is what woke this turn) or a restart may have freed a slot.
@@ -3726,7 +3741,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
-        if (dispatcherTurn) throw new SkipComputerLease();
+        if (dispatcherTurn || !leaseTarget.computerId) throw new SkipComputerLease();
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
           runId,
@@ -4224,8 +4239,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
         }
 
-        if (!bot.computer) throw new Error("Bot has no computer");
-        const storedComputer = bot.computer;
+        // A dispatcher's main turn has no computer tools and never starts a computer, so it runs
+        // even when its bot has none (unbound or damaged data must not break chat).
+        if (!bot.computer && !dispatcherTurn) throw new Error("Bot has no computer");
+        const storedComputer = bot.computer ?? dispatcherComputerPlaceholder(bot.id);
         const computerMode = parseComputerMode(storedComputer.scope);
         const artifacts = deps.artifacts;
         const recentFilesInput = {
@@ -4237,6 +4254,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const runComputer = lazyRunComputer(
           async () => {
             getLogger().info("computer.requested");
+            if (!bot.computer)
+              throw new Error("This bot has no computer; hand the work to background_task.");
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
             screenRelease = { computer, context, keepWarm: false };
             scheduleComputerSleep(deps.jobs, storedComputer.id);
@@ -4303,6 +4322,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let currentTurnFiles: Awaited<ReturnType<typeof listCurrentTurnFiles>> = [];
         // Attachments that arrive as steering mid-run, so a worker launched later still gets them.
         const steeringTurnFiles: Awaited<ReturnType<typeof listCurrentTurnFiles>> = [];
+        const steeringTurnBlocks: MessageBlock[][] = [];
         let recentThreadFiles: Awaited<ReturnType<typeof listRecentThreadFiles>> = [];
         try {
           if (artifacts) {
@@ -7445,27 +7465,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const dispatchRun = { ...run, sourceMessageId: run.sourceMessageId };
             const dispatcher = { id: bot.id, name: bot.name, computerId: bot.computerId };
             if (name === "background_task") {
-              // A dispatcher never touches its computer, so the user's uploads would stay
-              // unmaterialized and the worker (own home) could not find "attachments/…".
-              // Copy them now and hand the worker team-root paths it can read.
-              const taskFiles = [...currentTurnFiles, ...steeringTurnFiles, ...recentThreadFiles];
-              if (taskFiles.length && typeof args.task === "string" && args.task.trim()) {
-                await getRunComputer("tool", name);
-                args = {
-                  ...args,
-                  task: withDispatcherAttachments(args.task, taskFiles, computerMode, bot.id),
-                };
-              }
+              // The user's uploads travel with the task as attachments: the worker's own run
+              // copies them into its workspace, so the dispatcher never starts a computer.
+              const attachments = taskAttachmentBlocks([
+                ...(turnBlocks ?? []),
+                ...steeringTurnBlocks.flat(),
+                ...recentAttachmentBlocks(history, historyMessages, recentFilesInput),
+              ]).slice(0, ATTACHMENT_MAX_COUNT);
               const launched = await launchBackgroundTask(deps, dispatchRun, dispatcher, args, {
                 builtinToolNames: BUILTIN_TOOL_NAMES,
                 deliveryKey: effectKey,
+                attachments,
               });
-              if ("task_ref" in launched && launched.task_id) {
+              if ("task_ref" in launched && "worker_id" in launched && launched.worker_id) {
                 try {
                   await publishMessage(deps, run, "bot", [
                     {
                       kind: "child_bot",
-                      botId: launched.task_id,
+                      botId: launched.worker_id,
                       name: `后台任务：${launched.name} #${launched.task_ref}`,
                       title: `任务 #${launched.task_ref} · 点开看实时进度`,
                       status: "created",
@@ -8076,6 +8093,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     if (files.length) {
                       pendingTurnFiles.push(item.blocks);
                       steeringTurnFiles.push(...files);
+                      steeringTurnBlocks.push(item.blocks);
                     }
                     const filesInstruction = currentTurnFilesInstruction(files);
                     return {
@@ -9910,6 +9928,40 @@ export async function waitForEarlierDispatcherTurns(
   }
 }
 
+const DISPATCHER_WAKE_DEFER_MS = 3_000;
+
+/** Whether an earlier main turn of this chat is still alive: a live lease, or queued before us. */
+export async function earlierDispatcherTurnAlive(
+  prisma: Pick<PrismaClient, "run">,
+  run: { id: string; botId: string; threadId: string; createdAt: Date },
+  now = new Date(),
+): Promise<boolean> {
+  const alive = await prisma.run.findFirst({
+    where: {
+      id: { not: run.id },
+      botId: run.botId,
+      threadId: run.threadId,
+      OR: [
+        { status: { in: ["leased", "running"] }, leaseExpiresAt: { gt: now } },
+        { status: "queued", trigger: "bot_message", createdAt: { lt: run.createdAt } },
+      ],
+    },
+    select: { id: true },
+  });
+  return Boolean(alive);
+}
+
+/** Stand-in for a dispatcher without a computer; any attempt to start it fails clearly. */
+function dispatcherComputerPlaceholder(botId: string) {
+  return {
+    id: `no-computer:${botId}`,
+    scope: "bot",
+    kind: "none",
+    providerRef: null,
+    homeKey: botId,
+  } as never;
+}
+
 /** A user's own bot that can dispatch (background_task not disabled); workers never dispatch. */
 export function isDispatcherBot(bot: {
   spawnKey?: string | null;
@@ -10250,6 +10302,8 @@ export function attachedPathKey(resolvedPath: string): string {
 }
 
 export function workerReportWorkspacePath(file: string): string | null {
+  // A Windows path (C:\\...) is on a native host the computer workspace cannot read; skip it.
+  if (/^[A-Za-z]:[\\/]/.test(file)) return null;
   if (file.startsWith("~/")) return file.slice(2);
   const match = /^\/(?:[^/]+\/)*?rakazo-home(?:\/(.*))?$/.exec(file);
   if (match) return `/${match[1] ?? ""}`;
@@ -10327,6 +10381,8 @@ export async function attachWorkerReportFiles(input: {
       );
       await publishMessage(deps, run, "bot", [result.block]);
       input.alreadyAttached.add(file);
+      // Dedupe by the resolved file too: "~/a.png" and "/rakazo-home/a.png" are the same file.
+      input.alreadyAttached.add(attachedPathKey(resolved));
       attached.push(file);
     } catch (error) {
       getLogger().warn(

@@ -298,7 +298,7 @@ export async function listRecentThreadFiles(
 }
 
 /** The newest attachments across the last `maxTurns` user turns that carry any. */
-function recentAttachmentBlocks(
+export function recentAttachmentBlocks(
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: { skipMessageId?: string | null; maxTurns: number },

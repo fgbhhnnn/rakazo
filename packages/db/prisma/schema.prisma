@@ -1664,22 +1664,36 @@ model ModelCreditLot {
 
 /// background_task requests waiting for a free worker slot, FIFO per dispatcher bot.
 model BackgroundTaskQueue {
-  id          String    @id @default(cuid())
-  spaceId     String
-  botId       String
-  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId      String
-  runId       String
-  threadId    String
-  name        String
-  task        String    @db.Text
-  args        Json
-  /// queued | started | cancelled
-  status      String    @default("queued")
-  workerBotId String?
-  createdAt   DateTime  @default(now())
-  startedAt   DateTime?
+  id             String    @id @default(cuid())
+  spaceId        String
+  botId          String
+  bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId         String
+  runId          String
+  threadId       String
+  name           String
+  task           String    @db.Text
+  args           Json
+  /// queued | claiming | started | completed | failed | cancelled
+  status         String    @default("queued")
+  workerBotId    String?
+  createdAt      DateTime  @default(now())
+  startedAt      DateTime?
+  /// Stable task handle shown on cards ("#REF") and used as task_id.
+  ref            String?
+  /// Normalized hash of the task text; duplicates are judged by content, not by name.
+  taskHash       String?
+  /// The worker run currently carrying this task; its outcome is this task's result.
+  workerRunId    String?
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  attempts       Int       @default(0)
+  error          String?   @db.Text
+  finishedAt     DateTime?
 
   @@index([botId, status, createdAt])
+  @@index([botId, ref])
+  @@index([workerRunId])
+  @@index([workerBotId, status])
   @@map("background_task_queue")
 }

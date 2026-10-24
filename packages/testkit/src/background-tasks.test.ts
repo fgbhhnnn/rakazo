@@ -159,8 +159,10 @@ describeIntegration("background tasks: dispatcher stays idle, stop is immediate"
       where: { parentBotId: chief.id, spawnKey: { startsWith: "bg-worker:" } },
       select: { id: true, title: true },
     });
-    expect(workers.map((w) => w.title).sort()).toEqual(["code", "image", "video"]);
-    const ids = Object.fromEntries(workers.map((w) => [w.title, w.id]));
+    // Worker titles carry the task ref ("image #REF"); the name part identifies the task.
+    const taskNames = workers.map((w) => w.title.replace(/ #[A-Z0-9]{4,10}$/, ""));
+    expect([...taskNames].sort()).toEqual(["code", "image", "video"]);
+    const ids = Object.fromEntries(workers.map((w, i) => [taskNames[i], w.id]));
     await waitFor(async () => (await activeRuns(workers.map((w) => w.id))) === 3);
 
     const stop = await send("cancel background task named video");

@@ -745,7 +745,17 @@ describe("automatic outcome return", () => {
     });
     (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
       .fn()
-      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "生成封面 #AB12CD34" });
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "newer task #ZZ99ZZ99" });
+    // The slot already shows a newer task; the result is credited to the task row of this run.
+    (harness.deps.prisma as unknown as { backgroundTaskQueue: unknown }).backgroundTaskQueue = {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "q1",
+        name: "生成封面",
+        ref: "AB12CD34",
+        status: "started",
+      }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    };
     await returnBotMessageOutcome(
       harness.deps,
       { ...run, sourceMessageId: "message-source" },
