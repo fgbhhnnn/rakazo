@@ -5,7 +5,6 @@ import {
   botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
-  clampBotMessage,
   nextBotMessageHop,
   resolveBotAddress,
 } from "@rakazo/core";
@@ -20,6 +19,7 @@ import { getLogger } from "@rakazo/logging";
 import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
 import { attachmentBlocks } from "./task-attachments.js";
+import { workerOutcomeRelay } from "./worker-outcome-relay.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -377,14 +377,16 @@ export async function returnBotMessageOutcome(
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
+  // The dispatcher names the task by its title and #ref; an over-long result travels as a file.
+  const relay = await workerOutcomeRelay(deps, run, workerTitle, text, source.fromBotId);
   const outcome = await messageBot(
     deps,
     run,
     sender,
     {
       bot_id: source.fromBotId,
-      // The dispatcher names the task by its title and #ref, never by the worker slot name.
-      message: clampBotMessage(workerTitle ? `【后台任务：${workerTitle}】\n${text}` : text),
+      message: relay.message,
+      attachments: relay.attachments,
       intent,
       // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
       deliveryKey: `auto-outcome:${run.id}`,

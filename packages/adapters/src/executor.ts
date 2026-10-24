@@ -302,6 +302,11 @@ import {
   attachWorkerReportFiles,
   withoutMessagesOwnedByOtherLiveRuns,
 } from "./dispatcher-relay.js";
+import {
+  createDispatcherTurnLedger,
+  guardDispatcherReply,
+  queueClaimRecheck,
+} from "./dispatcher-reply-guard.js";
 import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
@@ -413,6 +418,7 @@ import {
 } from "./run-secret.js";
 import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
+import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
 
 export { selectRunConnections } from "./connection-context.js";
 
@@ -3734,6 +3740,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // A dispatcher's main turn has no computer tools, so it never waits for the computer
       // (booting, suspending, or busy with a worker): the reply must not queue behind it.
       const dispatcherTurn = Boolean(deps.dispatcherMode) && isDispatcherBot(leaseTarget);
+      const turnLedger = createDispatcherTurnLedger();
       if (!leaseTarget.computerId && !dispatcherTurn) throw new Error("Bot has no computer");
       if (dispatcherTurn) {
         // Drain this dispatcher's persisted queue first: a worker that just finished (its result
@@ -7513,6 +7520,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 ),
               publish: (blocks) => publishMessage(deps, run, "bot", blocks),
             });
+            turnLedger.record(name, result);
             if (result !== undefined) return finish(result);
           }
           if (name === "message_bot") {
@@ -8605,7 +8613,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               skipEmptyFallback: publishedTerminalSubagent || publishedMidTurnUserMessage,
             });
           }
-          const blocks = handedOff
+          const draftBlocks = handedOff
             ? []
             : withoutRestatedLeadSentences(
                 finalBlocksAfterMidTurnProgress(
@@ -8613,9 +8621,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
                 ),
               );
+          const replyGuard = guardDispatcherReply(
+            dispatcherTurn && !handedOff,
+            draftBlocks,
+            turnLedger,
+            {
+              wokenByWorker: Boolean(peerMessage),
+              runId,
+            },
+          );
+          const blocks = replyGuard.blocks;
           const text = handedOff
             ? ""
-            : redactSecrets(completionNotificationBody(silentReply.assembled, blocks), runSecrets);
+            : redactSecrets(
+                completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
+                runSecrets,
+              );
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }
@@ -8642,6 +8663,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
               alreadyAttached: attachedFilePaths,
               publish: (blocks) => publishMessage(deps, run, "bot", blocks),
             }).catch((error) => getLogger().error("worker report attach", error));
+          }
+          if (dispatcherTurn && peerMessage) {
+            await forwardWorkerRelayAttachments({
+              prisma: deps.prisma,
+              run,
+              bot,
+              report: peerMessage,
+              publish: (blocks) => publishMessage(deps, run, "bot", blocks),
+            }).catch((error) => getLogger().error("worker result forward", error));
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const botMessageOutcome =
@@ -8678,6 +8708,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await deps.jobs
               .enqueue(runContinueJob(completed.continuationRunId))
               .catch((error) => getLogger().error("steering continuation enqueue", error));
+          }
+          if (replyGuard.recheckClaim && !completed.continuationRunId) {
+            await queueClaimRecheck(deps, run, replyGuard.original ?? text).catch((error) =>
+              getLogger().error("dispatcher claim recheck", error),
+            );
           }
           if (botMessageOutcome) {
             // Prefer the final reply. If the turn only posted mid-turn progress, return that
