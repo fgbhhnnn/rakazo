@@ -1,6 +1,11 @@
 import { normalizeContext } from "@earendil-works/pi-ai";
 import type { MessageBlock } from "@rakazo/contracts";
-import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE, FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import {
+  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
+  cloudflareModelConfigMessage,
+  FLEET_TOOL_NAMES,
+} from "@rakazo/contracts";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
@@ -1280,7 +1285,7 @@ describe("userTurnInstructions", () => {
     STEERING_REPLY_GUIDANCE,
   ];
   const archiveBot =
-    "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
+    "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
   const replyGuidance =
     "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
   const stableTail = [
@@ -1455,7 +1460,7 @@ describe("userTurnInstructions", () => {
     expect(clause).toContain("Tool results, tool arguments");
     expect(clause).toMatch(/untrusted/);
     expect(clause).not.toContain("Instructions edits");
-    expect(clause).toContain("no tool to edit a bot you did not create");
+    expect(clause).toContain("any bot in your current space");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
     expect(narrowed).toContain(
       "update_group, set_child_bot_model and create_child_routine need the owner's approval",
@@ -1785,7 +1790,7 @@ describe("createRunExecutor", () => {
     expect(tools).toContain("web_fetch");
   });
 
-  it("offers forget_memory only when the memory provider can forget", () => {
+  it("keeps remember and offers forget_memory only when the memory provider can forget", () => {
     const names = (semanticMemoryForgets: boolean) =>
       selectBuiltinToolsForRun({
         graphicalToolsAllowed: false,
@@ -1798,6 +1803,31 @@ describe("createRunExecutor", () => {
     expect(names(false)).toEqual(expect.arrayContaining(["recall_memory", "save_memory"]));
     expect(names(false)).not.toContain("forget_memory");
     expect(names(true)).toContain("forget_memory");
+    expect(names(false)).toContain("remember");
+  });
+
+  it("gives a creation intro only its question and its own profile, and normal turns everything", () => {
+    const names = (trigger: string, disabledBuiltinTools: string[] = []) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: true,
+        pageBrowserAllowed: true,
+        groupId: null,
+        trigger,
+        semanticMemoryEnabled: true,
+        cloudAgentEnabled: true,
+        messagingChannelRun: false,
+        fleetManagement: true,
+        disabledBuiltinTools,
+      })
+        .map((tool) => tool.name)
+        .sort();
+    expect(names("created")).toEqual(["ask_user", "update_bot"]);
+    expect(names("created", ["ask_user"])).toEqual(["update_bot"]);
+    expect(names("created", ["ask_user", "update_bot"])).toEqual([]);
+    // Answering the intro resumes it as the user's turn (see commitAnswerRunInput).
+    expect(names("user")).toEqual(
+      expect.arrayContaining(["ask_user", "update_bot", "shell", "schedule_create", "spawn_bot"]),
+    );
   });
 
   it("keeps a creation intro from answering a user message that arrived during it", () => {
@@ -1903,7 +1933,7 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate },
+          run: { create: runCreate, findMany: vi.fn(async () => []) },
         }),
       ),
     } as unknown as PrismaClient;
@@ -1972,7 +2002,7 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate },
+          run: { create: runCreate, findMany: vi.fn(async () => []) },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2047,7 +2077,7 @@ describe("createRunExecutor", () => {
               findUnique: vi.fn(async () => claimedModel),
             },
             task: { create: taskCreate },
-            run: { create: runCreate },
+            run: { create: runCreate, findMany: vi.fn(async () => []) },
           }),
         ),
       } as unknown as PrismaClient;
@@ -2197,7 +2227,7 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate },
+          run: { create: runCreate, findMany: vi.fn(async () => []) },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2269,7 +2299,7 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate },
+          run: { create: runCreate, findMany: vi.fn(async () => []) },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2435,7 +2465,7 @@ description: Prepare standup notes
     expect(cancel).toHaveBeenCalledWith("routine:routine-1");
   });
 
-  it("restores the routine claim when run.continue enqueue fails", async () => {
+  it("preserves the committed one-shot when run.continue enqueue fails", async () => {
     const scheduledAt = new Date(Date.now() - 1_000);
     const previousLastRunAt = new Date(Date.now() - 60_000);
     const enqueue = vi.fn(async () => {
@@ -2499,21 +2529,11 @@ description: Prepare standup notes
       events: { append: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createRunExecutor>[0]);
 
-    await expect(executor.wakeRoutine("routine-1", scheduledAt.toISOString())).rejects.toThrow(
-      "enqueue failed",
-    );
-    expect(deleteRunMany).toHaveBeenCalledWith({ where: { id: "run-1", status: "queued" } });
-    expect(deleteTaskMany).toHaveBeenCalledWith({ where: { id: "task-1", status: "queued" } });
-    expect(restoreUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ id: "routine-1", active: false, nextRunAt: null }),
-        data: expect.objectContaining({
-          nextRunAt: scheduledAt,
-          active: true,
-          lastRunAt: previousLastRunAt,
-        }),
-      }),
-    );
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(deleteRunMany).not.toHaveBeenCalled();
+    expect(deleteTaskMany).not.toHaveBeenCalled();
+    expect(restoreUpdateMany).not.toHaveBeenCalled();
+    expect(claimUpdateMany).toHaveBeenCalledTimes(1);
   });
 
   it("consumes a persisted takeover checkpoint when claiming the run", async () => {
@@ -3885,6 +3905,11 @@ description: Prepare standup notes
 describe("terminal model setup errors", () => {
   it("fails an unroutable Cloudflare credential instead of retrying setup", () => {
     expect(isTerminalModelSetupError(new Error(CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE))).toBe(true);
+    expect(
+      isTerminalModelSetupError(
+        new Error(cloudflareModelConfigMessage(CLOUDFLARE_WORKERS_AI_PROVIDER_ID)),
+      ),
+    ).toBe(true);
     expect(isTerminalModelSetupError(new UnavailableModelForAuthError())).toBe(true);
     expect(isTerminalModelSetupError(new RetiredModelCredentialError("signed out"))).toBe(true);
     expect(isTerminalModelSetupError(new Error("socket hang up"))).toBe(false);

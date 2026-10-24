@@ -25,10 +25,10 @@ import {
   activeRunSelection,
   backgroundWorkOf,
   backgroundWorkSelection,
-  latestBotRunSelection,
   previewFromBlocks,
   primaryActiveRun,
   rosterStatus,
+  withLatestBotRuns,
 } from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
@@ -95,6 +95,7 @@ function mapBot(
     thinkingLevel?: string | null;
     teamChatAmbientEnabled?: boolean;
     teamChatRules?: string;
+    crossSpaceCommunication?: boolean;
     fleetManagement?: boolean;
     disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
@@ -140,6 +141,7 @@ function mapBot(
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
+    crossSpaceCommunication: bot.crossSpaceCommunication ?? false,
     fleetManagement: bot.fleetManagement ?? false,
     disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
     webhookConfigured: Boolean(bot.webhookSecretId),
@@ -195,7 +197,6 @@ export function createRepos(
           select: {
             id: true,
             unread: true,
-            runs: latestBotRunSelection,
           },
         },
         runs: activeRunSelection,
@@ -203,7 +204,7 @@ export function createRepos(
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
-    const bots = await withNewestThreadMessages(prisma, rows, 1);
+    const bots = await withNewestThreadMessages(prisma, await withLatestBotRuns(prisma, rows), 1);
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
       const activeRun = primaryActiveRun(bot.runs);
@@ -363,25 +364,24 @@ export function createRepos(
     ): Promise<Bot[]> {
       const bots = await withNewestThreadMessages(
         prisma,
-        await prisma.bot.findMany({
-          where: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            archivedAt: options.archived ? { not: null } : null,
-            ...(options.includeHidden ? {} : { AND: [VISIBLE_BOT_WHERE] }),
-          },
-          include: {
-            thread: {
-              include: {
-                runs: latestBotRunSelection,
-              },
+        await withLatestBotRuns(
+          prisma,
+          await prisma.bot.findMany({
+            where: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              archivedAt: options.archived ? { not: null } : null,
+              ...(options.includeHidden ? {} : { AND: [VISIBLE_BOT_WHERE] }),
             },
-            runs: activeRunSelection,
-            computer: { select: { scope: true } },
-            ...backgroundWorkSelection,
-          },
-          orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-        }),
+            include: {
+              thread: true,
+              runs: activeRunSelection,
+              computer: { select: { scope: true } },
+              ...backgroundWorkSelection,
+            },
+            orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
+          }),
+        ),
         SIDEBAR_PREVIEW_MESSAGE_WINDOW,
       );
       const callThreadIds = capabilities.phoneCallsEnabled
@@ -515,6 +515,7 @@ export function createRepos(
         notifyOnFinish: boolean;
         fleetManagement?: boolean;
         color?: string;
+        avatarFamily?: number;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
@@ -572,6 +573,7 @@ export function createRepos(
               select: { id: true, color: true },
             }),
             input.color,
+            { family: input.avatarFamily },
           );
           const teamComputer = await ensureComputerRecord(tx, {
             mode: "team",

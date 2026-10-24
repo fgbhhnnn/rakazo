@@ -173,6 +173,7 @@ import {
   mcpOAuthEnvReferences,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
+  signupSurveyAsksTeamSize,
   storedPiProviderIds,
   usableModelId,
 } from "@rakazo/contracts";
@@ -216,6 +217,7 @@ import {
   createRepos,
   createSpaceForMember,
   createThreadMessageInTransaction,
+  crossSpaceCommunicationAllowed,
   defaultModelCredentialCandidates,
   deleteEmptySpaceForMember,
   deleteUnreferencedCredentialSecret,
@@ -823,15 +825,45 @@ function botSecretMetadataDto(row: {
   };
 }
 
-const BOT_INTRO_PROMPT =
-  "You were just created. In one reply, say what you understood your role to be from your title, description and instructions, and ask for anything you need to get started.";
+/** The creation intro's hidden prompt. It names only the tools this bot still has. */
+export function botIntroPrompt(input: {
+  userName: string;
+  spaceName: string | null;
+  disabledBuiltinTools: readonly string[];
+}): string {
+  const canAsk = !input.disabledBuiltinTools.includes("ask_user");
+  const canUpdate = !input.disabledBuiltinTools.includes("update_bot");
+  const options =
+    "two to four short options that fit your name, anything your title, description or instructions already say, and what you know about them, never a stock list";
+  return [
+    [
+      "You were just created.",
+      input.userName ? `${input.userName} made you.` : undefined,
+      input.spaceName ? `Their team space is called "${input.spaceName}".` : undefined,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    // Text streamed before ask_user is not kept once the run pauses, so the greeting
+    // goes in the question itself.
+    canAsk
+      ? `Call ask_user right away, with no text before it. Its question greets them by first name in a few words and asks what they want you for, with ${options}. They can also type their own answer.`
+      : `Greet them by first name in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
+    "If your profile already makes that clear, say in one line what you will do instead of asking.",
+    canUpdate
+      ? "Once you know what you are for, use update_bot to set your title to a short role and your description to one line. Leave them unset if the answer is too vague, and keep your name and look."
+      : undefined,
+    "Then get started, asking one follow-up only if you cannot start without it.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 /**
- * A freshly created bot otherwise sits silent until someone hands it real work,
- * so a misunderstood role goes unnoticed until it costs a run. Queue one
- * invisible-prompt turn (like a routine or skill test run) so its first
- * message states how it read its own instructions. The executor gives the
- * "created" trigger no tools (see executor.ts), so this turn can only speak.
+ * Creating a bot asks only for a name and a look, so the bot finds out what it
+ * is for itself. Queue one hidden-prompt turn (like a routine or skill test
+ * run) that greets the user and asks. The executor limits the "created"
+ * trigger to that question and the bot's own profile (see executor.ts), and
+ * answering resumes the run as the user's turn.
  */
 export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
   const threadId = bot.threadId;
@@ -841,14 +873,29 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
   // harness queued next, for a bot it doesn't otherwise get to opt out of.
   if (deps.env.agentRuntime === "scripted") return;
   if ((await modelSetup(deps, actor)).needsModel) return;
+  const [user, space] = await Promise.all([
+    deps.prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true } }),
+    deps.prisma.space.findUnique({
+      where: { id: actor.spaceId },
+      select: { name: true, isDefault: true },
+    }),
+  ]);
+  const prompt = botIntroPrompt({
+    userName: user?.name.trim() ?? "",
+    spaceName: space && !space.isDefault ? space.name.trim() || null : null,
+    disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
+  });
   const run = await deps.prisma.$transaction(async (tx) => {
+    // An idempotent create (spawnKey) returns the bot it already made; it gets one intro.
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+    if (await tx.run.findFirst({ where: { botId: bot.id }, select: { id: true } })) return null;
     const task = await tx.task.create({
       data: {
         spaceId: actor.spaceId,
         botId: bot.id,
         threadId,
         userId: actor.userId,
-        prompt: BOT_INTRO_PROMPT,
+        prompt,
         status: "queued",
       },
     });
@@ -865,7 +912,7 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
       select: { id: true },
     });
   });
-  await deps.jobs.enqueue(runContinueJob(run.id));
+  if (run) await deps.jobs.enqueue(runContinueJob(run.id));
 }
 
 async function resolveSpaceBoard(
@@ -2135,6 +2182,9 @@ export function createRouter(deps: RouterDeps) {
               ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
               : {}),
             ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
+            ...(input.crossSpaceCommunication !== undefined
+              ? { crossSpaceCommunication: input.crossSpaceCommunication }
+              : {}),
             ...(input.fleetManagement !== undefined
               ? { fleetManagement: input.fleetManagement }
               : {}),
@@ -5173,6 +5223,31 @@ export function createRouter(deps: RouterDeps) {
       },
     },
     onboarding: {
+      signupSurvey: authed.onboarding.signupSurvey.handler(async ({ context, input }) => {
+        const answers = {
+          reason: input.reason || null,
+          use: input.use ?? null,
+          teamSize: signupSurveyAsksTeamSize(input.use) ? (input.teamSize ?? null) : null,
+          source: input.source || null,
+        };
+        const saved = await deps.prisma.signupSurvey.upsert({
+          where: { userId: context.actor.userId },
+          create: { userId: context.actor.userId, ...answers },
+          update: answers,
+        });
+        deps.analytics?.capture(
+          context.actor.userId,
+          {
+            name: "signup_survey_answered",
+            skipped: Object.values(answers).every((answer) => answer === null),
+            ...(answers.use ? { use: answers.use } : {}),
+            ...(answers.teamSize ? { teamSize: answers.teamSize } : {}),
+          },
+          // The first save's time keeps a resubmission a duplicate of the same event.
+          { id: context.actor.userId, at: saved.createdAt },
+        );
+        return { ok: true as const };
+      }),
       start: authed.onboarding.start.handler(async ({ context, input }) => {
         await startOnboarding(onboardingDeps, context.actor, input.botId);
         return { ok: true as const };
@@ -5323,7 +5398,10 @@ export function createRouter(deps: RouterDeps) {
         );
         try {
           const auth = await connector.begin(
-            { provider: input.provider, redirectUrl: `${deps.env.webOrigin}/app` },
+            {
+              provider: input.provider,
+              redirectUrl: `${deps.env.webOrigin}/integrations/callback`,
+            },
             connectionContext(context.actor, "connections.begin", context.signal),
           );
           // Re-take the provider lock and only advance still-pending rows so a
@@ -6282,6 +6360,16 @@ export function createRouter(deps: RouterDeps) {
               // The claim holds the connection row lock through commit, so a
               // revoke either beats it or waits — it can never interleave with
               // the confirmation write below.
+              if (
+                input.accept &&
+                !(await crossSpaceCommunicationAllowed(
+                  tx,
+                  connection.requesterBotId,
+                  connection.targetBotId,
+                ))
+              ) {
+                throw new ORPCError("FORBIDDEN");
+              }
               const { count } = await tx.agentConnection.updateMany({
                 where: { id: connection.id, status: "pending" },
                 data: { status: input.accept ? "approved" : "declined" },
@@ -6738,7 +6826,9 @@ export function createRouter(deps: RouterDeps) {
       })),
     },
     voice: {
-      catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
+      catalog: authed.voice.catalog.handler(async () =>
+        listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint }),
+      ),
       status: authed.voice.status.handler(async ({ context }) => {
         const cred = await findDefaultVoiceCredential(
           deps.prisma,
@@ -7025,7 +7115,10 @@ function hostCredentials(active: boolean, provider: string) {
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   const [user, setup] = await Promise.all([
-    deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
+    deps.prisma.user.findUniqueOrThrow({
+      where: { id: actor.userId },
+      include: { signupSurvey: { select: { userId: true } } },
+    }),
     modelSetup(deps, actor),
   ]);
   return {
@@ -7060,6 +7153,8 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),
     memberSettingsLocked: !actor.isDeploymentOwner && memberSettingsPolicy(setup.settings).locked,
+    // Only billing deployments ask; self-hosted installs never see the survey.
+    needsSignupSurvey: Boolean(deps.billing) && !user.signupSurvey,
   };
 }
 

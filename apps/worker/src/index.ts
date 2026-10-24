@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import {
   ComposioConnector,
@@ -54,6 +55,8 @@ import {
   PipedreamConnector,
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
+  RunJobPublisher,
+  RunWorkerHost,
   reconcileCloudAgents,
   reconcileComputerUpdates,
   resolveDeploymentModel,
@@ -63,6 +66,7 @@ import {
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
   shutdownPiTelemetry,
+  withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken, uploadSizeFromEnv } from "@rakazo/core";
@@ -203,7 +207,8 @@ async function main() {
   const home = createAgentHomeStore(dataDir, prisma);
   const artifacts = new LocalArtifactStore(dataDir, contentEncryptionOf(prisma)?.ring);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
-  const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(pool, prisma);
+  const jobs: JobPublisher =
+    inMemoryJobs ?? new RunJobPublisher(prisma, realtime, new GraphileJobPublisher(pool, prisma));
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,
@@ -267,12 +272,12 @@ async function main() {
 
   const jobHost: JobWorkerHost =
     inMemoryJobs ??
-    createReservedGraphileJobWorkerHost(pool, {
-      // Main-bot replies and other interactive runs; long background-worker runs never use these.
-      concurrency: parsePositiveInteger(process.env.GRAPHILE_RESERVED_CONCURRENCY, 6),
-      // Hidden background workers and other non-interactive agent runs.
-      backgroundConcurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 8),
-    });
+    withRunWorker(
+      new RunWorkerHost(prisma, realtime),
+      createReservedGraphileJobWorkerHost(pool, {
+        concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
+      }),
+    );
 
   const workerId = workerProcessId(hostname(), process.pid, randomUUID().slice(0, 8));
   const jobHandlers = createBackgroundJobHandlers({
@@ -293,25 +298,6 @@ async function main() {
     cloudAgent,
     notifications,
   });
-  // graphile-worker run() connects through the shared pool. createPool already
-  // retries connect() on 53300 a finite number of times. Keep retrying start
-  // until Postgres has capacity: exhausting then returning from main().catch
-  // left a live process that held connections but never ran jobs or registered
-  // signal handlers, even after capacity returned. Do not exit(1) here; that
-  // crash-loops into the same saturated Postgres. GraphileJobWorkerHost also
-  // observes runner.promise after start and restarts with the same backoff if
-  // the runner dies later on 53300 (unhandledRejection still swallows that
-  // code so we do not Docker crash-loop on transient completeJob failures).
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await jobHost.start(jobHandlers);
-      break;
-    } catch (error) {
-      if (!isTooManyDatabaseConnections(error)) throw error;
-      logger.error("worker job host start waiting on database capacity", error);
-      await new Promise((resolve) => setTimeout(resolve, databaseCapacityBackoffMs(attempt)));
-    }
-  }
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -335,15 +321,15 @@ async function main() {
     ),
     reconcileHomeStorage: homeStorageSweeper(home),
   });
-  reconciler.start();
-  const stopHealth = startWorkerHealth(reconciler.lastCompletedAt);
-
+  let stopHealth: (() => Promise<void>) | undefined;
+  const shutdown = new AbortController();
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;
+    shutdown.abort();
     try {
-      await stopHealth();
+      await stopHealth?.();
       await reconciler.stop();
       // Stop taking jobs first, then hand held runs back so the next worker resumes them at
       // once instead of after the 5-minute lease. In-flight jobs may outlive the grace period.
@@ -383,6 +369,28 @@ async function main() {
     if (isTooManyDatabaseConnections(reason)) return;
     void stop().finally(() => process.exit(1));
   });
+
+  // Direct runs may already be active while the scheduler waits for capacity.
+  // Keep retrying without exiting; the handlers above drain them on shutdown.
+  for (let attempt = 0; !stopping; attempt += 1) {
+    try {
+      await jobHost.start(jobHandlers);
+      break;
+    } catch (error) {
+      if (stopping) return;
+      if (!isTooManyDatabaseConnections(error)) {
+        await stop();
+        throw error;
+      }
+      logger.error("worker job host start waiting on database capacity", error);
+      await sleep(databaseCapacityBackoffMs(attempt), undefined, { signal: shutdown.signal }).catch(
+        () => undefined,
+      );
+    }
+  }
+  if (stopping) return;
+  reconciler.start();
+  stopHealth = startWorkerHealth(reconciler.lastCompletedAt);
 
   logger.info("worker ready", { degraded: secrets.describe().capabilities.degraded ?? false });
 }

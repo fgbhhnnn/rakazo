@@ -9,11 +9,12 @@ import type {
 import {
   backupChoiceKey,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareGatewayRouting,
+  cloudflareModelRouting,
   compatibleConnectionName,
   connectedBackupOptions,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  isCloudflareModelProvider,
   isOllamaCloudBaseUrl,
   MAX_MODEL_BACKUPS,
   MAX_MODEL_CONTEXT_WINDOW,
@@ -61,6 +62,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
@@ -75,7 +77,6 @@ import { captureApiRequestContext, rpc, selectedSpaceId } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { withMemberSettingsGuard } from "../../lib/member-settings-guard";
-import { presentMessageActionSheet } from "../../lib/message-action-sheet";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
@@ -270,7 +271,9 @@ function ModelsScreen() {
         : pickCatalogModelId(
             nextCatalog,
             nextProvider,
-            preferred.modelId || nextCredential?.modelId || nextMe.defaultModel,
+            preferred.modelId ||
+              nextCredential?.modelId ||
+              (nextProvider === nextMe.defaultProvider ? nextMe.defaultModel : null),
           );
     meRef.current = nextMe;
     setMe(nextMe);
@@ -463,22 +466,10 @@ function ModelsScreen() {
   const selectedChoice = selectedSection?.data[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const isCloudflare = isCloudflareModelProvider(provider);
   const cloudflareRoutingReady =
-    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
+    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const credential = credentials.find((entry) => entry.provider === provider);
-  const currentEntry = catalog.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
-  );
-  const activeCredential = credentials.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
-  );
-  // The banner shows the effective effort — stored level or the runtime
-  // default — only when the active model can actually think.
-  const activeThinkingLabel =
-    (currentEntry?.thinkingLevels ?? []).some((level) => level !== "off") ||
-    activeCredential?.reasoning
-      ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium", t)
-      : null;
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,
@@ -498,9 +489,6 @@ function ModelsScreen() {
       ? (selected.thinkingLevels ?? []).filter((level) => level !== "off")
       : [];
   const reasoningEffortValue = thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default");
-  const catalogThinkingValue = thinkingLevel
-    ? thinkingLevelLabel(thinkingLevel, t)
-    : t("Default ({level})", { level: thinkingLevelLabel("medium", t) });
   const selectedStoredLevel =
     !isOpenAiCompatible && credential?.modelId === selected?.id
       ? (credential?.thinkingLevel ?? null)
@@ -522,7 +510,7 @@ function ModelsScreen() {
   const gatewayDirty =
     accountId.trim() !== (credential?.accountId ?? "") ||
     gatewayId.trim() !== (credential?.gatewayId ?? "");
-  const gatewayOnlySave = isCloudflareGateway && Boolean(credential) && !apiKey.trim();
+  const gatewayOnlySave = isCloudflare && Boolean(credential) && !apiKey.trim();
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
@@ -548,7 +536,12 @@ function ModelsScreen() {
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
-        : pickCatalogModelId(catalog, nextProvider, nextCredential?.modelId ?? me?.defaultModel);
+        : pickCatalogModelId(
+            catalog,
+            nextProvider,
+            nextCredential?.modelId ??
+              (nextProvider === me?.defaultProvider ? me.defaultModel : null),
+          );
     Keyboard.dismiss();
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
@@ -775,9 +768,7 @@ function ModelsScreen() {
           : {
               provider: selected.provider,
               ...(!savingLimitOnly ? { apiKey: apiKey.trim() } : {}),
-              ...(provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID
-                ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
-                : {}),
+              ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
               modelId: selected.id,
               // A limits-only save leaves the stored effort alone while the model
               // stays put. Changing the model sends the clamped level, including
@@ -1081,35 +1072,32 @@ function ModelsScreen() {
               />
             </View>
             {reasoning ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("Reasoning effort")}
-                accessibilityValue={{ text: reasoningEffortValue }}
+              <MenuPickerMenu
+                label={t("Reasoning effort")}
+                choices={[
+                  { key: "", label: t("Default") },
+                  ...THINKING_LEVEL_OPTIONS.map((level) => ({
+                    key: level,
+                    label: thinkingLevelLabel(level, t),
+                  })),
+                ]}
+                value={thinkingLevel ?? ""}
                 disabled={busy}
-                onPress={() => {
-                  presentMessageActionSheet({
-                    title: t("Reasoning effort"),
-                    selected: [null, ...THINKING_LEVEL_OPTIONS].indexOf(thinkingLevel),
-                    cancel: t("Cancel"),
-                    more: t("More"),
-                    colorScheme,
-                    actions: [
-                      {
-                        text: t("Default"),
-                        onPress: () => setThinkingLevel(null),
-                      },
-                      ...THINKING_LEVEL_OPTIONS.map((level) => ({
-                        text: thinkingLevelLabel(level, t),
-                        onPress: () => setThinkingLevel(level),
-                      })),
-                    ],
-                  });
-                }}
-                style={({ pressed }) => [styles.modelRow, pressed && styles.pressed]}
+                onChange={(value) => setThinkingLevel((value || null) as ThinkingLevel | null)}
               >
-                <Text style={styles.modelLabel}>{t("Reasoning effort")}</Text>
-                <Text style={styles.rowValue}>{reasoningEffortValue}</Text>
-              </Pressable>
+                <View>
+                  <SettingsRow
+                    title={t("Reasoning effort")}
+                    value={reasoningEffortValue}
+                    chevron="down"
+                    accessibilityRole="button"
+                    accessible
+                    accessibilityLabel={t("Reasoning effort")}
+                    accessibilityState={{ disabled: busy }}
+                    accessibilityValue={{ text: reasoningEffortValue }}
+                  />
+                </View>
+              </MenuPickerMenu>
             ) : null}
             <View style={[styles.modelRow, styles.singleRow]}>
               <Text style={styles.modelLabel}>{t("Supports images")}</Text>
@@ -1372,35 +1360,32 @@ function ModelsScreen() {
           />
           {catalogThinkingLevels.length ? <View style={styles.modelDivider} /> : null}
           {catalogThinkingLevels.length ? (
-            <SettingsRow
-              title={t("Thinking")}
-              value={catalogThinkingValue}
-              accessibilityRole="button"
-              accessibilityLabel={t("Thinking")}
-              accessibilityValue={{ text: catalogThinkingValue }}
+            <MenuPickerMenu
+              label={t("Thinking")}
+              choices={[
+                { key: "", label: t("Default") },
+                ...catalogThinkingLevels.map((level) => ({
+                  key: level,
+                  label: thinkingLevelLabel(level, t),
+                })),
+              ]}
+              value={thinkingLevel ?? ""}
               disabled={busy}
-              onPress={() => {
-                presentMessageActionSheet({
-                  title: t("Thinking"),
-                  selected: [null, ...catalogThinkingLevels].indexOf(thinkingLevel),
-                  cancel: t("Cancel"),
-                  more: t("More"),
-                  colorScheme,
-                  actions: [
-                    {
-                      text: t("Default ({level})", {
-                        level: thinkingLevelLabel("medium", t),
-                      }),
-                      onPress: () => setThinkingLevel(null),
-                    },
-                    ...catalogThinkingLevels.map((level) => ({
-                      text: thinkingLevelLabel(level, t),
-                      onPress: () => setThinkingLevel(level),
-                    })),
-                  ],
-                });
-              }}
-            />
+              onChange={(value) => setThinkingLevel((value || null) as ThinkingLevel | null)}
+            >
+              <View>
+                <SettingsRow
+                  title={t("Thinking")}
+                  value={reasoningEffortValue}
+                  chevron="down"
+                  accessibilityRole="button"
+                  accessible
+                  accessibilityLabel={t("Thinking")}
+                  accessibilityState={{ disabled: busy }}
+                  accessibilityValue={{ text: reasoningEffortValue }}
+                />
+              </View>
+            </MenuPickerMenu>
           ) : null}
         </View>
         {disclosureRow(t("Advanced"), showAdvanced, () => setShowAdvanced((visible) => !visible))}
@@ -1519,9 +1504,9 @@ function ModelsScreen() {
             />
           )
         ) : null}
-        {acceptsKey || isCloudflareGateway ? (
+        {acceptsKey || isCloudflare ? (
           <View style={styles.keySection}>
-            {isCloudflareGateway ? (
+            {isCloudflare ? (
               <>
                 <Text style={styles.sectionTitle}>{t("Account ID")}</Text>
                 <TextInput
@@ -1537,20 +1522,24 @@ function ModelsScreen() {
                   style={styles.keyInput}
                   value={accountId}
                 />
-                <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
-                <TextInput
-                  accessibilityLabel={t("Gateway ID")}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  editable={!busy}
-                  onChangeText={(value) => {
-                    setGatewayId(value);
-                    clearFeedback();
-                  }}
-                  style={styles.keyInput}
-                  value={gatewayId}
-                />
+                {isCloudflareGateway ? (
+                  <>
+                    <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
+                    <TextInput
+                      accessibilityLabel={t("Gateway ID")}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="off"
+                      editable={!busy}
+                      onChangeText={(value) => {
+                        setGatewayId(value);
+                        clearFeedback();
+                      }}
+                      style={styles.keyInput}
+                      value={gatewayId}
+                    />
+                  </>
+                ) : null}
               </>
             ) : null}
             {acceptsKey ? (
@@ -1770,19 +1759,6 @@ function ModelsScreen() {
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.activeCard}>
-          <Text style={styles.eyebrow}>{t("Active model")}</Text>
-          <Text style={styles.activeModel}>
-            {currentEntry?.label ?? me?.defaultModel ?? t("Deployment default")}
-          </Text>
-          <Text style={styles.secondary}>
-            {currentEntry?.providerName ?? me?.defaultProvider ?? t("Configured by deployment")}
-            {activeThinkingLabel
-              ? ` · ${t("Thinking: {level}", { level: activeThinkingLabel })}`
-              : ""}
-          </Text>
-        </View>
-
         {!selected || isOpenAiCompatible || !credential ? (
           <View style={styles.card}>{providerRow}</View>
         ) : null}
@@ -1916,24 +1892,6 @@ function createModelsStyles() {
       padding: 20,
       gap: 12,
       paddingBottom: 40,
-    },
-    activeCard: {
-      borderRadius: 16,
-      backgroundColor: native.fill,
-      padding: 18,
-      marginBottom: 8,
-    },
-    eyebrow: {
-      color: native.tertiaryLabel,
-      fontSize: 12,
-      textTransform: "uppercase",
-      letterSpacing: 1,
-    },
-    activeModel: {
-      color: native.label,
-      fontSize: 19,
-      fontWeight: "600",
-      marginTop: 6,
     },
     secondary: {
       color: native.secondaryLabel,

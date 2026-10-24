@@ -1,11 +1,9 @@
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { createPool, currentDbContext, runAsTenant } from "@rakazo/db";
-import { makeWorkerUtils } from "graphile-worker";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  BACKGROUND_WORKER_JOB_FLAG,
   createReservedGraphileJobWorkerHost,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
@@ -56,47 +54,38 @@ async function waitFor(assertion: () => void, timeoutMs = 10_000): Promise<void>
 }
 
 describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
-  it("keeps reserved slots for main-bot runs while background workers fill the rest", async () => {
-    const host = new GraphileJobWorkerHost(testPool(), {
-      concurrency: 1,
-      reservedConcurrency: 1,
-      pollInterval: 25,
-    });
+  it("starts a fifth agent while four agents wait on model work", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 4, pollInterval: 25 });
     const release = deferred();
-    const started: string[] = [];
+    const entered: string[] = [];
     const target = handlers({
-      "run.continue": async (payload) => {
-        started.push(payload.runId);
-        if (payload.runId.startsWith("lane-bg")) await release.promise;
+      "run.continue": async ({ runId }, execution) => {
+        entered.push(runId);
+        execution!.onRunStarted();
+        await release.promise;
       },
     });
-    const utils = await makeWorkerUtils({ pgPool: testPool() });
     try {
       await host.start(target);
-      for (const runId of ["lane-bg-1", "lane-bg-2"]) {
-        await utils.addJob(
-          "run.continue",
-          { runId },
-          { flags: [BACKGROUND_WORKER_JOB_FLAG], priority: 10, jobKey: `run:${runId}` },
-        );
-      }
-      await waitFor(() => expect(started).toContain("lane-bg-1"));
-      await utils.addJob(
-        "run.continue",
-        { runId: "lane-main" },
-        { priority: -10, jobKey: "run:lane-main" },
-      );
-      // The main run starts on the reserved slot although the general slot is busy, and the
-      // second worker run cannot take the reserved slot.
-      await waitFor(() => expect(started).toContain("lane-main"));
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(started.filter((id) => id.startsWith("lane-bg"))).toHaveLength(1);
+      for (let i = 0; i < 4; i++)
+        await publisher.enqueue({ name: "run.continue", payload: { runId: `waiting-agent-${i}` } });
+      await waitFor(() => expect(entered).toHaveLength(4));
+      await publisher.enqueue({ name: "run.continue", payload: { runId: "fifth-agent" } });
+      await waitFor(() => expect(entered).toContain("fifth-agent"));
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await Promise.resolve();
+      expect(stopped).toBe(false);
       release.resolve();
-      await waitFor(() => expect(started).toContain("lane-bg-2"));
+      await stopping;
+      expect(stopped).toBe(true);
     } finally {
       release.resolve();
       await host.stop();
-      await utils.release();
+      await publisher.close();
     }
   });
 

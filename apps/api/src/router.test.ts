@@ -29,7 +29,13 @@ import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
-import { createRouter, enqueueBotIntroRun, HEARTBEAT_MS, SESSION_RECHECK_MS } from "./router.js";
+import {
+  botIntroPrompt,
+  createRouter,
+  enqueueBotIntroRun,
+  HEARTBEAT_MS,
+  SESSION_RECHECK_MS,
+} from "./router.js";
 
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
@@ -273,21 +279,32 @@ describe("account preferences", () => {
 });
 
 describe("billing", () => {
-  function billingDeps(isDeploymentOwner: boolean, billing?: RouterDeps["billing"]) {
+  const surveyCreatedAt = new Date("2026-10-23T12:00:00Z");
+  const upsertSignupSurvey = vi.fn().mockResolvedValue({ createdAt: surveyCreatedAt });
+
+  function billingDeps(
+    isDeploymentOwner: boolean,
+    billing?: RouterDeps["billing"],
+    signupSurvey: { userId: string } | null = null,
+    analytics?: RouterDeps["analytics"],
+  ) {
     const prisma = {
       user: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           email: "user@rakazo.test",
           name: "Test User",
           avatarStyle: "robot",
+          signupSurvey,
         }),
       },
+      signupSurvey: { upsert: upsertSignupSurvey },
       spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
       billing,
+      analytics,
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -330,6 +347,81 @@ describe("billing", () => {
     await expect(billingDeps(true, billing).me()).resolves.toMatchObject({
       billingEnabled: true,
     });
+  });
+
+  it("asks hosted users the signup survey until they answer or skip it", async () => {
+    const billing = { status: vi.fn() } as unknown as RouterDeps["billing"];
+    await expect(billingDeps(false).me()).resolves.toMatchObject({ needsSignupSurvey: false });
+    await expect(billingDeps(false, billing).me()).resolves.toMatchObject({
+      needsSignupSurvey: true,
+    });
+    await expect(billingDeps(false, billing, { userId: "user-1" }).me()).resolves.toMatchObject({
+      needsSignupSurvey: false,
+    });
+  });
+
+  it("sends only the fixed survey choices to analytics", async () => {
+    const capture = vi.fn();
+    const client = billingDeps(false, undefined, null, { capture, flush: async () => undefined });
+    await client.onboarding.signupSurvey({
+      use: "work",
+      teamSize: "2-10",
+      reason: "Private plans",
+      source: "A friend",
+    });
+    await client.onboarding.signupSurvey({});
+    expect(capture.mock.calls.map(([userId, event]) => [userId, event])).toEqual([
+      ["user-1", { name: "signup_survey_answered", skipped: false, use: "work", teamSize: "2-10" }],
+      ["user-1", { name: "signup_survey_answered", skipped: true }],
+    ]);
+    expect(capture.mock.calls.map(([, , identity]) => identity)).toEqual([
+      { id: "user-1", at: surveyCreatedAt },
+      { id: "user-1", at: surveyCreatedAt },
+    ]);
+  });
+
+  it("records a blank survey as skipped", async () => {
+    await billingDeps(false).onboarding.signupSurvey({});
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith({
+      where: { userId: "user-1" },
+      create: { userId: "user-1", reason: null, use: null, teamSize: null, source: null },
+      update: { reason: null, use: null, teamSize: null, source: null },
+    });
+  });
+
+  it("keeps team size only for work or both", async () => {
+    const client = billingDeps(false);
+    await client.onboarding.signupSurvey({
+      reason: "  Run my inbox  ",
+      use: "personal",
+      teamSize: "11-50",
+      source: "",
+    });
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith({
+      where: { userId: "user-1" },
+      create: {
+        userId: "user-1",
+        reason: "Run my inbox",
+        use: "personal",
+        teamSize: null,
+        source: null,
+      },
+      update: { reason: "Run my inbox", use: "personal", teamSize: null, source: null },
+    });
+
+    await client.onboarding.signupSurvey({ use: "work", teamSize: "11-50" });
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        update: { reason: null, use: "work", teamSize: "11-50", source: null },
+      }),
+    );
+
+    await client.onboarding.signupSurvey({ use: "both", teamSize: "2-10" });
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        update: { reason: null, use: "both", teamSize: "2-10", source: null },
+      }),
+    );
   });
 });
 
@@ -2099,6 +2191,10 @@ describe("connections.begin", () => {
 
     expect(matched).toBe(true);
     expect(response.status).toBe(200);
+    expect(begin).toHaveBeenCalledWith(
+      { provider: "gmail", redirectUrl: "http://127.0.0.1:5173/integrations/callback" },
+      expect.anything(),
+    );
     // Complete and revoke hold the same lock across provider calls; begin must outwait them.
     expect(vi.mocked(prisma.$transaction).mock.calls.map((call) => call[1])).toEqual([
       { timeout: 60_000 },
@@ -3899,14 +3995,23 @@ describe("bot intro run", () => {
   } satisfies Actor;
   const bot = { id: "bot-1", threadId: "thread-1" } as unknown as Bot;
 
-  function introDeps(options: { agentRuntime?: string; hasCredential?: boolean } = {}) {
+  function introDeps(
+    options: { agentRuntime?: string; hasCredential?: boolean; existingRun?: boolean } = {},
+  ) {
     let calls = 0;
     const create = vi.fn(({ data }: { data: object }) => {
       calls += 1;
       return Promise.resolve({ id: `record-${calls}`, ...data });
     });
     const enqueue = vi.fn().mockResolvedValue(undefined);
-    const tx = { task: { create }, run: { create } };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      task: { create },
+      run: {
+        create,
+        findFirst: vi.fn().mockResolvedValue(options.existingRun ? { id: "run-0" } : null),
+      },
+    };
     const preference =
       (options.hasCredential ?? true)
         ? { isDefault: true, modelId: "model-1", credential: { id: "cred-1", provider: "test" } }
@@ -3917,6 +4022,10 @@ describe("bot intro run", () => {
         $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
         spaceModelPreference,
         deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+        user: { findUnique: vi.fn().mockResolvedValue({ name: "Ada Lovelace" }) },
+        space: {
+          findUnique: vi.fn().mockResolvedValue({ name: "Personal", isDefault: true }),
+        },
       },
       jobs: { enqueue },
       env: { agentRuntime: options.agentRuntime ?? "pi" },
@@ -3924,7 +4033,7 @@ describe("bot intro run", () => {
     return { create, enqueue, deps };
   }
 
-  it("queues an invisible-prompt run so the bot states how it read its role", async () => {
+  it("queues an invisible-prompt run so the bot asks what it is for", async () => {
     const { create, enqueue, deps } = introDeps();
 
     await enqueueBotIntroRun(deps, actor, bot);
@@ -3943,7 +4052,9 @@ describe("bot intro run", () => {
     const [taskCall, runCall] = create.mock.calls as Array<
       [{ data: { prompt?: string; trigger?: string; taskId?: string } }]
     >;
-    expect(taskCall?.[0].data.prompt).toMatch(/understood your role/i);
+    expect(taskCall?.[0].data.prompt).toBe(
+      botIntroPrompt({ userName: "Ada Lovelace", spaceName: null, disabledBuiltinTools: [] }),
+    );
     expect(runCall?.[0].data.trigger).toBe("created");
     // The Run must reference the Task this same call created, not a stale or
     // mismatched id, and the enqueued job must target that Run.
@@ -3978,6 +4089,24 @@ describe("bot intro run", () => {
 
     expect(create).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not queue a second intro when an idempotent create returns an existing bot", async () => {
+    const { create, enqueue, deps } = introDeps({ existingRun: true });
+
+    await enqueueBotIntroRun(deps, actor, bot);
+
+    expect(create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("names only the intro tools the bot still has", () => {
+    const prompt = (disabledBuiltinTools: string[]) =>
+      botIntroPrompt({ userName: "Ada", spaceName: null, disabledBuiltinTools });
+    expect(prompt([])).toContain("ask_user");
+    expect(prompt([])).toContain("update_bot");
+    expect(prompt(["ask_user", "update_bot"])).not.toContain("ask_user");
+    expect(prompt(["ask_user", "update_bot"])).not.toContain("update_bot");
   });
 });
 

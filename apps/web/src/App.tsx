@@ -31,6 +31,7 @@ import {
   showSessionUnavailable,
 } from "./lib/session-gate";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
+import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
@@ -72,7 +73,13 @@ export function App() {
     <RemoteImagesContext.Provider value={loadRemoteImages}>
       <LinkFaviconsContext.Provider value={linkFavicons}>
         <ErrorBoundary fallback={<AppFailed />}>
-          {window.location.pathname === SSO_CALLBACK_PATH ? <SsoCallbackPage /> : <SessionApp />}
+          {window.location.pathname === SSO_CALLBACK_PATH ? (
+            <SsoCallbackPage />
+          ) : window.location.pathname === "/integrations/callback" ? (
+            <IntegrationCallbackPage />
+          ) : (
+            <SessionApp />
+          )}
         </ErrorBoundary>
       </LinkFaviconsContext.Provider>
     </RemoteImagesContext.Provider>
@@ -184,7 +191,7 @@ function SessionApp() {
               )
             }
           >
-            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route path="/onboarding/:step?" element={<OnboardingPage />} />
             <Route path="/app" element={<ShellPage />} />
             <Route path="/app/g/:groupId" element={<ShellPage />} />
             <Route path="/app/artifacts" element={<ArtifactsPage />} />

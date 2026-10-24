@@ -70,6 +70,7 @@ import {
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
   piSessionsRoot,
+  RunJobPublisher,
   reconcileCloudAgents,
   reconcileComputerUpdates,
   removePiUserSessions,
@@ -314,12 +315,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const jobPool = created.pool ?? ownedJobPool;
   const jobs = inMemoryJobs
     ? inMemoryJobs
-    : new GraphileJobPublisher(
-        jobPool ??
-          (() => {
-            throw new Error("Graphile job publisher requires a PostgreSQL pool");
-          })(),
+    : new RunJobPublisher(
         prisma,
+        realtime,
+        new GraphileJobPublisher(
+          jobPool ??
+            (() => {
+              throw new Error("Graphile job publisher requires a PostgreSQL pool");
+            })(),
+          prisma,
+        ),
       );
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,

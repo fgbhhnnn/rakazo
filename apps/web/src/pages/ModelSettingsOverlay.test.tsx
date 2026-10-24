@@ -28,12 +28,14 @@ vi.mock("../lib/rpc", () => ({
   selectedSpaceId: () => "space-1",
   rpc: {
     models,
+    bots: { list: vi.fn(async () => []), update: vi.fn() },
     me: vi.fn(),
   },
 }));
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
+  providerDisplayName: (_id: string, name: string) => name,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -1050,3 +1052,69 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
     }
   },
 );
+
+it.each([undefined, "api_key", "oauth"])(
+  "only enables subscription connection checks for saved OAuth credentials (%s)",
+  async (authKind) => {
+    vi.mocked(rpc.me).mockResolvedValue(account("openai-codex", "fixture-model"));
+    models.list.mockResolvedValue([
+      {
+        provider: "openai-codex",
+        providerName: "ChatGPT",
+        id: "fixture-model",
+        label: "Fixture model",
+        billing: "Subscription",
+        auth: "oauth",
+        signIn: "device-code",
+        oauthLabel: "Sign in with ChatGPT Plus/Pro",
+      },
+    ]);
+    models.credentials.mockResolvedValue(
+      authKind
+        ? [{ id: "fixture", provider: "openai-codex", modelId: "fixture-model", authKind }]
+        : [],
+    );
+    const view = await renderSettings();
+    try {
+      expect(buttons(view.container, "Test connection")[0]?.disabled).toBe(authKind !== "oauth");
+      expect(view.container.textContent).not.toContain("Test sign-in");
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it("folds the key form behind Or paste an API key once a subscription is signed in", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
+  models.list.mockResolvedValue([
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-fixture",
+      label: "Claude fixture",
+      billing: "",
+      signIn: "auth-url",
+    },
+  ]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      hasKey: false,
+      authKind: "oauth",
+    },
+  ]);
+  const view = await renderSettings();
+  try {
+    expect(view.container.querySelector("#model-api-key")).toBeNull();
+    await act(async () => {
+      buttons(view.container, "Or paste an API key")[0]?.click();
+    });
+    expect(keyField(view.container)).toBeTruthy();
+    expect(buttons(view.container, "Connect API key")).toHaveLength(1);
+    expect(view.container.textContent).not.toContain("Replace API key");
+  } finally {
+    await view.unmount();
+  }
+});

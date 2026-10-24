@@ -2,10 +2,11 @@ import { useLingui } from "@lingui/react/macro";
 import type { Me, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareGatewayRouting,
+  cloudflareModelRouting,
   compatibleConnectionName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  isCloudflareModelProvider,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
@@ -30,6 +31,7 @@ import {
 } from "@rakazo/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
+import { providerDisplayName } from "../../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../../lib/model-auth";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
@@ -140,7 +142,8 @@ export function useModelSettings(onClose: () => void) {
           pickCatalogModelId(
             nextCatalog,
             nextProvider,
-            nextCredential?.modelId ?? nextMe.defaultModel,
+            nextCredential?.modelId ??
+              (nextProvider === nextMe.defaultProvider ? nextMe.defaultModel : null),
           ));
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
@@ -202,12 +205,16 @@ export function useModelSettings(onClose: () => void) {
     return popularModelProvidersFirst(
       [...grouped].map(([id, entries]) => ({
         id,
-        name: entries[0]?.providerName ?? id,
+        name: providerDisplayName(
+          id,
+          entries[0]?.providerName ?? id,
+          credentials.find((entry) => entry.provider === id)?.authKind,
+        ),
         entries,
       })),
       (group) => group.id,
     );
-  }, [catalog]);
+  }, [catalog, credentials]);
   const credentialByProvider = useMemo(
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],
@@ -266,14 +273,15 @@ export function useModelSettings(onClose: () => void) {
   selectedLabelRef.current = selected?.label;
   const selectedProviderName = compatibleConnectionName(
     baseUrl,
-    selected?.providerName ?? selected?.provider ?? "",
+    groups.find((group) => group.id === provider)?.name ?? provider,
   );
   const disconnectName = selectedProviderName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const isCloudflare = isCloudflareModelProvider(provider);
   const cloudflareRoutingReady =
-    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
+    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -330,7 +338,7 @@ export function useModelSettings(onClose: () => void) {
     !isOpenAiCompatible &&
     Boolean(credential) &&
     (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
-      (isCloudflareGateway &&
+      (isCloudflare &&
         (accountId.trim() !== (credential?.accountId ?? "") ||
           gatewayId.trim() !== (credential?.gatewayId ?? ""))));
 
@@ -383,7 +391,12 @@ export function useModelSettings(onClose: () => void) {
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
-        : pickCatalogModelId(catalog, nextProvider, nextCredential?.modelId ?? me?.defaultModel);
+        : pickCatalogModelId(
+            catalog,
+            nextProvider,
+            nextCredential?.modelId ??
+              (nextProvider === me?.defaultProvider ? me.defaultModel : null),
+          );
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
     const nextEntry = catalog.find(
@@ -630,9 +643,7 @@ export function useModelSettings(onClose: () => void) {
           : {
               provider: selected.provider,
               ...(newKey ? { apiKey: newKey } : {}),
-              ...(isCloudflareGateway
-                ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
-                : {}),
+              ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
               modelId: selected.id,
               // A limits-only save leaves the stored effort alone while the model
               // stays put. Changing the model sends the clamped level, including
@@ -737,6 +748,7 @@ export function useModelSettings(onClose: () => void) {
     hostCredentialSource,
     invalidatePreflight,
     isActive,
+    isCloudflare,
     isCloudflareGateway,
     isOpenAiCompatible,
     loading,

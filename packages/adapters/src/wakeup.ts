@@ -1,5 +1,6 @@
 import type {
   BackgroundJob,
+  BackgroundJobExecution,
   BackgroundJobHandlers,
   BackgroundJobName,
   JobPublisher,
@@ -7,12 +8,13 @@ import type {
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { HIDDEN_BOT_SPAWN_PREFIX, isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
+import { isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import type { Runner, WorkerUtils } from "graphile-worker";
 import { makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
+import { RunExecutionHost } from "./run-execution.js";
 
 // Adapter-local task name: the shared job contract remains run.continue. Older
 // publishers can keep publishing it while a new worker drains the legacy queue.
@@ -41,9 +43,6 @@ async function isInteractiveRun(prisma: RunLookup, runId: string): Promise<boole
 // pool per graphile-worker component: three independent pools per worker process
 // (Prisma + publisher + runner) triples the connection footprint against Postgres'
 // max_connections for no benefit, since they never need isolation from each other.
-/** Graphile job flag of hidden background-worker runs (see GraphileJobPublisher.runLane). */
-export const BACKGROUND_WORKER_JOB_FLAG = "bg-worker";
-
 export class GraphileJobPublisher implements JobPublisher {
   private utils: Promise<WorkerUtils> | undefined;
   private closed = false;
@@ -60,18 +59,13 @@ export class GraphileJobPublisher implements JobPublisher {
     // and not a job locked by replaceLockedBefore: Graphile never unlocks a job
     // whose worker died, and replace detaches a locked job and inserts a new one.
     const jobKeyMode = await this.keepExistingMode(utils, job);
-    const lane = await this.runLane(job);
-    // Hidden background-worker runs stay on run.continue (the background workload), so a
-    // worker started by a user-triggered dispatch can never occupy the interactive capacity.
     const task =
       job.name === "run.continue" &&
-      !lane.flags?.includes(BACKGROUND_WORKER_JOB_FLAG) &&
       this.prisma &&
       (await isInteractiveRun(this.prisma, job.payload.runId))
         ? INTERACTIVE_RUN_TASK
         : job.name;
     await utils.addJob(task, wrapJobPayload(job.payload), {
-      ...lane,
       runAt: job.availableAt,
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
@@ -120,41 +114,6 @@ export class GraphileJobPublisher implements JobPublisher {
     return this.utils;
   }
 
-  /**
-   * Hidden background-worker runs are flagged BACKGROUND_WORKER_JOB_FLAG and sorted after
-   * everything else, so the reserved runner (which forbids that flag) always has room for the
-   * main bots' replies, routines and housekeeping, however many workers are busy.
-   */
-  private async runLane(job: BackgroundJob): Promise<{ flags?: string[]; priority?: number }> {
-    if (job.name !== "run.continue") return {};
-    const runId = (job.payload as { runId?: string }).runId;
-    if (!runId) return {};
-    try {
-      const client = await this.pgPool.connect();
-      try {
-        await client.query("BEGIN READ ONLY");
-        await client.query("SELECT set_config('app.rls_bypass', 'on', true)");
-        const found = await client.query<{ spawnKey: string | null }>(
-          `SELECT b."spawnKey" FROM runs r JOIN bots b ON b.id = r."botId" WHERE r.id = $1`,
-          [runId],
-        );
-        await client.query("COMMIT");
-        const key = found.rows[0]?.spawnKey;
-        return key?.startsWith(HIDDEN_BOT_SPAWN_PREFIX)
-          ? { flags: [BACKGROUND_WORKER_JOB_FLAG], priority: 10 }
-          : { priority: -10 };
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-      }
-    } catch (error) {
-      getLogger().warn("job lane lookup failed; using the default lane", { runId, error });
-      return {};
-    }
-  }
-
   private async keepExistingMode(
     utils: WorkerUtils,
     job: BackgroundJob,
@@ -187,9 +146,14 @@ export class GraphileJobPublisher implements JobPublisher {
  * keep its tenant); each handler then narrows to the tenant of the row it acts for
  * (see createBackgroundJobHandlers).
  */
-function dispatchJob(handlers: BackgroundJobHandlers, name: string, payload: unknown) {
+function dispatchJob(
+  handlers: BackgroundJobHandlers,
+  name: string,
+  payload: unknown,
+  execution?: BackgroundJobExecution,
+) {
   return runAsSystem(`background job ${name}`, () =>
-    dispatchBackgroundJob(handlers, name, payload),
+    dispatchBackgroundJob(handlers, name, payload, execution),
   );
 }
 
@@ -213,21 +177,16 @@ export function databaseCapacityBackoffMs(attempt: number): number {
 
 export class GraphileJobWorkerHost implements JobWorkerHost {
   private runner: Runner | undefined;
-  private reserved: Runner | undefined;
   private handlers: BackgroundJobHandlers | undefined;
   private stopping = false;
   private superviseTask: Promise<void> | undefined;
   private wakeSleep: (() => void) | undefined;
+  private readonly executions = new RunExecutionHost();
 
   constructor(
     private readonly pgPool: Pool,
     private readonly options: {
       concurrency?: number;
-      /**
-       * Extra runner slots that never take background-worker runs, so main-bot replies and
-       * housekeeping never wait behind long worker jobs. 0 disables the reserved runner.
-       */
-      reservedConcurrency?: number;
       pollInterval?: number;
       noHandleSignals?: boolean;
       /** Omit for a worker that handles every task (tests and embedded hosts). */
@@ -240,6 +199,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   async start(handlers: BackgroundJobHandlers): Promise<void> {
     if (this.runner || this.superviseTask) return;
     this.stopping = false;
+    this.executions.start();
     this.handlers = handlers;
     await this.launchRunner();
     // run() resolves once the runner is up; runner.promise can still reject later
@@ -251,10 +211,13 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   async stop(): Promise<void> {
     this.stopping = true;
     this.wakeSleep?.();
+    const draining = this.executions.stop();
     try {
-      await Promise.all([this.runner?.stop(), this.reserved?.stop().catch(() => undefined)]);
+      await this.runner?.stop();
     } finally {
-      this.reserved = undefined;
+      // The queue has stopped accepting deliveries. Handed-off runs still own
+      // leases and must finish before their database and providers are closed.
+      await draining;
       await this.superviseTask?.catch(() => undefined);
       this.runner = undefined;
       this.superviseTask = undefined;
@@ -276,12 +239,15 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
           this.options.workload === "interactive" ? INTERACTIVE_RUN_TASK : name,
           async (payload: unknown) => {
             const unpacked = unwrapJobPayload(payload);
-            await runCorrelatedJob({
-              name,
-              payload: unpacked.payload,
-              correlation: unpacked.correlation,
-              run: () => dispatchJob(handlers, name, unpacked.payload),
-            });
+            const execute = (execution?: BackgroundJobExecution) =>
+              runCorrelatedJob({
+                name,
+                payload: unpacked.payload,
+                correlation: unpacked.correlation,
+                run: () => dispatchJob(handlers, name, unpacked.payload, execution),
+              });
+            if (name === "run.continue") await this.executions.execute(execute);
+            else await execute();
           },
         ]),
     );
@@ -301,26 +267,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       return;
     }
     this.runner = runner;
-    const reserved = this.options.reservedConcurrency ?? 0;
-    if (reserved > 0 && !this.reserved) {
-      const lane = await run({
-        pgPool: this.pgPool,
-        concurrency: reserved,
-        pollInterval: this.options.pollInterval ?? 500,
-        noHandleSignals: true,
-        taskList,
-        forbiddenFlags: [BACKGROUND_WORKER_JOB_FLAG],
-      });
-      lane.events.on("job:failed", ({ job, error }) => {
-        recordHistoryCompactAttemptsExhausted(job, error);
-      });
-      lane.promise.catch((error) => {
-        getLogger().error("reserved job runner stopped", error);
-        if (this.reserved === lane) this.reserved = undefined;
-      });
-      if (this.stopping) await lane.stop().catch(() => undefined);
-      else this.reserved = lane;
-    }
   }
 
   private delay(ms: number): Promise<void> {
@@ -375,42 +321,33 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
 /** Long agent turns cannot occupy the capacity reserved for other workloads. */
 export function createReservedGraphileJobWorkerHost(
   pool: Pool,
-  options: {
-    concurrency?: number;
-    /**
-     * Slots for non-interactive agent runs, including hidden background workers (several
-     * run in parallel per dispatcher). Defaults to 1.
-     */
-    backgroundConcurrency?: number;
-    pollInterval?: number;
-    noHandleSignals?: boolean;
-  } = {},
+  options: { concurrency?: number; pollInterval?: number; noHandleSignals?: boolean } = {},
 ): JobWorkerHost {
-  const { backgroundConcurrency, ...shared } = options;
   const hosts = (["interactive", "background", "maintenance"] as const).map(
     (workload) =>
       new GraphileJobWorkerHost(pool, {
-        ...shared,
-        concurrency:
-          workload === "interactive"
-            ? shared.concurrency
-            : workload === "background"
-              ? (backgroundConcurrency ?? 1)
-              : 1,
+        ...options,
+        concurrency: workload === "interactive" ? options.concurrency : 1,
         workload,
       }),
   );
+  let stopping = false;
   const stop = async () => {
+    stopping = true;
     const results = await Promise.allSettled(hosts.map((host) => host.stop()));
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;
   };
   return {
     async start(handlers) {
+      stopping = false;
       try {
         // Legacy jobs that are already locked finish with their original queue
         // identity and retry accounting. Reconciliation promotes unlocked chat.
-        for (const host of hosts) await host.start(handlers);
+        for (const host of hosts) {
+          if (stopping) break;
+          await host.start(handlers);
+        }
       } catch (error) {
         await stop();
         throw error;
