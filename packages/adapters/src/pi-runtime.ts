@@ -60,6 +60,7 @@ import {
 } from "./context-pruning.js";
 import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
+import { createInRunCompactor, IN_RUN_SUMMARY_INSTRUCTIONS } from "./in-run-compaction.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import {
@@ -489,7 +490,43 @@ export class PiAgentRuntime implements AgentRuntime {
             });
           },
         };
+        const transformContext = request.inRunCompaction
+          ? createInRunCompactor({
+              contextWindow: () =>
+                activeStreamTarget.config.contextWindow ?? activeStreamTarget.model.contextWindow,
+              estimateTokens: (messages) =>
+                estimateModelContextTokens(
+                  { systemPrompt, tools: [], messages: messages as Context["messages"] },
+                  estimatePiImageTokens,
+                ),
+              // The same model the run is using writes the summary.
+              summarize: async (transcript, summarySignal) => {
+                const target = activeStreamTarget;
+                const stream = reliableModelStream(
+                  target.models,
+                  target.model,
+                  {
+                    systemPrompt: IN_RUN_SUMMARY_INSTRUCTIONS,
+                    messages: [{ role: "user", content: transcript, timestamp: Date.now() }],
+                  },
+                  withCloudflareGatewayAuth(target.config, {
+                    signal: summarySignal ?? signal,
+                    maxTokens: 4096,
+                  }),
+                  4096,
+                  () => target.credentials?.accessToken ?? target.apiKey,
+                );
+                const message = await stream.result();
+                if (message.stopReason === "error" || message.stopReason === "aborted")
+                  throw new Error(message.errorMessage ?? "summary failed");
+                return message.content
+                  .map((part) => (part.type === "text" ? part.text : ""))
+                  .join("");
+              },
+            })
+          : undefined;
         agent = new Agent({
+          ...(transformContext ? { transformContext } : {}),
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
           streamFn: (_m, ctx, options) =>

@@ -7907,6 +7907,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // Keep an explicit executor override, but let the runtime select
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
+              // Background workers run long tool loops: summarize old steps, do not drop them.
+              ...(isHiddenBot(bot) ? { inRunCompaction: true } : {}),
               instructions: userTurnInstructions({
                 botInstructions: runIdentityInstruction(bot, run.trigger),
                 groupContext,

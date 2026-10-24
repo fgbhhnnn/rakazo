@@ -468,6 +468,8 @@ export interface AgentRunRequest {
   /** Awaited producer-side accounting, independent of event-consumer cancellation. */
   onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
   contextStrategy?: AgentContextStrategy;
+  /** Summarize older tool steps with the same model when a long run nears its context window. */
+  inRunCompaction?: boolean;
   /** Exclusive workflow cost bucket; retrieval tool turns are detected for answer calls. */
   usageOperationKind?: UsageOperationKind;
   botId: string;
