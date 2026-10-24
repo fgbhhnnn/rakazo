@@ -51,6 +51,7 @@ export * from "./daytona-sandbox.js";
 export * from "./deployment-model.js";
 export * from "./desktop-sandbox.js";
 export * from "./destination-emulator.js";
+export * from "./dispatcher-mode.js";
 export * from "./docker-sandbox.js";
 export * from "./e2b-sandbox.js";
 export * from "./elevenlabs-voice.js";

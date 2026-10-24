@@ -111,6 +111,13 @@ export async function resolveRunTimeZone(
       if (zone) return zone;
     }
   } catch {}
+  return deploymentTimeZone(env);
+}
+
+/** The deployment default zone (RAKAZO_DEFAULT_TIMEZONE), or undefined when unset or invalid. */
+export function deploymentTimeZone(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
   return usableTimeZone(env.RAKAZO_DEFAULT_TIMEZONE);
 }
 

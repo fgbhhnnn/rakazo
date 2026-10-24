@@ -11,9 +11,9 @@ import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import { BACKGROUND_DISPATCH_GUIDANCE, STEERING_REPLY_GUIDANCE } from "./dispatcher-mode.js";
 import {
   appendToolCompletionAudit,
-  BACKGROUND_DISPATCH_GUIDANCE,
   createRunExecutor,
   createRunWorkspaceCheckpoint,
   dockerComputerToolInstruction,
@@ -24,7 +24,6 @@ import {
   persistentComputerInstruction,
   REACTION_SILENT_REPLY_GUIDANCE,
   runNotificationsEnabled,
-  STEERING_REPLY_GUIDANCE,
   selectBuiltinToolsForRun,
   settleSteeringAttachmentLoads,
   threadContextForRun,

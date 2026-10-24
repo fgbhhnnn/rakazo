@@ -1013,4 +1013,11 @@ export const JA_MESSAGES: Record<string, string> = {
   "Connect apps": "アプリを接続",
   "Bring your own key. ElevenLabs, OpenAI, Cartesia, and Fish Audio all plug into the same speak buttons.":
     "ご自身のキーを使用できます。ElevenLabs、OpenAI、Cartesia、Fish Audioはすべて同じ読み上げボタンで使えます。",
+  "Background tasks running ({count})": "バックグラウンドタスク実行中（{count}）",
+  "Complete the security check first": "先にセキュリティチェックを完了してください",
+  "Security check failed. Check your connection and try again.":
+    "セキュリティチェックに失敗しました。接続を確認して、もう一度お試しください。",
+  "Security check failed. Complete it again and retry.":
+    "セキュリティチェックに失敗しました。もう一度完了してから再試行してください。",
+  "Your administrator manages this setting.": "この設定は管理者が管理しています。",
 };

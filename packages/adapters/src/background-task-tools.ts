@@ -1,0 +1,60 @@
+import { BUILTIN_TOOL_NAMES, type MessageBlock } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
+import {
+  backgroundTaskMessage,
+  backgroundTaskStatus,
+  cancelBackgroundTask,
+  launchBackgroundTask,
+} from "./background-tasks.js";
+import type { ExecutorDeps } from "./executor.js";
+import type { AttachmentBlock } from "./task-attachments.js";
+
+type DispatchRun = Parameters<typeof launchBackgroundTask>[1];
+type DispatchBot = Parameters<typeof launchBackgroundTask>[2];
+
+/**
+ * The dispatcher's background_task* tools. Returns the tool result, or undefined when the name
+ * is not one of them. A launched worker is announced in the chat with a link to its live progress.
+ */
+export async function runBackgroundTaskTool(
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "sandbox">,
+  name: string,
+  args: Record<string, unknown>,
+  input: {
+    run: DispatchRun;
+    dispatcher: DispatchBot;
+    effectKey: string;
+    attachments: () => readonly AttachmentBlock[];
+    publish: (blocks: MessageBlock[]) => Promise<unknown>;
+  },
+): Promise<unknown> {
+  const { run, dispatcher, effectKey } = input;
+  if (name === "background_task") {
+    const launched = await launchBackgroundTask(deps, run, dispatcher, args, {
+      builtinToolNames: BUILTIN_TOOL_NAMES,
+      deliveryKey: effectKey,
+      attachments: input.attachments(),
+    });
+    if ("task_ref" in launched && "worker_id" in launched && launched.worker_id) {
+      try {
+        await input.publish([
+          {
+            kind: "child_bot",
+            botId: launched.worker_id,
+            name: `后台任务：${launched.name} #${launched.task_ref}`,
+            title: `任务 #${launched.task_ref} · 点开看实时进度`,
+            status: "created",
+          },
+        ]);
+      } catch (error) {
+        getLogger().error("background task notice", error);
+      }
+    }
+    return launched;
+  }
+  if (name === "background_task_status") return backgroundTaskStatus(deps, run, dispatcher, args);
+  if (name === "background_task_message")
+    return backgroundTaskMessage(deps, run, dispatcher, args, effectKey);
+  if (name === "background_task_cancel") return cancelBackgroundTask(deps, run, dispatcher, args);
+  return undefined;
+}

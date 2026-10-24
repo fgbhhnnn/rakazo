@@ -4,7 +4,7 @@ import {
   dispatcherModeEnabled,
   dispatcherTurnMaxMs,
   isDispatcherBot,
-} from "./executor.js";
+} from "./dispatcher-mode.js";
 
 describe("dispatcher mode", () => {
   it("is on unless turned off", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { withoutMessagesOwnedByOtherLiveRuns } from "./executor.js";
+import { withoutMessagesOwnedByOtherLiveRuns } from "./dispatcher-relay.js";
 
 const run = { botId: "main", threadId: "t1" };
 

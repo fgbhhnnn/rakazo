@@ -22,7 +22,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
-import type { createRepos, PrismaClient } from "@rakazo/db";
+import { type createRepos, type PrismaClient, VISIBLE_BOT_WHERE } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   archiveBot,
@@ -214,7 +214,7 @@ describe("spawned bot archival", () => {
       ),
     ).toHaveProperty("error");
     expect(findMany).toHaveBeenCalledWith({
-      where: { userId: "user-1", spaceId: "space-1", id: "outside" },
+      where: { userId: "user-1", spaceId: "space-1", id: "outside", AND: [VISIBLE_BOT_WHERE] },
       take: 2,
     });
   });
@@ -278,7 +278,7 @@ describe("spawned bot archival", () => {
       ),
     ).resolves.toMatchObject({ ok: true, botId: "child-1", name: "Scout" });
     expect(prisma.bot.findMany).toHaveBeenCalledWith({
-      where: { userId: "user-1", spaceId: "workspace-1", id: "child-1" },
+      where: { userId: "user-1", spaceId: "workspace-1", id: "child-1", AND: [VISIBLE_BOT_WHERE] },
       take: 2,
     });
   });

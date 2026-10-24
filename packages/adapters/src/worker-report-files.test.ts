@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseWorkerReportFiles } from "./background-tasks.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
-import { attachWorkerReportFiles, workerReportWorkspacePath } from "./executor.js";
+import { attachWorkerReportFiles, workerReportWorkspacePath } from "./dispatcher-relay.js";
 
 describe("parseWorkerReportFiles", () => {
   it("reads the structured 文件 section", () => {
@@ -89,6 +89,7 @@ describe("attachWorkerReportFiles", () => {
       // biome-ignore lint/suspicious/noExplicitAny: fake context
       context: {} as any,
       alreadyAttached: already,
+      publish: async () => undefined,
     }).catch((error) => error);
     // The worker lookup is scoped to this main bot's workers.
     expect(deps.prisma.bot.findFirst).toHaveBeenCalledWith(
@@ -108,7 +109,7 @@ describe("attachWorkerReportFiles", () => {
   });
   it("skips a file the main bot already attached under another spelling of the same path", async () => {
     const { deps } = base();
-    const { attachedPathKey } = await import("./executor.js");
+    const { attachedPathKey } = await import("./dispatcher-relay.js");
     // The main bot's attach_file used a relative path that resolves into its own directory.
     const already = new Set([
       attachedPathKey(resolveBotWorkspacePath("team", "main", "report.md")),
@@ -135,6 +136,7 @@ describe("attachWorkerReportFiles", () => {
       // biome-ignore lint/suspicious/noExplicitAny: fake context
       context: {} as any,
       alreadyAttached: already,
+      publish: async () => undefined,
     }).catch((error) => error);
     expect(deps.sandbox.readFile).not.toHaveBeenCalled();
   });
@@ -160,6 +162,7 @@ describe("attachWorkerReportFiles", () => {
       // biome-ignore lint/suspicious/noExplicitAny: fake context
       context: {} as any,
       alreadyAttached: new Set(),
+      publish: async () => undefined,
     });
     expect(attached).toEqual([]);
     expect(deps.sandbox.readFile).not.toHaveBeenCalled();
@@ -168,7 +171,7 @@ describe("attachWorkerReportFiles", () => {
 
 describe("workerReportWorkspacePath", () => {
   it("maps the computer's real workspace paths onto the workspace root", async () => {
-    const { workerReportWorkspacePath } = await import("./executor.js");
+    const { workerReportWorkspacePath } = await import("./dispatcher-relay.js");
     expect(workerReportWorkspacePath("/home/user/rakazo-home/bots/w1/report.csv")).toBe(
       "/bots/w1/report.csv",
     );
@@ -180,7 +183,7 @@ describe("workerReportWorkspacePath", () => {
   });
 
   it("skips real paths outside the workspace instead of re-prefixing them", async () => {
-    const { workerReportWorkspacePath } = await import("./executor.js");
+    const { workerReportWorkspacePath } = await import("./dispatcher-relay.js");
     expect(workerReportWorkspacePath("/home/user/jobs/geo-audit/out/report.md")).toBeNull();
     expect(workerReportWorkspacePath("/tmp/out.png")).toBeNull();
     expect(workerReportWorkspacePath("/root/a.csv")).toBeNull();

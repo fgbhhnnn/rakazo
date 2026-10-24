@@ -46,7 +46,6 @@ import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts
 import {
   ATTACHMENT_MAX_BYTES,
   BotSecretName,
-  BUILTIN_TOOL_NAMES,
   botSecretSubmissionSchema,
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
@@ -207,15 +206,8 @@ import {
   resolveAutoReviewProviderKind,
 } from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
-import {
-  BACKGROUND_WORKER_SPAWN_PREFIX,
-  backgroundTaskMessage,
-  backgroundTaskStatus,
-  cancelBackgroundTask,
-  launchBackgroundTask,
-  parseWorkerReportFiles,
-  startQueuedBackgroundTasks,
-} from "./background-tasks.js";
+import { runBackgroundTaskTool } from "./background-task-tools.js";
+import { startQueuedBackgroundTasks } from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import {
@@ -292,6 +284,24 @@ import { connectedContext, selectRunConnections } from "./connection-context.js"
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
+import {
+  applyDispatcherToolPolicy,
+  BACKGROUND_DISPATCH_GUIDANCE,
+  DISPATCHER_RESTART_TRIGGERS,
+  DISPATCHER_TOOL_NAMES,
+  DispatcherTurnTimeout,
+  dispatcherTurnMaxMs,
+  isDispatcherBot,
+  restartDispatcherTurn,
+  SkipComputerLease,
+  STEERING_REPLY_GUIDANCE,
+  startDispatcherWatchdog,
+} from "./dispatcher-mode.js";
+import {
+  attachedPathKey,
+  attachWorkerReportFiles,
+  withoutMessagesOwnedByOtherLiveRuns,
+} from "./dispatcher-relay.js";
 import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
@@ -389,6 +399,7 @@ import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
 import { routineTaskInstructions, tickRoutineWatch } from "./routine-watch.js";
+import { watchRunCancellation } from "./run-cancel-watch.js";
 import { lazyRunComputer } from "./run-computer.js";
 import {
   commitConsumedRunSecret,
@@ -3656,8 +3667,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           select: { spawnKey: true, disabledBuiltinTools: true },
         });
         if (waker && isDispatcherBot(waker)) {
-          const ordered = await waitForEarlierDispatcherTurns(deps.prisma, run);
-          if (!ordered && (await deferDispatcherWake(deps, run))) return;
+          if (await deferDispatcherWake(deps, run)) return;
         }
       }
       let { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
@@ -3863,31 +3873,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
       }, 60_000);
       heartbeat.unref?.();
-      // Stop (the button, or a dispatcher's background_task_cancel) only flips the run to
-      // cancelled. Notice it within seconds even while a tool or MCP call is pending, and
-      // abort the model call and tools instead of waiting for the next event or heartbeat.
-      let cancelCheckBusy = false;
-      const cancelWatch = setInterval(() => {
-        if (runCompleted || cancelCheckBusy) return;
-        cancelCheckBusy = true;
-        void deps.prisma.run
-          .findUnique({ where: { id: runId }, select: { status: true } })
-          .then((current) => {
-            if (runCompleted || current?.status !== "cancelled") return;
-            leaseValid = false;
-            runAbortController?.abort();
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            cancelCheckBusy = false;
-          });
-      }, runCancelPollMs());
-      cancelWatch.unref?.();
+      const stopCancelWatch = watchRunCancellation(deps.prisma, runId, {
+        done: () => runCompleted,
+        onCancelled: () => {
+          leaseValid = false;
+          runAbortController?.abort();
+        },
+      });
       const stopHeartbeatAfterCompletion = () => {
         runCompleted = true;
         dispatcherWatchdogClear?.();
         clearInterval(heartbeat);
-        clearInterval(cancelWatch);
+        stopCancelWatch();
       };
 
       const runSecrets = [...deps.secrets];
@@ -4006,18 +4003,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
-        // Watchdog: a dispatcher turn only talks and dispatches, so one that runs long has a
-        // hung model call. Abort it so the thread is free for the next message.
         if (dispatcherTurn) {
-          const controller = runAbortController;
-          const watchdog = setTimeout(() => {
+          dispatcherWatchdogClear = startDispatcherWatchdog(runAbortController, () => {
             dispatcherWatchdogFired = true;
-            controller.abort(new DispatcherTurnTimeout(dispatcherTurnMaxMs()));
-          }, dispatcherTurnMaxMs());
-          watchdog.unref?.();
-          controller.signal.addEventListener("abort", () => clearTimeout(watchdog));
-          const clearWatchdog = () => clearTimeout(watchdog);
-          dispatcherWatchdogClear = clearWatchdog;
+          });
         }
         if (deps.shutdownSignal?.aborted) runAbortController.abort(deps.shutdownSignal.reason);
         const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
@@ -4456,21 +4445,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
         ];
-        // Dispatcher mode: a user's bot (never a hidden worker) that can dispatch only talks and
-        // delegates. Every work tool (shell, computer, browser, files, generation, web, MCP and
-        // plugin tools...) is withheld from the main run and refused if called, so new
-        // messages always get a short, real reply and stop cancels only workers.
-        const dispatcherRun = Boolean(deps.dispatcherMode) && isDispatcherBot(bot);
-        if (isHiddenBot(bot)) {
-          // Workers do the work themselves and never dispatch further workers.
-          for (const name of DISPATCH_ONLY_TOOL_NAMES) disabledBuiltinTools.add(name);
-        }
-        if (dispatcherRun) {
-          for (const tool of builtinAgentTools) {
-            if (!DISPATCHER_TOOL_NAMES.has(tool.name)) disabledBuiltinTools.add(tool.name);
-          }
-          for (const tool of agentConnectionTools) disabledBuiltinTools.add(tool.name);
-        }
+        // Dispatcher bots only talk and delegate; hidden workers never dispatch further.
+        const dispatcherRun = applyDispatcherToolPolicy(
+          deps.dispatcherMode,
+          bot,
+          disabledBuiltinTools,
+          [...builtinAgentTools, ...agentConnectionTools],
+        );
         const exposedConnectorTools = dispatcherRun
           ? []
           : discovered.filter(
@@ -7520,44 +7501,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
           }
           if (name.startsWith("background_task")) {
-            const dispatchRun = { ...run, sourceMessageId: run.sourceMessageId };
-            const dispatcher = { id: bot.id, name: bot.name, computerId: bot.computerId };
-            if (name === "background_task") {
-              const attachments = dispatcherTaskAttachments(
-                turnBlocks ?? [],
-                ...steeringTurnBlocks,
-                recentAttachmentBlocks(history, historyMessages, recentFilesInput),
-              );
-              const launched = await launchBackgroundTask(deps, dispatchRun, dispatcher, args, {
-                builtinToolNames: BUILTIN_TOOL_NAMES,
-                deliveryKey: effectKey,
-                attachments,
-              });
-              if ("task_ref" in launched && "worker_id" in launched && launched.worker_id) {
-                try {
-                  await publishMessage(deps, run, "bot", [
-                    {
-                      kind: "child_bot",
-                      botId: launched.worker_id,
-                      name: `后台任务：${launched.name} #${launched.task_ref}`,
-                      title: `任务 #${launched.task_ref} · 点开看实时进度`,
-                      status: "created",
-                    },
-                  ]);
-                } catch (error) {
-                  getLogger().error("background task notice", error);
-                }
-              }
-              return finish(launched);
-            }
-            if (name === "background_task_status")
-              return finish(await backgroundTaskStatus(deps, dispatchRun, dispatcher, args));
-            if (name === "background_task_message")
-              return finish(
-                await backgroundTaskMessage(deps, dispatchRun, dispatcher, args, effectKey),
-              );
-            if (name === "background_task_cancel")
-              return finish(await cancelBackgroundTask(deps, dispatchRun, dispatcher, args));
+            const result = await runBackgroundTaskTool(deps, name, args, {
+              run,
+              dispatcher: { id: bot.id, name: bot.name, computerId: bot.computerId },
+              effectKey,
+              attachments: () =>
+                dispatcherTaskAttachments(
+                  turnBlocks ?? [],
+                  ...steeringTurnBlocks,
+                  recentAttachmentBlocks(history, historyMessages, recentFilesInput),
+                ),
+              publish: (blocks) => publishMessage(deps, run, "bot", blocks),
+            });
+            if (result !== undefined) return finish(result);
           }
           if (name === "message_bot") {
             const sent = await messageBot(
@@ -8684,6 +8640,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               readComputer: () => getRunComputer("tool", "attach_file"),
               context,
               alreadyAttached: attachedFilePaths,
+              publish: (blocks) => publishMessage(deps, run, "bot", blocks),
             }).catch((error) => getLogger().error("worker report attach", error));
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
@@ -8945,7 +8902,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
         detachShutdown?.();
         clearInterval(heartbeat);
-        clearInterval(cancelWatch);
+        stopCancelWatch();
         if (!retainComputerLease) {
           if (screenRelease) {
             const releaseContext = screenRelease.keepWarm
@@ -9845,177 +9802,6 @@ export function mayOpenModelStream(
 
 export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply, stripStrayNoResponse };
 
-/** How often a running run checks whether it was stopped. RAKAZO_RUN_CANCEL_POLL_MS overrides. */
-/** Longest a dispatcher's main turn may run (RAKAZO_DISPATCHER_TURN_MAX_MS, default 90 s). */
-/** Thrown into a dispatcher turn that ran past its watchdog. */
-export class DispatcherTurnTimeout extends Error {
-  constructor(ms: number) {
-    super(`The reply took longer than ${Math.round(ms / 1000)} s and was stopped.`);
-    this.name = "DispatcherTurnTimeout";
-  }
-}
-
-/** Triggers whose main turn is a reply to a person, so a hung turn is restarted for them. */
-const DISPATCHER_RESTART_TRIGGERS = new Set(["user", "follow_up", "messaging", "bot_message"]);
-export const DISPATCHER_MAX_RESTARTS = 2;
-
-/**
- * Start a fresh main turn after the watchdog stopped one: steering the stopped turn had taken is
- * released so the new turn answers the latest messages. Restarts chain through retryOfRunId, so
- * a turn that keeps hanging stops after DISPATCHER_MAX_RESTARTS. Returns whether one was queued.
- */
-async function restartDispatcherTurn(
-  deps: ExecutorDeps,
-  failed: {
-    id: string;
-    spaceId: string;
-    botId: string;
-    threadId: string;
-    taskId: string;
-    userId: string;
-    trigger: string;
-    sourceMessageId: string | null;
-  },
-  continuationQueued: boolean,
-): Promise<boolean> {
-  let depth = 0;
-  let cursor: string | null = failed.id;
-  while (cursor && depth <= DISPATCHER_MAX_RESTARTS) {
-    const row: { retryOfRunId: string | null } | null = await deps.prisma.run.findUnique({
-      where: { id: cursor },
-      select: { retryOfRunId: true },
-    });
-    cursor = row?.retryOfRunId ?? null;
-    if (cursor) depth += 1;
-  }
-  if (depth >= DISPATCHER_MAX_RESTARTS) return false;
-  const task = await deps.prisma.task.findUnique({
-    where: { id: failed.taskId },
-    select: { prompt: true },
-  });
-  if (!task) return false;
-  const queued = await deps.prisma.$transaction(async (tx) => {
-    await tx.steeringMessage.updateMany({ where: { runId: failed.id }, data: { runId: null } });
-    // A continuation already queued for newer messages answers them; it sees the stopped
-    // turn's messages too now that their claim is released.
-    if (continuationQueued) return null;
-    const retryTask = await tx.task.create({
-      data: {
-        spaceId: failed.spaceId,
-        botId: failed.botId,
-        threadId: failed.threadId,
-        userId: failed.userId,
-        prompt: task.prompt,
-        status: "queued",
-      },
-    });
-    return tx.run.create({
-      data: {
-        spaceId: failed.spaceId,
-        botId: failed.botId,
-        threadId: failed.threadId,
-        taskId: retryTask.id,
-        userId: failed.userId,
-        status: "queued",
-        trigger: failed.trigger,
-        sourceMessageId: failed.sourceMessageId,
-        retryOfRunId: failed.id,
-      },
-      select: { id: true },
-    });
-  });
-  if (queued) await deps.jobs.enqueue(runContinueJob(queued.id));
-  return true;
-}
-
-export function dispatcherTurnMaxMs(env: Record<string, string | undefined> = process.env): number {
-  const parsed = Number(env.RAKAZO_DISPATCHER_TURN_MAX_MS);
-  return Number.isFinite(parsed) && parsed >= 5_000 ? Math.floor(parsed) : 90_000;
-}
-
-/** RAKAZO_DISPATCHER_MODE=0 turns dispatcher mode off; it is on otherwise. */
-export function dispatcherModeEnabled(env: Record<string, string | undefined> = process.env) {
-  return !["0", "false", "off"].includes((env.RAKAZO_DISPATCHER_MODE ?? "").trim().toLowerCase());
-}
-
-export function runCancelPollMs(env: Record<string, string | undefined> = process.env): number {
-  const parsed = Number(env.RAKAZO_RUN_CANCEL_POLL_MS);
-  return Number.isFinite(parsed) && parsed >= 200 ? Math.floor(parsed) : 2_000;
-}
-
-/**
- * Tools a dispatcher's main run keeps: talk, dispatch/steer/check/cancel workers, and relay
- * their results. Everything that is work runs in a background worker.
- */
-export const DISPATCHER_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "message_user",
-  "ask_user",
-  "end_call",
-  "background_task",
-  "background_task_status",
-  "background_task_message",
-  "background_task_cancel",
-  "attach_file",
-]);
-
-const DISPATCH_ONLY_TOOL_NAMES = [
-  "background_task",
-  "background_task_status",
-  "background_task_message",
-  "background_task_cancel",
-] as const;
-
-class SkipComputerLease extends Error {}
-
-const DISPATCHER_WAKE_POLL_MS = 400;
-
-/**
- * Waits until no other turn of this bot in this chat is running and no earlier queued wake is
- * pending. Bounded by the dispatcher turn limit, so a lost job never blocks a wake forever.
- */
-export async function waitForEarlierDispatcherTurns(
-  prisma: Pick<ExecutorDeps["prisma"], "run">,
-  run: { id: string; botId: string; threadId: string; createdAt: Date },
-  options: { maxWaitMs?: number; pollMs?: number; sleep?: (ms: number) => Promise<void> } = {},
-): Promise<boolean> {
-  const maxWaitMs = options.maxWaitMs ?? dispatcherTurnMaxMs();
-  const pollMs = options.pollMs ?? DISPATCHER_WAKE_POLL_MS;
-  const sleep = options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
-  const deadline = Date.now() + maxWaitMs;
-  for (;;) {
-    const earlier = await prisma.run.findFirst({
-      where: {
-        id: { not: run.id },
-        botId: run.botId,
-        threadId: run.threadId,
-        OR: [
-          { status: { in: ["leased", "running"] } },
-          { status: "queued", trigger: "bot_message", createdAt: { lt: run.createdAt } },
-        ],
-      },
-      select: { id: true },
-    });
-    if (!earlier) return true;
-    if (Date.now() >= deadline) return false;
-    await sleep(pollMs);
-  }
-}
-
-/** A user's own bot that can dispatch (background_task not disabled); workers never dispatch. */
-export function isDispatcherBot(bot: {
-  spawnKey?: string | null;
-  disabledBuiltinTools?: readonly string[] | null;
-}): boolean {
-  return !isHiddenBot(bot) && !(bot.disabledBuiltinTools ?? []).includes("background_task");
-}
-
-/** Keeps the bot a dispatcher: heavy work goes to background workers so the chat stays responsive. */
-export const BACKGROUND_DISPATCH_GUIDANCE =
-  'You are a dispatcher: you talk with the user and run background workers; you have no work tools. Every task that is work (images, video, code, shell, web search or research, files, computer or browser, apps and plugins, anything beyond a chat answer from your own knowledge) goes to background_task. Pure chat questions you answer directly. After a tool call, continue from where your text left off; never restate or reword an answer you already wrote earlier in this reply (write the answer once; if you need a tool first, call it before answering). Send a worker the same note at most once per turn. Never tell the user that something will run or is running in the background unless you called background_task (or background_task_message) for it in this same turn; if the user asks you to do work yourself or "in the foreground" (for example a shell command), you still cannot, so start a worker for it and say so. A main turn is short: reply in a sentence or two, call background_task (one per independent task, several may run in parallel), then end the turn, so every new user message gets a reply within seconds. Read all new user messages before acting: if a later message shows the user no longer wants an earlier request (judge the intent yourself, in any wording), do not start it; if a worker is already running it, call background_task_cancel (the matching task_id, or "all" when the user means everything) and confirm only what the tool reports was stopped. To stop or change one task the user describes, match it with background_task_status and act on that task_id only. Never claim from memory whether a task is running, queued or finished: call background_task_status first and report what it returns. Never say work is done, generated or ready (e.g. "已经生成了") until the worker result message has arrived or background_task_status shows it completed; before that, say it is running or queued. When woken by a worker result, relay only the result(s) in this wake message; do not repeat results you already relayed earlier in this chat, and do not contradict them. Before starting a new background_task while workers exist, check background_task_status and judge for yourself whether the new request is a follow-up, correction or change to a running or recently finished task (e.g. "配音换成男声", "改成竖屏" after a video task): if so, send it to that task_id with background_task_message (an idle worker resumes with its earlier context) instead of starting a new worker. Judge relatedness by meaning, not by wording or by which worker happens to be idle: a request about a different subject or deliverable is unrelated work and gets a new background_task, even when a worker is idle; when unsure, start a new background_task. Usually 1-2 workers are enough. When you mention a task to the user, call it by its name and #ref (e.g. \u201c生成封面 #AB12CD34\u201d), never by a worker slot name such as \u201c后台1\u201d. Shell commands with $?, $#, $$ or $! are allowed; do not warn the user that they may be blocked. If a worker reports a failure (for example a provider error), call background_task_status before retrying and relaunch only if that task is not still running or queued; never start a second copy. If background_task returns status "queued", tell the user truthfully it is queued and its position (e.g. "已排队，第 1 位"), not that it started; it starts automatically when a worker frees up. Do not wait or poll; each worker\'s result wakes you as a message. Always answer that wake in the same turn with a message to the user (never stay silent, even if it failed or was cancelled): relay the actual result content itself (the list, answer, text or numbers the worker reported), not a promise like "我先把文件发给你", and never hand the work back to the worker just to send or format what it already reported. Files in the report "文件：" section are attached to your reply automatically; call attach_file only for other image, video or file paths the report mentions.';
-/** Mid-run user messages get an acknowledgement before the bot goes back to work. */
-export const STEERING_REPLY_GUIDANCE =
-  "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";
-
 export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
   return `Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
 }
@@ -10286,152 +10072,6 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
 
 function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
-}
-
-/**
- * A worker's report lists its output files ("文件：" section). The main bot's wake turn attaches
- * them itself, from the worker's workspace, so the user gets the files with the relay instead of
- * a promise and a second hand-off. Paths the model already attached this run are skipped.
- */
-/**
- * Several main turns of one bot can be live at once (a user turn plus wake turns for worker
- * results that land together). Each used to read the whole thread and answer every pending
- * message, so the user got the same answer two or three times. A user-side message that belongs
- * to another queued or running turn of this bot is that turn's to answer, so it is left out here.
- */
-export async function withoutMessagesOwnedByOtherLiveRuns<
-  M extends { role: string; runId: string | null },
->(
-  prisma: Pick<ExecutorDeps["prisma"], "run">,
-  run: { botId: string; threadId: string },
-  runId: string,
-  messages: M[],
-): Promise<M[]> {
-  const owners = [
-    ...new Set(
-      messages
-        .filter((message) => message.role === "user" && message.runId && message.runId !== runId)
-        .map((message) => message.runId as string),
-    ),
-  ];
-  if (!owners.length || typeof prisma.run?.findMany !== "function") return messages;
-  const live = await prisma.run.findMany({
-    where: {
-      id: { in: owners },
-      botId: run.botId,
-      threadId: run.threadId,
-      status: { in: ["queued", "running"] },
-    },
-    select: { id: true },
-  });
-  if (!live?.length) return messages;
-  const liveIds = new Set(live.map((row) => row.id));
-  return messages.filter(
-    (message) => !(message.role === "user" && message.runId && liveIds.has(message.runId)),
-  );
-}
-
-/**
- * Workers list real absolute paths (they confirm them with realpath), such as
- * /home/user/rakazo-home/bots/<id>/out.csv. Workspace tools treat "/" as the workspace root, so
- * the computer's real workspace prefix is removed; "~/" paths are workspace-relative.
- */
-const OUTSIDE_WORKSPACE_ROOTS =
-  /^\/(?:home|root|tmp|var|etc|opt|usr|mnt|media|srv|data|private|Users|Volumes)(?:\/|$)/;
-
-/** Key for "this file was already attached in this turn", independent of a leading slash. */
-export function attachedPathKey(resolvedPath: string): string {
-  return `resolved:${resolvedPath.replace(/^\/+/, "")}`;
-}
-
-export function workerReportWorkspacePath(file: string): string | null {
-  if (/^[A-Za-z]:[\\/]/.test(file)) return null; // Windows host path: not in the workspace
-  if (file.startsWith("~/")) return file.slice(2);
-  const match = /^\/(?:[^/]+\/)*?rakazo-home(?:\/(.*))?$/.exec(file);
-  if (match) return `/${match[1] ?? ""}`;
-  // A real path outside the workspace (the shell's own home, /tmp, ...). Computer file reads are
-  // confined to the workspace, so prefixing it would name a file that does not exist; skip it.
-  if (OUTSIDE_WORKSPACE_ROOTS.test(file)) return null;
-  // Otherwise "/" is the workspace root (e.g. /bots/<id>/out.csv, /shared/a.png).
-  return file;
-}
-
-export async function attachWorkerReportFiles(input: {
-  deps: ExecutorDeps;
-  run: {
-    id: string;
-    spaceId: string;
-    threadId: string;
-    botId: string;
-    userId: string;
-    trigger: string;
-  };
-  bot: { id: string };
-  threadGroupId?: string;
-  report: { fromBotId: string; text: string };
-  computerMode: ReturnType<typeof parseComputerMode>;
-  readComputer: () => Promise<Parameters<ExecutorDeps["sandbox"]["readFile"]>[0]>;
-  context: Parameters<ExecutorDeps["sandbox"]["readFile"]>[2];
-  alreadyAttached: Set<string>;
-}): Promise<string[]> {
-  const { deps, run } = input;
-  if (!deps.artifacts) return [];
-  const files = parseWorkerReportFiles(input.report.text).filter(
-    (file) => !input.alreadyAttached.has(file),
-  );
-  if (!files.length) return [];
-  const worker = await deps.prisma.bot.findFirst({
-    where: {
-      id: input.report.fromBotId,
-      spawnKey: { startsWith: `${BACKGROUND_WORKER_SPAWN_PREFIX}${input.bot.id}:` },
-    },
-    select: { id: true },
-  });
-  if (!worker) return [];
-  const computer = await input.readComputer();
-  const attached: string[] = [];
-  for (const [index, file] of files.entries()) {
-    const mimeType = inferAttachmentMimeType(file);
-    if (!mimeType) continue;
-    const relative = workerReportWorkspacePath(file);
-    if (relative === null) {
-      getLogger().warn("worker report file not attached: path is outside the computer workspace");
-      continue;
-    }
-    const resolved = resolveBotWorkspacePath(input.computerMode, worker.id, relative);
-    if (input.alreadyAttached.has(attachedPathKey(resolved))) continue;
-    try {
-      const bytes = await deps.sandbox.readFile(computer, resolved, input.context, {
-        maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
-      });
-      const result = await attachWorkspaceFileToThread(
-        {
-          prisma: deps.prisma,
-          artifacts: deps.artifacts,
-          maxUploadSizeBytes: deps.maxUploadSizeBytes,
-        },
-        {
-          spaceId: run.spaceId,
-          userId: run.userId,
-          botId: input.bot.id,
-          groupId: input.threadGroupId,
-          runId: run.id,
-          filePath: file,
-          bytes,
-          operationId: `${run.id}:worker-file:${index}`,
-        },
-      );
-      await publishMessage(deps, run, "bot", [result.block]);
-      input.alreadyAttached.add(file);
-      input.alreadyAttached.add(attachedPathKey(resolved));
-      attached.push(file);
-    } catch (error) {
-      getLogger().warn(
-        `worker report file not attached: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-  return attached;
 }
 
 async function publishMessage(

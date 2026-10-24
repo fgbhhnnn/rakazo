@@ -462,7 +462,6 @@ services:
     environment:
       <<: *app-environment
       GRAPHILE_WORKER_CONCURRENCY:
-      GRAPHILE_RESERVED_CONCURRENCY:
     volumes:
       - appdata:/data
     networks:

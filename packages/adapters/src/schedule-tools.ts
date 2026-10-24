@@ -10,6 +10,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 
+import { deploymentTimeZone } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
@@ -207,7 +208,9 @@ export interface ScheduleToolDeps {
 export async function userTimeZone(prisma: PrismaClient, userId: string): Promise<string> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
   const timezone = user?.timezone;
-  return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
+  return timezone && TimeZoneSchema.safeParse(timezone).success
+    ? timezone
+    : (deploymentTimeZone() ?? "UTC");
 }
 
 /** Persist and enqueue a bot routine that wakes in the originating thread. */

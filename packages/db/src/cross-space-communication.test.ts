@@ -47,6 +47,15 @@ describe("cross-space bot communication", () => {
       ],
       allowed: true,
     },
+    {
+      // Background workers are hidden child bots of the dispatcher in its own space.
+      name: "dispatcher and its hidden worker",
+      bots: [
+        { ...sender, crossSpaceCommunication: false },
+        { ...recipient, id: "worker", spaceId: sender.spaceId, crossSpaceCommunication: false },
+      ],
+      allowed: true,
+    },
   ])("$name", async ({ bots, allowed }) => {
     const prisma = { $queryRaw: vi.fn(async () => bots) };
     expect(

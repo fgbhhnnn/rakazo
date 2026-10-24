@@ -886,6 +886,10 @@ msgstr "戻る"
 msgid "Back to sign in"
 msgstr "ログインに戻る"
 
+#: src/pages/shell/transcript.tsx
+msgid "Background tasks running ({count})"
+msgstr "バックグラウンドタスク実行中（{count}）"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "バックアップモデル"
@@ -1333,6 +1337,10 @@ msgstr "コンパクト"
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
 msgstr "完了"
+
+#: src/pages/Auth.tsx
+msgid "Complete the security check first"
+msgstr "先にセキュリティチェックを完了してください"
 
 #: src/components/SubagentCard.tsx
 msgid "Completed"
@@ -2254,7 +2262,7 @@ msgstr "{disconnectName}を切断しますか？"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect Self-hosted"
-msgstr ""
+msgstr "セルフホストを切断"
 
 #. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
@@ -3029,6 +3037,7 @@ msgstr "ルールを読み込み中…"
 msgid "Loading voice providers…"
 msgstr "音声プロバイダーを読み込み中…"
 
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
@@ -3164,6 +3173,14 @@ msgstr "メンバー"
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
 msgstr "メンバー（{0}）"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members and sign-up"
+msgstr "メンバーとサインアップ"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members without their own model or voice use my defaults"
+msgstr "独自のモデルや音声を設定していないメンバーは、私のデフォルトを使用します"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3657,6 +3674,10 @@ msgstr "1回限りの購入です。クレジットは失効しません。"
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr "削除できるのは空のスペースのみです。先にボットとグループを削除してください。"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
+msgstr "モデル、音声、MCPサーバーは私だけが管理します（メンバーは私の設定を使用し、変更できません）"
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -4204,6 +4225,10 @@ msgstr "{0}に返信中"
 msgid "Request a new code"
 msgstr "新しいコードをリクエスト"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Require a Cloudflare Turnstile check to create an account"
+msgstr "アカウント作成時にCloudflare Turnstileによるチェックを必須にする"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr "リサーチと執筆"
@@ -4380,6 +4405,10 @@ msgstr "保存"
 msgid "Save credential"
 msgstr "認証情報を保存"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Save keys"
+msgstr "キーを保存"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr "新しい値を保存"
@@ -4394,10 +4423,15 @@ msgstr "ワークスペースを保存して、最新のソフトウェアをイ
 msgid "Saved"
 msgstr "保存しました"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Saved — enter to replace"
+msgstr "保存済み — 置き換えるには入力してください"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "保存しましたが、一覧を更新できませんでした"
 
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "保存しました。"
@@ -4789,7 +4823,6 @@ msgstr "ステータス"
 msgid "Steps"
 msgstr "手順"
 
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5156,6 +5189,14 @@ msgstr "再試行"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "もう一度テストしてください。"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile secret key"
+msgstr "Turnstileシークレットキー"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile site key"
+msgstr "Turnstileサイトキー"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"

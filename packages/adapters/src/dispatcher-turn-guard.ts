@@ -2,24 +2,37 @@ import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { dispatcherTurnMaxMs } from "./dispatcher-mode.js";
 
 const DISPATCHER_WAKE_DEFER_MS = 3_000;
 
 type TurnRun = { id: string; botId: string; threadId: string; createdAt: Date };
 
-/** Whether an earlier main turn of this chat is still alive: a live lease, or queued before us. */
+/**
+ * Wakes for one chat run one at a time, oldest first, so each turn sees the relays already
+ * written. The run dispatcher must never block on this (a waiting wake would hold a dispatch
+ * slot), so a blocked wake is re-queued a few seconds out instead of polled in place.
+ *
+ * Within the dispatcher turn limit of the wake's age, any earlier turn that is leased or running
+ * blocks it, as does an earlier queued wake. After that only a live lease or an earlier queued
+ * wake does: a turn whose lease expired is dead and the dispatcher recovers it on its own.
+ */
 export async function earlierDispatcherTurnAlive(
   prisma: Pick<PrismaClient, "run">,
   run: TurnRun,
-  now = new Date(),
+  options: { now?: Date; patientMs?: number } = {},
 ): Promise<boolean> {
+  const now = options.now ?? new Date();
+  const patient = now.getTime() - run.createdAt.getTime() < (options.patientMs ?? 0);
   const alive = await prisma.run.findFirst({
     where: {
       id: { not: run.id },
       botId: run.botId,
       threadId: run.threadId,
       OR: [
-        { status: { in: ["leased", "running"] }, leaseExpiresAt: { gt: now } },
+        patient
+          ? { status: { in: ["leased", "running"] } }
+          : { status: { in: ["leased", "running"] }, leaseExpiresAt: { gt: now } },
         { status: "queued", trigger: "bot_message", createdAt: { lt: run.createdAt } },
       ],
     },
@@ -28,17 +41,13 @@ export async function earlierDispatcherTurnAlive(
   return Boolean(alive);
 }
 
-/**
- * Called when a dispatcher wake is still blocked after waiting for earlier turns. If an earlier
- * turn is alive, the wake is re-enqueued shortly instead of running two main turns side by side
- * (returns true: the caller stops). A turn whose lease expired is dead; the reconciler recovers
- * it and this wake proceeds (returns false).
- */
+/** Re-queues a dispatcher wake behind an earlier live turn of its chat; true means "stop here". */
 export async function deferDispatcherWake(
   deps: { prisma: Pick<PrismaClient, "run">; jobs: JobPublisher },
   run: TurnRun,
+  patientMs = dispatcherTurnMaxMs(),
 ): Promise<boolean> {
-  if (!(await earlierDispatcherTurnAlive(deps.prisma, run))) return false;
+  if (!(await earlierDispatcherTurnAlive(deps.prisma, run, { patientMs }))) return false;
   await deps.jobs.enqueue({
     ...runContinueJob(run.id),
     availableAt: new Date(Date.now() + DISPATCHER_WAKE_DEFER_MS),
