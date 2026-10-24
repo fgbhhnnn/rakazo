@@ -156,6 +156,7 @@ describe("mobile i18n", () => {
       "This model's context window is too small. Choose another model.",
       "{provider} took too long to respond. Try again.",
       "{provider} is overloaded right now. Try again in a moment.",
+      "{provider} couldn't be reached. Check that it's running.",
       "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
 
       EMPTY_PLUGIN_CATALOG_MESSAGE,

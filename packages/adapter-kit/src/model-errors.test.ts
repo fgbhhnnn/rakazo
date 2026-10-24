@@ -9,6 +9,10 @@ describe("transient model errors", () => {
     ],
     ["overloaded status", "529 overloaded_error: Overloaded"],
     [
+      "provider concurrency limit",
+      "ResourceExhausted: Worker local total request limit reached (16/16)",
+    ],
+    [
       "rate limit",
       "429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit",
     ],

@@ -199,6 +199,11 @@ msgstr "{provider} could not find the requested model."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} couldn't be reached. Check that it's running."
+msgstr "{provider} couldn't be reached. Check that it's running."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} denied access to this model."
 msgstr "{provider} denied access to this model."
 

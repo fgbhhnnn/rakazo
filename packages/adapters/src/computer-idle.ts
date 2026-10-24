@@ -25,6 +25,12 @@ export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
  * COMPUTER_MAX_ACTIVE_MS configures the limit; 0 disables it.
  */
 export const DEFAULT_COMPUTER_MAX_ACTIVE_MS = 2 * 60 * 60 * 1000;
+/**
+ * How long a run waiting for takeover keeps a computer that does not bill while running awake
+ * after asking, so the user can answer the push and finish a login, Duo, or CAPTCHA step on the
+ * same open page. Billed computers get no grace: an ignored request would keep them running.
+ */
+export const TAKEOVER_IDLE_GRACE_MS = 30 * 60 * 1000;
 const EXECUTING_RUN_STATUSES = ["leased", "running"] as const;
 const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
@@ -199,9 +205,16 @@ export function computerIdleSleepEnabled(): boolean {
   return process.env.SANDBOX_IDLE_MS?.trim() !== "0";
 }
 
-export function scheduleComputerSleep(jobs: JobPublisher, computerId: string): void {
+export function scheduleComputerSleep(
+  jobs: JobPublisher,
+  computerId: string,
+  notAfter?: Date,
+): void {
   if (!computerId || !computerIdleSleepEnabled()) return;
-  void jobs.enqueue(computerSleepJob(computerId, new Date(Date.now() + sandboxIdleMs())));
+  const at = Date.now() + sandboxIdleMs();
+  void jobs.enqueue(
+    computerSleepJob(computerId, new Date(notAfter ? Math.min(at, notAfter.getTime()) : at)),
+  );
 }
 
 function activeLimitReached(
@@ -283,6 +296,7 @@ export async function sleepComputerIfIdle(
   // Past the lifetime limit only a run executing right now holds the computer up; waiting
   // runs and background work start it again when they next need it. A user in control is
   // left alone: control leases expire on their own, and that release resumes the waiting run.
+  // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
   const activeControl = hasActiveComputerControl(computer);
   const limitReached =
     activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl;
@@ -296,8 +310,15 @@ export async function sleepComputerIfIdle(
     limitReached
       ? Promise.resolve(false)
       : hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId);
-  if ((await runHolds()) || (await backgroundHolds())) {
-    scheduleComputerSleep(deps.jobs, computerId);
+  const graceEndsAt = () =>
+    activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
+      ? Promise.resolve(null)
+      : takeoverGraceEndsAt(deps.prisma, computerId);
+  const runHeld = Boolean(await runHolds());
+  const takeoverHeldUntil = runHeld ? null : await graceEndsAt();
+  if (runHeld || takeoverHeldUntil || (await backgroundHolds())) {
+    // Recheck when the takeover grace ends so the computer sleeps on time.
+    scheduleComputerSleep(deps.jobs, computerId, takeoverHeldUntil ?? undefined);
     try {
       await deps.sandbox.keepAlive?.(ref);
     } catch (error) {
@@ -389,20 +410,26 @@ export async function sleepComputerIfIdle(
     throw error;
   }
 
-  const [current, activeAfterCheckpoint, backgroundAfterCheckpoint] = await Promise.all([
-    deps.prisma.computer.findUnique({
-      where: { id: computerId },
-      select: { state: true, providerRef: true, updatedAt: true },
-    }),
-    runHolds(),
-    backgroundHolds(),
-  ]);
-  if (activeAfterCheckpoint || backgroundAfterCheckpoint) {
+  const [current, activeAfterCheckpoint, takeoverAfterCheckpoint, backgroundAfterCheckpoint] =
+    await Promise.all([
+      deps.prisma.computer.findUnique({
+        where: { id: computerId },
+        select: { state: true, providerRef: true, updatedAt: true },
+      }),
+      runHolds(),
+      graceEndsAt(),
+      backgroundHolds(),
+    ]);
+  if (activeAfterCheckpoint || takeoverAfterCheckpoint || backgroundAfterCheckpoint) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
       data: { state: "running" },
     });
-    scheduleComputerSleep(deps.jobs, computerId);
+    scheduleComputerSleep(
+      deps.jobs,
+      computerId,
+      activeAfterCheckpoint ? undefined : (takeoverAfterCheckpoint ?? undefined),
+    );
     if (backgroundAfterCheckpoint) await deps.sandbox.keepAlive?.(ref);
     return;
   }
@@ -503,6 +530,25 @@ function findActiveRun(
     },
     select: { id: true },
   });
+}
+
+/** When the newest takeover request of a run still waiting on this computer stops holding it. */
+async function takeoverGraceEndsAt(prisma: PrismaClient, computerId: string): Promise<Date | null> {
+  const waiting = await prisma.run.findMany({
+    where: { bot: { computerId }, status: "waiting_takeover" },
+    select: { id: true },
+  });
+  if (waiting.length === 0) return null;
+  const requested = await prisma.event.findFirst({
+    where: {
+      runId: { in: waiting.map((run) => run.id) },
+      type: "computer.takeover.requested",
+      createdAt: { gt: new Date(Date.now() - TAKEOVER_IDLE_GRACE_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  return requested ? new Date(requested.createdAt.getTime() + TAKEOVER_IDLE_GRACE_MS) : null;
 }
 
 async function hasActiveBackgroundWork(

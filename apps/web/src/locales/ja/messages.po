@@ -199,6 +199,11 @@ msgstr "{provider}で指定されたモデルが見つかりませんでした�
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} couldn't be reached. Check that it's running."
+msgstr "{provider}に接続できませんでした。起動しているか確認してください。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} denied access to this model."
 msgstr "{provider}がこのモデルへのアクセスを拒否しました。"
 

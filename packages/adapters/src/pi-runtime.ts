@@ -51,6 +51,7 @@ import {
   MODEL_OUTPUT_LIMIT_ERROR,
   modelFallbackFailure,
   normalizeRunError,
+  parseModelFallbackFailure,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult, uncertainEffectResult } from "./approval-effect.js";
@@ -2535,13 +2536,31 @@ function looksLikeOpenCodeSessionError(message: string): boolean {
  * unusable output, is not a server fault. Anything it cannot place stays a plain error.
  */
 function modelFailure(error: string, message: string): Error {
+  // When every model failed, the run is only as clear as its least explained failure: an
+  // unexplained part stays a server error, and a part the user must fix outranks bad output,
+  // which outranks one that clears on its own. Skipped backups never ran, so they do not count.
+  const fallback = parseModelFallbackFailure(message);
+  const failures = fallback
+    ? [
+        fallback.primaryError,
+        ...fallback.backups.filter((item) => item.status === "failed").map((item) => item.reason),
+      ].map((part) => modelFailureClass(part, part))
+    : [modelFailureClass(error, message)];
+  const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? Error;
+  return new Failure(message);
+}
+
+/** Least to most severe; a server fault (plain Error) is last. */
+const MODEL_FAILURE_RANK = [TransientModelError, ModelOutputError, ModelAccountError, Error];
+
+function modelFailureClass(error: string, message: string): number {
   // OpenCode drops chat sessions on its side; the next send opens a new one.
   if (isTransientModelError(error) || message === OPENCODE_SESSION_ERROR)
-    return new TransientModelError(message);
+    return MODEL_FAILURE_RANK.indexOf(TransientModelError);
   const { kind } = normalizeRunError(message);
-  if (kind === "output") return new ModelOutputError(message);
-  if (kind) return new ModelAccountError(message);
-  return new Error(message);
+  if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
+  if (kind) return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
+  return MODEL_FAILURE_RANK.indexOf(Error);
 }
 
 function sanitizeProviderError(provider: string, message: string): string {

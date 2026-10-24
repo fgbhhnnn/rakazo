@@ -127,6 +127,7 @@ import {
   countUnreadInboxChats,
   createSpaceForMember,
   createThreadMessageInTransaction,
+  dropRunTurnCheckpoint,
   effectiveMemoryScope,
   findDefaultModelCredential,
   InstructionConflictError,
@@ -171,12 +172,14 @@ import {
 } from "./agent-environment.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
+import type { ApprovalPausedToolResult } from "./approval-effect.js";
 import {
   approvalPausedToolResult,
   approvalReplayPathError,
   approvalReplayResourceError,
   approvalRoutesMatch,
   approvedCatalogReplay,
+  approvedEffectOccurrence,
   approvedReplayArgs,
   boundDirectApprovalDetails,
   boundDirectApprovalRequest,
@@ -405,6 +408,7 @@ import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
+import { lateRoutineRunInstruction } from "./routine-lateness.js";
 import { routineTaskInstructions, tickRoutineWatch } from "./routine-watch.js";
 import { watchRunCancellation } from "./run-cancel-watch.js";
 import { lazyRunComputer } from "./run-computer.js";
@@ -3798,12 +3802,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         computerLease = null;
       }
       let attempt: { id: string };
+      // Resumed attempts keep the first start, so lateness reflects when the run began.
+      const executionStartedAt = current.startedAt ?? new Date();
       try {
         // Acquiring the computer can requeue a busy run. Count that wait as queue
         // time, and only stamp execution once this attempt can use its computer.
         const executionStarted = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-          data: { startedAt: current.startedAt ?? new Date() },
+          data: { startedAt: executionStartedAt },
         });
         if (executionStarted.count !== 1) {
           await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
@@ -4602,6 +4608,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           checkpointLoadError =
             error instanceof Error ? error : new Error("Unsupported turn checkpoint");
         }
+        let storedTurnCheckpoint = Boolean(turnCheckpoint);
         let runTainted =
           !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
         let earlierAttemptPromise: Promise<boolean> | undefined;
@@ -4629,7 +4636,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const approvedEffects = await deps.prisma.externalEffect.findMany({
           where: { runId, status: "approved" },
           orderBy: APPROVED_EFFECT_REPLAY_ORDER,
-          select: { kind: true, request: true },
+          select: { kind: true, request: true, idempotencyKey: true },
         });
         const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
         const baseComputerInstruction = persistentComputerInstruction({
@@ -4752,6 +4759,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let unchangedVisualStreak: UnchangedVisualStreak = { count: 0 };
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
+        let approvalRequest: Promise<ApprovalPausedToolResult> | undefined;
         const pendingTurnCheckpoints = new Map<string, () => string>();
         const persistTurnCheckpoint = async (executionId?: string) => {
           const capture = executionId ? pendingTurnCheckpoints.get(executionId) : undefined;
@@ -4759,6 +4767,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const saved = JSON.parse(capture());
             saved.effectOccurrences = effectOccurrences;
             await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+            storedTurnCheckpoint = true;
+          } else if (storedTurnCheckpoint) {
+            // Helper calls have no saved turn. An earlier pause's turn must not resume this one.
+            await dropRunTurnCheckpoint(deps.prisma, run, workerId, fence);
+            storedTurnCheckpoint = false;
           }
         };
         let handedOff = false;
@@ -4873,16 +4886,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           toolName: string,
           args: Record<string, unknown>,
           executionId: string,
+          approvedKey?: string,
         ) => {
           const fingerprint = toolEffectIdempotencyKey(runId, toolName, args);
+          const approved = approvedKey
+            ? approvedEffectOccurrence(approvedKey, fingerprint)
+            : undefined;
           const previous = restoredPendingEffect;
           if (previous?.executionId === executionId) {
             restoredPendingEffect = undefined;
-            if (previous.fingerprint === fingerprint) return previous.occurrence;
+            if (previous.fingerprint === fingerprint && approved === undefined)
+              return previous.occurrence;
           }
-          const occurrence = mutatingEffectOccurrences.get(fingerprint) ?? 0;
+          // An approved replay reuses the approved row's occurrence, so it claims that row
+          // even when this call would have counted differently.
+          const occurrence = approved ?? mutatingEffectOccurrences.get(fingerprint) ?? 0;
           effectOccurrences.push({ executionId, fingerprint, occurrence });
-          mutatingEffectOccurrences.set(fingerprint, occurrence + 1);
+          mutatingEffectOccurrences.set(
+            fingerprint,
+            Math.max(mutatingEffectOccurrences.get(fingerprint) ?? 0, occurrence + 1),
+          );
           return occurrence;
         };
 
@@ -5008,6 +5031,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // reconstructs after the worker resumes. This also makes a changed reconstruction
           // hit the already-approved effect instead of creating a second approval card.
           const nextApprovedTool = approvedEffectReplays.nextToolName();
+          let approvedEffectKey: string | undefined;
           const nextApprovedRequest = approvedEffectReplays.nextRequest();
           const liveRoute =
             connectorCall.route?.resourceId &&
@@ -5067,6 +5091,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               CATALOG_APPROVAL_TOOL,
             );
             if (resourceError) return { error: resourceError };
+            approvedEffectKey = approvedEffectReplays.nextIdempotencyKey();
             const approvedRequest = approvedEffectReplays.take(nextApprovedTool)!;
             const approvedCatalog = catalogApprovalDetails(approvedRequest, CATALOG_APPROVAL_TOOL);
             if (approvedCatalog && !catalogRemapped) {
@@ -5313,15 +5338,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const occurrence =
             name === "request_secret" || name === "connect_app"
               ? 0
-              : nextMutatingEffectOccurrence(replayEffectToolName, args, executionId);
+              : nextMutatingEffectOccurrence(
+                  replayEffectToolName,
+                  args,
+                  executionId,
+                  approvedEffectKey,
+                );
+          // An approved replay claims the row the user approved. A derived key can differ
+          // (another call's occurrence count), which would ask again and strand the approval.
           const effectKey =
-            usesApprovalKey && occurrence === 0
+            approvedEffectKey ??
+            (usesApprovalKey && occurrence === 0
               ? approvalEffectKey(runId, replayEffectToolName, args)
-              : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence);
+              : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence));
           // Connector read-only hints must not bypass approval, review, or replay decisions.
           // A fetch to a new site is gated like any action, so it needs an effect to approve.
           const applied =
-            READ_ONLY_AGENT_TOOLS.has(name) && siteGate !== "new" && nextApprovedTool !== name
+            READ_ONLY_AGENT_TOOLS.has(name) &&
+            siteGate !== "new" &&
+            nextApprovedTool !== name &&
+            !approvedEffectKey
               ? undefined
               : await recordEffect(
                   deps,
@@ -5620,7 +5656,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw uncertainEffectError(name);
           };
 
-          const requestApproval = async () => {
+          const showApprovalCard = async () => {
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
               // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
@@ -5665,6 +5701,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
               threadId: thread.id,
             });
             return pauseForApproval();
+          };
+          const requestApproval = () => {
+            // Parallel calls can need approval at once. Only the first saves the turn and shows
+            // its card; the others wait for that pause. Otherwise a later call's save could make
+            // the turn resume a call other than the one the user approved.
+            if (approvalRequest) return approvalRequest.then(() => pauseForApproval());
+            approvalRequest = showApprovalCard();
+            return approvalRequest;
           };
 
           if (applied?.duplicate) {
@@ -7823,6 +7867,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
         // The user's zone, else the Space owner's, else the deployment default; never fails a run.
         const userTimeZone = await resolveRunTimeZone(deps.prisma as never, run);
+        let lateRoutineNote: string | undefined;
+        if (run.trigger === "routine" && run.routineId && run.clientNonce) {
+          try {
+            const routine = await deps.prisma.routine.findUnique({
+              where: { id: run.routineId },
+              select: { crons: true, timezone: true },
+            });
+            if (routine)
+              lateRoutineNote = lateRoutineRunInstruction(run, routine, executionStartedAt);
+          } catch {
+            // Lateness is optional context; a lookup failure must not prevent a run.
+          }
+        }
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
@@ -7832,6 +7889,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
           formatCurrentTimeInstruction(new Date(), userTimeZone),
+          lateRoutineNote,
         ]
           .filter(Boolean)
           .join("\n\n");
@@ -8814,11 +8872,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (
             error instanceof TransientModelError ||
             error instanceof ModelAccountError ||
-            error instanceof ModelOutputError
+            error instanceof ModelOutputError ||
+            error instanceof SandboxRateLimitError
           ) {
             // Provider outages that outlasted retries, provider accounts, plans and model
-            // choices the user fixes, and unusable model output are not server faults; the
-            // run error already tells the user what to do.
+            // choices the user fixes, unusable model output and the computer provider's own
+            // rate limit are not server faults; the run error already tells the user what to do.
             getLogger().warn("run.failed", {
               "run.outcome": "failed",
               "run.failure": error.name,

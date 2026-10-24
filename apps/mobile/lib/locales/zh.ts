@@ -92,6 +92,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{provider} took too long to respond. Try again.": "{provider}响应超时。请重试。",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider}当前负载过高。请稍后再试。",
+  "{provider} couldn't be reached. Check that it's running.":
+    "无法连接到{provider}。请检查它是否正在运行。",
   "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
     "此对话对模型来说太长了。重试无济于事。请开始新的聊天或缩短你的消息。",
   "{provider} key hit its limit.": "{provider}的密钥已达到限额。",

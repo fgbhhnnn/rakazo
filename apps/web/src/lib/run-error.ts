@@ -66,6 +66,12 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "{provider} took too long to respond. Try again.",
         values,
       });
+    case "{provider} couldn't be reached. Check that it's running.":
+      return i18n._({
+        id: "{provider} couldn't be reached. Check that it's running.",
+        message: "{provider} couldn't be reached. Check that it's running.",
+        values,
+      });
     case "{provider} is overloaded right now. Try again in a moment.":
       return i18n._({
         id: "{provider} is overloaded right now. Try again in a moment.",

@@ -36,6 +36,7 @@ import type {
   MemoryProviderResolver,
   PiOAuthLogins,
   ProviderCatalogCache,
+  PushTokenStore,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
 } from "@rakazo/adapters";
@@ -64,7 +65,6 @@ import {
   createFaviconResolver,
   createTicket,
   defaultCatalogModelId,
-  deletePushToken,
   deploymentAutoReviewDefault,
   destroyBot,
   displayBotWorkspacePath,
@@ -119,7 +119,6 @@ import {
   routineRunModelPin,
   sanitizeComposioError,
   savedCatalogSelections,
-  savePushToken,
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
@@ -242,7 +241,6 @@ import {
   newestVoiceCredentialOrder,
   Prisma,
   parseComputerMode,
-  pushSessionExpiresAt,
   recordSecurityEvent,
   releaseSpaceDeletionClaim,
   renameSpaceForMember,
@@ -664,6 +662,7 @@ function mcpAssignmentDto(row: {
 }
 
 export interface RouterDeps {
+  pushTokens: PushTokenStore;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   prisma: PrismaClient;
@@ -776,15 +775,22 @@ const BOT_SECRET_INPUT_ERRORS = [
   "Credential limit reached",
 ];
 
-/** Map credential validation failures to a bad request without echoing the submitted value. */
-function mapBotSecretStoreError(error: unknown): unknown {
-  if (error instanceof ORPCError) return error;
+/** A credential the user typed that cannot be stored, as a bad request. Never echoes the value. */
+function mapBotSecretInputError(error: unknown): unknown {
   if (
     error instanceof Error &&
     BOT_SECRET_INPUT_ERRORS.some((prefix) => error.message.startsWith(prefix))
   ) {
     return new ORPCError("BAD_REQUEST", { message: error.message });
   }
+  return error;
+}
+
+/** Map credential validation failures to a bad request without echoing the submitted value. */
+function mapBotSecretStoreError(error: unknown): unknown {
+  if (error instanceof ORPCError) return error;
+  const mapped = mapBotSecretInputError(error);
+  if (mapped !== error) return mapped;
   // Login decoding failures: a JSON parse message can quote the submitted value, so never forward it.
   if (error instanceof SyntaxError || (error instanceof Error && error.name === "ZodError")) {
     return new ORPCError("BAD_REQUEST", {
@@ -2963,17 +2969,22 @@ export function createRouter(deps: RouterDeps) {
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        const answered = await deps.events.answerRunInput({
-          spaceId: context.actor.spaceId,
-          threadId: target.threadId,
-          runId: input.runId,
-          messageId: input.messageId,
-          answeredByUserId: context.actor.userId,
-          answer: input.answer,
-          clientNonce: input.clientNonce,
-          username: input.username,
-          dismiss: input.dismiss,
-        });
+        const answered = await deps.events
+          .answerRunInput({
+            spaceId: context.actor.spaceId,
+            threadId: target.threadId,
+            runId: input.runId,
+            messageId: input.messageId,
+            answeredByUserId: context.actor.userId,
+            answer: input.answer,
+            clientNonce: input.clientNonce,
+            username: input.username,
+            dismiss: input.dismiss,
+          })
+          .catch((error: unknown) => {
+            // A typed credential its destination cannot carry (e.g. a header with a line break).
+            throw mapBotSecretInputError(error);
+          });
         if (!answered) {
           throw new ORPCError("CONFLICT", {
             message: "This prompt is no longer awaiting an answer",
@@ -3049,6 +3060,10 @@ export function createRouter(deps: RouterDeps) {
         } catch (error) {
           if (error instanceof ComputerBusyError) {
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          }
+          // The bot was deleted or moved to another computer while this boot waited.
+          if (isRecordNotFound(error)) {
+            throw new ORPCError("NOT_FOUND", { message: "Computer no longer exists" });
           }
           throw error;
         } finally {
@@ -6795,12 +6810,7 @@ export function createRouter(deps: RouterDeps) {
         const sessionId = context.sessionId;
         if (!sessionId) throw new ORPCError("UNAUTHORIZED");
         try {
-          await savePushToken(deps.dataDir, context.actor.userId, input.token, sessionId, {
-            sessionActive: async () => {
-              const expiresAt = await pushSessionExpiresAt(deps.prisma, sessionId);
-              return expiresAt !== null && expiresAt.getTime() > Date.now();
-            },
-          });
+          await deps.pushTokens.save(context.actor.userId, input.token, sessionId);
         } catch (error) {
           if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
           throw error;
@@ -6808,7 +6818,7 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
-        await deletePushToken(deps.dataDir, context.actor.userId);
+        await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),
     },

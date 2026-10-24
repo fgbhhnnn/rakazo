@@ -1,5 +1,7 @@
+import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  APPROVED_ACTION_NOT_RUN_ERROR,
   isModelRequiredSendError,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
@@ -185,11 +187,30 @@ describe("normalizeRunError", () => {
       ["socket hang up", tookTooLong],
       ["fetch failed", tookTooLong],
       ["Model stream ended without a terminal event", tookTooLong],
+      ["Request timed out.", tookTooLong],
     ])("summarizes %s without recovery advice", (details, summary) => {
       expect(normalizeRunError(details)).toEqual({
         summary,
         details,
         ...(summary === tooLong ? { kind: "context" } : {}),
+      });
+    });
+
+    it.each([
+      // What the OpenAI and Anthropic SDKs report when a local server is down or the host is unknown.
+      "Connection error.",
+      "fetch failed: connect ECONNREFUSED 127.0.0.1:11434",
+      "connect ECONNREFUSED ::1:8000",
+      "getaddrinfo ENOTFOUND ollama.local",
+      "connect EHOSTUNREACH 192.168.1.20:11434",
+      "connect ENETUNREACH 10.0.0.5:8000",
+      "getaddrinfo EAI_AGAIN vllm",
+      "Connection refused",
+    ])("says an unreachable provider %s should be checked", (details) => {
+      expect(normalizeRunError(details)).toEqual({
+        summary: "Your model provider couldn't be reached. Check that it's running.",
+        details,
+        recovery: "connection",
       });
     });
 
@@ -337,13 +358,12 @@ describe("normalizeRunError", () => {
       });
     });
 
-    it("keeps the missing final answer advice while attributing it to the model", () => {
-      expect(normalizeRunError(MISSING_TOOL_FINAL_RESPONSE_ERROR)).toEqual({
-        summary: MISSING_TOOL_FINAL_RESPONSE_ERROR,
-        details: MISSING_TOOL_FINAL_RESPONSE_ERROR,
-        kind: "output",
-      });
-    });
+    it.each([MISSING_TOOL_FINAL_RESPONSE_ERROR, APPROVED_ACTION_NOT_RUN_ERROR])(
+      "keeps the advice while attributing it to the model: %s",
+      (details) => {
+        expect(normalizeRunError(details)).toEqual({ summary: details, details, kind: "output" });
+      },
+    );
 
     it.each([
       google({
@@ -491,8 +511,28 @@ it.each([
   );
   expect(normalizeRunError(details)).toEqual({
     ...normalizeRunError(primaryError),
-    details,
+    details: [
+      primaryError,
+      ...statuses.map(() => "fake-provider fake-model: fake-diagnostic"),
+    ].join("\n"),
     summary: `${normalizeRunError(primaryError).summary} ${explanation}`,
+  });
+});
+
+it.each([
+  "ResourceExhausted: Worker local total request limit reached (16/16)",
+  "ResourceExhausted: Worker local total request limit reached (4358/16)",
+])("reads a provider concurrency limit as rate limiting: %s", (details) => {
+  expect(normalizeRunError(details)).toMatchObject({
+    summary: "Your model provider is rate limiting requests. Try again shortly.",
+    kind: "rate",
+  });
+});
+
+it("shows the computer rate limit as written", () => {
+  expect(normalizeRunError(COMPUTER_RATE_LIMIT_ERROR)).toEqual({
+    summary: COMPUTER_RATE_LIMIT_ERROR,
+    details: COMPUTER_RATE_LIMIT_ERROR,
   });
 });
 

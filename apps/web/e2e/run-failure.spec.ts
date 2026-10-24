@@ -172,6 +172,20 @@ test("a model too small for required instructions offers a model change", async 
   await captureScreenshot(page, testInfo, "required-context-model-recovery");
 });
 
+test("an approved action the model did not run says so", async ({ page }, testInfo) => {
+  await signup(page, `unrun-approval-${Date.now()}@rakazo.test`, "password12", "Unrun Approval");
+  await completeOnboarding(page);
+  await page.getByPlaceholder(/^Message /).fill("fail this run with an unrun approval");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  const error = page.getByTestId("composer-error");
+  await expect(error).toContainText("The model did not run the approved action. Try again.", {
+    timeout: 30_000,
+  });
+  await expect(error).not.toContainText("The model provider returned an error.");
+  await captureScreenshot(page, testInfo, "approved-action-not-run");
+});
+
 test("a failed run explains that backup models also failed", async ({ page }, testInfo) => {
   await signup(page, `backup-failure-${Date.now()}@rakazo.test`, "password12", "Backup Failure");
   await completeOnboarding(page);
@@ -186,4 +200,19 @@ test("a failed run explains that backup models also failed", async ({ page }, te
   await expect(error).toContainText("Your backup models also failed.");
   await expect(error.locator("pre")).toBeHidden();
   await captureScreenshot(page, testInfo, "backup-models-exhausted");
+});
+
+test("an unreachable provider is named instead of a generic error", async ({ page }, testInfo) => {
+  await signup(page, `unreachable-${Date.now()}@rakazo.test`, "password12", "Unreachable");
+  await completeOnboarding(page);
+  await page.getByPlaceholder(/^Message /).fill("fail this run with an unreachable provider");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  const error = page.getByTestId("composer-error");
+  await expect(error).toContainText(
+    "Your model provider couldn't be reached. Check that it's running.",
+    { timeout: 30_000 },
+  );
+  await expect(error).not.toContainText("The model provider returned an error.");
+  await captureScreenshot(page, testInfo, "unreachable-run-error");
 });

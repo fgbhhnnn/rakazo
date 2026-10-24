@@ -199,6 +199,11 @@ msgstr "{provider}找不到请求的模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} couldn't be reached. Check that it's running."
+msgstr "无法连接到{provider}。请检查它是否正在运行。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} denied access to this model."
 msgstr "{provider}拒绝了对此模型的访问。"
 

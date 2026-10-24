@@ -96,6 +96,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "{provider}の応答に時間がかかりすぎました。もう一度お試しください。",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider}は現在混み合っています。しばらくしてからもう一度お試しください。",
+  "{provider} couldn't be reached. Check that it's running.":
+    "{provider}に接続できませんでした。起動しているか確認してください。",
   "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
     "この会話はモデルにとって長すぎます。再試行しても解決しません。新しいチャットを開始するか、メッセージを短くしてください。",
   "{provider} key hit its limit.": "{provider}のキーが上限に達しました。",

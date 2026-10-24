@@ -1,5 +1,9 @@
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
-import { MODEL_CONTEXT_TOO_SMALL_ERROR, MODEL_OUTPUT_LIMIT_ERROR } from "@rakazo/core";
+import {
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_OUTPUT_LIMIT_ERROR,
+  modelFallbackFailure,
+} from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const provider = vi.hoisted(() => ({ errorMessage: "" }));
@@ -133,5 +137,72 @@ describe("Pi runtime errors", () => {
   ])("keeps a dropped connection transient: %s", async (message) => {
     provider.errorMessage = message;
     await expect(consume()).rejects.toBeInstanceOf(TransientModelError);
+  });
+
+  it.each([
+    "ResourceExhausted: Worker local total request limit reached (16/16)",
+    "ResourceExhausted: Worker local total request limit reached (4358/16)",
+  ])("treats a provider concurrency limit as transient: %s", async (message) => {
+    provider.errorMessage = message;
+    await expect(consume()).rejects.toBeInstanceOf(TransientModelError);
+  });
+});
+
+describe("Pi runtime errors after every backup failed", () => {
+  const timedOut = "Request timed out.";
+  const freeTier =
+    '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}';
+  const unknown = "Cannot read properties of undefined (reading 'content')";
+  const emptyReply = "Provider returned an empty response";
+
+  function exhausted(primaryError: string, reasons: string[], skipped: string[] = []) {
+    return modelFallbackFailure(primaryError, [
+      ...reasons.map((reason, index) => ({
+        provider: "fake-provider",
+        modelId: `fake-model-${index}`,
+        status: "failed" as const,
+        reason,
+      })),
+      ...skipped.map((reason, index) => ({
+        provider: "fake-provider",
+        modelId: `fake-skipped-${index}`,
+        status: "skipped" as const,
+        reason,
+      })),
+    ]);
+  }
+
+  it.each([
+    ["every model timed out", exhausted(timedOut, [timedOut, timedOut]), TransientModelError],
+    [
+      "skipped backups do not count",
+      exhausted(timedOut, [timedOut], [unknown]),
+      TransientModelError,
+    ],
+    ["every model refused the account", exhausted(freeTier, [freeTier]), ModelAccountError],
+    [
+      "an account failure outranks timeouts",
+      exhausted(timedOut, [timedOut, freeTier]),
+      ModelAccountError,
+    ],
+    ["bad output outranks timeouts", exhausted(timedOut, [emptyReply]), ModelOutputError],
+    [
+      "an account failure outranks bad output",
+      exhausted(emptyReply, [freeTier]),
+      ModelAccountError,
+    ],
+  ])("classifies the chain when %s", async (_label, message, kind) => {
+    provider.errorMessage = message;
+    const failure = consume();
+    await expect(failure).rejects.toBeInstanceOf(kind);
+    await expect(failure).rejects.toThrow(message);
+  });
+
+  it("keeps the chain a server error when any failure is unexplained", async () => {
+    provider.errorMessage = exhausted(timedOut, [freeTier, unknown]);
+    const failure = consume();
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+    await expect(failure).rejects.not.toBeInstanceOf(ModelOutputError);
   });
 });

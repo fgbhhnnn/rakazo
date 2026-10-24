@@ -774,6 +774,28 @@ describe("secret request dismissal", () => {
     expect(response.status).toBe(400);
     expect(h.answerRunInput).not.toHaveBeenCalled();
   });
+
+  it("reports a credential its destination cannot carry as a bad request", async () => {
+    const h = setup(true);
+    h.answerRunInput.mockRejectedValue(
+      new Error("Credential cannot be used with this authentication method"),
+    );
+    const { response } = await h.send({ answer: "example\nvalue" });
+
+    expect(response.status).toBe(400);
+    const body = JSON.stringify(await response.json());
+    expect(body).toContain("Credential cannot be used with this authentication method");
+    expect(body).not.toContain("example");
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps unexpected answer failures as server errors", async () => {
+    const h = setup(true);
+    h.answerRunInput.mockRejectedValue(new Error("database unavailable"));
+    const { response } = await h.send({ answer: "Paris" });
+
+    expect(response.status).toBe(500);
+  });
 });
 
 describe("thread stream authorization", () => {

@@ -99,6 +99,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "{provider} deed er te lang over om te antwoorden. Probeer het opnieuw.",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider} is op dit moment overbelast. Probeer het zo nog eens.",
+  "{provider} couldn't be reached. Check that it's running.":
+    "{provider} is niet bereikbaar. Controleer of hij draait.",
   "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
     "Dit gesprek is te lang voor het model. Opnieuw proberen helpt niet. Begin een nieuwe chat of maak je bericht korter.",
   "{provider} key hit its limit.": "De sleutel van {provider} heeft de limiet bereikt.",

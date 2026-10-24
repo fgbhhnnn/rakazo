@@ -39,6 +39,7 @@ describe("lingui catalogs", () => {
       "{provider} could not find the requested model.",
       "{provider} took too long to respond. Try again.",
       "{provider} is overloaded right now. Try again in a moment.",
+      "{provider} couldn't be reached. Check that it's running.",
       "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
       "Details",
     ];
