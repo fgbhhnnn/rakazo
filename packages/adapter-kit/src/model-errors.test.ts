@@ -9,6 +9,10 @@ describe("transient model errors", () => {
     ],
     ["overloaded status", "529 overloaded_error: Overloaded"],
     [
+      "provider concurrency limit",
+      "ResourceExhausted: Worker local total request limit reached (16/16)",
+    ],
+    [
       "rate limit",
       "429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit",
     ],
@@ -53,6 +57,7 @@ describe("transient model errors", () => {
       },
     ],
     ["billing", { status: 402, message: "provider quota exhausted" }],
+    ["payment required", '402: {"message":"This request requires more credits.","code":402}'],
     ["credit balance", "Your credit balance is too low to access the API."],
     ...[
       "You have hit your ChatGPT usage limit.",
@@ -202,7 +207,8 @@ describe("provider availability classification", () => {
         message:
           "You've reached your concurrent request limit. Please wait for your ongoing requests to finish and try again.",
       },
-      false,
+      // Concurrency limits clear once in-flight calls finish, so they are retried.
+      true,
     ],
     [
       "generic 403 permission_error",
@@ -221,11 +227,48 @@ describe("provider availability classification", () => {
       false,
     ],
     ["quota exhaustion", { status: 402, message: "provider quota exhausted" }, true],
+    ["insufficient balance", { status: 402, message: "Insufficient Balance" }, true],
+    [
+      "explicit balance error with generic request code",
+      '402: {"message":"Insufficient Balance","type":"insufficient_balance_error","code":"invalid_request_error"}',
+      true,
+    ],
+    [
+      "authentication failure with a nested balance error",
+      { status: 401, cause: { status: 402, type: "insufficient_balance_error" } },
+      false,
+    ],
+    [
+      "balance error with invalid parameters",
+      { status: 402, type: "insufficient_balance_error", message: "Unsupported parameter" },
+      false,
+    ],
+    [
+      "payment status with an ordinary invalid request",
+      { status: 402, code: "invalid_request_error", message: "Invalid tool schema" },
+      false,
+    ],
     ["plain status", new Error("503 provider unavailable"), true],
     ["HTTP server status", new Error("HTTP 500"), true],
     ["context overflow", new Error("context_length_exceeded; retry after 60s"), false],
     ["transient server failure", { status: 503, message: "service unavailable" }, true],
   ])("classifies %s", (_label, error, expected) => {
     expect(isRetryableProviderUnavailable(error)).toBe(expected);
+  });
+});
+
+describe("gateway concurrency limit", () => {
+  it("is transient whatever status comes with it", async () => {
+    const { isTransientModelError, isRetryableProviderUnavailable } = await import(
+      "./model-errors.js"
+    );
+    for (const error of [
+      new Error("Concurrency limit exceeded for account, please retry later"),
+      { status: 400, message: "Concurrency limit exceeded for account, please retry later" },
+      { status: 403, errorMessage: "Concurrency limit exceeded for account, please retry later" },
+    ]) {
+      expect(isRetryableProviderUnavailable(error)).toBe(true);
+      expect(isTransientModelError(error)).toBe(true);
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import type { AccountSecurity } from "@rakazo/contracts";
+import { accountDisplay, displayName } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -18,11 +18,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppMark } from "../../components/app-mark";
-import { useAvatarStyle } from "../../components/avatar-style";
-import { BotAvatar } from "../../components/bot-avatar";
+import { NameDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
-import { NativeSymbol } from "../../components/native-symbol";
 import {
   SettingsGroup,
   SettingsLabel,
@@ -30,6 +28,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
+import { createAccountNameEditor } from "../../lib/account-name-editor";
 import type { MobileMe } from "../../lib/api";
 import {
   currentApiBase,
@@ -41,8 +40,9 @@ import {
   rpc,
   selectedSpaceId,
   signOut,
+  updateAccountName,
 } from "../../lib/api";
-import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
+import { getAppVersionInfo } from "../../lib/app-version";
 import {
   getCachedAppearancePreference,
   mobileTokens,
@@ -57,6 +57,7 @@ import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   getLiveNotificationSettings,
+  hasLiveUpdateSettings,
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
@@ -95,6 +96,32 @@ export default function Account() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
   const account = accountDisplay(me ?? {}, t("Your account"));
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [namePending, setNamePending] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const currentName = account.label === me?.email ? "" : displayName(me?.name, "");
+
+  const nameSaving = useRef(false);
+  const nameSaveVersion = useRef(0);
+  const { saveName, editName, closeNameDialog } = createAccountNameEditor({
+    currentName,
+    pending: nameSaving,
+    saveVersion: nameSaveVersion,
+    Platform,
+    Alert,
+    t,
+    errorText,
+    updateAccountName,
+    refresh: () => rpc<MobileMe>("me"),
+    onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
+    onRefreshed: setMe,
+    setNameDraft,
+    setNamePending,
+    setNameError,
+    setNameDialogOpen,
+  });
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
@@ -107,8 +134,6 @@ export default function Account() {
     (security?.hasPassword
       ? !deletePassword
       : !ssoReauthenticated && (!deletionCodeSent || !deletePassword.trim()));
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   );
@@ -143,7 +168,6 @@ export default function Account() {
     outputTokens: number | null;
     totalTokens?: number | null;
   } | null>(null);
-  const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
   const appearance = getCachedAppearancePreference();
   const streamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -160,8 +184,7 @@ export default function Account() {
   const stackOptions = useStackedSettings();
   const styles = useThemedStyles(createAccountStyles);
   const versionInfo = getAppVersionInfo();
-  const updateLabel = formatUpdateLabel(versionInfo.update, t);
-  const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
+  const versionAccessibility = versionInfo.nativeLabel ?? undefined;
 
   useEffect(() => {
     void rpc<MobileMe>("me")
@@ -211,19 +234,6 @@ export default function Account() {
       };
     }, []),
   );
-
-  async function selectAvatarStyle(next: AvatarStyle) {
-    if (next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
-    try {
-      await updateAvatarStyle(next);
-    } catch {
-      setAvatarError(t("Couldn't update avatars"));
-    } finally {
-      setAvatarPending(false);
-    }
-  }
 
   async function handleSignOut() {
     setPending(true);
@@ -387,16 +397,28 @@ export default function Account() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, stackOptions && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"
       >
         {focus === "usage" ? <SettingsGroup>{usageBlock}</SettingsGroup> : null}
         <SettingsGroup>
           <SettingsRow
-            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t("Edit name")}
+            accessibilityValue={{
+              text:
+                me?.email && account.label !== me.email
+                  ? `${account.label}, ${me.email}`
+                  : account.label,
+            }}
+            chevron="right"
+            disabled={!me}
             detail={me?.email && account.label !== me.email ? me.email : undefined}
             prominent
             title={account.label}
+            dimmed={namePending}
+            onPress={editName}
           />
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
@@ -504,49 +526,6 @@ export default function Account() {
           />
         </View>
 
-        <View accessibilityLabel={t("Avatar style")} style={styles.section}>
-          <SettingsLabel>{t("Avatars")}</SettingsLabel>
-          <View style={[styles.options, stackOptions && styles.optionsStacked]}>
-            {(["robot", "organic"] as const).map((style) => {
-              const selected = avatarStyle === style;
-              const styleLabel = style === "robot" ? t("Robot") : t("Organic");
-              return (
-                <Pressable
-                  key={style}
-                  accessibilityLabel={t("{style} avatars", { style: styleLabel })}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled: avatarPending }}
-                  disabled={avatarPending}
-                  onPress={() => void selectAvatarStyle(style)}
-                  style={({ pressed }) => [
-                    styles.option,
-                    styles.avatarOption,
-                    !stackOptions && styles.optionSideBySide,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <BotAvatar
-                    color={style === "robot" ? "#8B5CF6" : "#D62F8B"}
-                    identity="avatar-preview"
-                    size={42}
-                    variant={style}
-                  />
-                  <Text style={styles.optionLabel}>{styleLabel}</Text>
-                  <NativeSymbol
-                    android={selected ? "checkmark-circle" : "ellipse-outline"}
-                    color={selected ? native.label : native.tertiaryLabel}
-                    ios={selected ? "checkmark.circle.fill" : "circle"}
-                    size={22}
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
-          <SettingsGroup>
-            {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
-          </SettingsGroup>
-        </View>
-
         <SettingsGroup>
           <SettingsRow
             accessibilityRole="button"
@@ -593,11 +572,13 @@ export default function Account() {
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
-            <SettingsRow
-              accessibilityRole="button"
-              onPress={() => void openPromotedNotificationSettings()}
-              title={t("Live update settings")}
-            />
+            {hasLiveUpdateSettings() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                onPress={() => void openPromotedNotificationSettings()}
+                title={t("Live update settings")}
+              />
+            ) : null}
             <SettingsRow
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
@@ -623,27 +604,25 @@ export default function Account() {
               { title: t("Integrations"), href: "/integrations" },
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const
-          ).map(({ title, href }) => (
-            <SettingsRow
-              key={href}
-              accessibilityRole="button"
-              chevron="right"
-              disabled={pending}
-              // Artifacts lives on the root stack, so it closes the sheet before opening.
-              onPress={() =>
-                isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
-              }
-              title={title}
-            />
-          ))}
-          {me?.isDeploymentOwner ? (
-            <SettingsRow
-              accessibilityRole="button"
-              chevron="right"
-              onPress={() => router.push("/integration-setup")}
-              title={t("Server integrations")}
-            />
-          ) : null}
+          )
+            // The deployment owner manages models and voice for members when locked.
+            .filter(
+              ({ href }) =>
+                !(me?.memberSettingsLocked && (href === "/models" || href === "/voice")),
+            )
+            .map(({ title, href }) => (
+              <SettingsRow
+                key={href}
+                accessibilityRole="button"
+                chevron="right"
+                disabled={pending}
+                // Artifacts lives on the root stack, so it closes the sheet before opening.
+                onPress={() =>
+                  isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+                }
+                title={title}
+              />
+            ))}
         </SettingsGroup>
 
         <SettingsGroup>
@@ -702,16 +681,13 @@ export default function Account() {
 
         <View style={styles.about}>
           <AppMark />
-          {versionInfo.nativeLabel || updateLabel ? (
+          {versionInfo.nativeLabel ? (
             <View
               accessibilityLabel={versionAccessibility}
               accessibilityRole="summary"
               style={styles.versionFooter}
             >
-              {versionInfo.nativeLabel ? (
-                <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
-              ) : null}
-              {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
+              <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
             </View>
           ) : null}
         </View>
@@ -735,6 +711,19 @@ export default function Account() {
           ) : null}
         </SettingsGroup>
       </ScrollView>
+      {nameDialogOpen ? (
+        <NameDialog
+          draft={nameDraft}
+          error={nameError}
+          saving={namePending}
+          onChange={(value) => {
+            setNameDraft(value);
+            setNameError(null);
+          }}
+          onSave={(value) => void saveName(value)}
+          onClose={closeNameDialog}
+        />
+      ) : null}
       {deleteOpen ? (
         <Modal transparent animationType="fade" onRequestClose={closeDeletePrompt}>
           <KeyboardAvoidingView
@@ -858,38 +847,6 @@ function createAccountStyles() {
     section: {
       gap: 7,
     },
-    options: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    optionsStacked: {
-      flexDirection: "column",
-    },
-    option: {
-      minHeight: 48,
-      borderRadius: 14,
-      borderCurve: "continuous",
-      borderWidth: 2,
-      borderColor: "transparent",
-      backgroundColor: native.groupedCell,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    optionSideBySide: {
-      flex: 1,
-    },
-    avatarOption: {
-      minHeight: 96,
-      gap: 8,
-    },
-    optionLabel: {
-      color: native.label,
-      fontSize: 15,
-      fontWeight: "600",
-      textAlign: "center",
-    },
     about: {
       alignItems: "center",
       gap: 16,
@@ -972,9 +929,6 @@ function createAccountStyles() {
     },
     disabled: {
       opacity: 0.45,
-    },
-    pressed: {
-      backgroundColor: native.fillPressed,
     },
   });
 }

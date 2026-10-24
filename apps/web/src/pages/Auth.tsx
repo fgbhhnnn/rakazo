@@ -9,6 +9,7 @@ import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@ra
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { PasskeySignIn } from "../components/PasskeySignIn";
+import { TurnstileWidget } from "../components/TurnstileWidget";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
@@ -44,6 +45,8 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [method, setMethod] = useState<"code" | "password">("code");
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
   const useCode = Boolean(reset?.passwordAuth && reset.emailCode) && mode !== "forgot";
   const codeMode = useCode && method === "code";
   const codeStep = codeMode && codeSent;
@@ -95,6 +98,20 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       setError(credentialIssueText(issue));
       return;
     }
+    const turnstileSiteKey = mode === "up" ? reset.turnstileSiteKey : null;
+    if (turnstileSiteKey && !captchaToken) {
+      setError(t`Complete the security check first`);
+      return;
+    }
+    // A Turnstile token is single use; the widget issues a fresh one after each attempt.
+    const captcha =
+      turnstileSiteKey && captchaToken
+        ? { fetchOptions: { headers: { "x-captcha-response": captchaToken } } }
+        : {};
+    if (turnstileSiteKey) {
+      setCaptchaToken(null);
+      setCaptchaRound((round) => round + 1);
+    }
     setPending(true);
     setError(null);
     try {
@@ -119,6 +136,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         const request = await authClient.emailOtp.sendVerificationOtp({
           email: trimmedEmail,
           type: "sign-in",
+          ...captcha,
         });
         if (request.error) {
           setError(authErrorText(request.error, t`Could not continue`));
@@ -134,6 +152,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               email: trimmedEmail,
               password,
               name: name || trimmedEmail.split("@")[0] || "User",
+              ...captcha,
             })
           : await authClient.signIn.email({ email: trimmedEmail, password });
       if (result.error) {
@@ -217,6 +236,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     }
   }
 
+  if (!sent && !reset && !capabilityError) {
+    return <div className="h-full bg-background" />;
+  }
+
   return (
     <AuthFrame onSubmit={submit} title={title}>
       {sent ? (
@@ -240,10 +263,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 <Trans>Retry</Trans>
               </Button>
             </div>
-          ) : !reset ? (
-            <p role="status">
-              <Trans>Loading…</Trans>
-            </p>
           ) : null}
           {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
             <Button
@@ -345,6 +364,15 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                       </Link>
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+              {mode === "up" && !codeStep && reset?.turnstileSiteKey ? (
+                <div className="mt-4 w-full">
+                  <TurnstileWidget
+                    key={captchaRound}
+                    siteKey={reset.turnstileSiteKey}
+                    onToken={setCaptchaToken}
+                  />
                 </div>
               ) : null}
               {error ? (

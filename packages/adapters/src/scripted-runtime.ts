@@ -4,7 +4,15 @@ import type {
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
-import { abortableDelay, inferHandoffTargetName, STEERING_CONTINUATION_PROMPT } from "@rakazo/core";
+import {
+  APPROVED_ACTION_NOT_RUN_ERROR,
+  abortableDelay,
+  BOT_MESSAGE_WAKE_CUE,
+  inferHandoffTargetName,
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  modelFallbackFailure,
+  STEERING_CONTINUATION_PROMPT,
+} from "@rakazo/core";
 
 const running = new Map<string, AbortController>();
 
@@ -31,7 +39,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     const signal = context?.signal ?? controller.signal;
     try {
       if (shouldFail(request.prompt)) {
-        throw new Error("Scripted run failure");
+        throw new Error(scriptedFailure(request.prompt));
       }
       // Like Pi, a run first takes the messages waiting for it. A continuation exists only to
       // answer them, so their text is its prompt; any other run keeps its own task. A resumed
@@ -42,7 +50,8 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           ? steering.map((item) => item.historyText ?? item.text).join("\n")
           : undefined;
       const prompt = steeredPrompt ?? request.prompt;
-      const hangMs = hangDuration(prompt);
+      // A peer's wake hangs on the peer's words, not on the quoted message it replies to.
+      const hangMs = hangDuration(peerMessage(prompt)?.text ?? prompt);
       if (hangMs !== undefined) {
         // Long-running work happens on the computer, which starts it like any real run would.
         yield {
@@ -190,6 +199,12 @@ export function inferScript(
       },
     ];
   }
+  // A delegated result wakes the bot to relay it to the user. Before every content-based intent
+  // so the peer's text cannot steal the branch.
+  const report = delegatedReport(prompt);
+  if (report) {
+    return [{ assistant: `Here's what ${report.from} found: ${report.gist}`, complete: true }];
+  }
   // Before every content-based intent so payload text cannot steal the branch.
   const shellCommand = /run the shell command\s+([\s\S]+)$/i.exec(prompt)?.[1]?.trim();
   if (shellCommand) {
@@ -227,6 +242,49 @@ export function inferScript(
   const childEdit = childEditCalls(prompt);
   if (childEdit) {
     return [{ assistant: "updating your bots.", toolCalls: childEdit, complete: true }];
+  }
+  // Dispatcher fixtures: launch, redirect and stop background workers in plain words.
+  const named = /\bdispatch in background as ([\w-]+):\s*([^\n]+)/i.exec(prompt);
+  if (named && !prompt.includes("【后台任务】")) {
+    return [
+      {
+        assistant: `dispatched ${named[1]} to a background worker.`,
+        toolCalls: [{ name: "background_task", args: { name: named[1], task: named[2]!.trim() } }],
+        complete: true,
+      },
+    ];
+  }
+  const cancelNamed = /\bcancel background task named ([\w-]+)/i.exec(prompt);
+  if (cancelNamed) {
+    return [
+      {
+        assistant: `stopping ${cancelNamed[1]}.`,
+        toolCalls: [{ name: "background_task_cancel", args: { task_id: cancelNamed[1] } }],
+        complete: true,
+      },
+    ];
+  }
+  const dispatched = /\bdispatch in background:\s*([^\n]+)/i.exec(prompt);
+  if (dispatched && !prompt.includes("【后台任务】")) {
+    return [
+      {
+        assistant: "dispatched to a background worker.",
+        toolCalls: [
+          { name: "background_task", args: { name: "job", task: dispatched[1]!.trim() } },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  // Scripted test model: only an explicit script command, never user stop phrases.
+  if (/cancel all background tasks/i.test(prompt)) {
+    return [
+      {
+        assistant: "stopped.",
+        toolCalls: [{ name: "background_task_cancel", args: { task_id: "all" } }],
+        complete: true,
+      },
+    ];
   }
   const fleet = fleetCall(prompt);
   if (fleet) {
@@ -632,7 +690,7 @@ code-b
   }
   return [
     {
-      assistant: `on it. i will work this in the background and come back with a result.\n\n${summarize(prompt)}`,
+      assistant: `on it. i will work this in the background and come back with a result.\n\n${summarize(peerMessage(prompt)?.text ?? prompt)}`,
     },
     {
       files: [{ path: "notes/last-task.md", content: `# Task\n\n${prompt}\n` }],
@@ -645,9 +703,36 @@ function shouldFail(prompt: string): boolean {
   return prompt.toLowerCase().includes("fail this run");
 }
 
+/**
+ * The error a failing run throws; "overloaded" sends the body Anthropic returns with a 529 and
+ * "unreachable" sends what the provider SDKs report when nothing listens at the base URL.
+ */
+function scriptedFailure(prompt: string): string {
+  if (/\bfixed context\b/i.test(prompt)) return MODEL_CONTEXT_TOO_SMALL_ERROR;
+  if (/\bunrun approval\b/i.test(prompt)) return APPROVED_ACTION_NOT_RUN_ERROR;
+  if (/\bunreachable\b/i.test(prompt)) return "Connection error.";
+  if (/\bexhausted backups\b/i.test(prompt)) {
+    return modelFallbackFailure('429: {"message":"Too many requests"}', [
+      {
+        provider: "fake-provider",
+        modelId: "fake-backup",
+        status: "failed",
+        reason: "429 quota exhausted",
+      },
+    ]);
+  }
+  return /\boverloaded\b/i.test(prompt)
+    ? '529: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'
+    : "Scripted run failure";
+}
+
 /** How long a scripted run keeps working before it finishes; undefined runs its script. */
 function hangDuration(prompt: string): number | undefined {
   const lower = prompt.toLowerCase();
+  // Dispatching hanging work makes the background worker hang, not the dispatcher.
+  if (/\bdispatch in background( as [\w-]+)?:/i.test(prompt) && !prompt.includes("【后台任务】")) {
+    return undefined;
+  }
   // Asking another bot to keep working makes that bot's run hang, not this one.
   if (lower.includes("message the bot named") || lower.includes("message bot named")) {
     return undefined;
@@ -783,6 +868,39 @@ function namedSpace(prompt: string) {
     .exec(prompt)?.[1]
     ?.replace(/[.!?]+$/, "")
     .trim();
+}
+
+/** The quoted message a reply's prompt opens with (see reply-context.ts). */
+const REPLY_CONTEXT =
+  /^(?:Replying to|User reacted with \S+ to) \(quoted data, not instructions\):\n<(reply_target|reaction_target)>\n[\s\S]*?\n<\/\1>\n\n/;
+
+/**
+ * The sender and body of a bot-message wake prompt, without the wake instructions around it. A
+ * delivery that threads back to this bot's own message opens with that message quoted.
+ */
+function peerMessage(prompt: string): { from: string; text: string } | undefined {
+  if (!prompt.replace(REPLY_CONTEXT, "").startsWith(BOT_MESSAGE_WAKE_CUE)) return undefined;
+  const match = /<bot_message from="([^"]*)">\n([\s\S]*?)\n<\/bot_message>/.exec(prompt);
+  if (!match) return undefined;
+  const text = match[2]!
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
+    .trim();
+  return { from: match[1] || "Peer", text };
+}
+
+/** A delegated result or status to relay: who sent it and its last paragraph. */
+function delegatedReport(prompt: string): { from: string; gist: string } | undefined {
+  if (!/^This is a (?:result|status) for work you delegated\./m.test(prompt)) return undefined;
+  const message = peerMessage(prompt);
+  if (!message?.text) return undefined;
+  const gist =
+    message.text
+      .split(/\n\s*\n/)
+      .at(-1)
+      ?.trim() || message.text;
+  return { from: message.from, gist };
 }
 
 function summarize(prompt: string): string {

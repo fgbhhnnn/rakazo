@@ -7,6 +7,7 @@ import {
   ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAttachmentAudioMimeType,
+  isOfficeAttachmentMimeType,
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -51,7 +52,11 @@ export async function createOwnedArtifact(
   if (replayed) return createdArtifact(replayed);
   const inferredType = inferAttachmentMimeType(input.name, input.mimeType);
   const mimeType =
-    inferredType && (inferredType === "application/zip" || isAttachmentAudioMimeType(inferredType))
+    inferredType &&
+    (inferredType === "application/zip" ||
+      isAttachmentAudioMimeType(inferredType) ||
+      isOfficeAttachmentMimeType(inferredType) ||
+      isOfficeAttachmentMimeType(input.mimeType))
       ? inferredType
       : input.mimeType;
   validateAttachmentMimeType(mimeType);

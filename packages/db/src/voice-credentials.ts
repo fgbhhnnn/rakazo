@@ -1,5 +1,6 @@
 import type { PrismaClient } from "./client.js";
 import { newestCredentialOrder } from "./model-credentials.js";
+import { withinScope } from "./row-security.js";
 
 export const newestVoiceCredentialOrder = newestCredentialOrder;
 
@@ -69,12 +70,14 @@ export async function findDefaultVoiceCredential(
   prisma: PrismaClient,
   scope: VoiceCredentialScope,
 ) {
-  const preference = await prisma.spaceVoicePreference.findFirst({
-    where: { spaceId: scope.spaceId, userId: scope.userId, isDefault: true },
-    include: { credential: true },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-  });
-  return preference ? withVoicePreference(preference) : null;
+  const preference = await withinScope(scope, () =>
+    prisma.spaceVoicePreference.findFirst({
+      where: { spaceId: scope.spaceId, userId: scope.userId, isDefault: true },
+      include: { credential: true },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    }),
+  );
+  return preference?.credential ? withVoicePreference(preference) : null;
 }
 
 export function findNewestUserVoiceCredential(
@@ -93,6 +96,14 @@ export async function findVoiceCredential(
   scope: VoiceCredentialScope,
   provider: string,
 ) {
+  return withinScope(scope, () => findVoiceCredentialInScope(prisma, scope, provider));
+}
+
+async function findVoiceCredentialInScope(
+  prisma: PrismaClient,
+  scope: VoiceCredentialScope,
+  provider: string,
+) {
   const preference = await prisma.spaceVoicePreference.findFirst({
     where: {
       spaceId: scope.spaceId,
@@ -102,7 +113,7 @@ export async function findVoiceCredential(
     include: { credential: true },
     orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
   });
-  if (preference) return withVoicePreference(preference);
+  if (preference?.credential) return withVoicePreference(preference);
   const credential = await findNewestUserVoiceCredential(prisma, scope.userId, provider);
   return credential ? { ...credential, isDefault: false, voiceId: "", speechModel: "" } : null;
 }

@@ -7,13 +7,19 @@ import {
   type SpaceGroup,
 } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
+import { VISIBLE_BOT_WHERE } from "./bot-visibility.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./computers.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
-import { activeRunSelection, activeRunStatuses, previewFromBlocks } from "./thread-listing.js";
+import {
+  activeRunSelection,
+  activeRunStatuses,
+  previewFromBlocks,
+  primaryActiveRun,
+} from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type GroupRecord = {
@@ -56,7 +62,7 @@ function mapGroupMembers(members: GroupRecord["members"]): GroupMember[] {
     botId: member.bot.id,
     name: member.bot.name,
     color: member.bot.color,
-    status: member.bot.runs[0]?.status ?? "idle",
+    status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
   }));
 }
 
@@ -115,6 +121,7 @@ async function assertOwnedBots(
       spaceId: actor.spaceId,
       userId: actor.userId,
       archivedAt: null,
+      AND: [VISIBLE_BOT_WHERE],
     },
     select: { id: true, name: true, color: true },
   });

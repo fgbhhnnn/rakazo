@@ -1,4 +1,6 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
+import { hasInAppFileViewer } from "@rakazo/chat-ui/file-kinds";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Artifact, ArtifactVersion, Bot } from "@rakazo/contracts";
 import { isAttachmentImageMimeType } from "@rakazo/contracts";
@@ -17,6 +19,7 @@ import {
   NativeSelectOption,
   parseBotAvatar,
   resolvePersonaColorDef,
+  Spinner,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
@@ -34,6 +37,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { FileKindBadge, FileKindIcon } from "../components/FileKindIcon";
+import { FileViewerBody } from "../components/FileViewer";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
@@ -423,7 +428,7 @@ function BrowsingPane({
   if (items === null) {
     return (
       <div className="grid flex-1 place-items-center text-sm text-muted-foreground/80">
-        {loadError ?? <Trans>Loading…</Trans>}
+        {loadError ?? <Spinner aria-label={t`Loading…`} />}
       </div>
     );
   }
@@ -470,8 +475,15 @@ function BrowsingPane({
 function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
   return (
     <div className="mt-4 flex justify-center">
-      <Button variant="outline" size="sm" disabled={loading} onClick={onClick}>
-        {loading ? <Trans>Loading…</Trans> : <Trans>Load more</Trans>}
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={loading}
+        onClick={onClick}
+        aria-label={t`Load more`}
+      >
+        {loading ? <Spinner aria-label={t`Loading…`} /> : null}
+        <Trans>Load more</Trans>
       </Button>
     </div>
   );
@@ -500,7 +512,7 @@ function EmptyArtifacts({
       <div className="flex flex-col items-center gap-3">
         <span>
           {loadingMore ? (
-            <Trans>Loading…</Trans>
+            <Spinner aria-label={t`Loading…`} />
           ) : (
             <Trans>No matching artifacts on this page.</Trans>
           )}
@@ -534,7 +546,7 @@ function IndexPane({
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-e border-border">
       {items === null ? (
         <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
-          {loadError ?? <Trans>Loading…</Trans>}
+          {loadError ?? <Spinner aria-label={t`Loading…`} />}
         </div>
       ) : items.length === 0 ? (
         <EmptyArtifacts
@@ -641,18 +653,14 @@ function ArtifactCard({
         className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
-          <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-accent text-accent-foreground">
-            <ArtifactMimeIcon mimeType={artifact.mimeType} />
-          </span>
+          <FileKindIcon name={artifact.name} mimeType={artifact.mimeType} size={36} />
           <div className="flex items-center gap-1.5">
             {artifact.versionCount > 1 ? (
               <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
                 {`v${artifact.version}`}
               </span>
             ) : null}
-            <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-              {mimeLabel(artifact.mimeType)}
-            </span>
+            <FileKindBadge name={artifact.name} mimeType={artifact.mimeType} />
           </div>
         </div>
         <div className="min-w-0">
@@ -709,9 +717,7 @@ function ArtifactRow({
     <div className={`group relative ${active ? "bg-accent/60" : "hover:bg-accent/40"}`}>
       <Link to={`/app/artifacts/${artifact.id}`} className="flex flex-col gap-1 px-4 py-3 pe-10">
         <div className="flex items-center gap-2">
-          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[7px] bg-accent text-accent-foreground">
-            <ArtifactMimeIcon mimeType={artifact.mimeType} small />
-          </span>
+          <FileKindIcon name={artifact.name} mimeType={artifact.mimeType} size={24} />
           <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{artifact.name}</span>
           {artifact.versionCount > 1 ? (
             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
@@ -751,42 +757,6 @@ function ArtifactRow({
       </IconTooltip>
     </div>
   );
-}
-
-function ArtifactMimeIcon({ mimeType, small }: { mimeType: string; small?: boolean }) {
-  const size = small ? 12 : 16;
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {mimeType === "text/html" ? (
-        <>
-          <polyline points="8 6 2 12 8 18" />
-          <polyline points="16 6 22 12 16 18" />
-        </>
-      ) : (
-        <>
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-        </>
-      )}
-    </svg>
-  );
-}
-
-function mimeLabel(mimeType: string): string {
-  if (mimeType === "text/html") return "HTML";
-  if (mimeType === "text/markdown") return "MD";
-  if (mimeType === "application/pdf") return "PDF";
-  const slash = mimeType.indexOf("/");
-  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
 }
 
 function PreviewPane({
@@ -859,7 +829,7 @@ function PreviewPane({
       <header className="flex items-center gap-3 border-b border-border px-6 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[16px] font-semibold">
-            {state.status === "ready" ? state.artifact.name : t`Loading…`}
+            {state.status === "ready" ? state.artifact.name : null}
           </h2>
           {state.status === "ready" && state.artifact.description ? (
             <p className="truncate text-[12.5px] text-muted-foreground">
@@ -914,7 +884,7 @@ function PreviewPane({
       <div className="min-h-0 flex-1 p-5">
         {state.status === "loading" ? (
           <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-            <Trans>Loading…</Trans>
+            <Spinner aria-label={t`Loading…`} />
           </div>
         ) : state.status === "error" ? (
           <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
@@ -958,6 +928,9 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
   }
   if (isAttachmentImageMimeType(artifact.mimeType)) {
     return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
+  }
+  if (hasInAppFileViewer(artifact)) {
+    return <FileViewerBody bytes={bytes} name={artifact.name} mimeType={artifact.mimeType} />;
   }
   return (
     <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">

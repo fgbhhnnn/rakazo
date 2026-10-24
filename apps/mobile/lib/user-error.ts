@@ -15,7 +15,10 @@ export function errorText(
 ): string {
   return (
     voiceAccountErrorText(error) ??
-    userErrorMessage(error, { fallback, offline: t("Could not reach the server") })
+    userErrorMessage(error, {
+      fallback,
+      offline: t("Could not reach the server"),
+    })
   );
 }
 
@@ -68,6 +71,8 @@ export function authResponseErrorText(
         : status >= 500 || invalidJson
           ? t("The server had a problem. Try again in a moment.")
           : lastResort;
+  if ((body as { code?: unknown } | null)?.code === "CAPTCHA_FAILED")
+    return t("Security check failed. Complete it again and retry.");
   return authErrorText(body, fallback).trim() || fallback;
 }
 

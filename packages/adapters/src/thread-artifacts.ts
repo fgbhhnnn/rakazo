@@ -23,6 +23,7 @@ import {
 import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
 import { withResolvedArtifactVersion } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { attachmentDisplayName } from "./attachment-display-name.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
 export type MaterializedThreadFile = {
@@ -58,7 +59,7 @@ export async function attachWorkspaceFileToThread(
   if (!mimeType) {
     throw new Error(`Unsupported attachment type for ${fileName}`);
   }
-  const name = (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  const name = attachmentDisplayName(input.name, fileName, ARTIFACT_NAME_MAX_LENGTH);
   validateAttachmentMimeType(mimeType);
   if (input.bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
     throw new Error(
@@ -298,7 +299,7 @@ export async function listRecentThreadFiles(
 }
 
 /** The newest attachments across the last `maxTurns` user turns that carry any. */
-function recentAttachmentBlocks(
+export function recentAttachmentBlocks(
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: { skipMessageId?: string | null; maxTurns: number },

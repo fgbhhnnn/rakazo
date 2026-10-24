@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { readFileSync } from "node:fs";
+import { askAnswerRunId } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import React, { act, useRef, useState } from "react";
@@ -270,6 +271,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
     rpc,
     isCurrentTarget: () => true,
     refresh,
+    askAnswerRunId,
   };
   const answerMessage = new Function(
     ...Object.keys(handlerScope),
@@ -278,7 +280,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
     }).outputText,
   )(...Object.values(handlerScope));
   await render(loginAsk, () =>
-    answerMessage({ id: "message-1", runId: "run-1" }, "example-password"),
+    answerMessage({ id: "message-1", runId: "run-1", blocks: [] }, "example-password"),
   );
   await openSheet();
   await act(async () => sheet.onSave("example-password", "example-user"));

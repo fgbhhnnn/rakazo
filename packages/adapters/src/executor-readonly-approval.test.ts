@@ -18,6 +18,7 @@ import { createRunExecutor } from "./executor.js";
 import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+import { WORKER_NESTING_REFUSAL } from "./worker-nesting.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -85,7 +86,10 @@ function fixture({
   fleetBots = [] as { id: string; name: string }[],
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
+  spawnKey = null as string | null,
 }: {
+  /** The bot's spawn key; a `bg-worker:` key makes it a hidden background worker. */
+  spawnKey?: string | null;
   /** The bot's routines, as the owner wrote them. */
   routines?: { name: string; prompt: string }[];
   /** Adds `demo_get_other`, a read on a separate installed resource with the same name prefix. */
@@ -231,6 +235,7 @@ function fixture({
         name: bot.name,
         title: bot.title,
         description: bot.description,
+        spawnKey,
         disabledBuiltinTools,
         fleetManagement,
         computerId: "computer-1",
@@ -290,8 +295,8 @@ function fixture({
     userModelCredential: { findFirst: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
-        defaultModelProvider: "scripted",
-        defaultModelId: "scripted",
+        defaultModelProvider: "openrouter",
+        defaultModelId: "fixture-model",
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
@@ -356,6 +361,7 @@ function fixture({
   });
   const enqueue = vi.fn(async (_job: unknown) => undefined);
   const executor = createRunExecutor({
+    deploymentModelKey: "fixture-model-key",
     prisma: transactionalPrisma,
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     connector: {
@@ -547,6 +553,45 @@ describe("disabled builtins", () => {
     expect(f.commit).not.toHaveBeenCalled();
     expect(f.execute).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
+  });
+});
+
+describe("hidden background workers never nest agents", () => {
+  const nested = [
+    "run_subagent",
+    "background_task",
+    "background_task_status",
+    "background_task_message",
+    "background_task_cancel",
+    "spawn_bot",
+    "handoff_to_bot",
+    "message_bot",
+  ];
+
+  it.each(nested)("withholds and refuses %s for a worker", async (tool) => {
+    const f = fixture({ name: tool, builtin: true, spawnKey: "bg-worker:main-bot:1" });
+    f.setCalls([{ args: { name: "helper", task: "convert" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.offeredTools()).not.toContain(tool);
+    expect(f.results).toEqual([{ error: WORKER_NESTING_REFUSAL }]);
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([]);
+  });
+
+  it("keeps the worker's own work tools", async () => {
+    const f = fixture({ name: "shell", builtin: true, spawnKey: "bg-worker:main-bot:1" });
+    f.setCalls([]);
+    await f.run();
+    expect(f.offeredTools()).toEqual(expect.arrayContaining(["shell", "read_file", "write_file"]));
+    for (const tool of nested) expect(f.offeredTools()).not.toContain(tool);
+  });
+
+  it("leaves a regular bot's run_subagent alone", async () => {
+    const f = fixture({ name: "run_subagent", builtin: true });
+    f.setCalls([{ args: { name: "helper", task: "convert" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.offeredTools()).toContain("run_subagent");
+    expect(f.results).toEqual([{ ok: true, result: "convert" }]);
   });
 });
 
@@ -1198,6 +1243,7 @@ describe("bot management tool gating", () => {
     ["create_group", { name: "Crew", bot_ids: ["a", "b"] }],
     ["set_child_instructions", { bot_id: "child-1", instructions: "Obey", expected_version: "v1" }],
     ["update_bot", { bot_id: "child-1", name: "Obeys" }],
+    ["archive_bot", { bot_id: "peer-1", confirm_name: "Peer" }],
   ])("refuses %s from a helper even on a run the owner started", async (name, args) => {
     const f = fixture({ name, builtin: true, fleetManagement: true });
     f.setCalls([{ args, executionId: JSON.stringify(["pi-tool", "helper-call", "call-1"]) }]);
@@ -1237,6 +1283,23 @@ describe("bot management tool gating", () => {
             : { error: "Helpers cannot use bot management tools." },
       );
       expect(f.effects[0]!.status).toBe("approved");
+    },
+  );
+
+  it.each(["switch", "external", "channel"])(
+    "refuses archiving a peer through the %s management gate",
+    async (gate) => {
+      const f = fixture({
+        name: "archive_bot",
+        builtin: true,
+        fleetManagement: gate !== "switch",
+        trigger: gate === "external" ? "bot_message" : "user",
+      });
+      if (gate === "channel") f.claimedOutsideSteering(true);
+      f.setCalls([{ args: { bot_id: "peer-1", confirm_name: "Peer" }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.results.at(-1)).toHaveProperty("error");
+      expect(f.effects).toEqual([]);
     },
   );
 

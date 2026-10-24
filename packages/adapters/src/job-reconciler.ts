@@ -5,6 +5,7 @@ import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
+import { reconcileBackgroundTasks } from "./background-tasks.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
@@ -115,6 +116,7 @@ export function createJobReconciler(
     reconcileModelCredits?: () => Promise<void>;
     reconcileRoutineRetryNotices?: () => Promise<void>;
     reconcileSecurityEventRetention?: () => Promise<void>;
+    reconcileHomeStorage?: () => Promise<void>;
   },
   options: { intervalMs?: number; batchSize?: number } = {},
 ) {
@@ -137,11 +139,13 @@ export function createJobReconciler(
       const auxiliary = await Promise.allSettled(
         [
           () => reconcileCallRequests(deps),
+          () => reconcileBackgroundTasks(deps),
           deps.reconcileCloudAgents,
           deps.reconcileModelCredits,
           deps.reconcileComputerUpdates,
           deps.reconcileRoutineRetryNotices,
           deps.reconcileSecurityEventRetention,
+          deps.reconcileHomeStorage,
         ].map(async (reconcile) => reconcile?.()),
       );
       for (const result of auxiliary) {

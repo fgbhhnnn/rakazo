@@ -18,6 +18,10 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "request_takeover",
   "request_secret",
   "run_subagent",
+  "background_task",
+  "background_task_status",
+  "background_task_message",
+  "background_task_cancel",
   "spawn_bot",
   "schedule_create",
   "schedule_list",
@@ -39,6 +43,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "cloud_agent_cancel",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
+  "respond_agent_connection",
   "create_space",
   "propose_instructions_update",
   "create_group",
@@ -59,6 +64,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "recall_memory",
   "request_takeover",
   "run_subagent",
+  "background_task_status",
   "task_catalog",
   "schedule_list",
   "scratchpad_list",

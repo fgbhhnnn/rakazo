@@ -1,6 +1,11 @@
+import { OFFICE_ATTACHMENT_MIME_TYPES } from "./office-attachments.js";
+
 /** Default for deployments and clients connected to older servers. */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const ATTACHMENT_MAX_COUNT = 4;
+/** Shared photo preparation policy for web and mobile composers. */
+export const ATTACHMENT_IMAGE_MAX_EDGE = 1_600;
+export const ATTACHMENT_IMAGE_QUALITY = 0.7;
 export const ARTIFACT_NAME_MAX_LENGTH = 255;
 export const ARTIFACT_DESCRIPTION_MAX_LENGTH = 280;
 /** Base64 expands payload by 4/3; cap before decode to reject oversize uploads cheaply. */
@@ -30,6 +35,7 @@ export const ATTACHMENT_FILE_MIME_TYPES = [
   "text/html",
   "application/json",
   "application/zip",
+  ...OFFICE_ATTACHMENT_MIME_TYPES,
 ] as const;
 
 export const ATTACHMENT_ALLOWED_MIME_TYPES = [

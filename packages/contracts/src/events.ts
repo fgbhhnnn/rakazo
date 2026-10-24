@@ -93,6 +93,19 @@ const ChartBlock = z
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
+/**
+ * Links a main-chat copy of an approval card to the hidden worker run that raised it. The server
+ * writes it; answering the copy answers the worker's own card. closed: the worker ended first.
+ */
+export const WorkerApprovalMirror = z.object({
+  runId: Id,
+  messageId: Id,
+  /** Which background task asked, e.g. "任务 #AB12CD34（报表）". */
+  label: z.string().max(400),
+  closed: z.enum(["cancelled", "expired"]).optional(),
+});
+export type WorkerApprovalMirror = z.infer<typeof WorkerApprovalMirror>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -127,6 +140,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answer: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** A hidden background worker's approval, mirrored into the main chat and answered there. */
+    workerApproval: WorkerApprovalMirror.optional(),
     actions: z
       .array(
         z.object({

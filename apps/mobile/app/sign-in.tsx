@@ -1,9 +1,9 @@
-import type { IntegrationSetupState } from "@rakazo/contracts";
 import { credentialIssue, MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -16,7 +16,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
-import type { PasswordResetCapabilities } from "../lib/api";
+import { TurnstileWidget } from "../components/turnstile-widget";
+import type { MobileMe, PasswordResetCapabilities } from "../lib/api";
 import {
   currentApiBase,
   displayApiHost,
@@ -33,7 +34,7 @@ import {
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
@@ -43,12 +44,16 @@ const CODE_LENGTH = 6;
 export default function SignIn() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
+  const appearance = useResolvedAppearance();
   const router = useRouter();
-  const { mode: requestedMode } = useLocalSearchParams<{ mode?: string | string[] }>();
+  const { mode: requestedMode } = useLocalSearchParams<{
+    mode?: string | string[];
+  }>();
   const [mode, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [ready, setReady] = useState(false);
@@ -62,6 +67,12 @@ export default function SignIn() {
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
+
+  useEffect(() => {
+    setPasswordVisible(false);
+  }, [mode, apiBase, usePassword]);
 
   useFocusEffect(
     useCallback(() => {
@@ -120,7 +131,7 @@ export default function SignIn() {
           padding: 24,
         }}
       >
-        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>{t("Loading…")}</Text>
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
       </View>
     );
   }
@@ -142,6 +153,18 @@ export default function SignIn() {
     }
     // An unfinished code would spend one of the code's three attempts.
     if (codeStep && enteredCode.length !== CODE_LENGTH) return;
+    // The server checks Turnstile when this request may create an account.
+    const turnstileSiteKey = mode === "up" && !codeStep ? (reset.turnstileSiteKey ?? null) : null;
+    if (turnstileSiteKey && !captchaToken) {
+      setError(t("Complete the security check first"));
+      return;
+    }
+    const captcha = turnstileSiteKey ? (captchaToken ?? undefined) : undefined;
+    if (turnstileSiteKey) {
+      // A token is single use; render a fresh widget for the next attempt.
+      setCaptchaToken(null);
+      setCaptchaRound((round) => round + 1);
+    }
     setPending(true);
     setError(null);
     try {
@@ -155,7 +178,7 @@ export default function SignIn() {
       }
       if (usingCode && !codeSent) {
         const sentFrom = apiBase;
-        await sendSignInCode(email.trim());
+        await sendSignInCode(email.trim(), captcha);
         if (currentApiBase() !== sentFrom) return;
         setCode("");
         setCodeSent(true);
@@ -175,6 +198,7 @@ export default function SignIn() {
           trimmedEmail,
           password,
           name.trim() || trimmedEmail.split("@")[0] || "User",
+          captcha,
         );
         if (result.verificationRequired) {
           setResetSent(true);
@@ -183,12 +207,7 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      // A code can create the account from either form.
-      const setup =
-        mode === "up" || usingCode
-          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
-          : null;
-      router.replace(setup?.needsSetup ? "/integration-setup" : "/");
+      await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -196,11 +215,17 @@ export default function SignIn() {
     }
   }
 
+  // Any sign-in can create the account (a code, SSO), so ask the server rather than the form.
+  async function openApp() {
+    const me = await rpc<MobileMe>("me").catch(() => null);
+    router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
+  }
+
   async function externalSignIn(run: () => Promise<boolean>) {
     setPending(true);
     setError(null);
     try {
-      if (await run()) router.replace("/");
+      if (await run()) await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -255,7 +280,13 @@ export default function SignIn() {
                       setCodeSent(false);
                     }}
                   >
-                    <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
+                    <Text
+                      style={{
+                        color: tokens.foreground,
+                        fontSize: 15,
+                        fontWeight: "600",
+                      }}
+                    >
                       {t("Back to sign in")}
                     </Text>
                   </Pressable>
@@ -273,15 +304,17 @@ export default function SignIn() {
                       />
                     </View>
                   ) : !reset ? (
-                    <Text
-                      style={{ color: tokens.mutedForeground, textAlign: "center", marginTop: 16 }}
-                    >
-                      {t("Loading…")}
-                    </Text>
+                    <ActivityIndicator
+                      color={tokens.mutedForeground}
+                      accessibilityLabel={t("Loading…")}
+                      style={{ marginTop: 16 }}
+                    />
                   ) : null}
                   {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
                     <NativeActionButton
-                      label={t("Continue with {name}", { name: reset.sso.name })}
+                      label={t("Continue with {name}", {
+                        name: reset.sso.name,
+                      })}
                       disabled={pending}
                       onPress={() => void externalSignIn(continueWithSso)}
                       style={{ marginTop: 16 }}
@@ -378,25 +411,67 @@ export default function SignIn() {
                         }}
                       />
                       {mode !== "forgot" && !usingCode ? (
-                        <TextInput
-                          autoComplete={mode === "in" ? "current-password" : "new-password"}
-                          textContentType={mode === "in" ? "password" : "newPassword"}
-                          passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
-                          maxLength={MAX_PASSWORD_LENGTH}
-                          placeholder={t("Password")}
-                          placeholderTextColor={tokens.mutedForeground}
-                          returnKeyType="go"
-                          secureTextEntry
-                          value={password}
-                          onChangeText={setPassword}
-                          onSubmitEditing={() => void submit()}
+                        <View
                           style={{
                             marginTop: 12,
+                            flexDirection: "row",
+                            alignItems: "center",
                             backgroundColor: tokens.muted,
                             borderRadius: 13,
-                            padding: 16,
-                            color: tokens.foreground,
                           }}
+                        >
+                          <TextInput
+                            autoComplete={mode === "in" ? "current-password" : "new-password"}
+                            textContentType={mode === "in" ? "password" : "newPassword"}
+                            passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
+                            maxLength={MAX_PASSWORD_LENGTH}
+                            placeholder={t("Password")}
+                            placeholderTextColor={tokens.mutedForeground}
+                            returnKeyType="go"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            secureTextEntry={!passwordVisible}
+                            value={password}
+                            onChangeText={setPassword}
+                            onSubmitEditing={() => void submit()}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              padding: 16,
+                              color: tokens.foreground,
+                            }}
+                          />
+                          <NativeActionButton
+                            accessibilityLabel={
+                              passwordVisible ? t("Hide password") : t("Show password")
+                            }
+                            icon={{
+                              ios: passwordVisible ? "eye.slash" : "eye",
+                              android: passwordVisible ? "eye-off-outline" : "eye-outline",
+                            }}
+                            prominence="quiet"
+                            onPress={() => setPasswordVisible((visible) => !visible)}
+                            style={{
+                              alignSelf: "center",
+                              minWidth: 44,
+                              minHeight: 44,
+                              marginRight: 4,
+                            }}
+                          />
+                        </View>
+                      ) : null}
+                      {mode === "up" && !codeStep && reset.turnstileSiteKey ? (
+                        <TurnstileWidget
+                          key={`${captchaRound}:${apiBase}`}
+                          siteKey={reset.turnstileSiteKey}
+                          baseUrl={apiBase}
+                          dark={appearance === "dark"}
+                          onToken={setCaptchaToken}
+                          onError={() =>
+                            setError(
+                              t("Security check failed. Check your connection and try again."),
+                            )
+                          }
                         />
                       ) : null}
                       {error ? (
@@ -441,7 +516,9 @@ export default function SignIn() {
                       ) : null}
                       {reset.sso && mode !== "forgot" ? (
                         <NativeActionButton
-                          label={t("Continue with {name}", { name: reset.sso.name })}
+                          label={t("Continue with {name}", {
+                            name: reset.sso.name,
+                          })}
                           prominence="quiet"
                           disabled={pending}
                           onPress={() => void externalSignIn(continueWithSso)}
@@ -459,7 +536,11 @@ export default function SignIn() {
                           style={{ alignSelf: "center", marginTop: 16 }}
                         >
                           <Text
-                            style={{ color: tokens.foreground, fontSize: 14, fontWeight: "600" }}
+                            style={{
+                              color: tokens.foreground,
+                              fontSize: 14,
+                              fontWeight: "600",
+                            }}
                           >
                             {t("Forgot password?")}
                           </Text>
@@ -473,7 +554,12 @@ export default function SignIn() {
                           marginTop: 24,
                         }}
                       >
-                        <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+                        <Text
+                          style={{
+                            color: tokens.mutedForeground,
+                            fontSize: 15,
+                          }}
+                        >
                           {mode === "in"
                             ? t("Don’t have an account?")
                             : mode === "up"
@@ -490,7 +576,11 @@ export default function SignIn() {
                           style={{ marginLeft: 5 }}
                         >
                           <Text
-                            style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}
+                            style={{
+                              color: tokens.foreground,
+                              fontSize: 15,
+                              fontWeight: "600",
+                            }}
                           >
                             {mode === "in"
                               ? t("Sign up")
@@ -526,7 +616,13 @@ export default function SignIn() {
                   <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>
                     {t("Custom server")}
                   </Text>
-                  <Text style={{ color: tokens.mutedForeground, fontSize: 13, marginTop: 2 }}>
+                  <Text
+                    style={{
+                      color: tokens.mutedForeground,
+                      fontSize: 13,
+                      marginTop: 2,
+                    }}
+                  >
                     {displayApiHost(apiBase)}
                   </Text>
                 </>

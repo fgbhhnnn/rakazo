@@ -32,11 +32,12 @@ import {
   startWaitSound,
   stopWaitSound,
 } from "./call-sounds";
+import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
 import { errorText, voiceAccountErrorText } from "./user-error";
-import { speakText, stopSpeaking } from "./voice";
+import { setCallAudioActive, speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
 export type CallExchange = { role: "user" | "bot"; text: string };
@@ -59,6 +60,7 @@ export type CallClip = { base64: string; mimeType: string };
 export type DictationHandlers = {
   onInterim: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp: (reason: DictationGiveUp) => void;
 };
 
 /** Everything that touches the device or the server, so the loop stays testable. */
@@ -201,6 +203,7 @@ export function startCall(
   micOpen = false;
   bargedIn = false;
   spokenMemory.clear();
+  setCallAudioActive(true);
   state = {
     botId: call.botId,
     botName: call.botName,
@@ -254,6 +257,7 @@ export function endCall(): void {
         .catch(() => undefined);
   }
   if (state) deps.waitSound("release");
+  setCallAudioActive(false);
   turn?.abort();
   turn = null;
   unwatch?.();
@@ -331,9 +335,20 @@ async function openMic(): Promise<void> {
           onFinal: (text) => {
             if (mine()) void handleTranscript(text);
           },
+          onGiveUp: (reason) => {
+            if (!mine()) return;
+            controller.abort();
+            micOpen = false;
+            clearInterim();
+            set({ heard: "" });
+            if (reason === "failed") onDevice = false;
+            // Recording must wait for playback; recognition can still hear a barge-in.
+            if (state?.phase !== "speaking" || onDevice !== false) void openMic();
+          },
         },
         controller.signal,
       );
+      if (!mine()) return;
       if (started) {
         onDevice = true;
         return;
@@ -361,8 +376,8 @@ async function openMic(): Promise<void> {
     micOpen = false;
     await handleTranscript(text);
   } catch (error) {
-    micOpen = false;
     if (!mine()) return;
+    micOpen = false;
     failTurn(error);
   }
 }
@@ -601,6 +616,8 @@ function speakAndListen(text: string): void {
     })
     .finally(() => {
       if (state?.botId !== botId || callId !== speakingCallId) return;
+      // The echo window runs from when the line ends, not when a long reply began.
+      spokenMemory.remember(text);
       if (blockedByConsent) return;
       // The caller cut in: the microphone is already theirs and their turn is on its way.
       if (bargedIn) return;

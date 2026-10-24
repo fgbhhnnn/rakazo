@@ -3,11 +3,17 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, commandVariableName } from "@rakazo/contracts";
-import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
+import {
+  isApprovalAskBlock,
+  isSecretAskBlock,
+  selectedAskActionLabel,
+  workerApprovalClosedState,
+} from "@rakazo/core";
 import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+import { WorkerApprovalLabel } from "./WorkerApprovalLabel";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 
@@ -178,6 +184,7 @@ export function AskCard({
       }
       className={`w-full min-w-0 ${secretInput ? "" : "max-w-xl "}rounded-2xl border border-border bg-card px-5 py-4`}
     >
+      <WorkerApprovalLabel block={block} />
       <div className="text-[15.5px] leading-[1.5] text-foreground">
         {block.instructionUpdate ? (
           <Trans>Update instructions?</Trans>
@@ -246,7 +253,11 @@ export function AskCard({
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
-          <Trans>No longer active</Trans>
+          {workerApprovalClosedState(block) === "cancelled" ? (
+            t`Cancelled`
+          ) : (
+            <Trans>No longer active</Trans>
+          )}
         </div>
       ) : ownerOnly ? null : askActions?.length ? (
         <div className={approvalActions ? "mt-3.5 flex flex-wrap gap-2" : "mt-3.5 space-y-1.5"}>

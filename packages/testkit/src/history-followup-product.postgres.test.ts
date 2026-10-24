@@ -30,11 +30,13 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
       const followup = (request: ModelEmulatorRequest, index: number) => {
         const serialized = JSON.stringify(request.messages);
         expect(serialized).toContain(questions[index]);
+        // Consecutive history turns arrive merged into one user message.
         expect(
-          request.messages.filter((row) =>
-            String(row.content).includes(`Assistant: ${verifiedReply}`),
-          ),
-        ).toHaveLength(index);
+          request.messages
+            .map((row) => String(row.content))
+            .join("\n")
+            .split(`Assistant: ${verifiedReply}`).length - 1,
+        ).toBe(index);
         expect(serialized).toContain("do not repeat retrieval solely because the user asks again");
       };
       const key = "synthetic-history-followup-key";
@@ -135,13 +137,17 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
               }),
           },
         );
-        model.assertComplete();
-        expect(result).toMatchObject({
+        // The trial's own verdict first: a failed step reports its category, reason, and trace
+        // instead of surfacing only as an unconsumed model step.
+        expect({ ...result, artifacts: undefined }).toMatchObject({
           status: "passed",
+          category: null,
+          reason: null,
           toolCalls: 2,
           modelCalls: 5,
           cleanupFailed: false,
         });
+        model.assertComplete();
         expect(result.historyPreparationState).toMatchObject({
           generation: 0,
           beforeCursor: size === 1000 ? 949 : null,

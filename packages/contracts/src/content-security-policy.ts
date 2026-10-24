@@ -18,7 +18,8 @@ export const CSP_REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"
 
 const APP_DIRECTIVES: Record<string, string[]> = {
   "default-src": ["'self'"],
-  "script-src": ["'self'"],
+  // Cloudflare Turnstile, when the owner turns on the sign-up bot check.
+  "script-src": ["'self'", "https://challenges.cloudflare.com"],
   // Mermaid SVGs and some UI libraries inject <style> elements and style attributes as markup.
   "style-src": ["'self'", "'unsafe-inline'"],
   // Markdown images, link favicons and attachment previews (object URLs).
@@ -28,7 +29,7 @@ const APP_DIRECTIVES: Record<string, string[]> = {
   "media-src": ["'self'", "blob:"],
   "connect-src": ["'self'"],
   // The /novnc screen proxy, the HTML viewer shell and PDF object URLs.
-  "frame-src": ["'self'", "blob:"],
+  "frame-src": ["'self'", "blob:", "https://challenges.cloudflare.com"],
   "object-src": ["'none'"],
   "base-uri": ["'self'"],
   "form-action": ["'self'"],

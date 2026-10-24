@@ -6,16 +6,17 @@ import {
   expandPeerReplies,
   groupVoiceChats,
   isPeerReceiptBlocks,
-  isToolActivityBlock,
+  liveActivityLine,
+  liveMessageComposing,
   projectMessageReactions,
   timeSeparatorIds,
   unreadDividerMessageId,
   voiceChatHoldsMessage,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
-import { cn } from "@rakazo/ui-web";
+import { cn, Spinner } from "@rakazo/ui-web";
 import { ArrowDown } from "lucide-react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import {
   Fragment,
   memo,
@@ -26,6 +27,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { BackgroundCoordinatingRow } from "../../components/ai/BackgroundCoordinating";
 import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
 import { VoiceChatCard } from "../../components/call/VoiceChatCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
@@ -50,11 +52,15 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds,
   running,
   workingBots,
+  backgroundTasks,
+  coordinator,
+  userBubble,
   onCallBack,
   onLoadOlder,
   onOpenBot,
   onAnswer,
   onReply,
+  onMarkUnread,
   onQuote,
   onReact,
   onJumpToMessage,
@@ -83,6 +89,12 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds: Set<string>;
   running: boolean;
   workingBots: GroupAvatarMember[];
+  /** Hidden background workers of this bot; shown as a quiet working line when the bot itself is idle. */
+  backgroundTasks?: { running: number; queued: number };
+  /** The bot whose avatar leads the background coordinating line. */
+  coordinator?: GroupAvatarMember;
+  /** Your bubbles take the bot's color in its own chat. */
+  userBubble?: { background: string; foreground: string };
   /** Calls the bot back from a missed call in the transcript. */
   onCallBack?: () => void;
   onLoadOlder: () => void | Promise<void>;
@@ -94,6 +106,7 @@ export const Transcript = memo(function Transcript({
     dismiss?: boolean,
   ) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
+  onMarkUnread: (message: ThreadMessage) => void;
   onQuote: (message: ThreadMessage, quote: string) => void;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
@@ -150,11 +163,7 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
-  const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
-  const workingLabel =
-    workingBotName != null && workingBotName !== ""
-      ? t`${workingBotName} is working`
-      : t`Bots are working`;
+  const workingLabel = liveActivityLine(messages) ?? t`Working…`;
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -395,15 +404,25 @@ export const Transcript = memo(function Transcript({
           }
         }}
         className="rk-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+        style={
+          userBubble
+            ? ({
+                "--chat-user": userBubble.background,
+                "--chat-user-foreground": userBubble.foreground,
+              } as CSSProperties)
+            : undefined
+        }
       >
         {olderCursor != null ? (
           <button
             type="button"
             disabled={loadingOlder}
             onClick={() => void loadOlder()}
-            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground/75 disabled:opacity-50"
+            aria-label={t`Load earlier messages`}
+            className="flex items-center gap-2 self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground/75 disabled:opacity-50"
           >
-            {loadingOlder ? t`Loading…` : t`Load earlier messages`}
+            {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
+            {t`Load earlier messages`}
           </button>
         ) : null}
         {groupVoiceChats(reactionView.visibleMessages).map((item) => {
@@ -510,6 +529,7 @@ export const Transcript = memo(function Transcript({
                       onOpenComputer={onOpenComputer}
                       showToolActivity={showToolActivity}
                       onReply={onReply}
+                      onMarkUnread={onMarkUnread}
                       onReact={onReact}
                     />
                   </div>
@@ -539,15 +559,11 @@ export const Transcript = memo(function Transcript({
         })}
         {running &&
         !messages.some(
-          (message) =>
-            message.id.startsWith("progress:") &&
-            message.blocks.some(
-              (block) =>
-                block.kind === "progress" && !isToolActivityBlock(block) && Boolean(block.text),
-            ),
+          (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
         ) ? (
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
+        {running ? null : <BackgroundCoordinatingRow tasks={backgroundTasks} bot={coordinator} />}
       </div>
       {quoteDraft ? (
         <QuoteSelectionButton

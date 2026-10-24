@@ -1,7 +1,6 @@
 import type {
   AccountSecurity,
   AuthCapabilities,
-  AvatarStyle,
   Bot,
   BotSection,
   ComputerMode,
@@ -29,6 +28,7 @@ import {
   cancelResponseBody,
   displayIdentityEvent,
   displayIdentityResult,
+  displayName,
   ensureAiDataConsent,
   isActive,
   isBackgroundRunTrigger,
@@ -44,7 +44,9 @@ import {
   reduceLiveMessageBlocks,
   replyMetadata,
   runFailureError,
+  settleRunSubagents,
   signupRequiresEmailVerification,
+  stopsRunHelpers,
   takeLiveMessage,
   updateCloudAgentMessages,
   upsertMessageById,
@@ -52,7 +54,6 @@ import {
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
-import { getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
@@ -71,6 +72,7 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
+import { captchaHeaders } from "./turnstile";
 import { authResponseErrorText, errorText, sessionSaveErrorText } from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
@@ -289,7 +291,10 @@ async function writeStoredValue(key: string, value: string): Promise<boolean> {
 async function snapshotSpace(): Promise<{ ok: true; value: string } | { ok: false }> {
   if (cachedSpaceId) return { ok: true, value: cachedSpaceId };
   try {
-    return { ok: true, value: (await SecureStore.getItemAsync(SPACE_KEY)) ?? "" };
+    return {
+      ok: true,
+      value: (await SecureStore.getItemAsync(SPACE_KEY)) ?? "",
+    };
   } catch {
     return { ok: false };
   }
@@ -301,17 +306,18 @@ async function clearCredentialsForEndpointChange(): Promise<
       ok: true;
       previousToken: string;
       previousSpace: string;
-      previousAvatarStyle: AvatarStyle;
     }
   | { ok: false; result: EndpointResult }
 > {
   const previousToken = await snapshotSessionToken();
   const previousSpace = await snapshotSpace();
-  const previousAvatarStyle = getCachedAvatarStyle();
   if (!previousToken.ok || !previousSpace.ok) {
     return {
       ok: false,
-      result: { ok: false, error: t("Could not clear the previous server session") },
+      result: {
+        ok: false,
+        error: t("Could not clear the previous server session"),
+      },
     };
   }
   const rollbackReady = previousSpace.value
@@ -320,7 +326,10 @@ async function clearCredentialsForEndpointChange(): Promise<
   if (!rollbackReady) {
     return {
       ok: false,
-      result: { ok: false, error: t("Could not clear the previous server session") },
+      result: {
+        ok: false,
+        error: t("Could not clear the previous server session"),
+      },
     };
   }
   const sessionCleared = await clearSessionToken();
@@ -332,24 +341,21 @@ async function clearCredentialsForEndpointChange(): Promise<
       ok: true,
       previousToken: previousToken.value,
       previousSpace: previousSpace.value,
-      previousAvatarStyle,
     };
   }
 
-  await restoreCredentials(previousToken.value, previousSpace.value, previousAvatarStyle);
+  await restoreCredentials(previousToken.value, previousSpace.value);
   return {
     ok: false,
-    result: { ok: false, error: t("Could not clear the previous server session") },
+    result: {
+      ok: false,
+      error: t("Could not clear the previous server session"),
+    },
   };
 }
 
-async function restoreCredentials(
-  previousToken: string,
-  previousSpace: string,
-  previousAvatarStyle: AvatarStyle,
-) {
+async function restoreCredentials(previousToken: string, previousSpace: string) {
   if (previousToken) await restoreSessionToken(previousToken);
-  await saveAvatarStyle(previousAvatarStyle);
   if (previousSpace) {
     cachedSpaceId = previousSpace;
     bumpSpaceSelectionGeneration();
@@ -413,7 +419,6 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     | {
         previousToken: string;
         previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
       }
     | undefined;
   if (parsed.url !== previous) {
@@ -425,11 +430,7 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
     if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
+      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
     }
     return { ok: false, error: t("Could not save the server URL") };
   }
@@ -445,7 +446,6 @@ export async function resetApiBase(): Promise<EndpointResult> {
     | {
         previousToken: string;
         previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
       }
     | undefined;
   if (url !== previous) {
@@ -457,11 +457,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
     await SecureStore.deleteItemAsync(ENDPOINT_KEY);
   } catch {
     if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
+      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
@@ -470,7 +466,10 @@ export async function resetApiBase(): Promise<EndpointResult> {
   return { ok: true, url };
 }
 
-let clientBuild: { headers: () => Record<string, string>; onUpdateRequired: () => void } = {
+let clientBuild: {
+  headers: () => Record<string, string>;
+  onUpdateRequired: () => void;
+} = {
   headers: () => ({}),
   onUpdateRequired: () => {},
 };
@@ -514,12 +513,20 @@ export async function captureApiRequestContext(): Promise<ApiRequestContext> {
   return { apiBase, headers, sessionGeneration: generation };
 }
 
-async function postAuth(path: string, input: Record<string, string>) {
+async function postAuth(
+  path: string,
+  input: Record<string, string>,
+  extraHeaders: Record<string, string> = {},
+) {
   return fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/${path}`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        ...extraHeaders,
+      },
       body: JSON.stringify(input),
     },
     {},
@@ -530,8 +537,9 @@ async function authenticate(
   path: string,
   input: Record<string, string>,
   missingSession: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ verificationRequired: boolean }> {
-  const { response, body, invalidJson } = await postAuth(path, input);
+  const { response, body, invalidJson } = await postAuth(path, input, extraHeaders);
   if (!response.ok || invalidJson) {
     throw new Error(authResponseErrorText(response.status, body, invalidJson));
   }
@@ -553,20 +561,22 @@ export function signIn(email: string, password: string) {
   return authenticate("sign-in/email", { email, password }, t("Sign-in did not return a session"));
 }
 
-export function signUp(email: string, password: string, name: string) {
+export function signUp(email: string, password: string, name: string, captchaToken?: string) {
   return authenticate(
     "sign-up/email",
     { email, password, name },
     t("Sign-up did not return a session"),
+    captchaHeaders(captchaToken),
   );
 }
 
 /** Always succeeds when the server accepts the request, whether or not an email was sent. */
-export async function sendSignInCode(email: string): Promise<void> {
-  const { response, body, invalidJson } = await postAuth("email-otp/send-verification-otp", {
-    email,
-    type: "sign-in",
-  });
+export async function sendSignInCode(email: string, captchaToken?: string): Promise<void> {
+  const { response, body, invalidJson } = await postAuth(
+    "email-otp/send-verification-otp",
+    { email, type: "sign-in" },
+    captchaHeaders(captchaToken),
+  );
   if (!response.ok) throw new Error(authResponseErrorText(response.status, body, invalidJson));
 }
 
@@ -606,6 +616,30 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     );
 }
 
+export async function updateAccountName(name: string): Promise<void> {
+  const nextName = name.trim();
+  if (!nextName || nextName.length > 80 || !displayName(nextName, "")) {
+    throw new Error(t("Could not update name"));
+  }
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/update-user`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ name: nextName }),
+    },
+    {},
+  );
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not update name")),
+    );
+}
+
 /** Revoking other sessions also refuses this one until the replacement is saved. */
 let passwordChangesInFlight = 0;
 
@@ -631,7 +665,11 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
         origin: "rakazo://",
         ...headers,
       },
-      body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: true }),
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: true,
+      }),
     },
     {},
   );
@@ -702,7 +740,11 @@ export async function signOut() {
     await withAbort(
       fetch(`${currentApiBase()}/api/auth/sign-out`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          ...headers,
+        },
         body: "{}",
         signal: controller.signal,
       }),
@@ -963,7 +1005,10 @@ export async function rpc<T>(
       }
       throw httpError(message, res, typeof error?.code === "string" ? error.code : undefined);
     }
-    const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
+    const verifiedUser = parsed.json as {
+      userId?: unknown;
+      spaceId?: unknown;
+    } | null;
     if (
       proc === "me" &&
       typeof verifiedUser?.userId === "string" &&
@@ -1014,6 +1059,7 @@ export type MobileBot = Pick<
   | "thinkingLevel"
   | "autoSpeak"
   | "fleetManagement"
+  | "crossSpaceCommunication"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
 
@@ -1030,12 +1076,14 @@ export type MobileMe = Pick<
   | "hostCredentialProvider"
   | "hostCredentialSource"
   | "needsModel"
-  | "avatarStyle"
   | "isDeploymentOwner"
+  | "memberSettingsLocked"
+  | "needsSignupSurvey"
 > & { billingEnabled?: boolean };
 
 export type MobileModel = ModelCatalogEntry;
 
+/** Shared DTO includes headerNames only; header values remain in the server secret. */
 export type MobileModelCredential = ModelCredential;
 
 export type MobileMessage = {
@@ -1079,8 +1127,14 @@ export type MobileSnapshot = {
   cursor?: number;
   messages: MobileMessage[];
   olderCursor: number | null;
-  run: { id: string; botId?: string; status: string; error?: string | null } | null;
+  run: {
+    id: string;
+    botId?: string;
+    status: string;
+    error?: string | null;
+  } | null;
   activeRuns?: Array<{ id: string; botId?: string; status: string }>;
+  backgroundTasks?: { running: number; queued: number };
   members?: MobileGroup["members"];
   computer?: {
     state: string;
@@ -1287,7 +1341,10 @@ export async function subscribeThread(
         .join("");
       if (!data || data === "[DONE]") continue;
       try {
-        const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
+        const parsed = JSON.parse(data) as {
+          json?: ThreadEvent;
+          error?: { message?: string };
+        };
         // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
         if (parsed.json?.type && parsed.json.type !== "heartbeat")
           onEvent(displayIdentityEvent(parsed.json, identityLabels()));
@@ -1303,6 +1360,10 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev || event.type === "heartbeat") return prev;
+  if (stopsRunHelpers(event)) {
+    const messages = settleRunSubagents(prev.messages, event.runId);
+    if (messages !== prev.messages) prev = { ...prev, messages };
+  }
   if (event.type === "thread.cleared") {
     return {
       ...prev,

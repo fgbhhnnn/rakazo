@@ -47,8 +47,9 @@ name: Settings
 - tapOn: "Back"
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
-    visible: "Active model"
+    visible: "Model"
     timeout: 15000
+- assertNotVisible: "Active model"
 - takeScreenshot: 06-models
 - openLink: "rakazo:///integrations"
 - extendedWaitUntil:
@@ -77,8 +78,9 @@ name: Settings
     timeout: 15000
 - takeScreenshot: 11-routine
 - openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
-- extendedWaitUntil:
-    visible: "Advanced"
+- scrollUntilVisible:
+    element: "Advanced"
+    direction: DOWN
     timeout: 15000
 - tapOn: "Advanced"
 - takeScreenshot: 12-bot-settings

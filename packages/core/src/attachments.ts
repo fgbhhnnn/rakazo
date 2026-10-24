@@ -4,7 +4,12 @@ import {
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
+  isOfficeAssociationMislabel,
+  OFFICE_EXTENSION_MIME_TYPES,
+  OFFICE_MIME_TYPE_EXTENSIONS,
 } from "@rakazo/contracts";
+import { SOURCE_TEXT_EXTENSIONS } from "./source-text-extensions.js";
+import { withoutWorkerSlot } from "./worker-names.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -137,8 +142,10 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       }
       // Keep attribution on peer messages: without it a later turn cannot tell
       // which lines came from another bot rather than the user.
-      if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
-      if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
+      if (block.kind === "bot_message_received")
+        return `[from ${withoutWorkerSlot(block.fromBotName)}] ${block.text}`;
+      if (block.kind === "bot_message_sent")
+        return `[to ${withoutWorkerSlot(block.toBotName)}] ${block.text}`;
       if (block.kind === "handoff") {
         return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
       }
@@ -185,6 +192,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".htm": "text/html",
   ".json": "application/json",
   ".zip": "application/zip",
+  ...Object.fromEntries(SOURCE_TEXT_EXTENSIONS.map((ext) => [ext, "text/plain" as const])),
+  ...OFFICE_EXTENSION_MIME_TYPES,
 };
 
 const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
@@ -204,6 +213,7 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/html": ".html",
   "application/json": ".json",
   "application/zip": ".zip",
+  ...OFFICE_MIME_TYPE_EXTENSIONS,
 };
 
 export function inferAttachmentMimeType(
@@ -233,6 +243,7 @@ export function inferAttachmentMimeType(
   if (extensionType === "text/markdown" && (!reportedType || reportedType === "text/plain")) {
     return extensionType;
   }
+  if (isOfficeAssociationMislabel(extensionType, reportedType)) return extensionType ?? null;
   if (reportedType && isAllowedAttachmentMimeType(reportedType)) return reportedType;
   return extensionType ?? null;
 }

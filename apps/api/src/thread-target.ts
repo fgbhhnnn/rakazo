@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
+import { stopThreadRunsForBots } from "@rakazo/adapters";
 import type {
   Actor,
   GroupMember,
@@ -27,12 +27,15 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
+  backgroundWorkOf,
+  backgroundWorkSelection,
+  clearRunTurnCheckpoints,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
-  expireComputerExecutionLeases,
   IsolationError,
   lockOwnedGroup,
+  primaryActiveRun,
   retireWaitingQuestionInTransaction,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -244,6 +247,10 @@ export async function cancelSupersededQueuedRuns(
     where: { id: { in: superseded.map((run) => run.id) } },
     data: { status: "cancelled", completedAt: now },
   });
+  await clearRunTurnCheckpoints(
+    tx,
+    superseded.map((run) => run.id),
+  );
   await tx.task.updateMany({
     where: { id: { in: superseded.map((run) => run.taskId) } },
     data: { status: "cancelled" },
@@ -305,7 +312,7 @@ export async function resolveThreadTarget(
       botId: member.bot.id,
       name: member.bot.name,
       color: member.bot.color,
-      status: member.bot.runs[0]?.status ?? "idle",
+      status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
     }));
     return {
       kind: "group",
@@ -337,7 +344,10 @@ export async function threadSnapshot(
   // otherwise advance the client cursor past thread.message.created while the
   // ask message page still omits it — leaving waiting_input with no AskCard.
   if (target.kind === "bot") {
-    const [busyBotName, core] = await Promise.all([
+    const [background, busyBotName, core] = await Promise.all([
+      deps.prisma.bot
+        .findFirst({ where: { id: target.botId }, select: backgroundWorkSelection })
+        .then((row) => (row ? backgroundWorkOf(row) : { running: 0, queued: 0 })),
       resolveBusyBotName(deps.prisma, {
         computerId: target.bot.computer?.id,
         botId: target.botId,
@@ -359,7 +369,7 @@ export async function threadSnapshot(
                 threadId: target.threadId,
                 status: { in: [...ACTIVE_RUN_STATUSES] },
                 OR: [
-                  { trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] } },
+                  { trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] } },
                   { status: { in: ["waiting_input", "waiting_takeover"] } },
                 ],
               },
@@ -369,8 +379,8 @@ export async function threadSnapshot(
               where: {
                 botId: target.botId,
                 threadId: target.threadId,
-                // Hide peer bot_message and background ticket busy/failed noise; waiting is handled above.
-                trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+                // Background ticket work stays silent; waiting is handled above.
+                trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
                 status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
               },
               // The id tiebreak keeps ordering deterministic under equal
@@ -391,8 +401,8 @@ export async function threadSnapshot(
                   where: {
                     botId: target.botId,
                     threadId: target.threadId,
-                    // Peer bot_message and background failures must not bury a user-visible failure.
-                    trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+                    // Background failures must not bury a user-visible failure.
+                    trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
                     status: { in: ["failed", "completed", "cancelled"] },
                   },
                   orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -400,16 +410,19 @@ export async function threadSnapshot(
                 })
               : null;
           const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
+          const liveRuns = activeRuns.filter((run) => run.trigger !== "bot_message");
           const liveEvents =
-            activeRuns.length > 0
+            liveRuns.length > 0
               ? await tx.event.findMany({
                   where: {
                     threadId: target.threadId,
-                    runId: { in: activeRuns.map((run) => run.id) },
+                    runId: { in: liveRuns.map((run) => run.id) },
                     type: {
                       in: [
                         "thread.progress",
                         "thread.subagent",
+                        "run.waiting_input",
+                        "computer.takeover.requested",
                         "agent.tool.called",
                         "agent.tool.completed",
                       ],
@@ -427,10 +440,11 @@ export async function threadSnapshot(
       botId: target.botId,
       threadId: target.threadId,
       cursor: core.last?.seq ?? -1,
-      messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
+      messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents, core.activeRuns),
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
+      backgroundTasks: background,
       computer: toComputerStatus(target.botId, target.bot.computer, busyBotName),
     };
   }
@@ -480,6 +494,8 @@ export async function threadSnapshot(
                   in: [
                     "thread.progress",
                     "thread.subagent",
+                    "run.waiting_input",
+                    "computer.takeover.requested",
                     "agent.tool.called",
                     "agent.tool.completed",
                   ],
@@ -505,7 +521,7 @@ export async function threadSnapshot(
     members: target.members,
     threadId: target.threadId,
     cursor: core.last?.seq ?? -1,
-    messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
+    messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents, core.activeRuns),
     olderCursor: core.messagePage.olderCursor,
     // Match the live reducer: a failed latest terminal stays in run even while siblings are
     // still active or start late. A newer completed/cancelled terminal clears it.
@@ -533,7 +549,8 @@ function pickPrimaryPrivateActiveRun<T extends { status: string }>(
 ): T | undefined {
   return (
     runs.find((run) => run.status === "waiting_takeover") ??
-    runs.find((run) => QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status)) ??
+    runs.find((run) => run.status === "running") ??
+    runs.find((run) => run.status === "leased") ??
     runs[0]
   );
 }
@@ -557,8 +574,9 @@ function pickLatestTerminalRun<T extends { id: string; createdAt: Date; complete
 function messagesWithLiveEvents(
   persisted: ThreadSnapshot["messages"],
   liveEvents: Parameters<typeof projectMessages>[0],
+  runs: NonNullable<Parameters<typeof projectMessages>[1]>,
 ) {
-  const live = projectMessages(liveEvents).filter((message) => {
+  const live = projectMessages(liveEvents, runs).filter((message) => {
     if (message.blocks.some((block) => block.kind === "progress" || block.kind === "steps")) {
       return true;
     }
@@ -1258,153 +1276,9 @@ export async function stopThreadRuns(
   actor: Actor,
   target: ThreadTarget,
 ) {
-  const { runIds, computers, leases, eventSeq } = await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-    const cancelled = await tx.run.updateManyAndReturn({
-      where: {
-        threadId: target.threadId,
-        status: { in: [...ACTIVE_RUN_STATUSES] },
-      },
-      data: { status: "cancelled", completedAt: new Date() },
-      select: { id: true, botId: true },
-    });
-    const ids = cancelled.map((run) => run.id);
-    await tx.steeringMessage.deleteMany({
-      where: {
-        botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
-        message: { threadId: target.threadId },
-      },
-    });
-    // Snapshot teardown coordinates before commit. Once cancellation becomes
-    // visible, a worker can release its lease / execution columns immediately; a
-    // later lookup would then miss the sandbox work this request must stop.
-    // Team ownership lives on ComputerExecutionLease; Computer.executionRunId is
-    // only a legacy secondary path and is not written by current acquisition.
-    const leases = ids.length
-      ? await tx.computerExecutionLease.findMany({
-          where: { runId: { in: ids } },
-          select: { computerId: true, botId: true, runId: true, fence: true },
-        })
-      : [];
-    const leaseComputerIds = [...new Set(leases.map((lease) => lease.computerId))];
-    const computers = ids.length
-      ? await tx.computer.findMany({
-          where:
-            leaseComputerIds.length > 0
-              ? {
-                  OR: [{ id: { in: leaseComputerIds } }, { executionRunId: { in: ids } }],
-                }
-              : { executionRunId: { in: ids } },
-          select: {
-            id: true,
-            homeKey: true,
-            kind: true,
-            providerRef: true,
-            executionBotId: true,
-            executionRunId: true,
-          },
-        })
-      : [];
-    // One terminal event per cancelled run, in the same commit as the status
-    // flip and the progress purge below. Other clients learn the run ended, and
-    // the fresh seq keeps max(seq) above every deleted progress row so a client
-    // whose cursor pointed at one never discards later refreshes as stale.
-    let eventSeq: number | null = null;
-    for (const run of cancelled) {
-      const event = await appendEventInTransaction(tx, {
-        spaceId: actor.spaceId,
-        threadId: target.threadId,
-        botId: run.botId,
-        type: "run.cancelled",
-        runId: run.id,
-        payload: {},
-      });
-      eventSeq = event.seq;
-    }
-    if (ids.length) {
-      await tx.event.deleteMany({
-        where: {
-          type: "thread.progress",
-          runId: { in: ids },
-        },
-      });
-    }
-    return { runIds: ids, computers, leases, eventSeq };
-  });
-  if (eventSeq !== null) {
-    // The events are durable; subscribers refetch from their persisted cursor.
-    await deps.events.notify(target.threadId, eventSeq).catch((error) => {
-      getLogger().error("thread stop realtime notification", error);
-    });
-  }
-  // Keep the DB lease until after teardown so a replacement run cannot claim the
-  // screen while we still need the cancelled run's screenLeaseId to release it.
-  const computerById = new Map(computers.map((computer) => [computer.id, computer]));
-  const teardownTargets: Array<{
-    computer: (typeof computers)[number];
-    botId: string;
-    runId: string;
-    lease: (typeof leases)[number] | null;
-  }> = [];
-  const seenTargets = new Set<string>();
-  for (const lease of leases) {
-    const computer = computerById.get(lease.computerId);
-    if (!computer) continue;
-    const key = `${computer.id}:${lease.runId}`;
-    if (seenTargets.has(key)) continue;
-    seenTargets.add(key);
-    teardownTargets.push({
-      computer,
-      botId: lease.botId,
-      runId: lease.runId,
-      lease,
-    });
-  }
-  const cancelledRunIds = new Set(runIds);
-  for (const computer of computers) {
-    if (!computer.executionBotId || !computer.executionRunId) continue;
-    // Computers may enter the snapshot via a cancelled lease while
-    // Computer.executionRunId still points at an unrelated live run. Only treat
-    // the legacy columns as a teardown target when they belong to a run we
-    // cancelled in this transaction.
-    if (!cancelledRunIds.has(computer.executionRunId)) continue;
-    const key = `${computer.id}:${computer.executionRunId}`;
-    if (seenTargets.has(key)) continue;
-    seenTargets.add(key);
-    teardownTargets.push({
-      computer,
-      botId: computer.executionBotId,
-      runId: computer.executionRunId,
-      lease: null,
-    });
-  }
-  await Promise.all(
-    teardownTargets.map(async ({ computer, botId, runId, lease }) => {
-      if (!computer.providerRef) return;
-      const context = {
-        operationId: "stop",
-        traceId: "stop",
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        botId,
-        runId,
-        screenLeaseId: screenLeaseIdForRun(lease, runId),
-        cancelRunWork: true,
-        signal: new AbortController().signal,
-      };
-      const ref = toComputerRef(computer);
-      await cancelComputerRunWork(deps.sandbox, ref, computer.id, runId, context);
-      await deps.sandbox.releaseScreen?.(ref, context).catch(() => undefined);
-    }),
-  );
-  await expireComputerExecutionLeases(deps.prisma, { runId: { in: runIds } });
-  await deps.prisma.computer.updateMany({
-    where: { executionRunId: { in: runIds } },
-    data: {
-      executionRunId: null,
-      executionBotId: null,
-      executionLeaseExpiresAt: null,
-    },
+  await stopThreadRunsForBots(deps, actor, {
+    threadId: target.threadId,
+    botIds: target.kind === "bot" ? [target.botId] : target.memberBotIds,
   });
 }
 
@@ -1458,6 +1332,28 @@ export async function markThreadRead(
 /** A chat only gets a divider when its unread dot was on, so replies seen live never do. */
 function dividerSeq(thread: { unread: boolean; lastReadSeq: number }, latestSeq: number) {
   return thread.unread && thread.lastReadSeq < latestSeq ? thread.lastReadSeq : null;
+}
+
+/**
+ * Marks the thread unread from one of its messages: the read cursor moves to just before it,
+ * so the next open puts the New divider above that message.
+ */
+export async function markThreadUnreadFrom(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+  messageId: string,
+) {
+  const message = await prisma.message.findFirst({
+    where: { id: messageId, threadId: target.threadId },
+    select: { seq: true },
+  });
+  if (!message) throw new ORPCError("NOT_FOUND");
+  const result = await prisma.thread.updateMany({
+    where: { id: target.threadId, spaceId: actor.spaceId, userId: actor.userId },
+    data: { unread: true, lastReadSeq: message.seq - 1 },
+  });
+  if (result.count > 1) throw new IsolationError();
 }
 
 export async function setThreadUnreadState(

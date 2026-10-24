@@ -137,6 +137,26 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a background worker's slot name from what it sends, not another bot's text", async () => {
+    const delivered = async (name: string) => {
+      const harness = deps();
+      const sent = await messageBot(
+        harness.deps,
+        run,
+        { id: "bot-sender", name },
+        {
+          bot_id: "bot-target",
+          message: "π 任务已完成（#TIZXV4ZQ，由后台4执行），共 4 轮。",
+          intent: "status",
+        },
+      );
+      expect(sent).toMatchObject({ ok: true });
+      return (sent as { delivered: string }).delivered;
+    };
+    expect(await delivered("调度测试 · 后台4")).toBe("π 任务已完成（#TIZXV4ZQ），共 4 轮。");
+    expect(await delivered("Researcher")).toContain("由后台4执行");
+  });
+
   it("marks a forced failure return unread on both sides", async () => {
     const harness = deps({
       hopBlocks: [
@@ -700,6 +720,88 @@ describe("automatic outcome return", () => {
 
     expect(returned).toBe(true);
     expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("always returns a hidden background worker's outcome, even for fyi", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "patch it",
+          hop: 1,
+          intent: "fyi",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1" });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Patched.",
+    );
+    expect(returned).toBe(true);
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("labels a hidden worker's result with its task title and #ref, not the slot name", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "make a cover",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "newer task #ZZ99ZZ99" });
+    // The slot already shows a newer task; the result is credited to the task row of this run.
+    (harness.deps.prisma as unknown as { backgroundTaskQueue: unknown }).backgroundTaskQueue = {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "q1",
+        name: "生成封面",
+        ref: "AB12CD34",
+        status: "started",
+      }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    };
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Done.",
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("【后台任务：生成封面 #AB12CD34】\\nDone.");
+    // The dispatcher's wake names the task, never the worker slot ("Worker · 后台1") that also
+    // ran the previous task, so the relay cannot credit the result to that task.
+    const prompt = JSON.stringify(vi.mocked(harness.tx.task.create).mock.calls);
+    expect(prompt).toContain("后台任务「生成封面 #AB12CD34」");
+    expect(prompt).not.toContain("后台1");
+  });
+
+  it("never shows a worker slot name in a wake prompt", async () => {
+    const harness = deps();
+    await messageBot(
+      harness.deps,
+      run,
+      { id: "bot-sender", name: "调度测试 · 后台2" },
+      { bot_id: "bot-target", message: "status", intent: "status" },
+    );
+    const prompt = JSON.stringify(vi.mocked(harness.tx.task.create).mock.calls);
+    expect(prompt).toContain("调度测试 · 后台任务");
+    expect(prompt).not.toMatch(/后台\d/);
   });
 
   it("skips the automatic return when a result was already sent", async () => {

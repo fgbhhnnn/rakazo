@@ -1,5 +1,11 @@
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import type { AppendEventInput, Prisma } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  RunHistoryWriteError,
+} from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -37,6 +43,11 @@ async function runTurn(
     splitText?: boolean;
     priorProgressText?: string;
     runtimeEvents?: AgentRuntimeEvent[];
+    runtimeFailure?: boolean;
+    runtimeCancel?: boolean;
+    failHelperId?: string;
+    failMessageOnce?: boolean;
+    dispatcherMode?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -62,7 +73,14 @@ async function runTurn(
   };
   const runtimeRun = vi.fn(async function* (_request: AgentRunRequest) {
     if (options.runtimeEvents) {
-      yield* options.runtimeEvents;
+      for (const event of options.runtimeEvents) {
+        yield event;
+      }
+      if (options.runtimeCancel) {
+        run.status = "cancelled";
+        yield { type: "done" as const };
+      }
+      if (options.runtimeFailure) throw new Error("fixture runtime failure");
       return;
     }
     const narrations = Array.isArray(narration) ? narration : [narration];
@@ -80,6 +98,9 @@ async function runTurn(
     if (finalText) yield { type: "text" as const, text: finalText };
     yield { type: "done" as const, text: options.doneText ?? narrations.join("") + finalText };
   });
+  const messages: { blocks: MessageBlock[] }[] = [];
+  const savedEvents: AppendEventInput[] = [];
+  let failMessage = options.failMessageOnce;
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
     run: {
@@ -112,6 +133,10 @@ async function runTurn(
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     thread: {
+      update: vi.fn(async () => ({
+        nextMessageSeq: messages.length + 1,
+        nextEventSeq: savedEvents.length + 1,
+      })),
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.threadId,
         groupId: null,
@@ -120,7 +145,27 @@ async function runTurn(
         nextMessageSeq: 3,
       })),
     },
+    event: {
+      create: vi.fn(async ({ data }: { data: AppendEventInput }) => {
+        if (
+          data.type === "thread.subagent" &&
+          (data.payload as { status?: string; agentId?: string }).status === "failed" &&
+          (data.payload as { agentId?: string }).agentId === options.failHelperId
+        )
+          throw new Error("fixture settlement unavailable");
+        savedEvents.push(data);
+        return { ...data, seq: savedEvents.length };
+      }),
+    },
     message: {
+      create: vi.fn(async ({ data }: { data: { blocks: MessageBlock[] } }) => {
+        if (failMessage) {
+          failMessage = false;
+          throw new Error("fixture message unavailable");
+        }
+        messages.push(data);
+        return { ...data, id: `message-${messages.length}` };
+      }),
       findMany: vi.fn(async ({ where }: { where: { runId?: string } }) =>
         where.runId === run.id && options.priorProgressText
           ? [
@@ -156,8 +201,8 @@ async function runTurn(
     spaceBackupModel: { findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
-        defaultModelProvider: "scripted",
-        defaultModelId: "scripted",
+        defaultModelProvider: "openrouter",
+        defaultModelId: "fixture-model",
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
@@ -171,15 +216,27 @@ async function runTurn(
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     $queryRaw: vi.fn(async () => [{ id: "row-1", scope: "dedicated" }]),
-    $transaction: vi.fn(
-      async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prisma),
-    ),
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => {
+      const messageCount = messages.length;
+      const eventCount = savedEvents.length;
+      try {
+        return await fn(prisma);
+      } catch (error) {
+        messages.length = messageCount;
+        savedEvents.length = eventCount;
+        throw error;
+      }
+    }),
   };
   const finalizeRun = vi.fn(async (_input: { blocks: MessageBlock[] }) => ({
     continuationRunId: null,
   }));
-  const append = vi.fn(async (_event: { type: string; payload?: unknown }) => undefined);
+  const append = vi.fn(async (event: AppendEventInput) =>
+    appendEventInTransaction(prisma as unknown as Prisma.TransactionClient, event),
+  );
+  const pauseRunForInput = vi.fn(async () => ({ continuationRunId: null }));
   const executor = createRunExecutor({
+    deploymentModelKey: "fixture-model-key",
     prisma,
     runtime: {
       describe: () => ({ capabilities: { scripted: false } }),
@@ -195,15 +252,17 @@ async function runTurn(
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
-    events: { append, finalizeRun },
+    events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets,
+    ...(options.dispatcherMode ? { dispatcherMode: true } : {}),
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   await executor.continueRun(run.id, "worker-1");
   expect(runtimeRun).toHaveBeenCalled();
-  expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
-  return { finalizeRun, append };
+  if (!options.runtimeFailure)
+    expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
+  return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma };
 }
 
 describe.each(["routine", "reaction", "bot_message", "messaging"])(
@@ -549,5 +608,173 @@ describe("a stray NO_RESPONSE on runs that must reply", () => {
       ],
     });
     expect(savedText(finalizeRun)).toBe("NO_RESPONSE");
+  });
+});
+
+describe("helper settlement", () => {
+  const helper: AgentRuntimeEvent = {
+    type: "subagent",
+    agentId: "helper",
+    name: "Helper",
+    task: "Check",
+    status: "running",
+  };
+  it.each(["pause", "finish", "failure", "cancel"])(
+    "persists stopped helpers on %s",
+    async (exit) => {
+      let now = Date.now();
+      const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 2_000));
+      const result = await runTurn("", false, "", [], "fyi", {
+        runtimeEvents: [
+          helper,
+          ...(exit === "pause" ? [{ type: "ask" as const, text: "Continue?" }] : []),
+        ],
+        runtimeFailure: exit === "failure",
+        runtimeCancel: exit === "cancel",
+      }).finally(() => clock.mockRestore());
+      const { savedEvents, messages, pauseRunForInput, finalizeRun } = result;
+      const index = savedEvents.findIndex(
+        (event) =>
+          event.type === "thread.subagent" &&
+          (event.payload as { status: string }).status === "failed",
+      );
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(savedEvents[index]?.payload).toMatchObject({
+        agentId: "helper",
+        name: "Helper",
+        task: "Check",
+        status: "failed",
+        result: "stopped",
+      });
+      expect(
+        messages.flatMap((message) => message.blocks).filter((block) => block.kind === "subagent"),
+      ).toEqual([
+        expect.objectContaining({ agentId: "helper", status: "failed", result: "stopped" }),
+      ]);
+      if (exit === "pause") {
+        expect(pauseRunForInput).toHaveBeenCalledOnce();
+        expect(result.prisma.event.create.mock.invocationCallOrder[index]).toBeLessThan(
+          pauseRunForInput.mock.invocationCallOrder[0]!,
+        );
+      } else if (exit !== "cancel") {
+        expect(finalizeRun).toHaveBeenCalledOnce();
+        expect(result.prisma.event.create.mock.invocationCallOrder[index]).toBeLessThan(
+          finalizeRun.mock.invocationCallOrder[0]!,
+        );
+      }
+    },
+  );
+  it("keeps ordinary history writes guarded after cancellation", async () => {
+    const { prisma, append } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: [helper],
+      runtimeCancel: true,
+    });
+    await expect(
+      append({
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        type: "thread.subagent",
+        payload: helper,
+      }),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    await expect(
+      createThreadMessageInTransaction(prisma as unknown as Prisma.TransactionClient, {
+        threadId: "thread-1",
+        runId: "run-1",
+        role: "bot",
+        blocks: [{ kind: "text", text: "Late response" }],
+      }),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+  });
+});
+
+describe("helper cleanup recovery", () => {
+  const helpers: AgentRuntimeEvent[] = ["unavailable", "available"].map((agentId) => ({
+    type: "subagent",
+    agentId,
+    name: "Helper",
+    task: "Check",
+    status: "running",
+  }));
+  it("continues cleanup after a helper write fails and never rejects cancellation", async () => {
+    const result = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: helpers,
+      runtimeCancel: true,
+      failHelperId: "unavailable",
+    });
+    expect(result.messages.flatMap((message) => message.blocks)).toContainEqual(
+      expect.objectContaining({ kind: "subagent", agentId: "available", status: "failed" }),
+    );
+  });
+  it("retries a failed message atomically without duplicate stopped blocks", async () => {
+    const result = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: helpers.slice(0, 1),
+      failMessageOnce: true,
+    });
+    expect(
+      result.messages
+        .flatMap((message) => message.blocks)
+        .filter((block) => block.kind === "subagent"),
+    ).toHaveLength(1);
+    expect(
+      result.savedEvents.filter(
+        (event) =>
+          event.type === "thread.subagent" &&
+          (event.payload as { status: string }).status === "failed",
+      ),
+    ).toHaveLength(1);
+  });
+});
+
+describe("dispatcher text before ask_user", () => {
+  const askEvents: AgentRuntimeEvent[] = [
+    { type: "text", text: "Task #A1 finished: 3 files changed, tests pass." },
+    {
+      type: "tool",
+      name: "ask_user",
+      args: { question: "Deploy now?", options: ["Deploy", "Not yet"] },
+      executionId: "ask-1",
+    },
+    {
+      type: "ask",
+      executionId: "ask-1",
+      text: "Deploy now?",
+      actions: [
+        { id: "Deploy", label: "Deploy" },
+        { id: "Not yet", label: "Not yet" },
+      ],
+    },
+  ];
+
+  it("is posted to the user before the run parks on the question", async () => {
+    const { messages, pauseRunForInput, finalizeRun, prisma } = await runTurn(
+      "",
+      false,
+      "",
+      [],
+      "fyi",
+      { trigger: "user", runtimeEvents: askEvents, dispatcherMode: true },
+    );
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    expect(finalizeRun).not.toHaveBeenCalled();
+    const texts = messages.flatMap((message) =>
+      message.blocks.filter((block) => block.kind === "text").map((block) => block.text),
+    );
+    expect(texts).toEqual(["Task #A1 finished: 3 files changed, tests pass."]);
+    const posted = prisma.message.create.mock.invocationCallOrder.at(-1)!;
+    expect(posted).toBeLessThan(pauseRunForInput.mock.invocationCallOrder[0]!);
+  });
+
+  it("is unchanged for bots outside dispatcher mode", async () => {
+    const { messages, pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+      trigger: "user",
+      runtimeEvents: askEvents,
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    expect(
+      messages.flatMap((message) => message.blocks.filter((block) => block.kind === "text")),
+    ).toEqual([]);
   });
 });

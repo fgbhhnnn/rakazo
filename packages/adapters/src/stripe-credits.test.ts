@@ -35,6 +35,9 @@ describe("Stripe prepaid model credits", () => {
     });
     const body = requests.at(-1)!.params;
     expect(body.get("mode")).toBe("subscription");
+    expect(body.get("allowed_payment_method_types[0]")).toBe("card");
+    expect(body.has("payment_method_types[0]")).toBe(false);
+    expect(body.get("subscription_data[billing_mode][type]")).toBe("classic");
     expect(body.get("line_items[0][quantity]")).toBe("1");
     expect(body.get("line_items[0][price]")).toBe("price_credits");
     expect(
@@ -56,6 +59,8 @@ describe("Stripe prepaid model credits", () => {
     });
     expect(requests).toHaveLength(1);
     expect(requests[0]!.params.get("mode")).toBe("payment");
+    expect(requests[0]!.params.get("allowed_payment_method_types[0]")).toBe("card");
+    expect(requests[0]!.params.has("subscription_data[billing_mode][type]")).toBe(false);
     expect(requests[0]!.params.get("payment_intent_data[metadata][rakazo_credit_cents]")).toBe(
       "2000",
     );

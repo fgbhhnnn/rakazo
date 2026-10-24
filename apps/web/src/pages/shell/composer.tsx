@@ -1,6 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@rakazo/contracts";
 import type { ComposerMention, SlashActionId } from "@rakazo/core";
 import {
   clampMentionHighlightIndex,
@@ -12,7 +11,7 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
-import { ArrowUp, Box, Paperclip, Plus, Settings, Square, X } from "lucide-react";
+import { ArrowUp, Box, Plus, Settings, X } from "lucide-react";
 import type { ClipboardEvent, DragEvent, RefObject } from "react";
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +19,7 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
+import { FileKindIcon } from "../../components/FileKindIcon";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
 import { newClientId } from "../../lib/client-id";
@@ -31,6 +31,7 @@ import {
   writeComposerDraft,
 } from "../../lib/composer-draft";
 import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
+import { ATTACHMENT_ACCEPT } from "./attachment-accept";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
@@ -38,11 +39,10 @@ import { ComposerError } from "./composer-error";
 import { MentionChipIcon, MentionOptionIcon, slashActionLabel } from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
-const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
 export const Composer = memo(function Composer({
   artifactTarget,
   activeName,
-  running,
+  busy,
   disabled,
   pendingAttachments,
   attachmentNotice,
@@ -57,7 +57,6 @@ export const Composer = memo(function Composer({
   onAttachmentPick,
   onRemoveAttachment,
   onSend,
-  onStop,
   phoneCallsEnabled,
   dictationTranscribe,
   replyTarget,
@@ -72,7 +71,8 @@ export const Composer = memo(function Composer({
   enterToSend,
 }: {
   activeName?: string;
-  running: boolean;
+  /** The bot is working. Marks the bar for tests; nothing is locked: sending interrupts. */
+  busy?: boolean;
   disabled?: boolean;
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
@@ -87,7 +87,6 @@ export const Composer = memo(function Composer({
   onAttachmentPick: (files: FileList | null) => boolean;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
-  onStop: () => Promise<void>;
   phoneCallsEnabled?: boolean;
   /** Hold-to-talk falls back to the voice provider's transcription; undefined while unknown. */
   dictationTranscribe?: boolean;
@@ -483,7 +482,11 @@ export const Composer = memo(function Composer({
                   className="h-8 w-8 rounded object-cover"
                 />
               ) : (
-                <Paperclip size={14} strokeWidth={1.8} />
+                <FileKindIcon
+                  name={attachment.file.name}
+                  mimeType={attachment.file.type}
+                  size={28}
+                />
               )}
               <span className="max-w-[180px] truncate" dir="auto">
                 {attachment.file.name}
@@ -590,8 +593,9 @@ export const Composer = memo(function Composer({
       <div
         ref={composerBarRef}
         data-testid="composer-bar"
+        data-bot-busy={busy ? "true" : undefined}
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-ring ${
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-input ${
           expanded ? "gap-x-2 gap-y-2 pb-[9px] pt-3" : "gap-x-3.5 py-[9px]"
         }`}
       >
@@ -752,31 +756,6 @@ export const Composer = memo(function Composer({
         >
           {talk.recording?.locked ? (
             <HoldToTalkControls talk={talk} />
-          ) : running ? (
-            <>
-              {phoneCallsEnabled && draft.trim().length === 0 ? (
-                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
-              ) : null}
-              <Button
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || !canSend || disabled}
-                onClick={send}
-                className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={t`Stop`}
-                disabled={sending}
-                onClick={() => void onStop()}
-                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <Square size={11} strokeWidth={0} fill="currentColor" />
-              </Button>
-            </>
           ) : (
             <>
               {phoneCallsEnabled && draft.trim().length === 0 ? (
@@ -787,7 +766,7 @@ export const Composer = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={send}
-                className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
+                className="size-8 shrink-0 rounded-full transition-transform active:scale-95"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>

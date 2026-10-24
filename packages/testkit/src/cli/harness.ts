@@ -5,6 +5,7 @@ import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import type { createApp } from "../../../../apps/api/src/app.ts";
+import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -48,7 +49,7 @@ async function main() {
   const mode = integration ? "integration" : "e2e";
   const reportDir = path.resolve("test-report", mode);
   await mkdir(reportDir, { recursive: true });
-  const container = await new PostgreSqlContainer("postgres:16-alpine").start();
+  const container = await new PostgreSqlContainer("postgres:18-alpine").start();
   try {
     // Migrations run as the container superuser and the e2e API connects as the
     // runtime login, so row-level security is enforced as in a deployment.
@@ -70,6 +71,9 @@ async function main() {
     process.env.SANDBOX_PROVIDER = sandboxProvider;
     process.env.AGENT_RUNTIME = agentRuntime;
     process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
+    // Same pin as unit tests (pin-test-env.ts): specs drive a bot that uses its own tools. Dispatcher
+    // mode (main bot hands heavy work to background workers) has its own integration tests.
+    process.env.RAKAZO_DISPATCHER_MODE ??= "0";
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
@@ -175,6 +179,7 @@ async function main() {
       {
         ComposioConnector,
         FakeComposioClient,
+        listPiCatalog,
         DestinationEmulator,
         EmailEmulator,
         PipedreamConnector,
@@ -202,6 +207,7 @@ async function main() {
     const email = new EmailEmulator();
     const handles = await createApp({
       databaseUrl,
+      modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
       prisma: undefined,
       composio: new ComposioConnector({ client: new FakeComposioClient() }),
       connectors: [new DestinationEmulator()],

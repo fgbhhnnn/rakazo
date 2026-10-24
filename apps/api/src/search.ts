@@ -8,7 +8,14 @@ import {
   snippetAroundMatch,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { contentEncryptionOf, INDEXED_MESSAGE, Prisma, UNINDEXED_MESSAGE } from "@rakazo/db";
+import {
+  contentEncryptionOf,
+  HIDDEN_BOT_SPAWN_PREFIX,
+  INDEXED_MESSAGE,
+  Prisma,
+  UNINDEXED_MESSAGE,
+  VISIBLE_BOT_WHERE,
+} from "@rakazo/db";
 
 const SEARCH_LIMIT = 25;
 /** Cap name matches so content hits (messages/files/links/routines) keep most of the budget. */
@@ -117,6 +124,7 @@ export async function querySpaceSearch(
       spaceId: actor.spaceId,
       userId: actor.userId,
       archivedAt: null,
+      AND: [VISIBLE_BOT_WHERE],
       OR: [
         { name: { contains: likeQuery, mode: "insensitive" } },
         { title: { contains: likeQuery, mode: "insensitive" } },
@@ -170,7 +178,7 @@ export async function querySpaceSearch(
       groupId: null,
       botId: { not: null },
       name: { contains: likeQuery, mode: "insensitive" },
-      bot: { archivedAt: null },
+      bot: { archivedAt: null, AND: [VISIBLE_BOT_WHERE] },
     },
     include: { bot: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -249,7 +257,7 @@ export async function querySpaceSearch(
         { name: { contains: likeQuery, mode: "insensitive" } },
         { prompt: { contains: likeQuery, mode: "insensitive" } },
       ],
-      bot: { archivedAt: null },
+      bot: { archivedAt: null, AND: [VISIBLE_BOT_WHERE] },
     },
     include: { bot: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -291,6 +299,7 @@ export async function querySpaceSearch(
       WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND b."archivedAt" IS NULL
+        AND (b."spawnKey" IS NULL OR b."spawnKey" NOT LIKE ${`${HIDDEN_BOT_SPAWN_PREFIX}%`})
         AND ${match.sql}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}

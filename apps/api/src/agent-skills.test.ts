@@ -60,12 +60,20 @@ describe("built-in skill precedence in the API", () => {
     "keeps %j listed, readable and mutable",
     async (name) => {
       const { service } = setup([savedSkill(name)]);
-      await expect(service.list(actor)).resolves.toEqual([
-        expect.objectContaining({ id: "saved-1", name, readOnly: false }),
-      ]);
-      await expect(service.listWithContent(actor)).resolves.toEqual([
-        expect.objectContaining({ id: "saved-1", content: expect.stringContaining("Saved steps") }),
-      ]);
+      // Other built-ins (e.g. Heavy Task Workflow) are listed too; only Interrogate is shadowed.
+      const listed = await service.list(actor);
+      expect(listed).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "saved-1", name, readOnly: false })]),
+      );
+      expect(listed.some((skill) => skill.id === "builtin:Interrogate")).toBe(false);
+      await expect(service.listWithContent(actor)).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "saved-1",
+            content: expect.stringContaining("Saved steps"),
+          }),
+        ]),
+      );
       await expect(service.get(actor, { name: " INTERROGATE " })).resolves.toMatchObject({
         id: "saved-1",
         source: "user",
@@ -105,9 +113,11 @@ describe("built-in skill precedence in the API", () => {
         id: "builtin:Interrogate",
         readOnly: true,
       });
-      await expect(service.list(actor)).resolves.toEqual([
-        expect.objectContaining({ id: "builtin:Interrogate" }),
-      ]);
+      const listed = await service.list(actor);
+      expect(listed).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "builtin:Interrogate" })]),
+      );
+      expect(listed.some((skill) => skill.id === "saved-1")).toBe(false);
       await expect(service.get(actor, { skillId: "saved-1" })).rejects.toThrow();
     },
   );

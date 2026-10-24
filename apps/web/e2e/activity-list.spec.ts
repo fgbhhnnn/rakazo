@@ -1,6 +1,12 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import {
+  busyComposer,
+  captureScreenshot,
+  completeOnboarding,
+  signup,
+  stopActiveWork,
+} from "./helpers";
 
 /** Activity rows sit above `[data-sidebar-group]` bots; match their aria-label. */
 function activityRow(page: Page, botName: string) {
@@ -49,14 +55,14 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "off");
   await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
   await expect(aside.getByText("Recent", { exact: true })).toHaveCount(0);
-  await expect(aside.getByText("Loading activity…")).toHaveCount(0);
+  await expect(aside.getByRole("status", { name: "Loading activity…" })).toHaveCount(0);
   await expect(aside.locator("[data-sidebar-group]").getByText("Chief").first()).toBeVisible();
   await captureActivitySidebar(page, testInfo, "57-activity-mode-off");
 
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+  await expect(busyComposer(page)).toBeVisible({
     timeout: 30_000,
   });
 
@@ -68,10 +74,12 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "on");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+  await expect(busyComposer(page)).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
+  await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden({
+    timeout: 20_000,
+  });
   await expect(aside.getByText("Now", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/keep working|Running|Queued|Starting/i);
@@ -126,13 +134,15 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(filtersButton).toHaveAttribute("aria-expanded", "false");
   await expect(activityRow(page, "Chief")).toBeVisible();
 
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await stopActiveWork(page);
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
 
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "on");
-  await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
+  await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden({
+    timeout: 20_000,
+  });
   await expect(aside.getByText("Recent", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/Cancelled|keep working/i);
@@ -263,11 +273,13 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
 
   phase = "hang";
   await retry.click();
-  await expect(aside.getByText("Loading activity…")).toBeVisible();
+  await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeVisible();
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect.poll(() => releaseHang !== null).toBe(true);
   releaseHang?.();
-  await expect(aside.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
+  await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeHidden({
+    timeout: 20_000,
+  });
   await expect(retry).toHaveCount(0);
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect(activitySearch).toHaveValue("Chief");
