@@ -425,6 +425,7 @@ import {
 import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
+import { botModelChoice } from "./worker-model.js";
 import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
 import { slotFree } from "./worker-slot-mentions.js";
 
@@ -3226,14 +3227,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
       botId?: string;
     }): Promise<AgentRunRequest["model"]> {
       const override = scope.botId
-        ? await deps.prisma.bot.findFirst({
-            where: {
-              id: scope.botId,
-              userId: scope.userId,
-              spaceId: scope.spaceId,
-            },
-            select: { modelProvider: true, modelId: true, thinkingLevel: true },
-          })
+        ? await deps.prisma.bot
+            .findFirst({
+              where: {
+                id: scope.botId,
+                userId: scope.userId,
+                spaceId: scope.spaceId,
+              },
+              select: {
+                modelProvider: true,
+                modelId: true,
+                thinkingLevel: true,
+                spawnKey: true,
+                parentBotId: true,
+              },
+            })
+            .then((bot) => bot && botModelChoice(deps.prisma as never, bot))
         : null;
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
       const modelScope = await sharedModelScope(deps.prisma, scope);
@@ -4007,7 +4016,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ...initialBotCommandEnvironment,
         });
         // modelPinned distinguishes the captured choice from an attempt's recorded model.
-        const modelChoice = runModelChoice(run, bot);
+        const modelChoice = runModelChoice(run, await botModelChoice(deps.prisma as never, bot));
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
           hasModelOverride && modelChoice.modelProvider
