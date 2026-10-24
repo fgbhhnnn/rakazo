@@ -625,6 +625,8 @@ describe("thread answer delivery", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const prisma = {
+      // Not a mirrored worker approval: the ordinary answer path.
+      message: { findFirst: vi.fn().mockResolvedValue(null) },
       bot: {
         findFirst: vi.fn().mockResolvedValue({
           id: "bot-1",
@@ -693,6 +695,8 @@ describe("secret request dismissal", () => {
     const answerRunInput = vi.fn().mockResolvedValue(answered);
     const enqueue = vi.fn().mockResolvedValue(undefined);
     const prisma = {
+      // Not a mirrored worker approval: the ordinary answer path.
+      message: { findFirst: vi.fn().mockResolvedValue(null) },
       bot: {
         findFirst: vi.fn().mockResolvedValue({
           id: "bot-1",

@@ -43,6 +43,10 @@ import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
+import {
+  type MirrorEvent,
+  settleWorkerApprovalMirrorsInTransaction,
+} from "./worker-approval-mirror.js";
 
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
@@ -688,6 +692,7 @@ async function commitAnswerRunInput(
   threadId: string;
   seq: number;
   approval?: { decision: string; effectKind: string };
+  mirror?: MirrorEvent | null;
 } | null> {
   // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
   // concurrent clear cannot deadlock against this transaction.
@@ -966,9 +971,18 @@ async function commitAnswerRunInput(
     runId: input.runId,
     payload: { messageId: message.id, role: "bot", blocks },
   });
+  // A hidden worker's card has a copy in the main chat; it settles with this answer.
+  const mirror = approvalAsk
+    ? await settleWorkerApprovalMirrorsInTransaction(tx, {
+        runId: input.runId,
+        approvalEffectId: pendingAsk.approvalEffectId,
+        settle: { status: "answered", answer: recordedAnswer },
+      })
+    : null;
   return {
     threadId: updated.threadId,
     seq: updated.seq,
+    mirror,
     ...(approvalEffect
       ? { approval: { decision: approvalAnswer, effectKind: approvalEffect.kind } }
       : {}),
@@ -1005,6 +1019,8 @@ export async function answerRunInput(
     });
   }
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  if (committed.mirror)
+    await notifyRealtime(realtime, committed.mirror.threadId, committed.mirror.seq);
   return true;
 }
 

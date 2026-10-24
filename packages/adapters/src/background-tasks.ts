@@ -934,7 +934,7 @@ async function backgroundTaskMessageNow(
   if (steered.kind === "waiting")
     return {
       error:
-        "the worker is waiting on the user (an approval or takeover in its chat); it cannot take a change now. Tell the user to tap the task's card (任务 #REF) and handle it there; never approve or deny for them.",
+        "the worker is waiting on the user (its approval card is in this chat); it cannot take a change now. Tell the user to approve or deny it on that card; never approve or deny for them.",
     };
   if (steered.kind === "retry") return backgroundTaskMessageNow(deps, run, bot, args, deliveryKey);
   // The worker is idle: resume this task on it with its context, unless the slot has already

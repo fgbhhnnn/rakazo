@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { askAnswerRunId } from "@rakazo/core";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
@@ -18,12 +19,13 @@ function setup(refresh: () => Promise<void>) {
     rpc: vi.fn(async () => undefined),
     isCurrentTarget: () => true,
     refresh: vi.fn(refresh),
+    askAnswerRunId,
   };
   const compiled = ts.transpileModule(`${handler}\nreturn answerMessage;`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const answerMessage = new Function(...Object.keys(scope), compiled)(...Object.values(scope)) as (
-    message: { id: string; runId: string },
+    message: { id: string; runId: string; blocks: [] },
     answer: string,
     username?: string,
     dismiss?: boolean,
@@ -34,7 +36,11 @@ function setup(refresh: () => Promise<void>) {
 describe("mobile ask answers", () => {
   it("sends the answer and username unchanged", async () => {
     const h = setup(async () => undefined);
-    await h.answerMessage({ id: "message-1", runId: "run-1" }, "example-password", "ada");
+    await h.answerMessage(
+      { id: "message-1", runId: "run-1", blocks: [] },
+      "example-password",
+      "ada",
+    );
     expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
       botId: "bot-1",
       runId: "run-1",
@@ -47,7 +53,7 @@ describe("mobile ask answers", () => {
 
   it("sends a dismissal with an empty answer and no username", async () => {
     const h = setup(async () => undefined);
-    await h.answerMessage({ id: "message-1", runId: "run-1" }, "", undefined, true);
+    await h.answerMessage({ id: "message-1", runId: "run-1", blocks: [] }, "", undefined, true);
     expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
       botId: "bot-1",
       runId: "run-1",
@@ -66,7 +72,7 @@ describe("mobile ask answers", () => {
       });
       await expect(
         h.answerMessage(
-          { id: "message-1", runId: "run-1" },
+          { id: "message-1", runId: "run-1", blocks: [] },
           dismiss ? "" : "example-password",
           undefined,
           dismiss,
@@ -80,7 +86,7 @@ describe("mobile ask answers", () => {
     const h = setup(async () => undefined);
     h.rpc.mockRejectedValueOnce(new Error("offline"));
     await expect(
-      h.answerMessage({ id: "message-1", runId: "run-1" }, "example-password", "ada"),
+      h.answerMessage({ id: "message-1", runId: "run-1", blocks: [] }, "example-password", "ada"),
     ).rejects.toThrow("offline");
     expect(h.refresh).not.toHaveBeenCalled();
   });

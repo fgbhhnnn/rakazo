@@ -1,25 +1,18 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { postWorkerApprovalMirror, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { backgroundTaskCard, postDispatcherTaskMessage } from "./background-task-cards.js";
 import type { ExecutorDeps } from "./executor.js";
 
 /*
  * A hidden worker can still pause for the user: an approval card (auto-review, effects) is raised
  * in the worker's own thread, which the user is not looking at. The worker cannot post into the
- * main chat itself, so the main chat gets a card linking to the worker's chat, where the real
- * approval card is answerable, and background_task_status reports the task as needs_user.
+ * main chat itself, so the card is mirrored there and answered there (the answer resolves the
+ * worker's own card), and background_task_status reports the task as needs_user.
  */
 
 export type WorkerPendingKind = "approval" | "secret" | "question" | "takeover";
 
 export type WorkerPending = { kind: WorkerPendingKind; text: string };
-
-const KIND_LABEL: Record<WorkerPendingKind, string> = {
-  approval: "批准",
-  secret: "提供凭据",
-  question: "回答",
-  takeover: "接管电脑",
-};
 
 const MAX_PENDING_TEXT = 300;
 
@@ -67,54 +60,31 @@ export function workerPending(
 }
 
 export const WORKER_NEEDS_USER_NOTE =
-  "A task in state \"needs_user\" is paused until the user acts: pending says what it needs. Tell the user in one line what it needs and that they can tap that task's card (任务 #REF) to approve, deny or answer it in the worker's chat. Never approve or deny for them, and do not resend the task; background_task_message cannot reach it until the user has acted.";
-
-/** The main-chat line and card announcing that a worker is waiting on the user. */
-export function workerNeedsUserBlocks(
-  task: { workerId: string; name: string; ref: string },
-  pending: WorkerPending,
-): MessageBlock[] {
-  const card = backgroundTaskCard(task.workerId, task.name, task.ref);
-  const label = KIND_LABEL[pending.kind];
-  const what = pending.text ? `：${pending.text}` : "";
-  return [
-    { kind: "text", text: `任务 #${task.ref}（${task.name}）需要你${label}${what}` },
-    { ...card, title: `任务 #${task.ref} · 需要你${label}，点开处理` },
-  ];
-}
+  'A task in state "needs_user" is paused until the user acts: pending says what it needs. Its approval card is already shown in this chat, and the user approves or denies it right there. Tell the user in one line what it waits for and point them to that card. Never approve or deny for them, and do not resend the task; background_task_message cannot reach it until the user has acted.';
 
 /**
- * Posts that card into the dispatcher's chat when a hidden worker's run pauses for the user.
- * Best effort and silent for runs that carry no background task (ordinary bots, child bots).
+ * Mirrors a hidden worker's approval card into the main chat (the background task's thread),
+ * where the user answers it directly. Best effort and silent for runs that carry no background
+ * task (ordinary bots, child bots). Returns the main bot and chat so the push points there.
  */
-export async function announceWorkerNeedsUser(
+export async function mirrorWorkerApproval(
   deps: Pick<ExecutorDeps, "prisma" | "events">,
-  input: { workerRunId: string; pending: WorkerPending },
-): Promise<void> {
+  input: { workerRunId: string; workerThreadId: string; block: MessageBlock },
+): Promise<{ botId: string; threadId: string } | null> {
+  if (input.block.kind !== "ask" || !input.block.approvalEffectId) return null;
   try {
-    const task = await deps.prisma.backgroundTaskQueue.findFirst({
-      where: { workerRunId: input.workerRunId, status: "started" },
-      select: {
-        id: true,
-        spaceId: true,
-        botId: true,
-        runId: true,
-        threadId: true,
-        name: true,
-        ref: true,
-        workerBotId: true,
-      },
-    });
-    if (!task?.workerBotId) return;
-    await postDispatcherTaskMessage(
-      deps,
-      { id: task.runId, spaceId: task.spaceId, threadId: task.threadId, botId: task.botId },
-      workerNeedsUserBlocks(
-        { workerId: task.workerBotId, name: task.name, ref: task.ref ?? task.id },
-        input.pending,
-      ),
+    const posted = await withTransactionRetry(() =>
+      postWorkerApprovalMirror(deps.prisma, {
+        workerRunId: input.workerRunId,
+        workerThreadId: input.workerThreadId,
+        block: input.block as Extract<MessageBlock, { kind: "ask" }>,
+      }),
     );
+    if (!posted) return null;
+    await deps.events.notify(posted.threadId, posted.seq).catch(() => undefined);
+    return { botId: posted.botId, threadId: posted.threadId };
   } catch (error) {
-    getLogger().error("worker needs-user card", error);
+    getLogger().error("worker approval mirror", error);
+    return null;
   }
 }

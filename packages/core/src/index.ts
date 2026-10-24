@@ -83,4 +83,5 @@ export * from "./tool-activity.js";
 export * from "./unread-divider.js";
 export * from "./user-error.js";
 export * from "./voice-chat-groups.js";
+export * from "./worker-approval-mirror.js";
 export * from "./worker-names.js";

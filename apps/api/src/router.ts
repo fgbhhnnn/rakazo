@@ -317,7 +317,6 @@ import { addScreenProxyCapability } from "./screen-proxy.js";
 import { querySpaceSearch } from "./search.js";
 import { connectionCreatedEvent, procedureSecurityEvent } from "./security-audit.js";
 import { withSerializableRetry } from "./serializable-retry.js";
-
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import {
   isBackgroundRun,
@@ -353,6 +352,7 @@ import {
   voiceCredentialServer,
   voiceProviderFor,
 } from "./voice.js";
+import { answerWorkerApprovalMirror } from "./worker-approval-answer.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 /** Each command writes a running and a done event, so this keeps about 100 commands. */
@@ -2973,6 +2973,8 @@ export function createRouter(deps: RouterDeps) {
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (await answerWorkerApprovalMirror(deps, context.actor, target, input))
+          return { ok: true as const };
         const answered = await deps.events
           .answerRunInput({
             spaceId: context.actor.spaceId,

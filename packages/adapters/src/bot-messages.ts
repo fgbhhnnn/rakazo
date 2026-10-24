@@ -360,7 +360,7 @@ export async function returnBotMessageOutcome(
 ) {
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   if (!source) {
-    await markBotOutcomeReturned(deps.prisma, run.id);
+    await markBotOutcomeReturned(deps, run.id);
     // Handled: nothing to deliver. Return true so callers do not release a reservation.
     return true;
   }
@@ -369,7 +369,7 @@ export async function returnBotMessageOutcome(
   // the message that woke it: the dispatcher is the only way its result reaches the user.
   const workerTitle = await hiddenWorkerTitle(deps.prisma, run);
   if (sourceIntent !== "request" && sourceIntent !== "question" && workerTitle === undefined) {
-    await markBotOutcomeReturned(deps.prisma, run.id);
+    await markBotOutcomeReturned(deps, run.id);
     return true;
   }
   const sent = await deps.prisma.message.findMany({
@@ -387,7 +387,7 @@ export async function returnBotMessageOutcome(
     ),
   );
   if (alreadyReturned) {
-    await markBotOutcomeReturned(deps.prisma, run.id);
+    await markBotOutcomeReturned(deps, run.id);
     return true;
   }
   // The dispatcher names the task by its title and #ref; an over-long result travels as a file.
@@ -411,11 +411,15 @@ export async function returnBotMessageOutcome(
       ...(workerTitle ? { wakeFromName: `后台任务「${workerTitle}」` } : {}),
     },
   );
-  if (outcome.ok) await markBotOutcomeReturned(deps.prisma, run.id);
+  if (outcome.ok) await markBotOutcomeReturned(deps, run.id);
   return outcome.ok;
 }
 
-async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
+async function markBotOutcomeReturned(
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  runId: string,
+) {
+  const { prisma } = deps;
   await prisma.run.updateMany({
     where: {
       id: runId,
@@ -424,7 +428,9 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
     },
     data: { botOutcomeReturnedAt: new Date() },
   });
-  await finalizeBackgroundTaskAfterReturn(prisma, runId);
+  await finalizeBackgroundTaskAfterReturn(prisma, runId, (threadId, seq) =>
+    deps.events.notify(threadId, seq),
+  );
 }
 
 function isUniqueConstraintError(error: unknown) {

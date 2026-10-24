@@ -7,7 +7,6 @@ import {
 import {
   pendingAskFromBlocks,
   WORKER_NEEDS_USER_NOTE,
-  workerNeedsUserBlocks,
   workerPending,
 } from "./worker-needs-user.js";
 import { dataBotId, loadWorkerOwner, mcpScopeBotId, recallForRun } from "./worker-owner-scope.js";
@@ -157,23 +156,10 @@ describe("worker needs user", () => {
     }
   });
 
-  it("builds the main-chat line and a card to the worker's chat", () => {
-    expect(
-      workerNeedsUserBlocks(
-        { workerId: "w1", name: "部署", ref: "B2" },
-        { kind: "secret", text: "" },
-      ),
-    ).toEqual([
-      { kind: "text", text: "任务 #B2（部署）需要你提供凭据" },
-      {
-        kind: "child_bot",
-        botId: "w1",
-        name: "后台任务：部署 #B2",
-        title: "任务 #B2 · 需要你提供凭据，点开处理",
-        status: "created",
-      },
-    ]);
+  it("tells the main bot the card is in its chat and never to answer it", () => {
+    expect(WORKER_NEEDS_USER_NOTE).toContain("approval card is already shown in this chat");
     expect(WORKER_NEEDS_USER_NOTE).toContain("Never approve or deny for them");
+    expect(WORKER_NEEDS_USER_NOTE).not.toContain("点开处理");
   });
 });
 

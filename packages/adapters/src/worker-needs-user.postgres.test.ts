@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { createDb, runAsSystem } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
 import { backgroundTaskStatus, backgroundWorkerSpawnKey } from "./background-tasks.js";
 import { workerSettingsFromMain } from "./worker-main-settings.js";
-import { announceWorkerNeedsUser } from "./worker-needs-user.js";
+import { mirrorWorkerApproval } from "./worker-needs-user.js";
 
 const postgres =
   process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 postgres("worker waiting on the user (PostgreSQL)", () => {
-  it("reports needs_user, posts a card in the main chat, and carries the main bot's settings", async () => {
+  it("reports needs_user, mirrors the approval card into the main chat, and closes it when the worker ends", async () => {
     const { prisma, pool } = createDb(process.env.DATABASE_URL!);
     const id = `needs-user-${randomUUID()}`;
     const userId = `${id}-user`;
@@ -94,7 +95,7 @@ postgres("worker waiting on the user (PostgreSQL)", () => {
             trigger: "bot",
           },
         });
-        await prisma.message.create({
+        const workerMessage = await prisma.message.create({
           data: {
             threadId: workerThread.id,
             seq: 0,
@@ -132,7 +133,7 @@ postgres("worker waiting on the user (PostgreSQL)", () => {
             startedAt: new Date(),
           },
         });
-        return { main, worker, mainThread, mainRun, workerRun };
+        return { main, worker, mainThread, workerThread, mainRun, workerRun, workerMessage };
       });
       const run = {
         id: fx.mainRun.id,
@@ -155,12 +156,17 @@ postgres("worker waiting on the user (PostgreSQL)", () => {
       expect("note" in status && status.note).toContain('state "needs_user"');
 
       const notify = vi.fn(async () => undefined);
-      await system(() =>
-        announceWorkerNeedsUser({ prisma, events: { notify } } as never, {
-          workerRunId: fx.workerRun.id,
-          pending: { kind: "approval", text: "Allow git push to origin?" },
-        }),
-      );
+      const ask = (fx.workerMessage.blocks as { kind: "ask" }[])[0] as never;
+      const mirror = () =>
+        system(() =>
+          mirrorWorkerApproval({ prisma, events: { notify } } as never, {
+            workerRunId: fx.workerRun.id,
+            workerThreadId: fx.workerThread.id,
+            block: ask,
+          }),
+        );
+      // The push for the paused worker points at the main bot's chat.
+      expect(await mirror()).toEqual({ botId: fx.main.id, threadId: fx.mainThread.id });
       const posted = await system(() =>
         prisma.message.findMany({
           where: { threadId: fx.mainThread.id },
@@ -171,31 +177,63 @@ postgres("worker waiting on the user (PostgreSQL)", () => {
         {
           role: "bot",
           botId: fx.main.id,
-          runId: fx.mainRun.id,
+          runId: null,
           blocks: [
-            { kind: "text", text: "任务 #A7（推送代码）需要你批准：Allow git push to origin?" },
             {
-              kind: "child_bot",
-              botId: fx.worker.id,
-              name: "后台任务：推送代码 #A7",
-              title: "任务 #A7 · 需要你批准，点开处理",
-              status: "created",
+              ...(ask as object),
+              workerApproval: {
+                runId: fx.workerRun.id,
+                messageId: fx.workerMessage.id,
+                label: "任务 #A7（推送代码）",
+              },
             },
           ],
         },
       ]);
+      expect(JSON.stringify(posted)).not.toContain("点开处理");
       expect(notify).toHaveBeenCalledTimes(1);
 
-      // A run that carries no background task (an ordinary bot's run) posts nothing.
-      await system(() =>
-        announceWorkerNeedsUser({ prisma, events: { notify } } as never, {
-          workerRunId: fx.mainRun.id,
-          pending: { kind: "approval", text: "x" },
-        }),
-      );
+      // The same approval raised again, a run without a background task, or a block that is not
+      // an approval posts nothing.
+      expect(await mirror()).toBeNull();
+      expect(
+        await system(() =>
+          mirrorWorkerApproval({ prisma, events: { notify } } as never, {
+            workerRunId: fx.mainRun.id,
+            workerThreadId: fx.mainThread.id,
+            block: ask,
+          }),
+        ),
+      ).toBeNull();
+      expect(
+        await system(() =>
+          mirrorWorkerApproval({ prisma, events: { notify } } as never, {
+            workerRunId: fx.workerRun.id,
+            workerThreadId: fx.workerThread.id,
+            block: { kind: "text", text: "hi" },
+          }),
+        ),
+      ).toBeNull();
       expect(
         await system(() => prisma.message.count({ where: { threadId: fx.mainThread.id } })),
       ).toBe(1);
+      expect(notify).toHaveBeenCalledTimes(1);
+
+      // Once the worker's outcome is returned after a cancel, the copy shows it was cancelled.
+      await system(() =>
+        prisma.run.update({ where: { id: fx.workerRun.id }, data: { status: "cancelled" } }),
+      );
+      await system(() => finalizeBackgroundTaskAfterReturn(prisma, fx.workerRun.id, notify));
+      const closed = await system(() =>
+        prisma.message.findFirstOrThrow({ where: { threadId: fx.mainThread.id } }),
+      );
+      expect(closed.blocks).toEqual([
+        expect.objectContaining({
+          status: "pending",
+          workerApproval: expect.objectContaining({ closed: "cancelled" }),
+        }),
+      ]);
+      expect(notify).toHaveBeenCalledTimes(2);
 
       // D: the worker carries the main bot's instructions and disabled tools.
       const settings = await system(() =>

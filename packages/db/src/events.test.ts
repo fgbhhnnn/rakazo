@@ -1985,6 +1985,8 @@ describe("answerRunInput", () => {
   it("approves consequential actions without overwriting the task prompt", async () => {
     const fanout = new TestFanout();
     const tx = {
+      // Not a background worker's run: no approval copy to settle.
+      backgroundTaskQueue: { findFirst: vi.fn(async () => null) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
         findFirst: vi.fn().mockResolvedValue({
@@ -2078,6 +2080,8 @@ describe("answerRunInput", () => {
     async (kind, request, matchKind, matchValue) => {
       const fanout = new TestFanout();
       const tx = {
+        // Not a background worker's run: no approval copy to settle.
+        backgroundTaskQueue: { findFirst: vi.fn(async () => null) },
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         message: {
           findFirst: vi.fn().mockResolvedValue({
@@ -4152,6 +4156,8 @@ describe("instruction proposal answers", () => {
       ],
     };
     const tx = {
+      // Not a background worker's run: no approval copy to settle.
+      backgroundTaskQueue: { findFirst: vi.fn(async () => null) },
       $queryRaw: vi.fn(async () => []),
       run: {
         findFirst: vi.fn(async () => ({ botId: "bot-1", userId: "owner" })),

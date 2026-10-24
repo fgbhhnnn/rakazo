@@ -80,6 +80,7 @@ vi.mock("../components/native-action-button", () => ({
 }));
 
 import { McpApprovalCard } from "../components/McpApprovalCard";
+import { inactiveAskText, WorkerApprovalLabel } from "../components/worker-approval-label";
 import { withUserBubble } from "./user-bubble";
 
 // Render the screen's actual message bubble without importing its native dependencies.
@@ -123,6 +124,8 @@ const scope = {
   Text,
   Pressable,
   AskActions: () => <button type="button">Answer</button>,
+  WorkerApprovalLabel,
+  inactiveAskText,
   safeDisplayName: (name: string) => name,
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   openHelpers: new Set<string>(),

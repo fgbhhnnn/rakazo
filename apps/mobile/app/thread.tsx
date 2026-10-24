@@ -20,6 +20,7 @@ import {
   abortableDelay,
   answerableAskMessageIds,
   appendNewerThreadPage,
+  askAnswerRunId,
   attachmentsForThread,
   buildComposerMentionOptions,
   canMarkMessageUnread,
@@ -159,6 +160,7 @@ import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import { TimeSeparator } from "../components/time-separator";
 import { UnreadDivider } from "../components/unread-divider";
 import { VoiceChatCard } from "../components/VoiceChatCard";
+import { inactiveAskText, WorkerApprovalLabel } from "../components/worker-approval-label";
 import { readableGutters } from "../lib/adaptive-layout";
 import type {
   MobileBot,
@@ -2018,10 +2020,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     async (message: MobileMessage, answer: string, username?: string, dismiss?: boolean) => {
       const targetBotId = botId;
       const targetGroupId = groupId;
-      if (readOnly || (!targetBotId && !targetGroupId) || !message.runId) return;
+      // A mirrored worker approval answers the worker's run, not this chat's.
+      const runId = askAnswerRunId(message);
+      if (readOnly || (!targetBotId && !targetGroupId) || !runId) return;
       await rpc("threads/answer", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
-        runId: message.runId,
+        runId,
         messageId: message.id,
         answer,
         ...(username ? { username } : {}),
@@ -4195,6 +4199,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             />
           ) : (
             <>
+              <WorkerApprovalLabel block={askBlock} />
               {askBlock.text ? (
                 <Text {...actionProps} style={{ color: tokens.foreground, ...typeScale.cardTitle }}>
                   {askBlock.instructionUpdate
@@ -4251,7 +4256,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   {...actionProps}
                   style={{ color: tokens.mutedForeground, marginTop: 12, ...typeScale.caption }}
                 >
-                  {t("No longer active")}
+                  {t(inactiveAskText(askBlock))}
                 </Text>
               )}
             </>

@@ -428,7 +428,7 @@ import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { botModelChoice } from "./worker-model.js";
-import { announceWorkerNeedsUser } from "./worker-needs-user.js";
+import { mirrorWorkerApproval } from "./worker-needs-user.js";
 import { workerNestingRefusal } from "./worker-nesting.js";
 import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
 import { dataBotId, loadWorkerOwner, recallForRun } from "./worker-owner-scope.js";
@@ -5798,20 +5798,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 .enqueue(runContinueJob(paused.continuationRunId))
                 .catch((error) => getLogger().error("steering continuation enqueue", error));
             }
-            await notifyRun(deps, run, {
+            // A hidden worker's chat is never shown: its card is answered in the main chat.
+            const mirrored = isHiddenBot(bot)
+              ? await mirrorWorkerApproval(deps, {
+                  workerRunId: runId,
+                  workerThreadId: thread.id,
+                  block: approvalAsk,
+                })
+              : null;
+            await notifyRun(deps, mirrored ? { ...run, ...mirrored } : run, {
               kind: "help",
               title: `${displayName(bot.name, "Bot")} needs approval`,
               body: `Review before ${name}`,
-              botId: bot.id,
-              threadId: thread.id,
+              botId: mirrored?.botId ?? bot.id,
+              threadId: mirrored?.threadId ?? thread.id,
             });
-            if (isHiddenBot(bot) && approvalAsk.kind === "ask") {
-              // The user is in the main chat, not this hidden worker's thread: point them here.
-              await announceWorkerNeedsUser(deps, {
-                workerRunId: runId,
-                pending: { kind: "approval", text: approvalAsk.text },
-              });
-            }
             return pauseForApproval();
           };
           const requestApproval = () => {

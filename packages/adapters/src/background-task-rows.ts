@@ -1,5 +1,6 @@
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { closeWorkerApprovalMirrors } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 /**
@@ -87,13 +88,23 @@ export async function finalizeBackgroundTaskForRun(
  * its worker's result reached the dispatcher, which frees its slot. Best effort; the
  * background-task reconciler finalizes anything missed here.
  */
-export async function finalizeBackgroundTaskAfterReturn(prisma: PrismaClient, runId: string) {
+export async function finalizeBackgroundTaskAfterReturn(
+  prisma: PrismaClient,
+  runId: string,
+  notify?: (threadId: string, seq: number) => Promise<void>,
+) {
   try {
     const ended = await prisma.run.findUnique({
       where: { id: runId },
       select: { id: true, botId: true, status: true },
     });
     if (ended && ["completed", "failed", "cancelled"].includes(ended.status)) {
+      // An approval copy in the main chat can no longer be answered once its worker ended.
+      const closed = await closeWorkerApprovalMirrors(prisma, ended.id).catch((error) => {
+        getLogger().error("worker approval close", error);
+        return null;
+      });
+      if (closed) await notify?.(closed.threadId, closed.seq).catch(() => undefined);
       await finalizeBackgroundTaskForRun(prisma, ended);
     }
   } catch (error) {

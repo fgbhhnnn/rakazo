@@ -1,10 +1,17 @@
 import { isSecretAskBlock } from "./action-approval.js";
+import { isOpenWorkerApprovalMirror } from "./worker-approval-mirror.js";
 
 type AskSnapshot = {
   messages: readonly {
     id: string;
     runId?: string | null;
-    blocks: readonly { kind: string; status?: string; input?: string; approvalEffectId?: string }[];
+    blocks: readonly {
+      kind: string;
+      status?: string;
+      input?: string;
+      approvalEffectId?: string;
+      workerApproval?: { runId: string; closed?: string };
+    }[];
   }[];
   run?: { id: string; status: string; userId?: string } | null;
   activeRuns?: readonly { id: string; status: string; userId?: string }[];
@@ -19,6 +26,11 @@ export function answerableAskMessageIds(snapshot: AskSnapshot | null): Set<strin
       .map((run) => run.id),
   );
   for (const message of snapshot.messages) {
+    // A worker's mirrored approval: its run lives in the hidden worker chat, not this one.
+    if (message.blocks.some(isOpenWorkerApprovalMirror)) {
+      answerable.add(message.id);
+      continue;
+    }
     if (!message.runId || !waitingRunIds.has(message.runId)) continue;
     if (message.blocks.some((block) => block.kind === "ask" && block.status !== "answered")) {
       answerable.add(message.id);

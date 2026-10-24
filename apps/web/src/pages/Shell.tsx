@@ -24,6 +24,7 @@ import {
   accountDisplay,
   answerableAskMessageIds,
   anySignal,
+  askAnswerRunId,
   attachmentsForThread,
   buildComposerMentionOptions,
   chatUserBubbleColors,
@@ -2233,7 +2234,7 @@ function SpaceShell() {
       if (!botId && !groupId) return;
       await rpc.threads.answer({
         ...(groupId ? { groupId } : { botId: botId! }),
-        runId: message.runId ?? "",
+        runId: askAnswerRunId(message) ?? "",
         messageId: message.id,
         answer: text,
         ...(username ? { username } : {}),
