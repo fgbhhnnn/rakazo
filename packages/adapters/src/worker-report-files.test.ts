@@ -55,6 +55,7 @@ describe("attachWorkerReportFiles", () => {
       artifacts: {},
       prisma: {
         bot: { findFirst: vi.fn(async () => ({ id: "worker1" })) },
+        artifact: { findMany: vi.fn(async (): Promise<Array<{ name: string }>> => []) },
         $transaction: vi.fn(async () => {
           published.push(1);
           return { eventSeq: 1, message: { id: "m", createdAt: new Date() } };
@@ -139,6 +140,36 @@ describe("attachWorkerReportFiles", () => {
       publish: async () => undefined,
     }).catch((error) => error);
     expect(deps.sandbox.readFile).not.toHaveBeenCalled();
+  });
+  it("skips files this run already stored in an earlier attempt (resume after ask_user)", async () => {
+    const { deps } = base();
+    deps.prisma.artifact.findMany = vi.fn(async () => [{ name: "a.md" }]);
+    await attachWorkerReportFiles({
+      deps: deps as any,
+      run: {
+        id: "r",
+        spaceId: "s",
+        threadId: "t",
+        botId: "main",
+        userId: "u",
+        trigger: "bot_message",
+      },
+      bot: { id: "main" },
+      report: { fromBotId: "worker1", text: "完成\n文件：\n- /out/a.md\n- /out/b.png" },
+      computerMode: "team",
+      readComputer: async () => ({}) as any,
+      context: {} as any,
+      alreadyAttached: new Set<string>(),
+      publish: async () => undefined,
+    }).catch((error) => error);
+    expect(deps.prisma.artifact.findMany).toHaveBeenCalledWith({
+      where: { runId: "r", botId: "main" },
+      select: { name: true },
+    });
+    // a.md is already stored for this run; only b.png is read.
+    expect(deps.sandbox.readFile).toHaveBeenCalledTimes(1);
+    const readPath = (deps.sandbox.readFile.mock.calls[0] as unknown[])[1] as string;
+    expect(readPath).toBe(resolveBotWorkspacePath("team", "worker1", "/out/b.png"));
   });
   it("does nothing for a report from a bot that is not this bot's worker", async () => {
     const { deps } = base();

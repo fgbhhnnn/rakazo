@@ -32,7 +32,17 @@ export async function announceQueuedTaskStart(
   run: { id: string; spaceId: string; threadId: string; botId: string },
   task: { workerId: string; name: string; ref: string },
 ): Promise<void> {
-  const blocks: MessageBlock[] = [backgroundTaskCard(task.workerId, task.name, task.ref)];
+  await postDispatcherTaskMessage(deps, run, [
+    backgroundTaskCard(task.workerId, task.name, task.ref),
+  ]);
+}
+
+/** Posts bot blocks into the dispatcher's thread, attributed to the given (possibly ended) run. */
+export async function postDispatcherTaskMessage(
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  run: { id: string; spaceId: string; threadId: string; botId: string },
+  blocks: MessageBlock[],
+): Promise<void> {
   try {
     const event = await withTransactionRetry(() =>
       deps.prisma.$transaction(async (tx) => {
@@ -57,6 +67,6 @@ export async function announceQueuedTaskStart(
     );
     await deps.events.notify(run.threadId, event.seq).catch(() => undefined);
   } catch (error) {
-    getLogger().error("queued background task card", error);
+    getLogger().error("background task card", error);
   }
 }

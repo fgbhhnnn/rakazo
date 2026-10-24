@@ -1,7 +1,13 @@
-import { ATTACHMENT_MAX_BYTES, type MessageBlock } from "@rakazo/contracts";
+import path from "node:path";
+import {
+  ARTIFACT_NAME_MAX_LENGTH,
+  ATTACHMENT_MAX_BYTES,
+  type MessageBlock,
+} from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import type { parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { attachmentDisplayName } from "./attachment-display-name.js";
 import { BACKGROUND_WORKER_SPAWN_PREFIX, parseWorkerReportFiles } from "./background-tasks.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 import type { ExecutorDeps } from "./executor.js";
@@ -111,11 +117,25 @@ export async function attachWorkerReportFiles(input: {
     select: { id: true },
   });
   if (!worker) return [];
+  // A run resumed after ask_user (or retried) already attached these files in an earlier
+  // attempt; the in-memory set starts empty, so check what this run already stored.
+  const storedNames = new Set(
+    (
+      await deps.prisma.artifact.findMany({
+        where: { runId: run.id, botId: input.bot.id },
+        select: { name: true },
+      })
+    ).map((artifact) => artifact.name),
+  );
   const computer = await input.readComputer();
   const attached: string[] = [];
   for (const [index, file] of files.entries()) {
     const mimeType = inferAttachmentMimeType(file);
     if (!mimeType) continue;
+    const fileName = path.basename(file) || file;
+    if (storedNames.has(attachmentDisplayName(undefined, fileName, ARTIFACT_NAME_MAX_LENGTH))) {
+      continue;
+    }
     const relative = workerReportWorkspacePath(file);
     if (relative === null) {
       getLogger().warn("worker report file not attached: path is outside the computer workspace");

@@ -11,6 +11,7 @@ import {
   withholdNestedAgentTools,
   workerNestingRefusal,
 } from "./worker-nesting.js";
+import { WORKER_USER_FACING_TOOLS } from "./worker-user-facing-tools.js";
 
 const worker = { spawnKey: "bg-worker:main-bot:2", disabledBuiltinTools: [] };
 const regular = { spawnKey: null, disabledBuiltinTools: [] };
@@ -62,7 +63,10 @@ describe("worker nesting policy", () => {
   it("applies through the run tool policy, whatever the worker's stored tool list says", () => {
     const disabled = new Set<string>();
     expect(applyDispatcherToolPolicy(true, worker, disabled, offered)).toBe(false);
-    expect([...disabled].sort()).toEqual([...WORKER_NESTED_AGENT_TOOLS].sort());
+    // Nested-agent tools plus the user-facing ones (worker-user-facing-tools.ts), nothing else.
+    expect([...disabled].sort()).toEqual(
+      [...new Set([...WORKER_NESTED_AGENT_TOOLS, ...WORKER_USER_FACING_TOOLS])].sort(),
+    );
     for (const name of ["shell", "read_file", "web_search", "computer_act"])
       expect(disabled.has(name)).toBe(false);
   });

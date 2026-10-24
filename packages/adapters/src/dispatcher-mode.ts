@@ -1,7 +1,9 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { isHiddenBot } from "@rakazo/db";
+import { DISPATCHER_OWNER_TOOL_NAMES } from "./dispatcher-owner-tools.js";
 import type { ExecutorDeps } from "./executor.js";
 import { withholdNestedAgentTools } from "./worker-nesting.js";
+import { withholdUserFacingTools } from "./worker-user-facing-tools.js";
 
 /*
  * Dispatcher mode: a user's bot only talks and dispatches; work runs in hidden background
@@ -124,6 +126,7 @@ export const DISPATCHER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "background_task_message",
   "background_task_cancel",
   "attach_file",
+  ...DISPATCHER_OWNER_TOOL_NAMES,
 ]);
 
 export const DISPATCH_ONLY_TOOL_NAMES = [
@@ -186,6 +189,7 @@ export function applyDispatcherToolPolicy(
 ): boolean {
   if (isHiddenBot(bot)) for (const name of DISPATCH_ONLY_TOOL_NAMES) disabled.add(name);
   withholdNestedAgentTools(bot, disabled);
+  withholdUserFacingTools(bot, disabled);
   const dispatcherRun = Boolean(dispatcherMode) && isDispatcherBot(bot);
   if (dispatcherRun) {
     for (const tool of offered) if (!DISPATCHER_TOOL_NAMES.has(tool.name)) disabled.add(tool.name);

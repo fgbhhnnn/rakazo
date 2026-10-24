@@ -27,6 +27,8 @@ import { QUEUE_AFTER_CANCEL_NOTE, queueChangeAfterCancel } from "./queue-after-c
 import { type AttachmentBlock, attachmentBlocks } from "./task-attachments.js";
 import { backgroundTaskHash, newTaskRef, taskTitle } from "./task-identity.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
+import { workerSettingsFromMain } from "./worker-main-settings.js";
+import { WORKER_NEEDS_USER_NOTE, workerPending } from "./worker-needs-user.js";
 import { WORKER_ALWAYS_DISABLED, workerDisabledTools } from "./worker-tool-policy.js";
 
 /**
@@ -105,6 +107,8 @@ const WORKER_INSTRUCTIONS = `你是后台工作者（background worker），由�
 - 你有自己的上下文；主 bot 和用户看不到你的中间过程，只看到你最后的回复。
 - 只做任务说明里的事。不要问用户问题；信息不够就做合理假设并在结果里写明。
 - 你不能再开子任务、子代理或新 bot（background_task、run_subagent、spawn_bot 等都不可用），所有活自己做完。
+- 你不能直接找用户：要用户输入、密钥/登录、授权、连接应用、接管电脑或定时提醒时（request_secret、connect_app、request_takeover、schedule_create 等都不可用），先停下，在结果里写清楚具体需要什么、为什么；主 bot 会去找用户处理，再通知你继续。
+- 等待后台命令时不要设定时提醒：在本轮里隔一会儿（如 sleep 30–60）查一次 status.json / 日志，直到跑完。
 - 大任务按 "Heavy Task Workflow" 技能来：计划清单写文件、素材存文件；技能里说交给子代理或 background_task 的步骤，你自己分批做（看图每批 3-4 张，看完只留文字笔记写进文件）。
 - 产物写到电脑工作区里的文件（shell 的默认当前目录就是工作区，建议 ./jobs/<任务名>/out/），结果里给出路径。不要把要交付的文件放在工作区外（如 shell 的 ~、/tmp），那里的文件发不出去；如已写在外面，先复制进工作区。
 - 最后的回复就是交给主 bot 的结果：简洁（建议 1500 字以内），包括 完成情况 / 结果要点 / 遇到的问题 / 建议的下一步。短结果（答案、短名单、短文案）直接写进回复；长材料（长报告、长名单、大段正文，超过约 3000 字）写进工作区的报告文件（如 ./jobs/<任务名>/out/report.md），回复里只写要点摘要，并在下面的“文件：”里列出这个报告文件。
@@ -604,16 +608,23 @@ async function startOnSlot(
   spec: StartSpec,
 ): Promise<{ runId: string } | { error: string }> {
   const { name, task, agent, ref } = spec;
-  // Per task: same computer as the dispatcher, quiet notifications, this task's tool set.
+  // Per task: same computer as the dispatcher, quiet notifications, this task's tool set, plus
+  // the main bot's own instructions and the tools its owner turned off.
+  const settings = await workerSettingsFromMain(
+    deps.prisma,
+    bot.id,
+    WORKER_INSTRUCTIONS,
+    spec.disabled,
+  );
   await deps.prisma.bot.update({
     where: { id: workerId },
     data: {
       notifyOnFinish: false,
-      instructions: WORKER_INSTRUCTIONS,
+      instructions: settings.instructions,
       // Display only (cards, the worker's own chat); results are attributed through the task row.
       title: `${name.slice(0, 70)} #${ref}`,
       description: task.slice(0, 300),
-      disabledBuiltinTools: spec.disabled,
+      disabledBuiltinTools: settings.disabledBuiltinTools,
       ...(bot.computerId ? { computerId: bot.computerId } : {}),
     },
   });
@@ -748,11 +759,14 @@ export async function backgroundTaskStatus(
                 : "finishing"
               : row.status;
       const finishedAt = row.finishedAt ?? workerRun?.completedAt ?? undefined;
+      const pending =
+        row.status === "started" ? workerPending(workerRun?.status, last?.blocks) : undefined;
       return {
         task_id: row.ref ?? row.id,
         name: row.name,
         task: row.task.slice(0, 300),
-        state,
+        state: pending ? "needs_user" : state,
+        ...(pending ? { pending } : {}),
         ...(row.status === "queued" ? { position: queuedOrder.indexOf(row.id) + 1 } : {}),
         queued_at: formatInstantForUser(row.createdAt, zone),
         started_at: row.startedAt ? formatInstantForUser(row.startedAt, zone) : undefined,
@@ -772,7 +786,7 @@ export async function backgroundTaskStatus(
     limit: backgroundTaskConcurrency(),
     tasks,
     time_zone: zone ?? "UTC",
-    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task.`,
+    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task. ${WORKER_NEEDS_USER_NOTE}`,
   };
 }
 
@@ -919,7 +933,8 @@ async function backgroundTaskMessageNow(
   }
   if (steered.kind === "waiting")
     return {
-      error: "the worker is waiting on an approval or takeover; it cannot take a change now",
+      error:
+        "the worker is waiting on the user (an approval or takeover in its chat); it cannot take a change now. Tell the user to tap the task's card (任务 #REF) and handle it there; never approve or deny for them.",
     };
   if (steered.kind === "retry") return backgroundTaskMessageNow(deps, run, bot, args, deliveryKey);
   // The worker is idle: resume this task on it with its context, unless the slot has already

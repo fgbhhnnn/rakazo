@@ -289,6 +289,7 @@ import { connectedContext, selectRunConnections } from "./connection-context.js"
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
+import { dispatcherAskClause } from "./dispatcher-ask-guidance.js";
 import {
   applyDispatcherToolPolicy,
   BACKGROUND_DISPATCH_GUIDANCE,
@@ -302,6 +303,7 @@ import {
   STEERING_REPLY_GUIDANCE,
   startDispatcherWatchdog,
 } from "./dispatcher-mode.js";
+import { dispatcherOwnerToolsClause } from "./dispatcher-owner-tools.js";
 import {
   attachedPathKey,
   attachWorkerReportFiles,
@@ -426,9 +428,12 @@ import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { botModelChoice } from "./worker-model.js";
+import { announceWorkerNeedsUser } from "./worker-needs-user.js";
 import { workerNestingRefusal } from "./worker-nesting.js";
 import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
+import { dataBotId, loadWorkerOwner, recallForRun } from "./worker-owner-scope.js";
 import { slotFree } from "./worker-slot-mentions.js";
+import { workerUserFacingRefusal } from "./worker-user-facing-tools.js";
 
 export { selectRunConnections } from "./connection-context.js";
 
@@ -3752,8 +3757,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
           computerSwitching: true,
           computer: { select: { scope: true } },
           spawnKey: true,
+          parentBotId: true,
           disabledBuiltinTools: true,
         },
+      });
+      // A hidden worker uses its main bot's data (see worker-owner-scope.ts).
+      const dataScope = { id: run.botId, ...leaseTarget };
+      const secretScope = {
+        userId: run.userId,
+        spaceId: run.spaceId,
+        botId: dataBotId(dataScope),
+      };
+      // Started now, awaited before the memory context loads; a failed read keeps the worker's own.
+      const workerOwnerPromise = loadWorkerOwner(deps.prisma, dataScope).catch((error) => {
+        getLogger().error("worker owner lookup", error);
+        return null;
       });
       // A dispatcher's main turn has no computer tools, so it never waits for the computer
       // (booting, suspending, or busy with a worker): the reply must not queue behind it.
@@ -3976,7 +3994,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }),
           deps.memoryProviders.resolve(run.spaceId),
           deps.prisma.taughtSkill.findMany({
-            where: { botId: run.botId, spaceId: run.spaceId, status: "saved" },
+            where: { botId: secretScope.botId, spaceId: run.spaceId, status: "saved" },
           }),
           listAgentSkillRecords(deps.prisma, {
             spaceId: run.spaceId,
@@ -3989,7 +4007,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               secret: { select: { id: true, ciphertext: true } },
             },
           }),
-          loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
+          loadBotCommandEnvironment(deps.prisma, deps.secretStore, secretScope),
         ]);
         const messages = await withoutMessagesOwnedByOtherLiveRuns(
           deps.prisma,
@@ -4073,6 +4091,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const memoryScope = configuredMemory
           ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
           : null;
+        const workerOwner = await workerOwnerPromise;
+        // A worker reads and records the main bot's memory and scratchpad.
+        const memoryBotId = workerOwner?.id ?? bot.id;
+        const ownerMemory =
+          workerOwner && configuredMemory
+            ? {
+                id: workerOwner.id,
+                scope: effectiveMemoryScope(workerOwner.memoryScope, configuredMemory.defaultScope),
+              }
+            : null;
+        const durableMemoryScope = ownerMemory?.scope ?? memoryScope;
         const semanticMemory: SemanticMemoryProvider | null = configuredMemory?.provider ?? null;
 
         await deps.events.append({
@@ -4149,7 +4178,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           semanticMemory &&
           memoryScope &&
           thread.historyCompactedUpToSeq != null
-            ? semanticMemory.recall(
+            ? recallForRun(
+                semanticMemory,
                 {
                   query: task.prompt,
                   scope: memoryScope,
@@ -4157,6 +4187,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   historyGeneration: thread.historyCompactionGeneration,
                   limit: MAX_RECALLED_MEMORIES,
                 },
+                ownerMemory,
                 context,
               )
             : Promise.resolve(null);
@@ -4172,12 +4203,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           loadCurrentTurnImages(deps, turnBlocks, context),
           messagingChannelRun
             ? Promise.resolve("")
-            : loadAgentMemoryContext(deps.memory, bot.id, context),
+            : loadAgentMemoryContext(deps.memory, memoryBotId, context),
           messagingChannelRun
             ? Promise.resolve("")
             : loadAgentScratchpadContext(deps, {
                 spaceId: run.spaceId,
-                botId: bot.id,
+                botId: memoryBotId,
               }),
           messagingChannelRun || !deps.ticketBoardEnabled
             ? Promise.resolve(undefined)
@@ -4707,6 +4738,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // Keep the last segment in case the model supplies no final reply.
         let discardedMidTurnNarration = false;
         let lastDiscardedMidTurnNarration = "";
+        // A dispatcher's text right before ask_user: held back like narration, but the ask ends
+        // the turn with no final reply, so it is posted above the card instead of being lost.
+        let discardedNarrationCount = 0;
+        let preAskNarration = "";
         let explicitNoResponse = false;
         let assistantTurnText = "";
         const recordExplicitNoResponse = (text: string) => {
@@ -4839,6 +4874,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             assembled = "";
             discardedMidTurnNarration = true;
             lastDiscardedMidTurnNarration = narration;
+            discardedNarrationCount += 1;
             return;
           }
           assembled = "";
@@ -4852,6 +4888,62 @@ export function createRunExecutor(deps: ExecutorDeps) {
           );
           midTurnUserTexts.push(narration);
           publishedMidTurnUserMessage = true;
+        };
+        // A worker's files and forwarded result go out with the dispatcher's relay of its report.
+        const relayWorkerReportAttachments = async () => {
+          if (!dispatcherTurn || !peerMessage) return;
+          if (deps.artifacts) {
+            await attachWorkerReportFiles({
+              deps,
+              run,
+              bot,
+              threadGroupId: thread.groupId ?? undefined,
+              report: peerMessage,
+              computerMode,
+              readComputer: () => getRunComputer("tool", "attach_file"),
+              context,
+              alreadyAttached: attachedFilePaths,
+              publish: (blocks) => publishMessage(deps, run, "bot", blocks),
+            }).catch((error) => getLogger().error("worker report attach", error));
+          }
+          await forwardWorkerRelayAttachments({
+            prisma: deps.prisma,
+            run,
+            bot,
+            report: peerMessage,
+            publish: (blocks) => publishMessage(deps, run, "bot", blocks),
+          }).catch((error) => getLogger().error("worker result forward", error));
+        };
+        // ask_user pauses the turn without a final reply, so a dispatcher's text before the
+        // card (e.g. its relay of a worker result) and the report's files are posted first.
+        const publishDispatcherPreAskReply = async () => {
+          const pending = assembled.trim() ? assembled : preAskNarration;
+          preAskNarration = "";
+          const text = clampUserProgressMessage(
+            dispatcherVisible(redactSecrets(pending, runSecrets)),
+          );
+          if (text && !midTurnUserTexts.includes(text)) {
+            const guarded = guardDispatcherReply(true, [{ kind: "text", text }], turnLedger, {
+              wokenByWorker: Boolean(peerMessage),
+              runId,
+            });
+            if (guarded.blocks.length) {
+              await publishMessage(
+                deps,
+                run,
+                "bot",
+                guarded.blocks,
+                undefined,
+                userProgressClientNonce(run.id, midTurnProgressCount++),
+              );
+              midTurnUserTexts.push(text);
+              publishedMidTurnUserMessage = true;
+            }
+          }
+          assembled = "";
+          hasStreamedText = false;
+          pendingProgress = "";
+          await relayWorkerReportAttachments();
         };
         const formatObservation = (
           observation: Awaited<ReturnType<SandboxProvider["observe"]>>,
@@ -4946,6 +5038,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return pauseForApproval();
           const nestingRefusal = workerNestingRefusal(bot, name);
           if (nestingRefusal) return { error: nestingRefusal };
+          const userFacingRefusal = workerUserFacingRefusal(bot, name);
+          if (userFacingRefusal) return { error: userFacingRefusal };
           if (disabledBuiltinTools.has(name)) {
             return { error: "This tool is disabled for this bot." };
           }
@@ -5676,6 +5770,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await workspaceCheckpoint.flush();
             await persistTurnCheckpoint(executionId);
             await settleRunningHelpers();
+            const approvalAsk = buildApprovalAskBlock(
+              applied!.effect.id,
+              name,
+              name === "propose_instructions_update" ? { ...args, botId: bot.id } : args,
+              runSecrets,
+              { reviewReason, summary: fleetSummary },
+            );
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -5684,15 +5785,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               attemptId: attempt.id,
               leaseOwner: workerId,
               leaseFence: fence,
-              blocks: [
-                buildApprovalAskBlock(
-                  applied!.effect.id,
-                  name,
-                  name === "propose_instructions_update" ? { ...args, botId: bot.id } : args,
-                  runSecrets,
-                  { reviewReason, summary: fleetSummary },
-                ),
-              ],
+              blocks: [approvalAsk],
             });
             // pauseRunForInput returning false after a successful renew means the run row no
             // longer matches this worker. Exiting via pauseForApproval() would leave the run
@@ -5712,6 +5805,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botId: bot.id,
               threadId: thread.id,
             });
+            if (isHiddenBot(bot) && approvalAsk.kind === "ask") {
+              // The user is in the main chat, not this hidden worker's thread: point them here.
+              await announceWorkerNeedsUser(deps, {
+                workerRunId: runId,
+                pending: { kind: "approval", text: approvalAsk.text },
+              });
+            }
             return pauseForApproval();
           };
           const requestApproval = () => {
@@ -6155,7 +6255,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const commandEnvironment = await shellCommandEnvironment({
               prisma: deps.prisma,
               secretStore: deps.secretStore,
-              scope: run,
+              scope: secretScope,
               spaceEnvironment: agentEnvironment,
               registerRedactions: registerRunSecrets,
             });
@@ -6372,7 +6472,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             // changes the revision, so re-read and append again.
             for (let attempt = 1; ; attempt += 1) {
               const snapshot = await deps.memory.read(
-                { scope: "bot", botId: bot.id, path },
+                { scope: "bot", botId: memoryBotId, path },
                 context,
               );
               const existing = snapshot.documents[0];
@@ -6382,7 +6482,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 await deps.memory.commit(
                   {
                     scope: "bot",
-                    botId: bot.id,
+                    botId: memoryBotId,
                     path,
                     content,
                     expectedRevision: existing?.revision ?? 0,
@@ -6488,7 +6588,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                         const resolved = await resolveLoginFill({
                           prisma: deps.prisma,
                           secretStore: deps.secretStore,
-                          scope: run,
+                          scope: secretScope,
                           name: step.secret,
                           field: step.field,
                         });
@@ -6530,14 +6630,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
               spaceId: run.spaceId,
-              botId: bot.id,
+              botId: memoryBotId,
               includeDone: Boolean(args.includeDone),
             });
           }
           if (name === "scratchpad_add") {
             const created = await addScratchpadItemFromTool(deps, {
               spaceId: run.spaceId,
-              botId: bot.id,
+              botId: memoryBotId,
               userId: run.userId,
               title: String(args.title ?? ""),
               status: args.status ? String(args.status) : undefined,
@@ -6548,7 +6648,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "scratchpad_update") {
             const updated = await updateScratchpadItemFromTool(deps, {
               spaceId: run.spaceId,
-              botId: bot.id,
+              botId: memoryBotId,
               userId: run.userId,
               itemId: String(args.itemId ?? ""),
               title: args.title !== undefined ? String(args.title) : undefined,
@@ -6560,7 +6660,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "scratchpad_complete") {
             const completed = await completeScratchpadItemFromTool(deps, {
               spaceId: run.spaceId,
-              botId: bot.id,
+              botId: memoryBotId,
               userId: run.userId,
               itemId: String(args.itemId ?? ""),
             });
@@ -6569,7 +6669,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "scratchpad_remove") {
             const removed = await removeScratchpadItemFromTool(deps, {
               spaceId: run.spaceId,
-              botId: bot.id,
+              botId: memoryBotId,
               userId: run.userId,
               itemId: String(args.itemId ?? ""),
             });
@@ -6880,7 +6980,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
           }
           if (name === "recall_memory") {
-            return semanticMemory!.recall(
+            return recallForRun(
+              semanticMemory!,
               {
                 query: String(args.query ?? ""),
                 scope: memoryScope!,
@@ -6890,6 +6991,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   : { historyGeneration: thread.historyCompactionGeneration }),
                 limit: MAX_RECALLED_MEMORIES,
               },
+              ownerMemory,
               context,
             );
           }
@@ -6922,8 +7024,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await semanticMemory!.save(
                 {
                   content: String(args.content ?? ""),
-                  scope: memoryScope!,
-                  botId: bot.id,
+                  scope: durableMemoryScope!,
+                  botId: memoryBotId,
                   source: { kind: "durable" },
                 },
                 context,
@@ -6940,8 +7042,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await semanticMemory.forget(
                 {
                   id: String(args.id ?? ""),
-                  scope: memoryScope!,
-                  botId: bot.id,
+                  scope: durableMemoryScope!,
+                  botId: memoryBotId,
                   ...(typeof args.entity === "string" && args.entity.trim()
                     ? { entity: args.entity.trim() }
                     : {}),
@@ -7055,7 +7157,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               ),
             );
           }
-          if (name === "list_secrets") return listBotSecrets(deps.prisma, run);
+          if (name === "list_secrets") return listBotSecrets(deps.prisma, secretScope);
           if (name === "forget_secret") {
             const parsed = BotSecretName.safeParse(args.name);
             if (!parsed.success) return finish({ error: "A valid credential name is required." });
@@ -7066,7 +7168,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               const result = await requestWithBotSecret({
                 prisma: deps.prisma,
                 secretStore: deps.secretStore,
-                scope: run,
+                scope: secretScope,
                 request: args,
                 signal: context.signal,
                 remote: deps.secretHttp,
@@ -8073,6 +8175,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 replyGuidance: runReplyGuidance(run.trigger),
                 disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(builtins),
+                askUserOffered: tools.some((tool) => tool.name === "ask_user"),
+                dispatcherRun,
               })
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),
@@ -8316,6 +8420,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 id: action.id,
                 label: redactSecrets(action.label, runSecrets),
               }));
+              if (dispatcherTurn) {
+                await flushProgress();
+                await publishDispatcherPreAskReply();
+              }
               await workspaceCheckpoint.flush();
               await persistTurnCheckpoint(event.executionId);
               await settleRunningHelpers();
@@ -8425,7 +8533,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // Promote streamed narration into a durable, replyable chat message before
               // tools continue, so long turns do not look stalled and stay replyable.
               if (event.name !== "message_user") {
+                const discardedBefore = discardedNarrationCount;
                 await publishMidTurnNarration();
+                if (event.name === "ask_user") {
+                  preAskNarration =
+                    discardedNarrationCount !== discardedBefore
+                      ? lastDiscardedMidTurnNarration
+                      : "";
+                }
               }
               assistantTurnBreakPending = true;
               await deps.events.append({
@@ -8734,29 +8849,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ) {
             throw new Error(TOOL_STEPS_WITHOUT_RESPONSE);
           }
-          if (dispatcherTurn && peerMessage && deps.artifacts) {
-            await attachWorkerReportFiles({
-              deps,
-              run,
-              bot,
-              threadGroupId: thread.groupId ?? undefined,
-              report: peerMessage,
-              computerMode,
-              readComputer: () => getRunComputer("tool", "attach_file"),
-              context,
-              alreadyAttached: attachedFilePaths,
-              publish: (blocks) => publishMessage(deps, run, "bot", blocks),
-            }).catch((error) => getLogger().error("worker report attach", error));
-          }
-          if (dispatcherTurn && peerMessage) {
-            await forwardWorkerRelayAttachments({
-              prisma: deps.prisma,
-              run,
-              bot,
-              report: peerMessage,
-              publish: (blocks) => publishMessage(deps, run, "bot", blocks),
-            }).catch((error) => getLogger().error("worker result forward", error));
-          }
+          await relayWorkerReportAttachments();
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const botMessageOutcome =
             run.trigger === "bot_message"
@@ -9758,6 +9851,10 @@ export function userTurnInstructions(parts: {
   disabledBuiltinTools?: ReadonlySet<string>;
   /** The fleet tools the run was offered (see offeredFleetTools). */
   offeredFleetTools?: readonly string[];
+  /** ask_user is among the run's tools (it depends on the trigger, not only on settings). */
+  askUserOffered?: boolean;
+  /** A dispatcher's main turn (see applyDispatcherToolPolicy). */
+  dispatcherRun?: boolean;
 }): (string | undefined)[] {
   return [
     parts.botInstructions,
@@ -9792,6 +9889,8 @@ export function userTurnInstructions(parts: {
       "background_task",
       BACKGROUND_DISPATCH_GUIDANCE,
     ),
+    dispatcherAskClause(parts.disabledBuiltinTools, parts.askUserOffered),
+    dispatcherOwnerToolsClause(parts.dispatcherRun),
     offeredBuiltinClause(parts.disabledBuiltinTools, "message_user", STEERING_REPLY_GUIDANCE),
     parts.botDirectory,
     offeredBuiltinClause(

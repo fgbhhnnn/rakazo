@@ -47,6 +47,7 @@ async function runTurn(
     runtimeCancel?: boolean;
     failHelperId?: string;
     failMessageOnce?: boolean;
+    dispatcherMode?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -254,6 +255,7 @@ async function runTurn(
     events: { append, finalizeRun, pauseRunForInput, notify: vi.fn(async () => undefined) },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets,
+    ...(options.dispatcherMode ? { dispatcherMode: true } : {}),
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   await executor.continueRun(run.id, "worker-1");
@@ -723,5 +725,56 @@ describe("helper cleanup recovery", () => {
           (event.payload as { status: string }).status === "failed",
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("dispatcher text before ask_user", () => {
+  const askEvents: AgentRuntimeEvent[] = [
+    { type: "text", text: "Task #A1 finished: 3 files changed, tests pass." },
+    {
+      type: "tool",
+      name: "ask_user",
+      args: { question: "Deploy now?", options: ["Deploy", "Not yet"] },
+      executionId: "ask-1",
+    },
+    {
+      type: "ask",
+      executionId: "ask-1",
+      text: "Deploy now?",
+      actions: [
+        { id: "Deploy", label: "Deploy" },
+        { id: "Not yet", label: "Not yet" },
+      ],
+    },
+  ];
+
+  it("is posted to the user before the run parks on the question", async () => {
+    const { messages, pauseRunForInput, finalizeRun, prisma } = await runTurn(
+      "",
+      false,
+      "",
+      [],
+      "fyi",
+      { trigger: "user", runtimeEvents: askEvents, dispatcherMode: true },
+    );
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    expect(finalizeRun).not.toHaveBeenCalled();
+    const texts = messages.flatMap((message) =>
+      message.blocks.filter((block) => block.kind === "text").map((block) => block.text),
+    );
+    expect(texts).toEqual(["Task #A1 finished: 3 files changed, tests pass."]);
+    const posted = prisma.message.create.mock.invocationCallOrder.at(-1)!;
+    expect(posted).toBeLessThan(pauseRunForInput.mock.invocationCallOrder[0]!);
+  });
+
+  it("is unchanged for bots outside dispatcher mode", async () => {
+    const { messages, pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+      trigger: "user",
+      runtimeEvents: askEvents,
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    expect(
+      messages.flatMap((message) => message.blocks.filter((block) => block.kind === "text")),
+    ).toEqual([]);
   });
 });

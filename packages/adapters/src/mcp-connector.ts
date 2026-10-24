@@ -62,6 +62,7 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { recordMcpServerHealth } from "./mcp-server-health.js";
 import { isAllowedStdioCommand, McpSession } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { mcpScopeBotId } from "./worker-owner-scope.js";
 
 type SessionEntry = {
   session: McpSession;
@@ -398,7 +399,8 @@ export class McpConnector implements ConnectorProvider {
     if (!context.botId) return [];
     const assignments = await this.prisma.botMcpServer.findMany({
       where: {
-        botId: context.botId,
+        // A hidden worker uses its main bot's servers.
+        botId: await mcpScopeBotId(this.prisma, context.botId),
         spaceId: context.spaceId,
         userId: context.userId,
         server: { enabled: true },
@@ -597,7 +599,7 @@ export class McpConnector implements ConnectorProvider {
     }
     const assignment = await this.prisma.botMcpServer.findFirst({
       where: {
-        botId: context.botId,
+        botId: await mcpScopeBotId(this.prisma, context.botId),
         serverId: call.route.resourceId,
         spaceId: context.spaceId,
         userId: context.userId,
