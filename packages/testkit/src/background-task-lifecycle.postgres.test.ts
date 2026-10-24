@@ -263,7 +263,9 @@ describeIntegration("background task rows: claims, recovery, FIFO, attribution",
 
   it("defers a dispatcher wake only behind an earlier turn that is still alive", async () => {
     const { run } = await dispatcher("Wake");
-    const { earlierDispatcherTurnAlive } = await import("../../adapters/src/executor.ts");
+    const { earlierDispatcherTurnAlive } = await import(
+      "../../adapters/src/dispatcher-turn-guard.ts"
+    );
     const later = {
       id: "later-wake",
       botId: run.botId,

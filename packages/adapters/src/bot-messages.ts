@@ -17,11 +17,9 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import {
-  backgroundTaskForWorkerRun,
-  finalizeBackgroundTaskForRun,
-} from "./background-task-rows.js";
+import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
+import { attachmentBlocks } from "./task-attachments.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -239,10 +237,7 @@ export async function messageBot(
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
           role: "user",
-          blocks: [
-            inboundBlock,
-            ...(input.attachments ?? []).filter((b) => b.kind === "file" || b.kind === "image"),
-          ],
+          blocks: [inboundBlock, ...attachmentBlocks(input.attachments ?? [])],
           replyToMessageId:
             sourceContext?.fromBotId === target.id && intent !== "fyi"
               ? sourceContext.returnToMessageId
@@ -412,30 +407,14 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
     },
     data: { botOutcomeReturnedAt: new Date() },
   });
-  // A background task is done once its worker's result reached the dispatcher; that frees its slot.
-  // Best effort: the background-task reconciler finalizes anything missed here.
-  try {
-    const ended = await prisma.run.findUnique({
-      where: { id: runId },
-      select: { id: true, botId: true, status: true },
-    });
-    if (ended && ["completed", "failed", "cancelled"].includes(ended.status)) {
-      await finalizeBackgroundTaskForRun(prisma, ended);
-    }
-  } catch (error) {
-    getLogger().error("background task finalize", error);
-  }
+  await finalizeBackgroundTaskAfterReturn(prisma, runId);
 }
 
 function isUniqueConstraintError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
-/**
- * The task title a hidden worker's result is labelled with ("" when unknown); undefined for any
- * other bot. It comes from the task this run carries, never from the worker's current title: a
- * reused slot may already show a newer task when an older result is delivered.
- */
+/** A hidden worker run's task label (from its task row, not the mutable title); undefined for other bots. */
 async function hiddenWorkerTitle(
   prisma: PrismaClient,
   run: { id: string; botId: string },
@@ -446,9 +425,7 @@ async function hiddenWorkerTitle(
       select: { spawnKey: true, title: true },
     });
     if (!isHiddenBot({ spawnKey: bot?.spawnKey ?? null })) return undefined;
-    const task = await backgroundTaskForWorkerRun(prisma, run).catch(() => null);
-    if (task) return task.ref ? `${task.name} #${task.ref}` : task.name;
-    return bot?.title?.trim() ?? "";
+    return (await backgroundTaskLabel(prisma, run)) ?? bot?.title?.trim() ?? "";
   } catch {
     return undefined;
   }

@@ -65,11 +65,7 @@ export const backgroundWorkSelection = {
     },
     select: { id: true },
   },
-  _count: {
-    select: {
-      backgroundTaskQueue: { where: { status: { in: ["queued", "claiming"] as string[] } } },
-    },
-  },
+  _count: { select: { backgroundTaskQueue: { where: { status: "queued" } } } },
 } as const;
 
 export type BackgroundWork = { running: number; queued: number };

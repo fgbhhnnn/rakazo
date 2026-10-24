@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH, textSimilarity } from "@rakazo/core";
 import {
@@ -7,12 +6,21 @@ import {
   HIDDEN_BOT_SPAWN_PREFIX,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { SLOT_HOLDING_STATUSES } from "./background-task-rows.js";
+import { recoverBackgroundTasks } from "./background-task-recovery.js";
+import {
+  ACTIVE_TASK_STATUSES,
+  MAX_TASK_START_ATTEMPTS,
+  SLOT_HOLDING_STATUSES,
+  taskDeliveryKey,
+} from "./background-task-rows.js";
 import { messageBot } from "./bot-messages.js";
 import { spawnBot } from "./child-bots.js";
 import { formatInstantForUser, resolveRunTimeZone } from "./current-time.js";
 import type { ExecutorDeps } from "./executor.js";
+import { type AttachmentBlock, attachmentBlocks } from "./task-attachments.js";
+import { backgroundTaskHash, newTaskRef, taskTitle } from "./task-identity.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
+import { WORKER_ALWAYS_DISABLED, workerDisabledTools } from "./worker-tool-policy.js";
 
 /**
  * Background tasks: the bot hands heavy work to a worker and stays free to talk.
@@ -23,12 +31,6 @@ import { stopThreadRunsForBots } from "./thread-stop.js";
  * durable (the job reconciler repairs lost wakes), its terminal outcome is returned to the
  * dispatcher automatically (bounded by the bot-message limit), and that reply wakes the dispatcher.
  */
-export const BACKGROUND_TASK_TOOL_NAMES = [
-  "background_task",
-  "background_task_status",
-  "background_task_message",
-  "background_task_cancel",
-] as const;
 
 export function backgroundTaskConcurrency(env: Record<string, string | undefined> = process.env) {
   const parsed = Number(env.RAKAZO_BACKGROUND_TASKS_PER_BOT?.trim() || Number.NaN);
@@ -39,32 +41,6 @@ export const BACKGROUND_WORKER_SPAWN_PREFIX = HIDDEN_BOT_SPAWN_PREFIX;
 export function backgroundWorkerSpawnKey(botId: string, slot: number) {
   return `${BACKGROUND_WORKER_SPAWN_PREFIX}${botId}:${slot}`;
 }
-
-/** Tools a worker never gets: no recursion, no fleet changes, no talking to the user directly. */
-const WORKER_ALWAYS_DISABLED = [
-  ...BACKGROUND_TASK_TOOL_NAMES,
-  "spawn_bot",
-  "archive_bot",
-  "update_bot",
-  "handoff_to_bot",
-  "call_user",
-  "end_call",
-  "create_space",
-  "propose_instructions_update",
-  "list_fleet",
-  "create_group",
-  "update_group",
-  "organize_bot",
-  "set_child_instructions",
-  "set_child_bot_model",
-  "create_child_routine",
-  // A worker never talks to the user or other bots itself: its final reply is its only output,
-  // and the dispatcher relays it. ask_user would also park the worker in waiting_input.
-  "ask_user",
-  "message_user",
-  "message_bot",
-  "message_agent",
-];
 
 export const BACKGROUND_AGENT_PROFILES = {
   general: {
@@ -185,29 +161,6 @@ type DispatchRun = {
   sourceMessageId?: string | null;
 };
 type DispatchBot = { id: string; name: string; computerId?: string | null };
-type AttachmentBlock = Extract<MessageBlock, { kind: "file" | "image" }>;
-
-/** Builtin tools a worker may not use, given an optional allowlist. Unknown names are ignored. */
-export function workerDisabledTools(
-  allBuiltinNames: readonly string[],
-  allowlist: readonly string[] | undefined,
-): string[] {
-  const disabled = new Set<string>(WORKER_ALWAYS_DISABLED);
-  if (allowlist && allowlist.length > 0) {
-    const allowed = new Set(allowlist);
-    for (const name of allBuiltinNames) if (!allowed.has(name)) disabled.add(name);
-  }
-  return [...disabled].filter((name) => allBuiltinNames.includes(name)).sort();
-}
-
-/** The builtin tools a worker actually gets for a profile (or explicit allowlist). */
-export function workerToolSurface(
-  allBuiltinNames: readonly string[],
-  allowlist: readonly string[] | undefined,
-): string[] {
-  const disabled = new Set(workerDisabledTools(allBuiltinNames, allowlist));
-  return allBuiltinNames.filter((name) => !disabled.has(name));
-}
 
 export function buildBackgroundTaskMessage(input: {
   name: string;
@@ -246,53 +199,8 @@ async function workerBots(deps: Pick<Deps, "prisma">, botId: string, spaceId: st
   });
 }
 
-/**
- * Task lifecycle. Every background_task is one durable row (the "task"), and its ref is the
- * task_id the dispatcher uses for status, follow-ups and cancel, so a reused worker slot can
- * never make an old handle point at a newer task.
- *   queued   waiting for a slot, FIFO per dispatcher
- *   claiming a slot is reserved (lease) and the hand-off to the worker is in flight
- *   started  the worker carries it (workerRunId); the slot stays held until the result is
- *            delivered to the dispatcher
- *   completed | failed | cancelled  final
- */
-
-const ACTIVE_TASK_STATUSES = ["queued", ...SLOT_HOLDING_STATUSES];
 const CLAIM_LEASE_MS = 2 * 60_000;
-export const MAX_TASK_START_ATTEMPTS = 3;
-/** A started task whose worker run ended this long ago without delivery is closed out. */
-const UNDELIVERED_GRACE_MS = 30 * 60_000;
 const PROCESS_LEASE_OWNER = `bgq:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
-
-/** Short unique label of one background task, shown on its card and used as its task_id. */
-export function newTaskRef(): string {
-  return `T${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 5)}`.toUpperCase();
-}
-
-/** A worker title without its " #REF" task label. */
-export function taskTitle(title: string): string {
-  return title.replace(/ #[A-Z0-9]{4,10}$/, "");
-}
-
-/**
- * Identity of a task: its name plus normalized content. Same name with different content is a
- * different task, and so is the same content under a different name (the user asked twice).
- */
-export function backgroundTaskHash(input: {
-  name?: string;
-  task: string;
-  instructions?: string;
-  agent: string;
-}): string {
-  const normalize = (text: string | undefined) =>
-    (text ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
-  return createHash("sha256")
-    .update(
-      `${normalize(input.name)}\n${input.agent}\n${normalize(input.instructions)}\n${normalize(input.task)}`,
-    )
-    .digest("hex")
-    .slice(0, 32);
-}
 
 const FRESH_TASK_SUMMARY = "此前的后台任务已结束，与接下来的新任务无关；只按新任务消息工作。";
 
@@ -311,17 +219,7 @@ function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
 }
 
 /** The user's uploads to forward to a worker as attachments (deduplicated, file/image only). */
-export function taskAttachmentBlocks(blocks: readonly MessageBlock[]): AttachmentBlock[] {
-  const seen = new Set<string>();
-  const out: AttachmentBlock[] = [];
-  for (const block of blocks) {
-    if (block.kind !== "file" && block.kind !== "image") continue;
-    if (seen.has(block.artifactId)) continue;
-    seen.add(block.artifactId);
-    out.push(block);
-  }
-  return out;
-}
+export const taskAttachmentBlocks = attachmentBlocks;
 
 type TaskRow = Awaited<ReturnType<typeof findTaskRow>> & {};
 
@@ -518,10 +416,6 @@ async function claimSlot(
 
 async function findTaskRow(deps: Pick<Deps, "prisma">, id: string) {
   return deps.prisma.backgroundTaskQueue.findUnique({ where: { id } });
-}
-
-function taskDeliveryKey(row: { id: string }, attempts: number) {
-  return `bgtask:${row.id}:${attempts}`;
 }
 
 /**
@@ -737,106 +631,6 @@ async function startOnSlot(
   if (!sent.ok) return { error: sent.error };
   if (!sent.runId) return { error: "worker run was not created" };
   return { runId: sent.runId };
-}
-
-/**
- * Repairs task rows a crash or a lost delivery left behind:
- * - an expired claim is bound to the worker run it already created, or requeued (failed after
- *   MAX_TASK_START_ATTEMPTS), so a crash between claiming and starting never loses the task;
- * - a started task whose worker run is gone, or ended long ago without its result being
- *   delivered, is finalized so it no longer holds its slot.
- */
-export async function recoverBackgroundTasks(
-  deps: Pick<Deps, "prisma">,
-  scope: { botId?: string } = {},
-  now = new Date(),
-) {
-  let requeued = 0;
-  let finalized = 0;
-  const expired = await deps.prisma.backgroundTaskQueue.findMany({
-    where: { ...scope, status: "claiming", leaseExpiresAt: { lt: now } },
-    take: 100,
-  });
-  for (const row of expired) {
-    const nonce = taskDeliveryKey(row, row.attempts);
-    const delivered = row.workerBotId
-      ? await deps.prisma.message.findFirst({
-          where: { clientNonce: nonce, thread: { botId: row.workerBotId } },
-          select: { runId: true },
-        })
-      : null;
-    const data = delivered?.runId
-      ? { status: "started", workerRunId: delivered.runId, leaseOwner: null, leaseExpiresAt: null }
-      : row.attempts >= MAX_TASK_START_ATTEMPTS
-        ? {
-            status: "failed",
-            error: "worker hand-off did not complete",
-            finishedAt: now,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          }
-        : {
-            status: "queued",
-            workerBotId: null,
-            startedAt: null,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          };
-    const done = await deps.prisma.backgroundTaskQueue.updateMany({
-      where: { id: row.id, status: "claiming", leaseExpiresAt: row.leaseExpiresAt },
-      data,
-    });
-    requeued += done.count;
-  }
-  const started = await deps.prisma.backgroundTaskQueue.findMany({
-    where: { ...scope, status: "started", workerRunId: { not: null } },
-    take: 200,
-  });
-  for (const row of started) {
-    const workerRun = await deps.prisma.run.findUnique({
-      where: { id: row.workerRunId! },
-      select: { status: true, completedAt: true, botOutcomeReturnedAt: true },
-    });
-    if (workerRun && ACTIVE_RUN_STATUSES.includes(workerRun.status as never)) continue;
-    // A newer run on the worker (a steering continuation) carries the task now.
-    const newer = row.workerBotId
-      ? await deps.prisma.run.findFirst({
-          where: { botId: row.workerBotId, status: { in: [...ACTIVE_RUN_STATUSES] } },
-          orderBy: { createdAt: "desc" },
-          select: { id: true },
-        })
-      : null;
-    if (newer) {
-      await deps.prisma.backgroundTaskQueue.updateMany({
-        where: { id: row.id, status: "started" },
-        data: { workerRunId: newer.id },
-      });
-      continue;
-    }
-    const ended = workerRun?.completedAt?.getTime() ?? 0;
-    if (
-      workerRun &&
-      !workerRun.botOutcomeReturnedAt &&
-      now.getTime() - ended < UNDELIVERED_GRACE_MS
-    )
-      continue;
-    const done = await deps.prisma.backgroundTaskQueue.updateMany({
-      where: { id: row.id, status: "started", workerRunId: row.workerRunId },
-      data: {
-        status: !workerRun
-          ? "failed"
-          : workerRun.status === "completed"
-            ? "completed"
-            : workerRun.status === "cancelled"
-              ? "cancelled"
-              : "failed",
-        ...(workerRun ? {} : { error: "worker run is missing" }),
-        finishedAt: now,
-      },
-    });
-    finalized += done.count;
-  }
-  return { requeued, finalized };
 }
 
 /**
@@ -1286,7 +1080,15 @@ function lastText(blocks: unknown): string | undefined {
   return text ? (text.length > 300 ? `…${text.slice(-300)}` : text) : undefined;
 }
 
+export { recoverBackgroundTasks } from "./background-task-recovery.js";
 export {
   backgroundTaskForWorkerRun,
   finalizeBackgroundTaskForRun,
+  MAX_TASK_START_ATTEMPTS,
 } from "./background-task-rows.js";
+export { backgroundTaskHash, newTaskRef, taskTitle } from "./task-identity.js";
+export {
+  BACKGROUND_TASK_TOOL_NAMES,
+  workerDisabledTools,
+  workerToolSurface,
+} from "./worker-tool-policy.js";

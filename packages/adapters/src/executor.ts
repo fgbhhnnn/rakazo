@@ -44,7 +44,6 @@ import {
 import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
   BotSecretName,
   BUILTIN_TOOL_NAMES,
   botSecretSubmissionSchema,
@@ -212,7 +211,6 @@ import {
   launchBackgroundTask,
   parseWorkerReportFiles,
   startQueuedBackgroundTasks,
-  taskAttachmentBlocks,
 } from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
@@ -290,6 +288,7 @@ import { connectedContext, selectRunConnections } from "./connection-context.js"
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
+import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
   createChildRoutine,
@@ -396,6 +395,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export { selectRunConnections } from "./connection-context.js";
@@ -3639,17 +3639,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
         if (waker && isDispatcherBot(waker)) {
           const ordered = await waitForEarlierDispatcherTurns(deps.prisma, run);
-          // Still blocked after the wait: if the earlier turn is alive (live lease or still
-          // queued), defer this wake instead of running two main turns side by side. A turn
-          // whose lease expired is dead; the reconciler recovers it and this wake may proceed.
-          if (!ordered && (await earlierDispatcherTurnAlive(deps.prisma, run))) {
-            await deps.jobs.enqueue({
-              ...runContinueJob(run.id),
-              availableAt: new Date(Date.now() + DISPATCHER_WAKE_DEFER_MS),
-            });
-            getLogger().info("dispatcher wake deferred behind an earlier turn", { runId });
-            return;
-          }
+          if (!ordered && (await deferDispatcherWake(deps, run))) return;
         }
       }
       let { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
@@ -4239,8 +4229,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
         }
 
-        // A dispatcher's main turn has no computer tools and never starts a computer, so it runs
-        // even when its bot has none (unbound or damaged data must not break chat).
         if (!bot.computer && !dispatcherTurn) throw new Error("Bot has no computer");
         const storedComputer = bot.computer ?? dispatcherComputerPlaceholder(bot.id);
         const computerMode = parseComputerMode(storedComputer.scope);
@@ -7465,13 +7453,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const dispatchRun = { ...run, sourceMessageId: run.sourceMessageId };
             const dispatcher = { id: bot.id, name: bot.name, computerId: bot.computerId };
             if (name === "background_task") {
-              // The user's uploads travel with the task as attachments: the worker's own run
-              // copies them into its workspace, so the dispatcher never starts a computer.
-              const attachments = taskAttachmentBlocks([
-                ...(turnBlocks ?? []),
-                ...steeringTurnBlocks.flat(),
-                ...recentAttachmentBlocks(history, historyMessages, recentFilesInput),
-              ]).slice(0, ATTACHMENT_MAX_COUNT);
+              const attachments = dispatcherTaskAttachments(
+                turnBlocks ?? [],
+                ...steeringTurnBlocks,
+                recentAttachmentBlocks(history, historyMessages, recentFilesInput),
+              );
               const launched = await launchBackgroundTask(deps, dispatchRun, dispatcher, args, {
                 builtinToolNames: BUILTIN_TOOL_NAMES,
                 deliveryKey: effectKey,
@@ -9928,40 +9914,6 @@ export async function waitForEarlierDispatcherTurns(
   }
 }
 
-const DISPATCHER_WAKE_DEFER_MS = 3_000;
-
-/** Whether an earlier main turn of this chat is still alive: a live lease, or queued before us. */
-export async function earlierDispatcherTurnAlive(
-  prisma: Pick<PrismaClient, "run">,
-  run: { id: string; botId: string; threadId: string; createdAt: Date },
-  now = new Date(),
-): Promise<boolean> {
-  const alive = await prisma.run.findFirst({
-    where: {
-      id: { not: run.id },
-      botId: run.botId,
-      threadId: run.threadId,
-      OR: [
-        { status: { in: ["leased", "running"] }, leaseExpiresAt: { gt: now } },
-        { status: "queued", trigger: "bot_message", createdAt: { lt: run.createdAt } },
-      ],
-    },
-    select: { id: true },
-  });
-  return Boolean(alive);
-}
-
-/** Stand-in for a dispatcher without a computer; any attempt to start it fails clearly. */
-function dispatcherComputerPlaceholder(botId: string) {
-  return {
-    id: `no-computer:${botId}`,
-    scope: "bot",
-    kind: "none",
-    providerRef: null,
-    homeKey: botId,
-  } as never;
-}
-
 /** A user's own bot that can dispatch (background_task not disabled); workers never dispatch. */
 export function isDispatcherBot(bot: {
   spawnKey?: string | null;
@@ -10302,8 +10254,7 @@ export function attachedPathKey(resolvedPath: string): string {
 }
 
 export function workerReportWorkspacePath(file: string): string | null {
-  // A Windows path (C:\\...) is on a native host the computer workspace cannot read; skip it.
-  if (/^[A-Za-z]:[\\/]/.test(file)) return null;
+  if (/^[A-Za-z]:[\\/]/.test(file)) return null; // Windows host path: not in the workspace
   if (file.startsWith("~/")) return file.slice(2);
   const match = /^\/(?:[^/]+\/)*?rakazo-home(?:\/(.*))?$/.exec(file);
   if (match) return `/${match[1] ?? ""}`;
@@ -10381,7 +10332,6 @@ export async function attachWorkerReportFiles(input: {
       );
       await publishMessage(deps, run, "bot", [result.block]);
       input.alreadyAttached.add(file);
-      // Dedupe by the resolved file too: "~/a.png" and "/rakazo-home/a.png" are the same file.
       input.alreadyAttached.add(attachedPathKey(resolved));
       attached.push(file);
     } catch (error) {
