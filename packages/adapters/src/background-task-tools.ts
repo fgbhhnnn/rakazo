@@ -1,5 +1,6 @@
 import { BUILTIN_TOOL_NAMES, type MessageBlock } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
+import { backgroundTaskCard } from "./background-task-cards.js";
 import {
   backgroundTaskMessage,
   backgroundTaskStatus,
@@ -24,7 +25,8 @@ export async function runBackgroundTaskTool(
     run: DispatchRun;
     dispatcher: DispatchBot;
     effectKey: string;
-    attachments: () => readonly AttachmentBlock[];
+    /** The uploads this task carries, given the task's own text (see dispatcherTaskAttachments). */
+    attachments: (taskText: string) => readonly AttachmentBlock[];
     publish: (blocks: MessageBlock[]) => Promise<unknown>;
   },
 ): Promise<unknown> {
@@ -33,18 +35,14 @@ export async function runBackgroundTaskTool(
     const launched = await launchBackgroundTask(deps, run, dispatcher, args, {
       builtinToolNames: BUILTIN_TOOL_NAMES,
       deliveryKey: effectKey,
-      attachments: input.attachments(),
+      attachments: input.attachments(
+        [args.name, args.task, args.instructions].filter((v) => typeof v === "string").join("\n"),
+      ),
     });
     if ("task_ref" in launched && "worker_id" in launched && launched.worker_id) {
       try {
         await input.publish([
-          {
-            kind: "child_bot",
-            botId: launched.worker_id,
-            name: `后台任务：${launched.name} #${launched.task_ref}`,
-            title: `任务 #${launched.task_ref} · 点开看实时进度`,
-            status: "created",
-          },
+          backgroundTaskCard(launched.worker_id, launched.name, launched.task_ref),
         ]);
       } catch (error) {
         getLogger().error("background task notice", error);

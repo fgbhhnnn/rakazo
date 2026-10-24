@@ -111,6 +111,7 @@ import {
   unattendedTriggerToolRequiresApproval,
   userTurnMessageForRun,
   withoutRestatedLeadSentences,
+  withoutWorkerSlot,
 } from "@rakazo/core";
 import { normalizedHttpUrl, sitesInText, urlSite } from "@rakazo/core/egress";
 import {
@@ -248,6 +249,7 @@ import {
   needsLivePluginSync,
   planLiveConnectionSync,
 } from "./composio-connector.js";
+import { provisionWhenNotBusy } from "./computer-busy-retry.js";
 import { BACKGROUND_WORK_LAUNCH, scheduleComputerSleep } from "./computer-idle.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import {
@@ -418,6 +420,7 @@ import {
 } from "./run-secret.js";
 import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
+import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
 
 export { selectRunConnections } from "./connection-context.js";
@@ -4120,7 +4123,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             peerMessage.intent === "status" ||
             peerMessage.intent === "question" ||
             peerMessage.repliesToRequest
-            ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
+            ? `Update from ${withoutWorkerSlot(peerMessage.fromBotName)}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
         const recallPromise =
@@ -4279,7 +4282,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             getLogger().info("computer.requested");
             if (!bot.computer)
               throw new Error("This bot has no computer; hand the work to background_task.");
-            const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+            const computer = await provisionWhenNotBusy(
+              () => provisionComputer(deps, storedComputer.id, context, "bot"),
+              { signal: context.signal },
+            );
             screenRelease = { computer, context, keepWarm: false };
             scheduleComputerSleep(deps.jobs, storedComputer.id);
             // Earlier attachments wait for the computer's first use; every start copies them
@@ -7512,12 +7518,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               run,
               dispatcher: { id: bot.id, name: bot.name, computerId: bot.computerId },
               effectKey,
-              attachments: () =>
-                dispatcherTaskAttachments(
-                  turnBlocks ?? [],
-                  ...steeringTurnBlocks,
-                  recentAttachmentBlocks(history, historyMessages, recentFilesInput),
-                ),
+              attachments: (taskText) =>
+                dispatcherTaskAttachments({
+                  turn: [turnBlocks ?? [], ...steeringTurnBlocks],
+                  recent: recentAttachmentBlocks(history, historyMessages, recentFilesInput),
+                  taskText,
+                }),
               publish: (blocks) => publishMessage(deps, run, "bot", blocks),
             });
             turnLedger.record(name, result);
@@ -8575,7 +8581,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
-          await workspaceCheckpoint.flush();
+          if (!defersTerminalCheckpoint(leaseTarget)) await workspaceCheckpoint.flush();
           terminalCheckpointComplete = true;
 
           // Preserve the last held-back preview as a normal final reply when the

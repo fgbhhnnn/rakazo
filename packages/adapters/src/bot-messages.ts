@@ -7,6 +7,7 @@ import {
   buildBotMessageWakePrompt,
   nextBotMessageHop,
   resolveBotAddress,
+  withoutWorkerSlot,
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
@@ -85,7 +86,12 @@ export async function messageBot(
     /** File/image blocks (artifacts of this space and user) delivered with the message. */
     attachments?: readonly MessageBlock[];
   },
-  options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
+  options?: {
+    allowTerminalSource?: boolean;
+    forceUnread?: boolean;
+    /** How the recipient's wake prompt names the sender (a worker's task label, not its slot). */
+    wakeFromName?: string;
+  },
 ) {
   const message = String(input.message ?? "").trim();
   if (!message) return { ok: false as const, error: "message is required" };
@@ -143,7 +149,11 @@ export async function messageBot(
       note: `Already sent to ${target.name} in this turn; it was not sent again.`,
     }) as const;
 
-  const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message, intent });
+  const wakePrompt = buildBotMessageWakePrompt({
+    from: { ...sender, name: options?.wakeFromName ?? withoutWorkerSlot(sender.name) },
+    text: message,
+    intent,
+  });
   const outboundBlock: MessageBlock = {
     kind: "bot_message_sent",
     toBotId: target.id,
@@ -394,6 +404,8 @@ export async function returnBotMessageOutcome(
     {
       allowTerminalSource: true,
       forceUnread: options?.forceUnread,
+      // Name the result by its own task: the slot that ran it also ran the previous task.
+      ...(workerTitle ? { wakeFromName: `后台任务「${workerTitle}」` } : {}),
     },
   );
   if (outcome.ok) await markBotOutcomeReturned(deps.prisma, run.id);

@@ -96,7 +96,9 @@ describeIntegration("background task rows: claims, recovery, FIFO, attribution",
   const options = (key: string) => ({ builtinToolNames: ["shell", "read"], deliveryKey: key });
 
   it("two processes launching at once never exceed the limit or share a worker", async () => {
-    const { deps, run, bot } = await dispatcher("Race");
+    const { deps: liveDeps, run, bot } = await dispatcher("Race");
+    // Keep worker runs from executing (and failing at once), which would free slots mid-test.
+    const deps = { ...(liveDeps as object), jobs: { enqueue: async () => undefined } } as never;
     const a = await freshModule();
     const b = await freshModule();
     const results = await Promise.all([
@@ -186,7 +188,10 @@ describeIntegration("background task rows: claims, recovery, FIFO, attribution",
   }, 60_000);
 
   it("keeps FIFO order and never starts a task cancelled while queued", async () => {
-    const { deps, run, bot } = await dispatcher("Fifo");
+    const { deps: liveDeps, run, bot } = await dispatcher("Fifo");
+    // Worker runs are never executed here: in this harness they fail at once ("connect a model"),
+    // which frees their slot mid-test and makes the queue order depend on timing.
+    const deps = { ...(liveDeps as object), jobs: { enqueue: async () => undefined } } as never;
     const mod = await freshModule();
     for (const name of ["f1", "f2", "f3", "f4"]) {
       await mod.launchBackgroundTask(deps, run, bot, launchArgs(name), options(name));
@@ -224,6 +229,25 @@ describeIntegration("background task rows: claims, recovery, FIFO, attribution",
     expect(after[2]!.workerBotId).toBeNull();
     // f4 reuses f1's worker slot.
     expect(after[3]!.workerBotId).toBe(after[0]!.workerBotId);
+    // A task started from the queue still gets its "title #REF" card in the dispatcher's chat;
+    // f1/f2 were announced by their own background_task calls, f3 never started.
+    const readCards = async () =>
+      (
+        await db.message.findMany({ where: { threadId: run.threadId }, orderBy: { seq: "asc" } })
+      ).flatMap((m) =>
+        (Array.isArray(m.blocks) ? (m.blocks as Array<Record<string, unknown>>) : []).filter(
+          (b) => b.kind === "child_bot",
+        ),
+      );
+    // The card is posted off the queue's critical path.
+    await waitFor(async () => (await readCards()).length > 0);
+    const cards = await readCards();
+    expect(cards).toEqual([
+      expect.objectContaining({
+        botId: after[3]!.workerBotId,
+        name: `后台任务：f4 #${after[3]!.ref}`,
+      }),
+    ]);
   }, 60_000);
 
   it("credits a late result from an older run to its own task, not the slot's new task", async () => {

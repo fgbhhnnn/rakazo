@@ -1,6 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { displayMessageBlock, displayName } from "./display-name.js";
 import { identitySourceField, preserveIdentitySource } from "./identity-source.js";
+import { isBackgroundWorkerName } from "./worker-names.js";
 
 export type IdentityLabels = {
   bot: string;
@@ -14,9 +15,6 @@ export type IdentityLabels = {
 };
 
 type Project = (value: unknown) => unknown;
-
-/** Background workers are named "<main bot> · 后台<slot>" (see background-tasks.ts). */
-const WORKER_NAME = / · 后台\d+$/;
 
 /**
  * The main bot's hand-off to a background worker and the worker's raw report are internal:
@@ -32,7 +30,7 @@ export function isWorkerRelayBlock(block: unknown): boolean {
       : b.kind === "bot_message_received"
         ? b.fromBotName
         : undefined;
-  return typeof name === "string" && WORKER_NAME.test(name);
+  return typeof name === "string" && isBackgroundWorkerName(name);
 }
 
 function isWorkerRelayMessage(message: unknown): boolean {

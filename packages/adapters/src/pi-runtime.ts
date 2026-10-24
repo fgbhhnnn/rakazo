@@ -69,6 +69,7 @@ import {
 } from "./context-pruning.js";
 import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
+import { SEQUENTIAL_DISPATCH_TOOL_NAMES } from "./dispatch-tool-order.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
 import { createInRunCompactor, IN_RUN_SUMMARY_INSTRUCTIONS } from "./in-run-compaction.js";
 import { estimateModelContextTokens } from "./model-context.js";
@@ -1407,7 +1408,9 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
     // sequential. Remember also needs this to avoid competing revision writes.
-    ...(SCHEDULE_TOOL_NAMES.has(tool.name) || tool.name === "remember"
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
+    tool.name === "remember" ||
+    SEQUENTIAL_DISPATCH_TOOL_NAMES.has(tool.name)
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),

@@ -764,6 +764,24 @@ describe("automatic outcome return", () => {
     );
     const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
     expect(texts).toContain("【后台任务：生成封面 #AB12CD34】\\nDone.");
+    // The dispatcher's wake names the task, never the worker slot ("Worker · 后台1") that also
+    // ran the previous task, so the relay cannot credit the result to that task.
+    const prompt = JSON.stringify(vi.mocked(harness.tx.task.create).mock.calls);
+    expect(prompt).toContain("后台任务「生成封面 #AB12CD34」");
+    expect(prompt).not.toContain("后台1");
+  });
+
+  it("never shows a worker slot name in a wake prompt", async () => {
+    const harness = deps();
+    await messageBot(
+      harness.deps,
+      run,
+      { id: "bot-sender", name: "调度测试 · 后台2" },
+      { bot_id: "bot-target", message: "status", intent: "status" },
+    );
+    const prompt = JSON.stringify(vi.mocked(harness.tx.task.create).mock.calls);
+    expect(prompt).toContain("调度测试 · 后台任务");
+    expect(prompt).not.toMatch(/后台\d/);
   });
 
   it("skips the automatic return when a result was already sent", async () => {

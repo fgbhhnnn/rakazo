@@ -1,11 +1,17 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH, textSimilarity } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  BOT_MESSAGE_MAX_LENGTH,
+  textSimilarity,
+  withoutWorkerSlot,
+} from "@rakazo/core";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   HIDDEN_BOT_SPAWN_PREFIX,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { announceQueuedTaskStart } from "./background-task-cards.js";
 import { recoverBackgroundTasks } from "./background-task-recovery.js";
 import {
   ACTIVE_TASK_STATUSES,
@@ -314,7 +320,8 @@ async function launchBackgroundTaskNow(
     }));
   // Every new task enters the queue, so it can never jump ahead of older queued ones (FIFO
   // even when the head of the queue fails to start).
-  await drainQueue(deps, bot.id, run);
+  // This call's own card is posted by the tool; every other task started here gets one from the drain.
+  await drainQueue(deps, bot.id, run, row.id);
   const now = await deps.prisma.backgroundTaskQueue.findUnique({ where: { id: row.id } });
   const limit = backgroundTaskConcurrency();
   if (now && (now.status === "started" || now.status === "claiming") && now.workerBotId) {
@@ -431,7 +438,13 @@ export function startQueuedBackgroundTasks(
   return serialized(dispatcherBotId, () => drainQueue(deps, dispatcherBotId, liveRun));
 }
 
-async function drainQueue(deps: QueueDeps, dispatcherBotId: string, liveRun?: DispatchRun) {
+async function drainQueue(
+  deps: QueueDeps,
+  dispatcherBotId: string,
+  liveRun?: DispatchRun,
+  /** A task whose card the caller posts itself (the background_task call that created it). */
+  announcedByCaller?: string,
+) {
   await recoverBackgroundTasks(deps, { botId: dispatcherBotId }).catch((error) =>
     getLogger().error("background task recovery", error),
   );
@@ -557,6 +570,14 @@ async function drainQueue(deps: QueueDeps, dispatcherBotId: string, liveRun?: Di
     }
     started.push(row.id);
     getLogger().info("background task started", { queueId: row.id, worker: workerId });
+    if (row.id !== announcedByCaller) {
+      // Not awaited: the card is best effort and must not hold the queue lock or the launch.
+      void announceQueuedTaskStart(deps, run, {
+        workerId,
+        name: row.name,
+        ref: row.ref ?? row.id,
+      });
+    }
   }
   const remaining = await deps.prisma.backgroundTaskQueue.count({
     where: { botId: dispatcherBotId, status: "queued" },
@@ -1035,7 +1056,7 @@ export async function cancelBackgroundTask(
       );
       cancelled.push({
         task_id: worker.id,
-        name: taskTitle(worker.title || worker.name),
+        name: taskTitle(worker.title || withoutWorkerSlot(worker.name)),
         cancelled_runs: runIds.length,
       });
     }

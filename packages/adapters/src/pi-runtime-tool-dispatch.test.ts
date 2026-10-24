@@ -872,6 +872,47 @@ describe("Pi connector tool dispatch", () => {
     expect(modes.get("destination_write")).toBe("default");
   });
 
+  it("runs a turn's background_task calls in the order the model emitted them", async () => {
+    const runtime = new PiAgentRuntime();
+    const names = [
+      "background_task",
+      "background_task_status",
+      "background_task_message",
+      "background_task_cancel",
+    ];
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "run six tasks",
+        instructions: "Dispatch each task.",
+        history: [],
+        tools: [
+          ...names.map((name) => builtinAgentTools.find((tool) => tool.name === name)!),
+          destinationTool,
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream.
+    }
+    const modes = new Map(
+      fakeAgentState.tools.map((tool) => [tool.name, tool.executionMode ?? "default"]),
+    );
+    // Concurrent calls entered the queue as 1,2,4,5,3,6, so FIFO started the wrong tasks.
+    for (const name of names) expect(modes.get(name)).toBe("sequential");
+    expect(modes.get("destination_write")).toBe("default");
+  });
+
   it("does not claim a tool-only turn finished work the model never described", async () => {
     const runtime = new PiAgentRuntime();
     const events: unknown[] = [];
