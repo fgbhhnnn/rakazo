@@ -7123,6 +7123,14 @@ function hostCredentials(active: boolean, provider: string) {
     : { hostCredentialProvider: null, hostCredentialSource: null };
 }
 
+/** Locked applies to members only; the deployment owner always manages their own settings. */
+export function lockedForActor(
+  policy: { locked: boolean; ownerUserId: string | null },
+  userId: string,
+): boolean {
+  return policy.locked && policy.ownerUserId !== userId;
+}
+
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   const [user, setup] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({
@@ -7162,7 +7170,8 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),
-    memberSettingsLocked: !actor.isDeploymentOwner && memberSettingsPolicy(setup.settings).locked,
+    // The owner is identified by the policy: app accounts no longer carry isDeploymentOwner.
+    memberSettingsLocked: lockedForActor(memberSettingsPolicy(setup.settings), actor.userId),
     // Only billing deployments ask; self-hosted installs never see the survey.
     needsSignupSurvey: Boolean(deps.billing) && !user.signupSurvey,
   };
