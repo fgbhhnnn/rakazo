@@ -7,7 +7,7 @@ import { sealTurnstileSecret } from "./turnstile-settings.js";
 
 /** Members of a locked deployment run on the owner's settings and cannot change them. */
 export async function assertMemberSettingsUnlocked(
-  prisma: Pick<PrismaClient, "deploymentSettings">,
+  prisma: Pick<PrismaClient, "deploymentSettings" | "user">,
   actor: Pick<Actor, "userId" | "isDeploymentOwner">,
 ): Promise<void> {
   if (actor.isDeploymentOwner) return;

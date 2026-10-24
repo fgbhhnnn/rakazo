@@ -1,4 +1,5 @@
 import type { PrismaClient } from "./client.js";
+import { ownsMemberSettingsUser, sharedOwnerUserId } from "./deployment-admin.js";
 
 type Scope = { userId: string; spaceId: string };
 
@@ -46,11 +47,20 @@ export async function loadMemberSettingsPolicy(
 
 /** True when this user is a member whose model, voice and integration settings are owner-managed. */
 export async function memberSettingsLocked(
-  prisma: Pick<PrismaClient, "deploymentSettings">,
+  prisma: Pick<PrismaClient, "deploymentSettings"> & Partial<Pick<PrismaClient, "user">>,
   userId: string,
 ): Promise<boolean> {
   const policy = await loadMemberSettingsPolicy(prisma);
-  return policy.locked && policy.ownerUserId !== userId;
+  return policy.locked && !(await ownsMemberSettingsUser(prisma, { userId }, policy.ownerUserId));
+}
+
+/** The owner whose defaults this member borrows, or null when the member uses their own. */
+async function borrowedOwner(prisma: PrismaClient, policy: MemberSettingsPolicy, userId: string) {
+  if (!policy.shareOwner) return null;
+  const ownerUserId = await sharedOwnerUserId(prisma, policy.ownerUserId);
+  if (!ownerUserId || ownerUserId === userId) return null;
+  if (await ownsMemberSettingsUser(prisma, { userId }, policy.ownerUserId)) return null;
+  return ownerUserId;
 }
 
 /**
@@ -63,16 +73,16 @@ export async function sharedModelScope<S extends Scope>(
   scope: S,
 ): Promise<S | Scope> {
   const policy = await loadMemberSettingsPolicy(prisma);
-  if (!policy.shareOwner || !policy.ownerUserId || policy.ownerUserId === scope.userId)
-    return scope;
+  const ownerUserId = await borrowedOwner(prisma, policy, scope.userId);
+  if (!ownerUserId) return scope;
   const own = await prisma.userModelCredential.count({ where: { userId: scope.userId } });
   if (own > 0 && !policy.locked) return scope;
   const owner = await prisma.spaceModelPreference.findFirst({
-    where: { userId: policy.ownerUserId, isDefault: true },
+    where: { userId: ownerUserId, isDefault: true },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     select: { spaceId: true },
   });
-  return owner ? { userId: policy.ownerUserId, spaceId: owner.spaceId } : scope;
+  return owner ? { userId: ownerUserId, spaceId: owner.spaceId } : scope;
 }
 
 /** Same as sharedModelScope, for the voice provider. */
@@ -81,14 +91,14 @@ export async function sharedVoiceScope<S extends Scope>(
   scope: S,
 ): Promise<S | Scope> {
   const policy = await loadMemberSettingsPolicy(prisma);
-  if (!policy.shareOwner || !policy.ownerUserId || policy.ownerUserId === scope.userId)
-    return scope;
+  const ownerUserId = await borrowedOwner(prisma, policy, scope.userId);
+  if (!ownerUserId) return scope;
   const own = await prisma.userVoiceCredential.count({ where: { userId: scope.userId } });
   if (own > 0 && !policy.locked) return scope;
   const owner = await prisma.spaceVoicePreference.findFirst({
-    where: { userId: policy.ownerUserId, isDefault: true },
+    where: { userId: ownerUserId, isDefault: true },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     select: { spaceId: true },
   });
-  return owner ? { userId: policy.ownerUserId, spaceId: owner.spaceId } : scope;
+  return owner ? { userId: ownerUserId, spaceId: owner.spaceId } : scope;
 }

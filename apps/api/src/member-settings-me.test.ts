@@ -84,8 +84,8 @@ describe("memberSettingsLocked on me", () => {
   });
 
   it("treats a lock without a recorded owner as applying to everyone", () => {
-    expect(lockedForActor({ locked: true, ownerUserId: null }, OWNER)).toBe(true);
-    expect(lockedForActor({ locked: true, ownerUserId: OWNER }, OWNER)).toBe(false);
-    expect(lockedForActor({ locked: false, ownerUserId: null }, MEMBER)).toBe(false);
+    expect(lockedForActor({ locked: true, ownerUserId: null }, { userId: OWNER })).toBe(true);
+    expect(lockedForActor({ locked: true, ownerUserId: OWNER }, { userId: OWNER })).toBe(false);
+    expect(lockedForActor({ locked: false, ownerUserId: null }, { userId: MEMBER })).toBe(false);
   });
 });

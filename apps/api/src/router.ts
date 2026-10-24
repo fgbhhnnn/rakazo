@@ -230,6 +230,7 @@ import {
   InstructionConflictError,
   InvalidSpaceNameError,
   IsolationError,
+  isDeploymentAdmin,
   issueMessagingLinkCode,
   listBoards,
   listSpaceBackupModels,
@@ -239,6 +240,7 @@ import {
   modelCredentialProviderFilter,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
+  ownsMemberSettings,
   Prisma,
   parseComputerMode,
   recordSecurityEvent,
@@ -1452,13 +1454,15 @@ export function createRouter(deps: RouterDeps) {
         spaces: navigation.spaces,
       };
     }),
-    // Retain wire compatibility for older clients, but app accounts have no server authority.
+    // Retain wire compatibility for older clients; only RAKAZO_ADMIN_EMAILS admins have authority.
     deployment: {
-      get: authed.deployment.get.handler(() => {
-        throw new ORPCError("FORBIDDEN");
+      // Only admins named in RAKAZO_ADMIN_EMAILS may read or change these.
+      get: authed.deployment.get.handler(({ context }) => {
+        if (!isDeploymentAdmin(context.actor)) throw new ORPCError("FORBIDDEN");
+        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
       }),
       update: authed.deployment.update.handler(async ({ context, input }) => {
-        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        if (!isDeploymentAdmin(context.actor)) throw new ORPCError("FORBIDDEN");
         if (input.computerHost === "this-mac" && deps.env.sandboxProvider !== "docker") {
           throw new ORPCError("BAD_REQUEST", {
             message:
@@ -7123,12 +7127,12 @@ function hostCredentials(active: boolean, provider: string) {
     : { hostCredentialProvider: null, hostCredentialSource: null };
 }
 
-/** Locked applies to members only; the deployment owner always manages their own settings. */
+/** Locked applies to members only; admins (else the stored owner) manage their own settings. */
 export function lockedForActor(
   policy: { locked: boolean; ownerUserId: string | null },
-  userId: string,
+  user: { userId: string; email?: string | null },
 ): boolean {
-  return policy.locked && policy.ownerUserId !== userId;
+  return policy.locked && !ownsMemberSettings(user, policy.ownerUserId);
 }
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
@@ -7147,7 +7151,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     email: user.email,
     name: user.name,
     spaceId: actor.spaceId,
-    isDeploymentOwner: false,
+    isDeploymentOwner: isDeploymentAdmin(actor),
     needsModel: setup.needsModel,
     defaultProvider: canonicalPiProviderId(
       setup.credential?.provider ??
@@ -7170,8 +7174,8 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),
-    // The owner is identified by the policy: app accounts no longer carry isDeploymentOwner.
-    memberSettingsLocked: lockedForActor(memberSettingsPolicy(setup.settings), actor.userId),
+    // Admins come from RAKAZO_ADMIN_EMAILS, else the stored owner; app accounts carry no authority.
+    memberSettingsLocked: lockedForActor(memberSettingsPolicy(setup.settings), actor),
     // Only billing deployments ask; self-hosted installs never see the survey.
     needsSignupSurvey: Boolean(deps.billing) && !user.signupSurvey,
   };
