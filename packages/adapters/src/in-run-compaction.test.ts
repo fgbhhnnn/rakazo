@@ -44,7 +44,7 @@ describe("in-run compaction", () => {
   });
 
   it("summarizes older tool steps, keeps user turns and the recent tail verbatim", async () => {
-    const summarize = vi.fn(async () => "did steps c0..c15");
+    const summarize = vi.fn(async (_transcript: string) => "did steps c0..c15");
     const messages = run(20, [user("已批准：可以覆盖 out.csv")]);
     const compact = createInRunCompactor({
       contextWindow: () => size(messages) / 2,
