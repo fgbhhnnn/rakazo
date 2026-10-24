@@ -363,7 +363,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "{name} (over {limit})": "{name} (über {limit})",
   "{name} (permission denied)": "{name} (Zugriff verweigert)",
   "{name} (unsupported type)": "{name} (Dateityp nicht unterstützt)",
-  "Background tasks running ({count})": "Hintergrundaufgaben laufen ({count})",
+  "Coordinating background tasks": "Hintergrundaufgaben werden koordiniert",
   "{name} is working": "{name} arbeitet",
   // app/bot-settings.tsx
   Advanced: "Erweitert",

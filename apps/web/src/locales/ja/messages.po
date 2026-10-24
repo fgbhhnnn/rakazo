@@ -886,10 +886,6 @@ msgstr "戻る"
 msgid "Back to sign in"
 msgstr "ログインに戻る"
 
-#: src/pages/shell/transcript.tsx
-msgid "Background tasks running ({count})"
-msgstr "バックグラウンドタスク実行中（{count}）"
-
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "バックアップモデル"
@@ -1523,6 +1519,10 @@ msgstr "クレジットで続行"
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "メールで続行"
+
+#: src/components/ai/BackgroundCoordinating.tsx
+msgid "Coordinating background tasks"
+msgstr "バックグラウンドタスクを調整中"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx

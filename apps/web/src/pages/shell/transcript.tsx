@@ -27,6 +27,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { BackgroundCoordinatingRow } from "../../components/ai/BackgroundCoordinating";
 import { ActiveBotGlyph } from "../../components/ai/CollaborationMarker";
 import { VoiceChatCard } from "../../components/call/VoiceChatCard";
 import type { ArtifactTarget } from "../../lib/artifact-open";
@@ -52,6 +53,7 @@ export const Transcript = memo(function Transcript({
   running,
   workingBots,
   backgroundTasks,
+  coordinator,
   userBubble,
   onCallBack,
   onLoadOlder,
@@ -89,6 +91,8 @@ export const Transcript = memo(function Transcript({
   workingBots: GroupAvatarMember[];
   /** Hidden background workers of this bot; shown as a quiet working line when the bot itself is idle. */
   backgroundTasks?: { running: number; queued: number };
+  /** The bot whose avatar leads the background coordinating line. */
+  coordinator?: GroupAvatarMember;
   /** Your bubbles take the bot's color in its own chat. */
   userBubble?: { background: string; foreground: string };
   /** Calls the bot back from a missed call in the transcript. */
@@ -559,9 +563,7 @@ export const Transcript = memo(function Transcript({
         ) ? (
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
-        {!running && backgroundTasks && backgroundTasks.running + backgroundTasks.queued > 0 ? (
-          <BackgroundTasksLine tasks={backgroundTasks} />
-        ) : null}
+        {running ? null : <BackgroundCoordinatingRow tasks={backgroundTasks} bot={coordinator} />}
       </div>
       {quoteDraft ? (
         <QuoteSelectionButton
@@ -595,18 +597,3 @@ export const Transcript = memo(function Transcript({
  * itself after mount so it can flip below the selection when there is no room
  * above and stay clamped inside the viewport; re-anchors on scroll/resize.
  */
-
-function BackgroundTasksLine({ tasks }: { tasks: { running: number; queued: number } }) {
-  const { t } = useLingui();
-  const count = tasks.running + tasks.queued;
-  return (
-    <div
-      role="status"
-      data-testid="background-tasks-running"
-      className="flex items-center gap-2 px-1 py-2 text-[13px] text-muted-foreground"
-    >
-      <span className="size-2 animate-pulse rounded-full bg-emerald-500" aria-hidden />
-      {t`Background tasks running (${count})`}
-    </div>
-  );
-}

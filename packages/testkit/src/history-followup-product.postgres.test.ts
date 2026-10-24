@@ -135,13 +135,17 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
               }),
           },
         );
-        model.assertComplete();
-        expect(result).toMatchObject({
+        // The trial's own verdict first: a failed step reports its category, reason, and trace
+        // instead of surfacing only as an unconsumed model step.
+        expect({ ...result, artifacts: undefined }).toMatchObject({
           status: "passed",
+          category: null,
+          reason: null,
           toolCalls: 2,
           modelCalls: 5,
           cleanupFailed: false,
         });
+        model.assertComplete();
         expect(result.historyPreparationState).toMatchObject({
           generation: 0,
           beforeCursor: size === 1000 ? 949 : null,

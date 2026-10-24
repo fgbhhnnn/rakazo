@@ -43,6 +43,7 @@ import {
   settleReadBoundary,
   speechFromBlocks,
   withLiveStreamingProgress,
+  withoutBackgroundTaskCards,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import {
@@ -2013,7 +2014,10 @@ function SpaceShell() {
     rememberSeenRunErrorId(runId);
   }, []);
   const transcript = useMemo(
-    () => foldPeerReplies(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
+    () =>
+      foldPeerReplies(withoutBackgroundTaskCards(activeSnapshot?.messages ?? []), {
+        includePeerReceipts: true,
+      }),
     [activeSnapshot?.messages],
   );
   const transcriptRef = useRef(transcript);
@@ -2042,6 +2046,13 @@ function SpaceShell() {
       status: run.status,
     };
   });
+  const coordinator = useMemo<GroupAvatarMember | undefined>(
+    () =>
+      active && !inGroup
+        ? { botId: active.id, color: active.color, name: active.name, status: "running" }
+        : undefined,
+    [active?.id, active?.color, active?.name, inGroup],
+  );
   const resolveTranscriptMemberName = useCallback(
     (botId: string | undefined) => memberName(transcriptMembers, botId),
     [transcriptMembers],
@@ -3530,6 +3541,7 @@ function SpaceShell() {
             running={transcriptRunning}
             workingBots={workingBots}
             backgroundTasks={activeSnapshot?.backgroundTasks}
+            coordinator={coordinator}
             userBubble={userBubble}
             onCallBack={
               bootstrapMe?.phoneCallsEnabled && !inGroup && active

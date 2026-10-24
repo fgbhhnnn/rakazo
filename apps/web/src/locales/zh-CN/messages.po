@@ -886,10 +886,6 @@ msgstr "返回"
 msgid "Back to sign in"
 msgstr "返回登录"
 
-#: src/pages/shell/transcript.tsx
-msgid "Background tasks running ({count})"
-msgstr "后台任务进行中（{count}）"
-
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "备用模型"
@@ -1523,6 +1519,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "使用邮箱继续"
+
+#: src/components/ai/BackgroundCoordinating.tsx
+msgid "Coordinating background tasks"
+msgstr "正在协调后台任务"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx

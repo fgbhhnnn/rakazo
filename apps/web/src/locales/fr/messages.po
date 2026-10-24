@@ -886,10 +886,6 @@ msgstr "Retour"
 msgid "Back to sign in"
 msgstr "Retour à la connexion"
 
-#: src/pages/shell/transcript.tsx
-msgid "Background tasks running ({count})"
-msgstr ""
-
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "Modèles de secours"
@@ -1523,6 +1519,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "Continuer avec l'e-mail"
+
+#: src/components/ai/BackgroundCoordinating.tsx
+msgid "Coordinating background tasks"
+msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx

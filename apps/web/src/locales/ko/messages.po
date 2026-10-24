@@ -886,10 +886,6 @@ msgstr "뒤로"
 msgid "Back to sign in"
 msgstr "로그인으로 돌아가기"
 
-#: src/pages/shell/transcript.tsx
-msgid "Background tasks running ({count})"
-msgstr ""
-
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "백업 모델"
@@ -1523,6 +1519,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "이메일로 계속하기"
+
+#: src/components/ai/BackgroundCoordinating.tsx
+msgid "Coordinating background tasks"
+msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx

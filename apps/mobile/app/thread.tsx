@@ -60,6 +60,7 @@ import {
   unreadDividerMessageId,
   voiceChatHoldsMessage,
   withLiveStreamingProgress,
+  withoutBackgroundTaskCards,
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
@@ -736,7 +737,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     [inGroup, snap?.messages],
   );
   const peerTranscript = useMemo(
-    () => foldPeerReplies(snap?.messages ?? [], { includePeerReceipts: true }),
+    () =>
+      foldPeerReplies(withoutBackgroundTaskCards(snap?.messages ?? []), {
+        includePeerReceipts: true,
+      }),
     [snap?.messages],
   );
   const reactionView = useMemo(
@@ -2670,7 +2674,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       <View
         accessibilityLabel={
           backgroundOnly
-            ? t("Background tasks running ({count})", { count: backgroundCount })
+            ? t("Coordinating background tasks")
             : t("{name} is working", { name: currentBot.name })
         }
         accessibilityRole="text"
@@ -2687,9 +2691,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           ]}
           atBottom={!threadScrollState.detached}
           label={
-            backgroundOnly
-              ? t("Background tasks running ({count})", { count: backgroundCount })
-              : (activityLine ?? t("Working…"))
+            backgroundOnly ? t("Coordinating background tasks") : (activityLine ?? t("Working…"))
           }
         />
       </View>

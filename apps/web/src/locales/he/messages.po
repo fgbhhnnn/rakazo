@@ -886,10 +886,6 @@ msgstr "חזרה"
 msgid "Back to sign in"
 msgstr "חזרה להתחברות"
 
-#: src/pages/shell/transcript.tsx
-msgid "Background tasks running ({count})"
-msgstr ""
-
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "מודלי גיבוי"
@@ -1523,6 +1519,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "המשך עם אימייל"
+
+#: src/components/ai/BackgroundCoordinating.tsx
+msgid "Coordinating background tasks"
+msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx
