@@ -10,6 +10,7 @@ export const BACKGROUND_TASK_TOOL_NAMES = [
 /** Tools a worker never gets: no recursion, no fleet changes, no talking to the user directly. */
 export const WORKER_ALWAYS_DISABLED = [
   ...BACKGROUND_TASK_TOOL_NAMES,
+  "run_subagent",
   "spawn_bot",
   "archive_bot",
   "update_bot",

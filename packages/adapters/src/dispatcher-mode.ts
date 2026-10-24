@@ -1,6 +1,7 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { isHiddenBot } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor.js";
+import { withholdNestedAgentTools } from "./worker-nesting.js";
 
 /*
  * Dispatcher mode: a user's bot only talks and dispatches; work runs in hidden background
@@ -184,6 +185,7 @@ export function applyDispatcherToolPolicy(
   offered: readonly { name: string }[],
 ): boolean {
   if (isHiddenBot(bot)) for (const name of DISPATCH_ONLY_TOOL_NAMES) disabled.add(name);
+  withholdNestedAgentTools(bot, disabled);
   const dispatcherRun = Boolean(dispatcherMode) && isDispatcherBot(bot);
   if (dispatcherRun) {
     for (const tool of offered) if (!DISPATCHER_TOOL_NAMES.has(tool.name)) disabled.add(tool.name);

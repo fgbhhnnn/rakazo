@@ -426,6 +426,7 @@ import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { botModelChoice } from "./worker-model.js";
+import { workerNestingRefusal } from "./worker-nesting.js";
 import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
 import { slotFree } from "./worker-slot-mentions.js";
 
@@ -4943,6 +4944,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "propose_instructions_update" && approvalPausePending)
             return pauseForApproval();
+          const nestingRefusal = workerNestingRefusal(bot, name);
+          if (nestingRefusal) return { error: nestingRefusal };
           if (disabledBuiltinTools.has(name)) {
             return { error: "This tool is disabled for this bot." };
           }
