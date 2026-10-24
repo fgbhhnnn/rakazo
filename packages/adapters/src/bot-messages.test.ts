@@ -137,6 +137,26 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a background worker's slot name from what it sends, not another bot's text", async () => {
+    const delivered = async (name: string) => {
+      const harness = deps();
+      const sent = await messageBot(
+        harness.deps,
+        run,
+        { id: "bot-sender", name },
+        {
+          bot_id: "bot-target",
+          message: "π 任务已完成（#TIZXV4ZQ，由后台4执行），共 4 轮。",
+          intent: "status",
+        },
+      );
+      expect(sent).toMatchObject({ ok: true });
+      return (sent as { delivered: string }).delivered;
+    };
+    expect(await delivered("调度测试 · 后台4")).toBe("π 任务已完成（#TIZXV4ZQ），共 4 轮。");
+    expect(await delivered("Researcher")).toContain("由后台4执行");
+  });
+
   it("marks a forced failure return unread on both sides", async () => {
     const harness = deps({
       hopBlocks: [

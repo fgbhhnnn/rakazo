@@ -1797,9 +1797,17 @@ msgstr "Impossible de se déconnecter. Réessayez."
 msgid "Could not open billing"
 msgstr ""
 
+#: src/components/PdfViewer.tsx
+msgid "Could not open this PDF. Download it to view it."
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "Impossible de lire un extrait de test"
+
+#: src/components/FileViewer.tsx
+msgid "Could not preview this file. Download it to open it."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
@@ -3026,6 +3034,8 @@ msgid "Loading model catalog…"
 msgstr "Chargement du catalogue de modèles…"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/components/FileViewer.tsx
+#: src/components/PdfViewer.tsx
 msgid "Loading preview…"
 msgstr "Chargement de l'aperçu…"
 

@@ -1797,9 +1797,17 @@ msgstr "无法退出登录。请重试。"
 msgid "Could not open billing"
 msgstr ""
 
+#: src/components/PdfViewer.tsx
+msgid "Could not open this PDF. Download it to view it."
+msgstr "无法打开此 PDF。请下载后查看。"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "无法播放测试片段"
+
+#: src/components/FileViewer.tsx
+msgid "Could not preview this file. Download it to open it."
+msgstr "无法预览此文件。请下载后打开。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
@@ -3026,6 +3034,8 @@ msgid "Loading model catalog…"
 msgstr "正在加载模型目录…"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/components/FileViewer.tsx
+#: src/components/PdfViewer.tsx
 msgid "Loading preview…"
 msgstr "正在加载预览…"
 

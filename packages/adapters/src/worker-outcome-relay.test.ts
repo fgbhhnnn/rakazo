@@ -26,6 +26,24 @@ describe("workerOutcomeRelay", () => {
     expect(attach).not.toHaveBeenCalled();
   });
 
+  it("keeps worker slot names out of the relay and the result file", async () => {
+    const short = await workerOutcomeRelay(
+      { prisma: {} as never },
+      run,
+      "π",
+      "已完成（由后台4执行），后台3个任务都结束了。",
+    );
+    expect(short.message).toBe("【后台任务：π】\n已完成，后台3个任务都结束了。");
+    await workerOutcomeRelay(
+      { prisma: {} as never, artifacts: {} as never },
+      run,
+      "写报告",
+      `由后台2执行。${long}`,
+    );
+    const bytes = (attach.mock.calls[0]![1] as { bytes: Uint8Array }).bytes;
+    expect(new TextDecoder().decode(bytes)).not.toMatch(/后台\s*2/);
+  });
+
   it("still clamps a non-worker (no title) message", async () => {
     const relay = await workerOutcomeRelay(
       { prisma: {} as never, artifacts: {} as never },

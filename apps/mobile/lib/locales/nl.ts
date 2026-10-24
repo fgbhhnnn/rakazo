@@ -285,7 +285,6 @@ export const NL_MESSAGES: Record<string, string> = {
   New: "Nieuw",
   "New messages": "Nieuwe berichten",
   "Load earlier messages": "Eerdere berichten laden",
-  "Markdown file": "Markdown-bestand",
   Message: "Bericht",
   "Message from {peer}": "Bericht van {peer}",
   "Message {name}": "{name} berichten",
@@ -726,6 +725,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Updating Team Computer": "Teamcomputer bijwerken",
   "Updating {name}’s Computer": "De computer van {name} bijwerken",
   "Close preview": "Voorbeeld sluiten",
+  "Could not preview this file. Share it to open it in another app.":
+    "Kan dit bestand niet weergeven. Deel het om het in een andere app te openen.",
   "Could not load this file.": "Dit bestand laden mislukt.",
   "Could not share file": "Bestand delen mislukt",
   "Loading preview…": "Voorbeeld laden…",

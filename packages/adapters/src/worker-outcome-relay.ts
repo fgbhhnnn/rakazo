@@ -7,6 +7,7 @@ import { backgroundTaskForWorkerRun } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
 import { type AttachmentBlock, attachmentBlocks } from "./task-attachments.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
 type RelayDeps = Pick<ExecutorDeps, "prisma"> &
   Partial<Pick<ExecutorDeps, "artifacts" | "maxUploadSizeBytes">>;
@@ -50,6 +51,8 @@ export async function workerOutcomeRelay(
   ownerBotId: string = run.botId,
 ): Promise<{ message: string; attachments?: AttachmentBlock[] }> {
   const header = workerTitle === undefined ? "" : `【后台任务：${workerTitle}】`;
+  // The result file is the user's copy of the report: no worker slot names in it either.
+  text = slotFree(workerTitle !== undefined)(text);
   const full = header ? `${header}\n${text}` : text;
   if (workerTitle === undefined || full.trim().length <= BOT_MESSAGE_MAX_LENGTH) {
     return { message: clampBotMessage(full) };

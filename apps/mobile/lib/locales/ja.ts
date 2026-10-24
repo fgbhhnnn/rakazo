@@ -273,7 +273,6 @@ export const JA_MESSAGES: Record<string, string> = {
   New: "新規",
   "New messages": "新しいメッセージ",
   "Load earlier messages": "以前のメッセージを読み込む",
-  "Markdown file": "Markdownファイル",
   Message: "メッセージ",
   "Message from {peer}": "{peer}からのメッセージ",
   "Message {name}": "{name}にメッセージ",
@@ -716,6 +715,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Updating Team Computer": "チームのコンピューターを更新中",
   "Updating {name}’s Computer": "{name}のコンピューターを更新中",
   "Close preview": "プレビューを閉じる",
+  "Could not preview this file. Share it to open it in another app.":
+    "このファイルはプレビューできません。共有して別のアプリで開いてください。",
   "Could not load this file.": "このファイルを読み込めませんでした。",
   "Could not share file": "ファイルを共有できませんでした",
   "Loading preview…": "プレビューを読み込み中…",

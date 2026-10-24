@@ -1797,9 +1797,17 @@ msgstr "ログアウトできませんでした。もう一度お試しくださ
 msgid "Could not open billing"
 msgstr "請求ページを開けませんでした"
 
+#: src/components/PdfViewer.tsx
+msgid "Could not open this PDF. Download it to view it."
+msgstr "この PDF を開けませんでした。ダウンロードして表示してください。"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "テスト音声を再生できませんでした"
+
+#: src/components/FileViewer.tsx
+msgid "Could not preview this file. Download it to open it."
+msgstr "このファイルをプレビューできませんでした。ダウンロードして開いてください。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
@@ -3026,6 +3034,8 @@ msgid "Loading model catalog…"
 msgstr "モデルカタログを読み込み中…"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/components/FileViewer.tsx
+#: src/components/PdfViewer.tsx
 msgid "Loading preview…"
 msgstr "プレビューを読み込み中…"
 

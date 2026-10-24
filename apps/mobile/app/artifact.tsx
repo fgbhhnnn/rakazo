@@ -15,6 +15,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { FileViewerBody, hasMobileFileViewer } from "../components/file-viewer";
 import { NativeSymbol } from "../components/native-symbol";
 import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
 import { formatActivityRelativeTime } from "../lib/activity";
@@ -38,6 +39,7 @@ type PreviewContent =
   | { kind: "html"; html: string }
   | { kind: "markdown"; text: string }
   | { kind: "image"; uri: string }
+  | { kind: "file"; uri: string; name: string; mimeType: string }
   | { kind: "unsupported" };
 
 type ContentState =
@@ -45,10 +47,12 @@ type ContentState =
   | { status: "error"; message: string }
   | { status: "ready"; artifact: MobileArtifactWithContent; file: File; preview: PreviewContent };
 
-async function computePreview(mimeType: string, file: File): Promise<PreviewContent> {
+async function computePreview(mimeType: string, file: File, name: string): Promise<PreviewContent> {
   if (mimeType === "text/html") return { kind: "html", html: await file.text() };
   if (mimeType === "text/markdown") return { kind: "markdown", text: await file.text() };
   if (isAttachmentImageMimeType(mimeType)) return { kind: "image", uri: file.uri };
+  if (hasMobileFileViewer({ name, mimeType }))
+    return { kind: "file", uri: file.uri, name, mimeType };
   return { kind: "unsupported" };
 }
 
@@ -90,7 +94,7 @@ export default function ArtifactDetailScreen() {
     void getArtifactById(selectedVersionId)
       .then(async (artifact) => {
         const file = writeArtifactCacheFile(artifact.id, artifact.mimeType, artifact.contentBase64);
-        const preview = await computePreview(artifact.mimeType, file);
+        const preview = await computePreview(artifact.mimeType, file, artifact.name);
         if (cancelled) return;
         setContent({ status: "ready", artifact, file, preview });
       })
@@ -316,6 +320,13 @@ function ArtifactPreview({
       >
         <Image source={{ uri: preview.uri }} style={styles.image} resizeMode="contain" />
       </Pressable>
+    );
+  }
+  if (preview.kind === "file") {
+    return (
+      <View style={styles.previewCard}>
+        <FileViewerBody uri={preview.uri} name={preview.name} mimeType={preview.mimeType} />
+      </View>
     );
   }
   return (

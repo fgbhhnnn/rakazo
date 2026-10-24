@@ -5,6 +5,7 @@ import {
   botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
+  isBackgroundWorkerName,
   nextBotMessageHop,
   resolveBotAddress,
   withoutWorkerSlot,
@@ -21,6 +22,7 @@ import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./backgr
 import type { ExecutorDeps } from "./executor.js";
 import { attachmentBlocks } from "./task-attachments.js";
 import { workerOutcomeRelay } from "./worker-outcome-relay.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -93,7 +95,8 @@ export async function messageBot(
     wakeFromName?: string;
   },
 ) {
-  const message = String(input.message ?? "").trim();
+  // A background worker's results and status updates name tasks, never its own slot.
+  const message = slotFree(isBackgroundWorkerName(sender.name))(String(input.message ?? "")).trim();
   if (!message) return { ok: false as const, error: "message is required" };
   if (message.length > BOT_MESSAGE_MAX_LENGTH) {
     return {

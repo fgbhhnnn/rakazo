@@ -10,6 +10,7 @@ export * from "./avatar-clips.js";
 export * from "./avatar-life.js";
 export * from "./avatar-motion.js";
 export * from "./avatar-shape.js";
+export * from "./background-task-card.js";
 export * from "./barge-in.js";
 export * from "./bot-avatar-colors.js";
 export * from "./bot-avatar-shapes.js";

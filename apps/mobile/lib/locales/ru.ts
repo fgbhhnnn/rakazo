@@ -300,6 +300,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Tab: "Tab",
   Up: "Вверх",
   "Close preview": "Закрыть предварительный просмотр",
+  "Could not preview this file. Share it to open it in another app.":
+    "Не удалось просмотреть файл. Поделитесь им, чтобы открыть в другом приложении.",
   Code: "Код",
   Color: "Цвет",
   "Color {number}": "Цвет {number}",
@@ -748,7 +750,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "https://executor.example/mcp": "https://executor.example/mcp",
   Diagram: "Диаграмма",
   Image: "Изображение",
-  "Markdown file": "Файл Markdown",
   "Message from {peer}": "Сообщение от {peer}",
   subagent: "субагент",
   "Messaged {peer}": "Отправлено сообщение {peer}",

@@ -422,6 +422,7 @@ import { dispatcherTaskAttachments } from "./task-attachments.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
 export { selectRunConnections } from "./connection-context.js";
 
@@ -3744,6 +3745,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // (booting, suspending, or busy with a worker): the reply must not queue behind it.
       const dispatcherTurn = Boolean(deps.dispatcherMode) && isDispatcherBot(leaseTarget);
       const turnLedger = createDispatcherTurnLedger();
+      const dispatcherVisible = slotFree(dispatcherTurn);
       if (!leaseTarget.computerId && !dispatcherTurn) throw new Error("Bot has no computer");
       if (dispatcherTurn) {
         // Drain this dispatcher's persisted queue first: a worker that just finished (its result
@@ -4791,7 +4793,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const publishMidTurnNarration = async (beforeConnectCard = false) => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
-          const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
+          const narration = clampUserProgressMessage(
+            dispatcherVisible(redactSecrets(extracted.text, runSecrets)),
+          );
           const canPublish =
             canPublishDurableNarration() ||
             (beforeConnectCard && runPromotesMidTurnNarration(run.trigger));
@@ -7480,7 +7484,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
           }
           if (name === "message_user") {
-            const rawMessage = redactSecrets(String(args.message ?? ""), runSecrets);
+            const rawMessage = dispatcherVisible(
+              redactSecrets(String(args.message ?? ""), runSecrets),
+            );
             const maxLength = messageUserMaxLength();
             const text = clampUserProgressMessage(rawMessage, maxLength);
             if (!text) return finish({ error: "message is required" });
@@ -8286,7 +8292,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // does not treat pre-takeover text as the delegated final result.
               await publishMidTurnNarration();
               if (assembled.trim()) {
-                const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
+                const narration = clampUserProgressMessage(
+                  dispatcherVisible(redactSecrets(assembled, runSecrets)),
+                );
                 if (narration && canPublishDurableNarration()) {
                   await publishMessage(
                     deps,

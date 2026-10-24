@@ -1,3 +1,4 @@
+import { fileKindOf } from "@rakazo/chat-ui/file-kinds";
 import type { Artifact, ArtifactVersion } from "@rakazo/contracts";
 import { rpc } from "./api";
 import type { MobileArtifactTarget } from "./artifact-open";
@@ -36,13 +37,9 @@ export function artifactThreadTarget(
   return null;
 }
 
-/** Short badge text for a mime type ("HTML", "MD", "PDF", or its subtype). */
+/** Short badge text for a mime type ("HTML", "MD", "PDF", "XLSX", …), shared with the file icons. */
 export function mimeBadgeLabel(mimeType: string): string {
-  if (mimeType === "text/html") return "HTML";
-  if (mimeType === "text/markdown") return "MD";
-  if (mimeType === "application/pdf") return "PDF";
-  const slash = mimeType.indexOf("/");
-  return (slash === -1 ? mimeType : mimeType.slice(slash + 1)).toUpperCase().slice(0, 6);
+  return fileKindOf({ mimeType }).badge;
 }
 
 /** Client-side search over an already-loaded page, matching the web Artifacts page. */

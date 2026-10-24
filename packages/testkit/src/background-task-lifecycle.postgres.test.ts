@@ -250,6 +250,36 @@ describeIntegration("background task rows: claims, recovery, FIFO, attribution",
     ]);
   }, 60_000);
 
+  it("a cancel that frees a slot reports which queued task started there", async () => {
+    const { deps: liveDeps, run, bot } = await dispatcher("CancelQueue");
+    const deps = { ...(liveDeps as object), jobs: { enqueue: async () => undefined } } as never;
+    const mod = await freshModule();
+    for (const name of ["c1", "c2", "c3", "c4"]) {
+      await mod.launchBackgroundTask(deps, run, bot, launchArgs(name), options(name));
+    }
+    const before = await db.backgroundTaskQueue.findMany({
+      where: { botId: bot.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(before.map((r) => r.status)).toEqual(["started", "started", "queued", "queued"]);
+    // The real stop cancels c1's worker run, which is what frees its slot.
+    const out = (await mod.cancelBackgroundTask(deps, run, bot, {
+      task_id: before[0]!.ref,
+    })) as Record<string, unknown>;
+    expect(out).toMatchObject({
+      ok: true,
+      cancelled: [{ task_id: before[0]!.ref, name: "c1", cancelled_runs: 1 }],
+      started_from_queue: [{ task_id: before[2]!.ref, name: "c3" }],
+      still_queued: [{ task_id: before[3]!.ref, name: "c4", position: 1 }],
+    });
+    expect(String(out.note)).toContain("started_from_queue");
+    const after = await db.backgroundTaskQueue.findMany({
+      where: { botId: bot.id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(after.map((r) => r.status)).toEqual(["cancelled", "started", "started", "queued"]);
+  }, 60_000);
+
   it("credits a late result from an older run to its own task, not the slot's new task", async () => {
     const { deps, run, bot } = await dispatcher("Attrib");
     const mod = await freshModule();

@@ -292,7 +292,6 @@ export const DE_MESSAGES: Record<string, string> = {
   New: "Neu",
   "New messages": "Neue Nachrichten",
   "Load earlier messages": "Frühere Nachrichten laden",
-  "Markdown file": "Markdown-Datei",
   Message: "Nachricht",
   "Message from {peer}": "Nachricht von {peer}",
   "Message {name}": "{name} schreiben",
@@ -752,8 +751,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Update failed": "Aktualisierung fehlgeschlagen",
   "Updating Team Computer": "Team-Computer wird aktualisiert",
   "Updating {name}’s Computer": "Computer von {name} wird aktualisiert",
-  // components/markdown-artifact-preview.tsx
+  // components/file-artifact-viewer.tsx
   "Close preview": "Vorschau schließen",
+  "Could not preview this file. Share it to open it in another app.":
+    "Vorschau nicht möglich. Teile die Datei, um sie in einer anderen App zu öffnen.",
   "Could not load this file.": "Datei konnte nicht geladen werden.",
   "Could not share file": "Datei konnte nicht geteilt werden",
   "Loading preview…": "Vorschau wird geladen…",

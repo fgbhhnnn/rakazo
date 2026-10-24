@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { isBackgroundTaskCardBlock } from "./background-task-card.js";
 import { messageReaction } from "./message-reactions.js";
 
 type PresentableMessage = {
@@ -157,6 +158,7 @@ export function foldPeerReplies<T extends PresentableMessage>(
     )
       return fold(parentMarkerId, message);
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
+    if (message.blocks.some(isBackgroundTaskCardBlock)) return true;
     // User-input cards stay inline; previews without receipts keep only asks, as before.
     if (message.blocks.some(includePeerReceipts ? isPeerInputBlock : isAskBlock)) return true;
     // A relay is the bot's own reply to the user, so previews show it too.

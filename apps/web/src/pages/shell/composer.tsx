@@ -1,6 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@rakazo/contracts";
 import type { ComposerMention, SlashActionId } from "@rakazo/core";
 import {
   clampMentionHighlightIndex,
@@ -12,7 +11,7 @@ import {
   truncateSlashDescription,
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
-import { ArrowUp, Box, Paperclip, Plus, Settings, X } from "lucide-react";
+import { ArrowUp, Box, Plus, Settings, X } from "lucide-react";
 import type { ClipboardEvent, DragEvent, RefObject } from "react";
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +19,7 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
+import { FileKindIcon } from "../../components/FileKindIcon";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
 import { newClientId } from "../../lib/client-id";
@@ -31,6 +31,7 @@ import {
   writeComposerDraft,
 } from "../../lib/composer-draft";
 import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
+import { ATTACHMENT_ACCEPT } from "./attachment-accept";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
@@ -38,7 +39,6 @@ import { ComposerError } from "./composer-error";
 import { MentionChipIcon, MentionOptionIcon, slashActionLabel } from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
-const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
 export const Composer = memo(function Composer({
   artifactTarget,
   activeName,
@@ -482,7 +482,11 @@ export const Composer = memo(function Composer({
                   className="h-8 w-8 rounded object-cover"
                 />
               ) : (
-                <Paperclip size={14} strokeWidth={1.8} />
+                <FileKindIcon
+                  name={attachment.file.name}
+                  mimeType={attachment.file.type}
+                  size={28}
+                />
               )}
               <span className="max-w-[180px] truncate" dir="auto">
                 {attachment.file.name}

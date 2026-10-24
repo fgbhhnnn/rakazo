@@ -1,15 +1,18 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { hasInAppFileViewer } from "@rakazo/chat-ui/file-kinds";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
-import { Code2, Download, FileText, Play, X } from "lucide-react";
+import { Download, Play, X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
 import { errorText } from "../lib/user-error";
+import { FileKindIcon } from "./FileKindIcon";
+import { FileViewerBody } from "./FileViewer";
 import { IconTooltip } from "./IconTooltip";
 import { PdfViewer } from "./PdfViewer";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
@@ -32,7 +35,7 @@ const TEXT_MIME_TYPES = new Set(["text/markdown", "text/html"]);
 
 export function ArtifactFileCard(props: ArtifactFileCardProps) {
   const { t } = useLingui();
-  const previewable = PREVIEWABLE_MIME_TYPES.has(props.mimeType);
+  const previewable = PREVIEWABLE_MIME_TYPES.has(props.mimeType) || hasInAppFileViewer(props);
   const previewButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -66,12 +69,15 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         <button
           type="button"
           onClick={() => void startDownload()}
-          className="rounded-2xl border border-border bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
+          className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
         >
-          <div className="font-medium">{props.name}</div>
-          <div className="mt-1 text-muted-foreground">
-            {props.mimeType} · {formatBytes(props.size)}
-          </div>
+          <FileKindIcon name={props.name} mimeType={props.mimeType} />
+          <span className="min-w-0">
+            <span className="block font-medium">{props.name}</span>
+            <span className="mt-1 block text-muted-foreground">
+              {props.mimeType} · {formatBytes(props.size)}
+            </span>
+          </span>
         </button>
         {downloadError ? <DownloadError message={downloadError} /> : null}
       </div>
@@ -89,13 +95,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             onClick={() => setPreviewOpen(true)}
             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent"
           >
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-muted text-foreground">
-              {props.mimeType === "text/html" ? (
-                <Code2 size={21} strokeWidth={1.8} />
-              ) : (
-                <FileText size={21} strokeWidth={1.8} />
-              )}
-            </span>
+            <FileKindIcon name={props.name} mimeType={props.mimeType} />
             <span className="min-w-0">
               <span className="block truncate text-[14px] font-medium">{props.name}</span>
               <span className="mt-0.5 block text-[13px] text-muted-foreground">
@@ -238,7 +238,9 @@ function FilePreview({
           <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground sm:px-12 sm:py-12">
             <ChatMarkdown>{state.text}</ChatMarkdown>
           </article>
-        ) : null}
+        ) : (
+          <FileViewerBody bytes={state.bytes} name={name} mimeType={mimeType} />
+        )}
       </div>
     </>
   );

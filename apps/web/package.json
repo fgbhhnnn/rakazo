@@ -22,16 +22,19 @@
     "@rakazo/chat-ui": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@sentry/react": "11.8.0",
     "@simplewebauthn/browser": "13.3.0",
     "better-auth": "1.7.11",
     "lucide-react": "1.60.0",
+    "mammoth": "1.13.0",
+    "pdfjs-dist": "6.4.299",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-router-dom": "7.18.4",
-    "@rakazo/logging": "workspace:*"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",

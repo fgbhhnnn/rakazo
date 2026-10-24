@@ -277,6 +277,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Tab: "Tab",
   Up: "向上",
   "Close preview": "关闭预览",
+  "Could not preview this file. Share it to open it in another app.":
+    "无法预览此文件。请通过分享在其他应用中打开。",
   Code: "验证码",
   Color: "颜色",
   "Color {number}": "颜色 {number}",
@@ -716,7 +718,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "https://executor.example/mcp": "https://executor.example/mcp",
   Diagram: "图表",
   Image: "图片",
-  "Markdown file": "Markdown 文件",
   "Message from {peer}": "来自 {peer} 的消息",
   subagent: "子智能体",
   "Messaged {peer}": "已给 {peer} 发消息",

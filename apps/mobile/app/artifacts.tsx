@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
-import { NativeSymbol } from "../components/native-symbol";
+import { FileKindIcon } from "../components/file-kind-icon";
 import { formatActivityRelativeTime } from "../lib/activity";
 import type { MobileBot } from "../lib/api";
 import { rpc } from "../lib/api";
@@ -377,7 +377,6 @@ function ArtifactRow({
 }) {
   const styles = useThemedStyles(createStyles);
   const { t } = useI18n();
-  const isCode = item.mimeType === "text/html";
   return (
     <Pressable
       accessibilityRole="button"
@@ -387,13 +386,7 @@ function ArtifactRow({
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <View style={styles.rowIcon}>
-        <NativeSymbol
-          ios={isCode ? "chevron.left.forwardslash.chevron.right" : "doc.text"}
-          android={isCode ? "code-slash-outline" : "document-text-outline"}
-          size={16}
-        />
-      </View>
+      <FileKindIcon name={item.name} mimeType={item.mimeType} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.rowName} numberOfLines={1}>
@@ -463,14 +456,6 @@ function createStyles() {
     footer: { paddingVertical: 20 },
     row: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
     rowPressed: { opacity: 0.6 },
-    rowIcon: {
-      width: 36,
-      height: 36,
-      borderRadius: 10,
-      backgroundColor: native.fill,
-      alignItems: "center",
-      justifyContent: "center",
-    },
     rowBody: { flex: 1, minWidth: 0, gap: 3 },
     rowTop: { flexDirection: "row", alignItems: "center", gap: 6 },
     rowName: { flex: 1, minWidth: 0, color: native.label, fontSize: 15, fontWeight: "600" },

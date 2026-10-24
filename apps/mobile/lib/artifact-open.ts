@@ -145,22 +145,13 @@ async function cacheMobileArtifact(
   return file;
 }
 
-/** Local playback URI using the same authenticated, session-scoped artifact cache. */
-export async function audioArtifactUri(
+/** Local file URI (playback, in-app viewing) from the authenticated, session-scoped artifact cache. */
+export async function artifactFileUri(
   target: MobileArtifactTarget,
   artifactId: string,
   mimeType: string,
 ): Promise<string> {
   return (await cacheMobileArtifact(target, artifactId, mimeType)).uri;
-}
-
-export async function readMobileArtifactText(
-  target: MobileArtifactTarget,
-  artifactId: string,
-  mimeType: string,
-): Promise<string> {
-  const file = await cacheMobileArtifact(target, artifactId, mimeType);
-  return file.text();
 }
 
 export async function openMobileArtifact(

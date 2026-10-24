@@ -23,6 +23,7 @@ import { messageBot } from "./bot-messages.js";
 import { spawnBot } from "./child-bots.js";
 import { formatInstantForUser, resolveRunTimeZone } from "./current-time.js";
 import type { ExecutorDeps } from "./executor.js";
+import { QUEUE_AFTER_CANCEL_NOTE, queueChangeAfterCancel } from "./queue-after-cancel.js";
 import { type AttachmentBlock, attachmentBlocks } from "./task-attachments.js";
 import { backgroundTaskHash, newTaskRef, taskTitle } from "./task-identity.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
@@ -1072,12 +1073,14 @@ export async function cancelBackgroundTask(
     ms: Date.now() - startedAt,
   });
   // Freed slots go to the next queued tasks (unless everything was cancelled).
+  const queuedBefore = (await queuedTasks(deps, bot.id)).map((row) => row.id);
   if (wanted !== "all") await startQueuedBackgroundTasks(deps, bot.id, run).catch(() => undefined);
   return {
     ok: true as const,
     cancelled,
     cancelled_queued: cancelledQueued,
-    note: "Tell the user exactly which tasks were stopped (cancelled_runs > 0) and which queued ones were removed. A task with cancelled_runs 0 had already finished or was idle: say so instead of claiming you stopped it.",
+    ...(await queueChangeAfterCancel(deps.prisma, bot.id, queuedBefore)),
+    note: `Tell the user exactly which tasks were stopped (cancelled_runs > 0) and which queued ones were removed. A task with cancelled_runs 0 had already finished or was idle: say so instead of claiming you stopped it.${QUEUE_AFTER_CANCEL_NOTE}`,
   };
 }
 

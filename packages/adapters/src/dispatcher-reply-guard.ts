@@ -1,11 +1,14 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
+import { acknowledgementOf, type LaunchedTask } from "./dispatch-acknowledgement.js";
 import type { ExecutorDeps } from "./executor.js";
+import { withoutWorkerSlotMentions } from "./worker-slot-mentions.js";
+
+export { acknowledgementOf } from "./dispatch-acknowledgement.js";
 
 /** Longest reply a dispatcher may write in a turn that started new work (the acknowledgement). */
 export const DISPATCH_ACK_MAX_CHARS = 400;
-const ACK_KEEP_CHARS = 200;
 /** Marks a corrective turn's prompt, so a turn is re-prompted at most once. */
 export const CLAIM_RECHECK_MARKER = "【系统核对：上一轮回复声称已安排后台任务】";
 
@@ -18,6 +21,7 @@ const ok = (result: unknown): result is Record<string, unknown> =>
  */
 export function createDispatcherTurnLedger() {
   const launchedRefs = new Set<string>();
+  const launchedTasks: LaunchedTask[] = [];
   let launched = 0;
   let acted = 0;
   return {
@@ -31,6 +35,15 @@ export function createDispatcherTurnLedger() {
           for (const key of ["task_ref", "task_id"]) {
             if (typeof result[key] === "string") launchedRefs.add(String(result[key]));
           }
+          const ref = result.task_ref ?? result.task_id;
+          if (typeof ref === "string") {
+            launchedTasks.push({
+              ref,
+              status,
+              name: typeof result.name === "string" ? result.name : undefined,
+              position: typeof result.position === "number" ? result.position : undefined,
+            });
+          }
         }
       }
     },
@@ -43,6 +56,8 @@ export function createDispatcherTurnLedger() {
       return acted > 0;
     },
     launchedRefs: launchedRefs as ReadonlySet<string>,
+    /** The tasks started or queued this turn, as their tool results reported them. */
+    launchedTasks: launchedTasks as readonly LaunchedTask[],
   };
 }
 export type DispatcherTurnLedger = ReturnType<typeof createDispatcherTurnLedger>;
@@ -87,23 +102,6 @@ export function withoutWorkerClaims(text: string): string {
     .trim();
 }
 
-/** The leading one or two sentences of a reply, as its acknowledgement. */
-export function acknowledgementOf(text: string): string {
-  let out = "";
-  let count = 0;
-  for (const sentence of sentences(text.trim())) {
-    if (!sentence.trim()) {
-      if (out) break;
-      continue;
-    }
-    if (out && (count >= 2 || out.length + sentence.length > ACK_KEEP_CHARS)) break;
-    out += sentence;
-    count += 1;
-  }
-  out = out.trim();
-  return out.length > ACK_KEEP_CHARS ? `${out.slice(0, ACK_KEEP_CHARS - 1).trimEnd()}…` : out;
-}
-
 /** A reply that relays work other than this turn's new tasks: a worker result or another #ref. */
 function relaysOtherWork(text: string, launchedRefs: ReadonlySet<string>): boolean {
   if (/【后台任务[:：]/.test(text)) return true;
@@ -127,7 +125,8 @@ export type ReplyGuardOutcome = {
  * - a turn that started new work replies with a short acknowledgement only, not the answer
  *   (unless it also relays a worker result or another task, or was woken by one);
  * - a reply that says a worker was asked/started/re-sent when no background_task* call
- *   succeeded loses that claim, and the turn is re-prompted once to actually do it.
+ *   succeeded loses that claim, and the turn is re-prompted once to actually do it;
+ * - worker slot names ("由后台4执行") are removed: tasks are named by title and #REF.
  */
 export function guardDispatcherReply(
   enabled: boolean,
@@ -159,8 +158,9 @@ export function guardDispatcherReply(
       runId: context.runId,
       chars: text.length,
     });
-    next = acknowledgementOf(text);
+    next = acknowledgementOf(text, ledger.launchedTasks);
   }
+  next = withoutWorkerSlotMentions(next);
   if (next === text) return { blocks, changed: false, recheckClaim };
   let placed = false;
   const out: MessageBlock[] = [];

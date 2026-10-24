@@ -129,13 +129,15 @@ import { ChoiceCard } from "../components/ChoiceCard";
 import { ComputerCard } from "../components/ComputerCard";
 import { ComposerReplyPreview } from "../components/composer-reply-preview";
 import { FailedSendBubble } from "../components/failed-send-bubble";
+import type { FileArtifactViewerTarget } from "../components/file-artifact-viewer";
+import { FileArtifactViewer } from "../components/file-artifact-viewer";
+import { FileKindIcon } from "../components/file-kind-icon";
+import { hasMobileFileViewer } from "../components/file-viewer";
 import { GlassSurface } from "../components/glass-surface";
 import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { InstructionUndo } from "../components/instruction-undo";
 import { McpApprovalCard } from "../components/McpApprovalCard";
-import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artifact-preview";
-import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
 import { presentMessageMenu } from "../components/message-action-menu";
 import { MessageCaption } from "../components/message-caption";
 import { MessageContextMenu } from "../components/message-context-menu";
@@ -716,9 +718,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const newerLoadFailed = useRef(false);
   const pinnedScrollMetrics = useRef({ offset: 0, viewport: 0, content: 0 });
   const joinPinnedAfterLayout = useRef<number | null>(null);
-  const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
-    null,
-  );
+  const [filePreview, setFilePreview] = useState<FileArtifactViewerTarget | null>(null);
   const [dismissedChoiceQuestions, setDismissedChoiceQuestions] = useState<
     ReadonlyMap<string, ReadonlySet<string>>
   >(() => new Map());
@@ -2447,7 +2447,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     answer: answerMessage,
     openBot,
     openComputer,
-    previewMarkdown: setMarkdownPreview,
+    previewFile: setFilePreview,
     previewImage: (target) =>
       router.push({
         pathname: "/image",
@@ -2517,7 +2517,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         rowActionsRef.current.answer(message, answer, username, dismiss),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
-      previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
+      previewFile: (target) => rowActionsRef.current.previewFile(target),
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
@@ -3105,12 +3105,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                       style={{ width: 28, height: 28, borderRadius: 6 }}
                     />
                   ) : (
-                    <NativeSymbol
-                      ios="paperclip"
-                      android="attach"
-                      size={16}
-                      color={tokens.mutedForeground}
-                    />
+                    <FileKindIcon name={attachment.name} mimeType={attachment.mimeType} size={28} />
                   )}
                   <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
                     {attachment.name}
@@ -3212,11 +3207,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           onConnection={openErrorConnection}
           onModel={(snap?.run?.botId ?? botId) ? openErrorModel : undefined}
         />
-        {markdownPreview && artifactTarget ? (
-          <MarkdownArtifactPreview
+        {filePreview && artifactTarget ? (
+          <FileArtifactViewer
             threadTarget={artifactTarget}
-            target={markdownPreview}
-            onClose={() => setMarkdownPreview(null)}
+            target={filePreview}
+            onClose={() => setFilePreview(null)}
           />
         ) : null}
         {quoteTarget ? (
@@ -3410,7 +3405,7 @@ type MessageRowActions = {
   ) => Promise<void>;
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;
-  previewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  previewFile: (target: FileArtifactViewerTarget) => void;
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
@@ -3819,7 +3814,7 @@ const MessageRow = memo(function MessageRow({
                 onOpenBot={actions.openBot}
                 onOpenComputer={actions.openComputer}
                 onChoiceDismissed={onChoiceDismissed}
-                onPreviewMarkdown={actions.previewMarkdown}
+                onPreviewFile={actions.previewFile}
                 onPreviewImage={actions.previewImage}
                 peerReplies={peerReplies}
                 onTogglePeerReplies={actions.togglePeerReplies}
@@ -3938,7 +3933,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onAnswer,
   onOpenComputer,
   onChoiceDismissed,
-  onPreviewMarkdown,
+  onPreviewFile,
   onPreviewImage,
   peerReplies,
   onTogglePeerReplies,
@@ -3966,7 +3961,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onOpenBot: (botId: string, name: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
   onChoiceDismissed?: (question: string) => void;
-  onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  onPreviewFile: (target: FileArtifactViewerTarget) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   peerReplies?: "collapsed" | "expanded";
   onTogglePeerReplies: (markerId: string) => void;
@@ -4389,11 +4384,11 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               key={`${attachment.artifactId ?? attachment.name ?? "file"}-${index}`}
               onPress={() =>
                 attachment.artifactId
-                  ? attachment.mimeType === "text/markdown"
-                    ? onPreviewMarkdown({
+                  ? hasMobileFileViewer(attachment)
+                    ? onPreviewFile({
                         artifactId: attachment.artifactId,
-                        name: attachment.name ?? t("Markdown file"),
-                        mimeType: attachment.mimeType,
+                        name: attachment.name ?? t("File"),
+                        mimeType: attachment.mimeType ?? "application/octet-stream",
                       })
                     : void openMobileArtifact(
                         artifactTarget,
@@ -4406,26 +4401,34 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   : undefined
               }
             >
-              <Text
-                style={{
-                  color: message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
-                  fontSize: 15,
-                }}
-              >
-                📎 {attachment.name ?? t("File")}
-              </Text>
-              {formatFileSize(attachment.size) ? (
-                <Text
-                  style={{
-                    color:
-                      message.role === "user" ? tokens.chatUserForeground : tokens.mutedForeground,
-                    marginTop: 4,
-                    fontSize: 13,
-                  }}
-                >
-                  {formatFileSize(attachment.size)}
-                </Text>
-              ) : null}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <FileKindIcon name={attachment.name} mimeType={attachment.mimeType} />
+                <View style={{ flexShrink: 1 }}>
+                  <Text
+                    style={{
+                      color:
+                        message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
+                      fontSize: 15,
+                    }}
+                  >
+                    {attachment.name ?? t("File")}
+                  </Text>
+                  {formatFileSize(attachment.size) ? (
+                    <Text
+                      style={{
+                        color:
+                          message.role === "user"
+                            ? tokens.chatUserForeground
+                            : tokens.mutedForeground,
+                        marginTop: 4,
+                        fontSize: 13,
+                      }}
+                    >
+                      {formatFileSize(attachment.size)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
             </Pressable>
           ),
         )}
