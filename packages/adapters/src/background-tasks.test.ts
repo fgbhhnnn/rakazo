@@ -15,6 +15,7 @@ const {
   cancelBackgroundTask,
   launchBackgroundTask,
   taskTitle,
+  withDispatcherAttachments,
   workerDisabledTools,
 } = await import("./background-tasks.js");
 const { BACKGROUND_WORK_LAUNCH, CANCEL_COMPUTER_RUN_WORK } = await import("./computer-idle.js");
@@ -424,5 +425,19 @@ describe("duplicate launches", () => {
     );
     expect(out).toMatchObject({ ok: true, status: "already_running", task_id: "w1" });
     expect(messageBot).not.toHaveBeenCalled();
+  });
+});
+
+describe("withDispatcherAttachments", () => {
+  const file = { name: "a.csv", path: "attachments/art1.csv", mimeType: "text/csv", size: 16 };
+  it("gives a team worker paths into the dispatcher's home", () => {
+    const out = withDispatcherAttachments("sum column b", [file, file], "team", "disp1");
+    expect(out.startsWith("sum column b\n\n")).toBe(true);
+    expect(out).toContain("/bots/disp1/attachments/art1.csv");
+    expect(out).toContain("../disp1/attachments/art1.csv");
+    expect(out.match(/a\.csv/g)).toHaveLength(1);
+  });
+  it("leaves a task without files unchanged", () => {
+    expect(withDispatcherAttachments("t", [], "team", "d")).toBe("t");
   });
 });

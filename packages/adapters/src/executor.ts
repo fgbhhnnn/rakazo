@@ -211,6 +211,7 @@ import {
   launchBackgroundTask,
   parseWorkerReportFiles,
   startQueuedBackgroundTasks,
+  withDispatcherAttachments,
 } from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
@@ -4300,6 +4301,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           );
         };
         let currentTurnFiles: Awaited<ReturnType<typeof listCurrentTurnFiles>> = [];
+        // Attachments that arrive as steering mid-run, so a worker launched later still gets them.
+        const steeringTurnFiles: Awaited<ReturnType<typeof listCurrentTurnFiles>> = [];
         let recentThreadFiles: Awaited<ReturnType<typeof listRecentThreadFiles>> = [];
         try {
           if (artifacts) {
@@ -7442,6 +7445,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const dispatchRun = { ...run, sourceMessageId: run.sourceMessageId };
             const dispatcher = { id: bot.id, name: bot.name, computerId: bot.computerId };
             if (name === "background_task") {
+              // A dispatcher never touches its computer, so the user's uploads would stay
+              // unmaterialized and the worker (own home) could not find "attachments/…".
+              // Copy them now and hand the worker team-root paths it can read.
+              const taskFiles = [...currentTurnFiles, ...steeringTurnFiles, ...recentThreadFiles];
+              if (taskFiles.length && typeof args.task === "string" && args.task.trim()) {
+                await getRunComputer("tool", name);
+                args = {
+                  ...args,
+                  task: withDispatcherAttachments(args.task, taskFiles, computerMode, bot.id),
+                };
+              }
               const launched = await launchBackgroundTask(deps, dispatchRun, dispatcher, args, {
                 builtinToolNames: BUILTIN_TOOL_NAMES,
                 deliveryKey: effectKey,
@@ -8059,7 +8073,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                         item.blocks,
                         context.signal,
                       );
-                    if (files.length) pendingTurnFiles.push(item.blocks);
+                    if (files.length) {
+                      pendingTurnFiles.push(item.blocks);
+                      steeringTurnFiles.push(...files);
+                    }
                     const filesInstruction = currentTurnFilesInstruction(files);
                     return {
                       id: item.id,

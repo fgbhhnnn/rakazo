@@ -1,3 +1,5 @@
+import path from "node:path";
+import type { ComputerMode } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, BOT_MESSAGE_MAX_LENGTH, textSimilarity } from "@rakazo/core";
 import {
   appendEventInTransaction,
@@ -7,6 +9,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { messageBot } from "./bot-messages.js";
 import { spawnBot } from "./child-bots.js";
+import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { formatInstantForUser, resolveRunTimeZone } from "./current-time.js";
 import type { ExecutorDeps } from "./executor.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
@@ -262,6 +265,31 @@ export function taskTitle(title: string): string {
 const FRESH_TASK_SUMMARY = "此前的后台任务已结束，与接下来的新任务无关；只按新任务消息工作。";
 
 const launchLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Append the dispatcher's thread attachments to a worker task as team-root paths. A worker runs
+ * in its own home, so the dispatcher's relative "attachments/<id>" would not resolve there.
+ */
+export function withDispatcherAttachments(
+  task: string,
+  files: ReadonlyArray<{ name: string; path: string; mimeType: string; size: number }>,
+  computerMode: ComputerMode,
+  dispatcherId: string,
+): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const file of files) {
+    if (seen.has(file.path)) continue;
+    seen.add(file.path);
+    const where =
+      computerMode === "team"
+        ? `文件工具路径 /${path.posix.join(teamBotWorkspaceDirectory(dispatcherId), file.path)}；shell（当前目录是你自己的主目录）路径 ${path.posix.join("..", dispatcherId, file.path)}`
+        : file.path;
+    lines.push(`- ${file.name}（${file.mimeType}，${file.size} 字节）：${where}`);
+  }
+  if (!lines.length) return task;
+  return `${task}\n\n用户上传的附件（已放到电脑上，按下列路径读取）：\n${lines.join("\n")}`;
+}
 
 export function launchBackgroundTask(
   deps: Deps,
