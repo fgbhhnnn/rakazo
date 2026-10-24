@@ -145,6 +145,8 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
       const tools = await asSystem(handles.prisma).event.findMany({
         where: { botId: bot.id, type: "agent.tool.called" },
         select: { payload: true },
+        // Without an order Postgres may return the rows in any order (seen: shell first).
+        orderBy: { seq: "asc" },
       });
       expect(tools).toHaveLength(2);
       expect(JSON.stringify(tools[0])).toContain("write_file");

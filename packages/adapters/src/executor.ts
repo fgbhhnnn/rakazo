@@ -249,7 +249,7 @@ import {
   needsLivePluginSync,
   planLiveConnectionSync,
 } from "./composio-connector.js";
-import { provisionWhenNotBusy } from "./computer-busy-retry.js";
+import { computerBusyWaitMs, provisionWhenNotBusy } from "./computer-busy-retry.js";
 import { BACKGROUND_WORK_LAUNCH, scheduleComputerSleep } from "./computer-idle.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import {
@@ -4284,7 +4284,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               throw new Error("This bot has no computer; hand the work to background_task.");
             const computer = await provisionWhenNotBusy(
               () => provisionComputer(deps, storedComputer.id, context, "bot"),
-              { signal: context.signal },
+              { signal: context.signal, waitMs: computerBusyWaitMs(leaseTarget) },
             );
             screenRelease = { computer, context, keepWarm: false };
             scheduleComputerSleep(deps.jobs, storedComputer.id);

@@ -1,9 +1,19 @@
+import { HIDDEN_BOT_SPAWN_PREFIX } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { ComputerBusyError } from "./computer-lifecycle.js";
 
 /** How long a tool waits for a sibling run to finish booting the shared computer. */
 export const COMPUTER_BUSY_WAIT_MS = 90_000;
 const COMPUTER_BUSY_POLL_MS = 2_000;
+
+/**
+ * How long a run's tool waits for a busy computer. Only background workers wait: they start in
+ * bursts on their dispatcher's one computer. Any other run keeps failing fast, so its job is
+ * requeued and a computer held by another run's live lease is left alone.
+ */
+export function computerBusyWaitMs(bot: { spawnKey?: string | null }): number {
+  return bot.spawnKey?.startsWith(HIDDEN_BOT_SPAWN_PREFIX) ? COMPUTER_BUSY_WAIT_MS : 0;
+}
 
 /**
  * Background workers share their dispatcher's computer. When several start at once, the first

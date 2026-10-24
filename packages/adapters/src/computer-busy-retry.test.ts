@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { provisionWhenNotBusy } from "./computer-busy-retry.js";
+import {
+  COMPUTER_BUSY_WAIT_MS,
+  computerBusyWaitMs,
+  provisionWhenNotBusy,
+} from "./computer-busy-retry.js";
 import { ComputerBusyError } from "./computer-lifecycle.js";
 
 describe("provisionWhenNotBusy", () => {
@@ -45,5 +49,18 @@ describe("provisionWhenNotBusy", () => {
     });
     setTimeout(() => controller.abort(new Error("cancelled")), 5);
     await expect(waiting).rejects.toThrow("cancelled");
+  });
+
+  it("only lets background workers wait; other runs fail fast and requeue", async () => {
+    expect(computerBusyWaitMs({ spawnKey: "bg-worker:bot-1:1" })).toBe(COMPUTER_BUSY_WAIT_MS);
+    expect(computerBusyWaitMs({ spawnKey: null })).toBe(0);
+    expect(computerBusyWaitMs({ spawnKey: "child:bot-1" })).toBe(0);
+    const provision = vi.fn(async () => {
+      throw new ComputerBusyError();
+    });
+    await expect(
+      provisionWhenNotBusy(provision, { pollMs: 5, waitMs: computerBusyWaitMs({}) }),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(provision).toHaveBeenCalledTimes(1);
   });
 });
