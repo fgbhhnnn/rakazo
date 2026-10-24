@@ -326,7 +326,7 @@ test("a message with an attachment centers hover actions on its text bubble", as
   await expect
     .poll(async () => {
       const bubbleBox = await row.getByTestId("message-user-bubble").boundingBox();
-      const fileBox = await row.getByRole("button", { name: /notes\.txt/ }).boundingBox();
+      const fileBox = await row.getByRole("button", { name: "Preview notes.txt" }).boundingBox();
       return bubbleBox && fileBox ? fileBox.y - (bubbleBox.y + bubbleBox.height) : null;
     })
     .toBeGreaterThanOrEqual(6);
