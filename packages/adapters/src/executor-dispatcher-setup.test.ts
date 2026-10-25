@@ -116,6 +116,7 @@ async function runDispatcherTurn(options: {
     },
     attempt: {
       create: vi.fn(async () => ({ id: "attempt-1" })),
+      findMany: vi.fn(async () => []),
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
@@ -182,6 +183,7 @@ async function runDispatcherTurn(options: {
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     spaceBackupModel: { findMany: vi.fn(async () => []) },
+    spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

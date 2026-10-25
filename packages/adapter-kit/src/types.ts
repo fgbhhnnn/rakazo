@@ -427,6 +427,8 @@ export interface AgentRunModel {
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
+  /** Opaque id of the stored connection serving it, so a model can fall back to another account. */
+  connectionId?: string;
   apiKey?: string;
   /** Cloudflare account id stored with a gateway BYOK credential. */
   accountId?: string;
@@ -493,9 +495,13 @@ export interface AgentRunRequest {
   tools: ConnectorTool[];
   model: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */
-  fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id">>;
+  fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id" | "connectionId">>;
   /** Resolve one configured backup lazily so healthy primary turns do no extra auth work. */
-  resolveFallbackModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
+  resolveFallbackModel?: (
+    provider: string,
+    modelId: string,
+    connectionId?: string,
+  ) => Promise<AgentRunModel>;
   /** Persist the selected backup against the active run lease before requesting it. */
   onModelChange?: (provider: string, modelId: string) => Promise<void>;
   /** Resolve an explicitly requested helper model within the active user and space scope. */
@@ -994,6 +1000,8 @@ export type BrowserActStep =
       text: string;
       /** Refuse the step unless the page is on this origin when it is applied. */
       origin?: string;
+      /** Which part of a saved login `text` is; a password is typed only into a password field. */
+      field?: "username" | "password";
     };
 
 export interface BrowserActRequest {

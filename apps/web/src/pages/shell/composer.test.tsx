@@ -194,6 +194,25 @@ describe("Composer", () => {
     expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("Alice");
   });
 
+  it.each([false, true])(
+    "draws an idle Send button with the primary disabled tokens (busy: %s)",
+    (busy) => {
+      renderComposer(vi.fn(), { busy });
+      const send = container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
+      expect(send?.disabled).toBe(true);
+      expect(send?.className.split(" ")).toEqual(
+        expect.arrayContaining([
+          "bg-primary",
+          "hover:bg-primary-hover",
+          "disabled:bg-primary-disabled",
+          "disabled:text-foreground/30",
+          "disabled:opacity-100",
+        ]),
+      );
+      expect(send?.className).not.toContain("disabled:opacity-50");
+    },
+  );
+
   it("clears the draft once the message is sent", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const textarea = renderComposer(onSend);
@@ -610,4 +629,33 @@ it("has no stop button; the user interrupts a busy bot by sending a message", ()
   expect(container?.querySelector('[aria-label="Stop"]')).toBeNull();
   const send = container?.querySelector<HTMLButtonElement>('[aria-label="Send"]');
   expect(send).not.toBeNull();
+});
+
+it("accepts file drops in transparent padding only during file drags", () => {
+  const onAttachmentPick = vi.fn(() => true);
+  renderComposer(async () => true, { onAttachmentPick });
+  const fieldset = container!.querySelector("fieldset")!;
+  const dispatchDrag = (target: EventTarget, type: string, dataTransfer: object) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+    act(() => target.dispatchEvent(event));
+  };
+  dispatchDrag(window, "dragenter", { types: ["text/plain"], items: [] });
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  const files = [new File(["example"], "example.txt", { type: "text/plain" })];
+  const dataTransfer = { types: ["Files"], items: [], files };
+  dispatchDrag(window, "dragenter", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-auto")).toBe(true);
+  dispatchDrag(fieldset, "dragover", dataTransfer);
+  expect(fieldset.dataset.dragging).toBe("files");
+  dispatchDrag(fieldset, "drop", dataTransfer);
+  expect(onAttachmentPick).toHaveBeenCalledExactlyOnceWith(files);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  expect(fieldset.dataset.dragging).toBeUndefined();
+  dispatchDrag(window, "dragenter", dataTransfer);
+  dispatchDrag(window, "dragleave", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  dispatchDrag(window, "dragenter", dataTransfer);
+  dispatchDrag(window, "dragend", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
 });

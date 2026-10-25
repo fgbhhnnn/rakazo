@@ -156,12 +156,15 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await settings.getByTestId("settings-nav-models").click();
   await expect(settings).toHaveAttribute("data-settings-section", "models");
   await expect(settings.getByTestId("model-settings")).toBeVisible();
+  await expect(settings.getByTestId("model-role-main")).toBeVisible();
+  await expect(settings.getByTestId("model-role-approval")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-models");
 
   await settings.getByTestId("settings-nav-memory").click();
   await expect(settings).toHaveAttribute("data-settings-section", "memory");
   await expect(settings.getByTestId("memory-settings")).toBeVisible();
   const memory = settings.getByTestId("memory-settings");
+  await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
   await expect(memory.getByLabel("Provider")).toBeVisible();
   await memory.getByLabel("Provider").selectOption("serenity");
   await expect(memory.getByLabel("MCP endpoint")).toBeVisible();
@@ -190,6 +193,9 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await completeOnboarding(page);
   const settings = await openUserSettings(page, "memory");
   const memory = settings.getByTestId("memory-settings");
+  await expect(memory.getByLabel("Provider")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "memory-default");
+  await memory.getByRole("button", { name: "Connect memory provider", exact: true }).click();
   await memory.getByLabel("Provider").selectOption("honcho");
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("Workspace", { exact: true })).toBeVisible();
@@ -210,8 +216,8 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await userPeer.fill("user-alex");
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
   await captureScreenshot(page, testInfo, "memory-honcho-filled");
-  await memory.getByRole("button", { name: "Local", exact: true }).click();
-  await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("http://localhost:8000");
+  await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
+  await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");
   await memory
     .getByLabel("Base URL", { exact: true })
     .fill("http://honcho-api.railway.internal:8000");
@@ -235,8 +241,8 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await scrollToTop();
   await expect(memory.getByLabel("Organization API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-cloud");
-  await memory.getByRole("button", { name: "Local", exact: true }).click();
-  await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("http://localhost:6767");
+  await memory.getByRole("button", { name: "Self-hosted", exact: true }).click();
+  await expect(memory.getByLabel("Base URL", { exact: true })).toHaveValue("");
   await expect(memory.getByLabel("Instance API key", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-supermemory-local");
 

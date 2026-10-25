@@ -5,6 +5,8 @@ import type {
   BotSection,
   ComputerReleaseReason,
   ComputerStatus,
+  Connection,
+  ConnectionCatalogItem,
   Group,
   Me,
   MessageReaction,
@@ -65,6 +67,7 @@ import {
   toast,
 } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   Menu,
   Monitor,
@@ -107,6 +110,7 @@ import { authClient } from "../lib/auth";
 import { autoReadStillWanted } from "../lib/auto-read";
 import {
   discardPrimedBootstrap,
+  peekBootstrapSeed,
   primeSpaceBootstrap,
   takeInitialBootstrap,
 } from "../lib/bootstrap";
@@ -156,6 +160,7 @@ import {
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { canPrepareImage, prepareImage } from "../lib/prepare-image";
+import { fetchFresh, queryClient, spaceQueries, spaceSeedKey, writeSaved } from "../lib/query";
 import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
 import type { Panel, RightPanelState } from "../lib/right-panel-state";
 import {
@@ -275,6 +280,7 @@ type PendingBrowserNotification = {
 const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 /** Bound Settings leave so a hung voice status refresh cannot block dismissal. */
 const VOICE_STATUS_REFRESH_TIMEOUT_MS = 10_000;
+const NO_AGENT_SKILLS: AgentSkillCatalogEntry[] = [];
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
@@ -298,7 +304,10 @@ export function ShellPage() {
 function SpaceShell() {
   const { t } = useLingui();
   const { botId, groupId } = useParams();
-  const [rpc] = useState(() => createSpaceRpc(selectedSpaceId()));
+  const [shellSpaceId] = useState(selectedSpaceId);
+  const [rpc] = useState(() => createSpaceRpc(shellSpaceId));
+  // A revisited space opens with what it showed last time while its fresh bootstrap loads.
+  const [seed] = useState(() => peekBootstrapSeed(botId));
   const routerNavigate = useNavigate();
   const navigateRef = useRef(routerNavigate);
   navigateRef.current = routerNavigate;
@@ -334,8 +343,9 @@ function SpaceShell() {
   );
   const session = authClient.useSession();
   const userId = session.data?.user.id;
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [bots, setBots] = useState<Bot[]>([]);
+  const queries = spaceQueries(userId ?? null, shellSpaceId);
+  const [groups, setGroups] = useState<Group[]>(seed?.groups ?? []);
+  const [bots, setBots] = useState<Bot[]>(seed?.bots ?? []);
   // A hidden background worker opened from its "后台任务" card: shown, never listed.
   const [hiddenBot, setHiddenBot] = useState<Bot | null>(null);
   const botsRef = useRef(bots);
@@ -343,15 +353,16 @@ function SpaceShell() {
   const botOrderEpochRef = useRef(0);
   const pendingBotOrderRef = useRef<string[] | null>(null);
   const savingBotOrderRef = useRef(false);
-  const [botSections, setBotSections] = useState<BotSection[]>([]);
-  const [spaces, setSpaces] = useState<Space[]>([]);
-  const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
-  const [archivedGroups, setArchivedGroups] = useState<Group[]>([]);
+  const [botSections, setBotSections] = useState<BotSection[]>(seed?.botSections ?? []);
+  const [spaces, setSpaces] = useState<Space[]>(seed?.spaces ?? []);
+  const [archivedBots, setArchivedBots] = useState<Bot[]>(seed?.archivedBots ?? []);
+  const [archivedGroups, setArchivedGroups] = useState<Group[]>(seed?.archivedGroups ?? []);
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   useEffect(() => {
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
   }, [userId]);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
@@ -428,17 +439,13 @@ function SpaceShell() {
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
   const [taughtSkills, setTaughtSkills] = useState<TaughtSkill[]>([]);
   const [taughtSkillsBotId, setTaughtSkillsBotId] = useState<string | null>(null);
-  const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
-  const [footerLogos, setFooterLogos] = useState<Array<{ name: string; logo: string | null }>>([]);
-  const [mentionConnectors, setMentionConnectors] = useState<
-    Array<{
-      id: string;
-      name: string;
-      authStatus: "connected" | "needs_auth";
-      connectionId?: string;
-    }>
-  >([]);
+  const agentSkillsQuery = useQuery(queries.agentSkills.list.queryOptions());
+  const agentSkills = agentSkillsQuery.data ?? NO_AGENT_SKILLS;
+  const setAgentSkills = useCallback(
+    (skills: AgentSkillCatalogEntry[]) =>
+      void writeSaved(queryClient, queries.agentSkills.list.queryKey(), () => skills),
+    [queries],
+  );
   const [teachBusy, setTeachBusy] = useState(false);
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const computerRef = useRef<ComputerStatus | null>(null);
@@ -494,6 +501,14 @@ function SpaceShell() {
   function updateSnapshot(update: (prev: ThreadSnapshot | null) => ThreadSnapshot | null) {
     commitSnapshot(update(snapshotRef.current));
   }
+
+  /**
+   * Each chat's last snapshot, so reopening it paints at once. The live load and
+   * subscription still run and replace it, so it is only ever a first frame.
+   */
+  function cachedThreadKey(target: { botId: string } | { groupId: string }) {
+    return queries.threads.get.queryKey({ input: target });
+  }
   const overlay = readShellOverlay(searchParams);
   // Overlays replace the URL rather than adding history, so opening and closing never race a navigation.
   function setOverlay(next: ShellOverlay) {
@@ -501,10 +516,14 @@ function SpaceShell() {
   }
   const [messagingSurfaceEnabled, setMessagingSurfaceEnabled] = useState(false);
   const [messagingProviders, setMessagingProviders] = useState<string[]>([]);
-  const [memoryProviderConfig, setMemoryProviderConfig] = useState<
-    SpaceMemoryConfig | null | undefined
-  >(undefined);
-  const memoryProviderConfigRevision = useRef(0);
+  const memoryConfigQuery = useQuery(queries.memory.providerConfig.queryOptions());
+  // Undefined while it first loads; null when the space has none or it could not be read.
+  const memoryProviderConfig: SpaceMemoryConfig | null | undefined =
+    memoryConfigQuery.data !== undefined
+      ? memoryConfigQuery.data
+      : memoryConfigQuery.isError
+        ? null
+        : undefined;
   const call = useCallSession();
   /** Calls a bot, or opens voice settings first when no voice is connected. */
   const callBot = (bot: Bot) => {
@@ -520,7 +539,9 @@ function SpaceShell() {
       transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
     });
   };
-  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const voiceStatusKey = queries.voice.status.queryKey();
+  const voiceStatus: VoiceStatus | null =
+    useQuery(queries.voice.status.queryOptions()).data ?? null;
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [dismissedRunErrorIds, setDismissedRunErrorIds] =
     useState<ReadonlySet<string>>(readSeenRunErrorIds);
@@ -604,8 +625,8 @@ function SpaceShell() {
   const booting = bootingBotId !== null && bootingBotId === computer?.botId;
   const bootsInFlight = useRef(new Map<string, symbol>());
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
-  const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
+  const [initialBotsLoaded, setInitialBotsLoaded] = useState(Boolean(seed));
+  const [bootstrapMe, setBootstrapMe] = useState<Me | null | undefined>(seed?.me);
   const callsEnabledRef = useRef(false);
   useEffect(() => {
     callsEnabledRef.current = bootstrapMe?.phoneCallsEnabled === true;
@@ -758,6 +779,9 @@ function SpaceShell() {
     olderCursor: number | null;
   } | null>(null);
   const manuallyUnread = useRef(new Set<string>());
+  const [markedUnread, setMarkedUnread] = useState<{ visit: number; messageId: string } | null>(
+    null,
+  );
   const readVisibleGroups = useRef(new Set<string>());
   // What the user had read up to when the open chat was opened; the "New" divider
   // follows it for the rest of the visit. Each open of a chat is a new visit.
@@ -882,7 +906,10 @@ function SpaceShell() {
   // automatic read answering after the user marked the chat unread can't undo the hold.
   const markBotRead = useCallback(
     async (id: string, stillWanted?: () => boolean) => {
-      if (!stillWanted) manuallyUnread.current.delete(id);
+      if (!stillWanted) {
+        manuallyUnread.current.delete(id);
+        if (readVisit.current.chat === `bot:${id}`) setMarkedUnread(null);
+      }
       const answer = await readInOrder(`bot:${id}`, () =>
         !stillWanted || stillWanted() ? rpc.threads.markRead({ botId: id }) : Promise.resolve(null),
       );
@@ -895,6 +922,7 @@ function SpaceShell() {
   const markBotUnread = useCallback(
     async (id: string, messageId?: string) => {
       manuallyUnread.current.add(id);
+      const visit = readVisit.current.visit;
       try {
         // Through the chat's read queue, so a read already sent lands first and this one wins.
         await readInOrder(`bot:${id}`, () =>
@@ -904,6 +932,7 @@ function SpaceShell() {
         manuallyUnread.current.delete(id);
         throw err;
       }
+      if (messageId && readVisit.current.visit === visit) setMarkedUnread({ visit, messageId });
       updateBotUnread(id, true);
     },
     [readInOrder, updateBotUnread],
@@ -1139,7 +1168,10 @@ function SpaceShell() {
       snapTranscriptToEndAfterFrame();
     }
     void Promise.all([
-      rpc.routines.list({ botId: id }).catch(() => null),
+      // Runs after routine changes too, so an older read in flight is not reused.
+      fetchFresh(queryClient, queries.routines.list.queryOptions({ input: { botId: id } })).catch(
+        () => null,
+      ),
       rpc.skills.list({ botId: id }).catch(() => null),
       refreshComputerScreen(id).catch(() => null),
     ]).then(([routines, skills]) => {
@@ -1227,22 +1259,11 @@ function SpaceShell() {
 
   useEffect(() => {
     let cancelled = false;
-    const providerConfigRevision = memoryProviderConfigRevision.current;
-    void rpc.memory
-      .providerConfig()
-      .then((providerConfig) => {
-        if (!cancelled && memoryProviderConfigRevision.current === providerConfigRevision) {
-          setMemoryProviderConfig(providerConfig);
-        }
-      })
-      .catch(() => {
-        if (!cancelled && memoryProviderConfigRevision.current === providerConfigRevision) {
-          setMemoryProviderConfig(null);
-        }
-      });
     const appliedAtStart = botsRefreshApplied.current;
     void takeInitialBootstrap(botId)
       .then((bootstrap) => {
+        // Kept for the space it belongs to, so switching back to it can paint at once.
+        queryClient.setQueryData(spaceSeedKey(userId ?? null, bootstrap.me.spaceId), bootstrap);
         if (cancelled) return;
         const groupList = bootstrap.groups;
         setBootstrapMe(bootstrap.me);
@@ -1274,7 +1295,8 @@ function SpaceShell() {
           setSpaces(bootstrap.spaces);
           setInitialBotsLoaded(true);
         }
-        if (!groupId && bootstrap.thread) {
+        // A seeded shell already loads its chat live; this older copy must not replace it.
+        if (!seed && !groupId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
           commitSnapshot(bootstrap.thread);
           commitComputer(bootstrap.thread.computer ?? null);
@@ -1307,7 +1329,7 @@ function SpaceShell() {
       })
       .catch(() => {
         if (cancelled) return;
-        setBootstrapMe(null);
+        if (!seed) setBootstrapMe(null);
         void refreshBots(true).catch(() => undefined);
       });
     let refreshTimer: number | undefined;
@@ -1339,33 +1361,11 @@ function SpaceShell() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    void rpc.agentSkills
-      .list()
-      .then((skills) => {
-        if (!cancelled) setAgentSkills(skills);
-      })
-      .catch(() => {
-        if (!cancelled) setAgentSkills([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const refreshAgentSkills = useCallback(() => {
-    void rpc.agentSkills
-      .list()
-      .then(setAgentSkills)
-      .catch(() => undefined);
-  }, []);
+    void queryClient.invalidateQueries({ queryKey: queries.agentSkills.list.queryKey() });
+  }, [queries]);
 
   useEffect(() => {
-    void rpc.voice
-      .status()
-      .then(setVoiceStatus)
-      .catch(() => undefined);
     const unsubSpeech = speaker.subscribe((state) => {
       setSpeakingMessageId(state.status === "idle" ? null : (state.messageId ?? null));
     });
@@ -1437,6 +1437,12 @@ function SpaceShell() {
     }
     expandedHistoryThread.current = null;
     historyEpoch.current += 1;
+    const threadKey = cachedThreadKey({ botId: active.id });
+    const cachedThread = pendingJump
+      ? undefined
+      : (queryClient.getQueryData(threadKey) ??
+        (seed?.thread?.botId === active.id ? seed.thread : undefined));
+    if (cachedThread && snapshotRef.current?.botId !== active.id) commitSnapshot(cachedThread);
     const abort = new AbortController();
     void runThreadSubscription({
       signal: abort.signal,
@@ -1517,6 +1523,8 @@ function SpaceShell() {
     });
     return () => {
       abort.abort();
+      const left = snapshotRef.current;
+      if (left?.botId === active.id && !left.groupId) queryClient.setQueryData(threadKey, left);
     };
   }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent]);
 
@@ -1567,6 +1575,9 @@ function SpaceShell() {
       expandedHistoryThread.current = null;
     }
     historyEpoch.current += 1;
+    const threadKey = cachedThreadKey({ groupId });
+    const cachedThread = pendingJump ? undefined : queryClient.getQueryData(threadKey);
+    if (cachedThread && snapshotRef.current?.groupId !== groupId) commitSnapshot(cachedThread);
     const abort = new AbortController();
     void runThreadSubscription({
       signal: abort.signal,
@@ -1622,6 +1633,8 @@ function SpaceShell() {
       window.removeEventListener("focus", markVisibleGroupRead);
       document.removeEventListener("visibilitychange", markVisibleGroupRead);
       abort.abort();
+      const left = snapshotRef.current;
+      if (left?.groupId === groupId) queryClient.setQueryData(threadKey, left);
     };
   }, [activeGroup?.id, groupId, notifyBrowserForEvent]);
 
@@ -1702,7 +1715,35 @@ function SpaceShell() {
           Boolean(getCallSnapshot()),
         );
       const current = () => decision() !== "abandon";
-      const primed = primeSpaceBootstrap(spaceId, target.botId);
+      // A space visited before opens at once with what it showed then, refreshing behind it.
+      const cached = queryClient.getQueryData(spaceSeedKey(userId ?? null, spaceId));
+      const primed = primeSpaceBootstrap(spaceId, target.botId, cached);
+      const remount = () =>
+        remountShellForSpace(() => {
+          const action = decision();
+          if (action !== "commit") {
+            discardPrimedBootstrap(primed);
+            if (action === "reload") {
+              // Leave the view-transition update before starting a full navigation.
+              window.setTimeout(() => {
+                if (current()) reload();
+              }, 0);
+            }
+            return false;
+          }
+          if (!selectSpace(spaceId)) {
+            discardPrimedBootstrap(primed);
+            return false;
+          }
+          // Playback belongs to the conversation being left.
+          speaker.stop();
+          navigate(path);
+          return true;
+        });
+      if (cached) {
+        remount();
+        return;
+      }
       primed.then(
         () => {
           if (!current()) {
@@ -1715,27 +1756,7 @@ function SpaceShell() {
             reload();
             return;
           }
-          remountShellForSpace(() => {
-            const action = decision();
-            if (action !== "commit") {
-              discardPrimedBootstrap(primed);
-              if (action === "reload") {
-                // Leave the view-transition update before starting a full navigation.
-                window.setTimeout(() => {
-                  if (current()) reload();
-                }, 0);
-              }
-              return false;
-            }
-            if (!selectSpace(spaceId)) {
-              discardPrimedBootstrap(primed);
-              return false;
-            }
-            // Playback belongs to the conversation being left.
-            speaker.stop();
-            navigate(path);
-            return true;
-          });
+          remount();
         },
         () => {
           discardPrimedBootstrap(primed);
@@ -1743,7 +1764,7 @@ function SpaceShell() {
         },
       );
     },
-    [bootstrapMe?.spaceId, navigate],
+    [bootstrapMe?.spaceId, navigate, userId],
   );
   const flushBotOrder = useCallback(async () => {
     if (savingBotOrderRef.current) return;
@@ -1857,6 +1878,7 @@ function SpaceShell() {
 
   async function jumpToSearchHit(hit: SearchHit) {
     setQuery("");
+    setSearchOpen(false);
     setSearchHits([]);
     const params = new URLSearchParams();
     if (hit.messageId) params.set("m", hit.messageId);
@@ -2059,6 +2081,90 @@ function SpaceShell() {
       ? t`You`
       : (resolveTranscriptMemberName(activeReplyTarget.botId) ?? active?.name ?? t`Bot`)
     : undefined;
+  const routineLists = useQueries({
+    queries: bots.map((bot) => queries.routines.list.queryOptions({ input: { botId: bot.id } })),
+    combine: routineListData,
+  });
+  const mentionRoutines = useMemo(
+    () =>
+      bots.flatMap((bot, index) =>
+        (routineLists[index] ?? []).map((routine) => ({ ...routine, botName: bot.name })),
+      ),
+    [bots, routineLists],
+  );
+  const composerConnections = useQuery({
+    queryKey: [...queries.connections.catalog.queryKey({ input: {} }), "with-connections"],
+    // The catalog call reconciles connection rows, so list them after it.
+    queryFn: async () => {
+      const catalog = await rpc.connections.catalog({}).catch(() => null);
+      const connections = await rpc.connections.list().catch(() => null);
+      return { catalog, connections };
+    },
+    enabled: initialBotsLoaded,
+  });
+  // Apps can change in the integrations overlay; leaving it refreshes what the composer offers.
+  const integrationsOpen = overlay?.kind === "integrations";
+  const wasIntegrationsOpen = useRef(integrationsOpen);
+  useEffect(() => {
+    if (wasIntegrationsOpen.current && !integrationsOpen) {
+      void queryClient.invalidateQueries({ queryKey: queries.connections.key() });
+    }
+    wasIntegrationsOpen.current = integrationsOpen;
+  }, [integrationsOpen, queries]);
+  // A changed roster refreshes connection data too, as it did before it was cached.
+  const mentionBotsKey = useMemo(
+    () => bots.map((bot) => `${bot.id}:${bot.name}`).join(","),
+    [bots],
+  );
+  const connectionsRoster = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialBotsLoaded) return;
+    const previous = connectionsRoster.current;
+    connectionsRoster.current = mentionBotsKey;
+    if (previous !== null && previous !== mentionBotsKey) void composerConnections.refetch();
+  }, [initialBotsLoaded, mentionBotsKey]);
+  const [footerLogos, setFooterLogos] = useState(() =>
+    connectedAppMarksOf(composerConnections.data),
+  );
+  useEffect(() => {
+    if (composerConnections.data?.catalog && composerConnections.data.connections) {
+      setFooterLogos(connectedAppMarksOf(composerConnections.data));
+    }
+  }, [composerConnections.data]);
+  const mentionConnectors = useMemo(() => {
+    const { catalog, connections } = composerConnections.data ?? {};
+    if (bots.length === 0) return [];
+    const connected = connections?.filter((row) => row.status === "connected") ?? [];
+    const options: Array<{
+      id: string;
+      name: string;
+      authStatus: "connected" | "needs_auth";
+      connectionId?: string;
+    }> = connected.map((row) => ({
+      id: row.id,
+      name: row.displayName,
+      authStatus: "connected" as const,
+      connectionId: row.id,
+    }));
+    for (const item of catalog ?? []) {
+      if (item.connected || item.noAuth) continue;
+      if (
+        connected.some(
+          (row) =>
+            row.provider.toLowerCase() === item.slug.toLowerCase() ||
+            row.displayName.toLowerCase() === item.name.toLowerCase(),
+        )
+      ) {
+        continue;
+      }
+      options.push({
+        id: `catalog:${item.connectorId}:${item.slug}`,
+        name: item.name,
+        authStatus: "needs_auth",
+      });
+    }
+    return options;
+  }, [bots.length, composerConnections.data]);
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
@@ -2091,81 +2197,6 @@ function SpaceShell() {
   loadOlderMessagesRef.current = loadOlderMessages;
   const jumpToMessageRef = useRef(jumpToMessage);
   jumpToMessageRef.current = jumpToMessage;
-
-  const mentionBotsKey = useMemo(
-    () => bots.map((bot) => `${bot.id}:${bot.name}`).join(","),
-    [bots],
-  );
-  const botsForMentionsRef = useRef(bots);
-  botsForMentionsRef.current = bots;
-
-  useEffect(() => {
-    const bots = botsForMentionsRef.current;
-    if (!initialBotsLoaded || bots.length === 0) {
-      setMentionRoutines([]);
-      setMentionConnectors([]);
-      if (!initialBotsLoaded) return;
-    }
-    let cancelled = false;
-    const botNameById = new Map(bots.map((bot) => [bot.id, bot.name]));
-    void Promise.all(
-      bots.map((bot) =>
-        rpc.routines
-          .list({ botId: bot.id })
-          .then((rows) =>
-            rows.map((routine) => ({
-              ...routine,
-              botName: botNameById.get(bot.id) ?? bot.name,
-            })),
-          )
-          .catch(() => [] as Array<Routine & { botName?: string }>),
-      ),
-    ).then((lists) => {
-      if (!cancelled) setMentionRoutines(lists.flat());
-    });
-    // The catalog call reconciles connection rows, so list them after it.
-    const catalogRequest = rpc.connections.catalog({}).catch(() => null);
-    void Promise.all([
-      catalogRequest.then(() => rpc.connections.list().catch(() => null)),
-      catalogRequest,
-    ]).then(([connections, catalog]) => {
-      if (cancelled) return;
-      const connected = connections?.filter((row) => row.status === "connected") ?? [];
-      if (catalog && connections) setFooterLogos(connectedAppMarks(catalog, connections));
-      const options: Array<{
-        id: string;
-        name: string;
-        authStatus: "connected" | "needs_auth";
-        connectionId?: string;
-      }> = connected.map((row) => ({
-        id: row.id,
-        name: row.displayName,
-        authStatus: "connected" as const,
-        connectionId: row.id,
-      }));
-      for (const item of catalog ?? []) {
-        if (item.connected || item.noAuth) continue;
-        if (
-          connected.some(
-            (row) =>
-              row.provider.toLowerCase() === item.slug.toLowerCase() ||
-              row.displayName.toLowerCase() === item.name.toLowerCase(),
-          )
-        ) {
-          continue;
-        }
-        options.push({
-          id: `catalog:${item.connectorId}:${item.slug}`,
-          name: item.name,
-          authStatus: "needs_auth",
-        });
-      }
-      setMentionConnectors(bots.length ? options : []);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [initialBotsLoaded, mentionBotsKey]);
 
   useLayoutEffect(() => {
     if (initialBotsLoaded) {
@@ -3045,7 +3076,10 @@ function SpaceShell() {
         } else {
           const groupId = contextGroup!.id;
           if (unread) manuallyUnread.current.add(groupId);
-          else manuallyUnread.current.delete(groupId);
+          else {
+            manuallyUnread.current.delete(groupId);
+            if (readVisit.current.chat === `group:${groupId}`) setMarkedUnread(null);
+          }
           const request = readInOrder(`group:${groupId}`, () =>
             unread ? rpc.threads.markUnread({ groupId }) : rpc.threads.markRead({ groupId }),
           );
@@ -3224,6 +3258,25 @@ function SpaceShell() {
             if (miniSidebar) setBotsSidebarCollapsedPref(false);
             toggleActivityMode();
           }}
+          searchOpen={searchOpen && !miniSidebar}
+          onSearch={
+            activityMode && !miniSidebar
+              ? undefined
+              : () => {
+                  if (searchOpen && !miniSidebar) {
+                    setQuery("");
+                    setSearchOpen(false);
+                    return;
+                  }
+                  if (miniSidebar) setBotsSidebarCollapsedPref(false);
+                  setSearchOpen(true);
+                  requestAnimationFrame(() =>
+                    document
+                      .querySelector<HTMLInputElement>('input[name="sidebar-search"]')
+                      ?.focus(),
+                  );
+                }
+          }
           setBotsSidebarCollapsedPref={setBotsSidebarCollapsedPref}
           bots={bots}
           setMobileSidebarOpen={setMobileSidebarOpen}
@@ -3233,24 +3286,7 @@ function SpaceShell() {
           setCreateBotOpen={setCreateBotOpen}
           setPickerInfoTopic={setPickerInfoTopic}
         />
-        {miniSidebar ? (
-          <IconTooltip label={t`Search`}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t`Search`}
-              className="mx-auto mb-1"
-              onClick={() => {
-                setBotsSidebarCollapsedPref(false);
-                requestAnimationFrame(() =>
-                  document.querySelector<HTMLInputElement>('input[name="sidebar-search"]')?.focus(),
-                );
-              }}
-            >
-              <Search size={16} aria-hidden="true" />
-            </Button>
-          </IconTooltip>
-        ) : (
+        {miniSidebar || !(activityMode || searchOpen || query) ? null : (
           <InputGroup
             data-testid="sidebar-search"
             className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
@@ -3265,9 +3301,13 @@ function SpaceShell() {
                 else setQuery(e.target.value);
               }}
               onKeyDown={(event) => {
-                if (activityMode && event.key === "Escape") {
+                if (event.key !== "Escape") return;
+                if (activityMode) {
                   setActivityFilters({ ...activityFilters, query: "" });
+                  return;
                 }
+                setQuery("");
+                setSearchOpen(false);
               }}
               placeholder={activityMode ? t`Search runs` : t`Search`}
               aria-label={activityMode ? t`Search runs` : t`Search`}
@@ -3530,6 +3570,12 @@ function SpaceShell() {
               scrollRequest={scrollRequest}
               onScrollRequestHandled={clearScrollRequest}
               artifactTarget={transcriptArtifactTarget}
+              markedUnreadMessageId={
+                markedUnread?.visit === readVisit.current.visit &&
+                manuallyUnread.current.has(groupId ?? active?.id ?? "")
+                  ? markedUnread.messageId
+                  : undefined
+              }
               transcript={transcript}
               showToolActivity={showToolActivity}
               olderCursor={activeSnapshot?.olderCursor ?? null}
@@ -3560,16 +3606,20 @@ function SpaceShell() {
                 // The next open of this chat starts the New divider at this message.
                 if (groupId) {
                   manuallyUnread.current.add(groupId);
+                  const visit = readVisit.current.visit;
                   void readInOrder(`group:${groupId}`, () =>
                     rpc.threads.markUnread({ groupId, messageId: message.id }),
                   )
-                    .then(() =>
+                    .then(() => {
+                      if (readVisit.current.visit === visit) {
+                        setMarkedUnread({ visit, messageId: message.id });
+                      }
                       setGroups((current) =>
                         current.map((group) =>
                           group.id === groupId ? { ...group, unread: true } : group,
                         ),
-                      ),
-                    )
+                      );
+                    })
                     .catch(() => manuallyUnread.current.delete(groupId));
                 } else if (active) {
                   void markBotUnread(active.id, message.id).catch(() => undefined);
@@ -3596,61 +3646,64 @@ function SpaceShell() {
             />
           )}
         </div>
-        {recordingSkill ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-destructive">
-            <Trans>Teaching in progress. Stop teaching before sending a new message.</Trans>
-          </div>
-        ) : null}
         {active || activeGroup ? (
-          <Composer
-            key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
-            draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
-            enterToSend={enterToSend}
-            activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
-            busy={composerRunning}
-            disabled={Boolean(recordingSkill)}
-            pendingAttachments={activePendingAttachments}
-            attachmentNotice={attachmentNotice}
-            sendError={sendError}
-            onOpenModels={() => {
-              if (active && !inGroup) {
-                setPanel("settings");
-                setModelFocusRequest(Date.now());
-              } else openSettings("models");
-            }}
-            runError={displayedRunError}
-            runErrorId={displayedRunErrorId}
-            onRunErrorPresented={handleRunErrorPresented}
-            onDismissError={dismissComposerError}
-            sending={sending}
-            fileInputRef={fileInputRef}
-            onAttachmentPick={onAttachmentPick}
-            onRemoveAttachment={removeAttachment}
-            onSend={sendMessage}
-            phoneCallsEnabled={bootstrapMe?.phoneCallsEnabled === true}
-            dictationTranscribe={voiceStatus ? Boolean(voiceStatus.transcribe) : undefined}
-            artifactTarget={transcriptArtifactTarget}
-            replyTarget={activeReplyTarget}
-            replyQuote={activeReplyQuote}
-            replyTargetName={replyTargetName}
-            onClearReply={clearReply}
-            mentionTargets={composerMentionTargets}
-            agentSkills={agentSkills}
-            onSlashOpen={refreshAgentSkills}
-            onSlashAction={(action) => {
-              if (action === "chat-settings") {
-                setPanel(inGroup ? "group-settings" : "settings");
-                return;
-              }
-              if (action === "settings-general") {
-                openSettings("general");
-                return;
-              }
-              if (action === "settings-usage") {
-                openSettings("usage");
-              }
-            }}
-          />
+          // Let messages continue behind the composer's rounded top corners.
+          <div className="pointer-events-none relative z-30 -mt-7">
+            {recordingSkill ? (
+              <div className="pointer-events-auto bg-background px-6 pb-2 text-center text-[13px] text-destructive">
+                <Trans>Teaching in progress. Stop teaching before sending a new message.</Trans>
+              </div>
+            ) : null}
+            <Composer
+              key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+              draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+              enterToSend={enterToSend}
+              activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
+              busy={composerRunning}
+              disabled={Boolean(recordingSkill)}
+              pendingAttachments={activePendingAttachments}
+              attachmentNotice={attachmentNotice}
+              sendError={sendError}
+              onOpenModels={() => {
+                if (active && !inGroup) {
+                  setPanel("settings");
+                  setModelFocusRequest(Date.now());
+                } else openSettings("models");
+              }}
+              runError={displayedRunError}
+              runErrorId={displayedRunErrorId}
+              onRunErrorPresented={handleRunErrorPresented}
+              onDismissError={dismissComposerError}
+              sending={sending}
+              fileInputRef={fileInputRef}
+              onAttachmentPick={onAttachmentPick}
+              onRemoveAttachment={removeAttachment}
+              onSend={sendMessage}
+              phoneCallsEnabled={bootstrapMe?.phoneCallsEnabled === true}
+              dictationTranscribe={voiceStatus ? Boolean(voiceStatus.transcribe) : undefined}
+              artifactTarget={transcriptArtifactTarget}
+              replyTarget={activeReplyTarget}
+              replyQuote={activeReplyQuote}
+              replyTargetName={replyTargetName}
+              onClearReply={clearReply}
+              mentionTargets={composerMentionTargets}
+              agentSkills={agentSkills}
+              onSlashOpen={refreshAgentSkills}
+              onSlashAction={(action) => {
+                if (action === "chat-settings") {
+                  setPanel(inGroup ? "group-settings" : "settings");
+                  return;
+                }
+                if (action === "settings-general") {
+                  openSettings("general");
+                  return;
+                }
+                if (action === "settings-usage") {
+                  openSettings("usage");
+                }
+              }}
+            />
+          </div>
         ) : null}
       </main>
 
@@ -4132,17 +4185,17 @@ function SpaceShell() {
             }}
             memoryConfig={memoryProviderConfig}
             onMemoryConfigChange={(config) => {
-              memoryProviderConfigRevision.current += 1;
-              setMemoryProviderConfig(config);
+              void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);
             }}
             onVoiceStatusMaybeChanged={async () => {
               try {
-                setVoiceStatus(
+                queryClient.setQueryData(
+                  voiceStatusKey,
                   await Promise.race([rpc.voice.status(), voiceStatusRefreshTimeout()]),
                 );
               } catch {
                 // Prefer reopening Voice settings over starting a call with stale readiness.
-                setVoiceStatus(null);
+                void queryClient.resetQueries({ queryKey: voiceStatusKey });
               }
             }}
             onClose={() => setOverlay(null)}
@@ -4195,6 +4248,16 @@ function SpaceShell() {
   );
 
   return shell;
+}
+
+function routineListData(results: Array<{ data?: Routine[] }>) {
+  return results.map((result) => result.data);
+}
+
+function connectedAppMarksOf(
+  data: { catalog: ConnectionCatalogItem[] | null; connections: Connection[] | null } | undefined,
+) {
+  return data?.catalog && data.connections ? connectedAppMarks(data.catalog, data.connections) : [];
 }
 
 function firstThreadRoute(

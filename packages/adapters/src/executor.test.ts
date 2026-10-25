@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { BACKGROUND_DISPATCH_GUIDANCE, STEERING_REPLY_GUIDANCE } from "./dispatcher-mode.js";
 import {
   appendToolCompletionAudit,
-  createRunExecutor,
+  createRunExecutor as createExecutor,
   createRunWorkspaceCheckpoint,
   dockerComputerToolInstruction,
   isTerminalModelSetupError,
@@ -38,7 +38,11 @@ import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./mo
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
 import { modelsForRequest } from "./pi-runtime.js";
+import { withMainRole } from "./testing/model-roles.js";
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
+
+const createRunExecutor = (deps: Parameters<typeof createExecutor>[0]) =>
+  createExecutor({ ...deps, prisma: withMainRole(deps.prisma) });
 
 describe("bot tool permissions", () => {
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
@@ -3743,7 +3747,7 @@ description: Prepare standup notes
     const findFirst = vi.fn(
       async (args: { where: { credential?: { provider?: string }; isDefault?: boolean } }) => {
         if (args.where.credential?.provider === "xai") return null;
-        if (args.where.isDefault) {
+        if (args.where.isDefault || args.where.credential?.provider === "openrouter") {
           return modelPreference({
             provider: "openrouter",
             secretId: "secret-or",
@@ -3857,8 +3861,7 @@ description: Prepare standup notes
   });
 
   it("keeps per-bot thinking when using the Space default model", async () => {
-    const findFirst = vi.fn(async (args: { where: { isDefault?: boolean } }) => {
-      if (!args.where.isDefault) return null;
+    const findFirst = vi.fn(async () => {
       return modelPreference({
         provider: "openrouter",
         secretId: "secret-or",

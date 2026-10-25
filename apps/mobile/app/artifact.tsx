@@ -33,6 +33,7 @@ import { t, useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 type PreviewContent =
@@ -286,6 +287,7 @@ function ArtifactPreview({
   imageLabel: string;
   onOpenImage: (() => void) | null;
 }) {
+  const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const tokens = mobileTokens();
   const colorScheme = useResolvedAppearance();
@@ -299,6 +301,7 @@ function ArtifactPreview({
   if (preview.kind === "markdown") {
     return (
       <ScrollView
+        style={sideInsets}
         contentContainerStyle={styles.markdownScroll}
         contentInsetAdjustmentBehavior="automatic"
       >

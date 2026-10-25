@@ -82,7 +82,18 @@ export async function sharedModelScope<S extends Scope>(
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     select: { spaceId: true },
   });
-  return owner ? { userId: ownerUserId, spaceId: owner.spaceId } : scope;
+  if (owner) return { userId: ownerUserId, spaceId: owner.spaceId };
+  // An owner whose main model has no default connection (one run on deployment credits)
+  // still chose it in the space their main model role lives in.
+  const role =
+    typeof prisma.spaceModelRoleChoice?.findFirst === "function"
+      ? await prisma.spaceModelRoleChoice.findFirst({
+          where: { userId: ownerUserId, role: "main", position: 0 },
+          orderBy: { spaceId: "asc" },
+          select: { spaceId: true },
+        })
+      : null;
+  return role ? { userId: ownerUserId, spaceId: role.spaceId } : scope;
 }
 
 /** Same as sharedModelScope, for the voice provider. */

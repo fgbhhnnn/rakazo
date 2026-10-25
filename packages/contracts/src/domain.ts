@@ -1219,27 +1219,39 @@ export const ModelBackupChoiceSchema = z.object({
   modelId: z.string().trim().min(1).max(512),
 });
 export type ModelBackupChoice = z.infer<typeof ModelBackupChoiceSchema>;
-export const ModelBackupListSchema = z
-  .array(ModelBackupChoiceSchema)
-  .max(MAX_MODEL_BACKUPS)
-  .superRefine((choices, ctx) => {
-    const seen = new Set<string>();
-    for (const [index, choice] of choices.entries()) {
-      const key = JSON.stringify([choice.provider, choice.modelId]);
-      if (seen.has(key)) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Backup models must be unique",
-          path: [index],
-        });
+/** At most MAX_MODEL_BACKUPS choices, each model once. */
+export function modelChoiceListSchema<T extends z.ZodType<ModelBackupChoice>>(choice: T) {
+  return z
+    .array(choice)
+    .max(MAX_MODEL_BACKUPS)
+    .superRefine((choices, ctx) => {
+      const seen = new Set<string>();
+      for (const [index, choice] of choices.entries()) {
+        // The same model may run on two connections, so a pinned connection is part of it.
+        const credentialId = (choice as { credentialId?: string | null }).credentialId ?? null;
+        const key = JSON.stringify([choice.provider, choice.modelId, credentialId]);
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Backup models must be unique",
+            path: [index],
+          });
+        }
+        seen.add(key);
       }
-      seen.add(key);
-    }
-  });
+    });
+}
+export const ModelBackupListSchema = modelChoiceListSchema(ModelBackupChoiceSchema);
 
 export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
 
 export const MAX_ENABLED_MODEL_IDS = 500;
+
+/** An existing connection's id, null for a new one, or omitted for the provider's newest. */
+export const ModelConnectionTargetSchema = Id.nullable().optional();
+
+export const MAX_MODEL_CONNECTION_LABEL = 80;
+export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL_CONNECTION_LABEL);
 
 export const ModelConnectInputSchema = z
   .object({
@@ -1251,9 +1263,16 @@ export const ModelConnectInputSchema = z
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     label: z.string().optional(),
+    /**
+     * The connection this save updates; null adds another connection for the provider.
+     * Older apps omit it and update the provider's newest connection.
+     */
+    credentialId: ModelConnectionTargetSchema,
     modelId: z.string().optional(),
     reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+    /** False keeps the space's current default model; omitted means true. */
+    makeDefault: z.boolean().optional(),
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
     supportsImages: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
@@ -1357,8 +1376,12 @@ export const SpaceMemoryConfigSchema = z.object({
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
 export const ModelCatalogEntrySchema = z.object({
+  /** Omitted by older servers and ordinary chat connections. */
+  protocol: z.enum(["chat", "decisions"]).optional(),
   /** Preselected for a new connection when there is no saved model choice. */
   recommended: z.boolean().optional(),
+  /** The provider's connections that can run it, when not all of them can. */
+  credentialIds: z.array(z.string()).optional(),
   /** Available through the deployment without a personal credential. */
   managed: z.boolean().optional(),
   provider: z.string(),

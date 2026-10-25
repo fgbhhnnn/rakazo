@@ -29,14 +29,23 @@ import type { PrismaClient } from "@rakazo/db";
 import { AnswerTooLongError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withMainRole } from "../../../packages/adapters/src/testing/model-roles.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
-  createRouter,
-  enqueueBotIntroRun,
+  createRouter as createRouterWith,
+  enqueueBotIntroRun as enqueueBotIntroRunWith,
   HEARTBEAT_MS,
   SESSION_RECHECK_MS,
 } from "./router.js";
+
+const withRoleDeps = (deps: RouterDeps) => {
+  withMainRole(deps.prisma);
+  return deps;
+};
+const createRouter = (deps: RouterDeps) => createRouterWith(withRoleDeps(deps));
+const enqueueBotIntroRun = (deps: RouterDeps, ...rest: [Actor, Bot]) =>
+  enqueueBotIntroRunWith(withRoleDeps(deps), ...rest);
 
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
@@ -3667,12 +3676,24 @@ describe("model credential persistence", () => {
     isDeploymentOwner: true,
   } satisfies Actor;
 
-  function persistDeps(options?: { envDefaultModel?: string }) {
-    const upsert = vi.fn().mockResolvedValue({ id: "preference" });
+  function persistDeps(options?: {
+    envDefaultModel?: string;
+    deploymentModelConfigured?: boolean;
+  }) {
+    const upsert = vi.fn(
+      async ({
+        create,
+        update,
+      }: {
+        create: { isDefault: boolean };
+        update: { isDefault?: boolean };
+      }) => ({ id: "preference", isDefault: update.isDefault ?? create.isDefault }),
+    );
     const finish = vi.fn();
     // Connect loads any previous credential on the root client before the write transaction.
     const userModelCredential = {
       findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockImplementation(async ({ data }: { data: { provider: string } }) => ({
         id: "cred-1",
         userId: actor.userId,
@@ -3698,6 +3719,7 @@ describe("model credential persistence", () => {
       prisma: {
         userModelCredential,
         spaceModelPreference,
+        deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
         $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
       },
       secrets: {
@@ -3713,6 +3735,7 @@ describe("model credential persistence", () => {
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
         agentRuntime: "pi",
+        deploymentModelConfigured: options?.deploymentModelConfigured ?? false,
       },
     } as unknown as RouterDeps;
     return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
@@ -3844,15 +3867,17 @@ describe("model credential persistence", () => {
     // The fixture shares this client with the write transaction.
     const transaction = deps.prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
     transaction.mockImplementation(async (fn) =>
-      fn({
-        userModelCredential: deps.prisma.userModelCredential,
-        userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
-        spaceModelPreference: deps.prisma.spaceModelPreference,
-        secret: {
-          create: vi.fn().mockResolvedValue({ id: "new-secret" }),
-          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
-        },
-      }),
+      fn(
+        withMainRole({
+          userModelCredential: deps.prisma.userModelCredential,
+          userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
+          spaceModelPreference: deps.prisma.spaceModelPreference,
+          secret: {
+            create: vi.fn().mockResolvedValue({ id: "new-secret" }),
+            deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
+        }),
+      ),
     );
     Object.assign(deps.prisma, {
       secret: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -3867,12 +3892,136 @@ describe("model credential persistence", () => {
     expect(response.status).toBe(200);
     expect(update).toHaveBeenCalledWith({
       where: { id: existing.id },
-      data: { label: "azure", secretId: "new-secret" },
+      // An older app's connect replaces the provider's connection and keeps its name.
+      data: { secretId: "new-secret" },
     });
     expect(deps.prisma.userModelCredential.create).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       json: { id: existing.id, provider: "azure" },
     });
+  });
+
+  it("keeps another connection as the space default when makeDefault is false", async () => {
+    const { upsert, deps, handler } = persistDeps();
+    const preferences = deps.prisma.spaceModelPreference as unknown as {
+      findFirst: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
+    };
+    preferences.findFirst.mockImplementation(
+      async ({ where }: { where: { credentialId?: unknown; isDefault?: true } }) =>
+        where.isDefault && typeof where.credentialId === "object" ? { id: "other-default" } : null,
+    );
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "fallback-model",
+      makeDefault: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(preferences.updateMany).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ modelId: "fallback-model", isDefault: false }),
+        update: expect.not.objectContaining({ isDefault: true }),
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({ json: { isDefault: false } });
+  });
+
+  it("keeps a working deployment model when a fallback connection is added", async () => {
+    const { upsert, handler } = persistDeps({ deploymentModelConfigured: true });
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "fallback-model",
+      makeDefault: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ isDefault: false }) }),
+    );
+    await expect(response.json()).resolves.toMatchObject({ json: { isDefault: false } });
+  });
+
+  it("leaves the main model's choice alone when its own connection is saved for another role", async () => {
+    const { upsert, deps, handler } = persistDeps({ deploymentModelConfigured: true });
+    const preferences = deps.prisma.spaceModelPreference as unknown as {
+      findFirst: ReturnType<typeof vi.fn>;
+    };
+    // This connection already runs chat.
+    preferences.findFirst.mockImplementation(
+      async ({ where }: { where: { credentialId?: unknown } }) =>
+        typeof where.credentialId === "string"
+          ? { id: "main", isDefault: true, modelId: "chat-model" }
+          : null,
+    );
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "approval-model",
+      makeDefault: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("changes no model role for a first connection when makeDefault is false", async () => {
+    const { upsert, deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "only-model",
+      makeDefault: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ isDefault: false }) }),
+    );
+    const roles = deps.prisma.spaceModelRoleChoice as unknown as {
+      createMany: ReturnType<typeof vi.fn>;
+    };
+    expect(roles.createMany).not.toHaveBeenCalled();
+  });
+
+  it("makes the connection's model the main model when asked, through the role table", async () => {
+    const { upsert, deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "only-model",
+      makeDefault: true,
+    });
+
+    expect(response.status).toBe(200);
+    const roles = deps.prisma.spaceModelRoleChoice as unknown as {
+      createMany: ReturnType<typeof vi.fn>;
+    };
+    expect(roles.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          role: "main",
+          position: 0,
+          provider: "test-provider",
+          modelId: "only-model",
+        }),
+      ],
+    });
+    // The previous release still reads it from the default preference.
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ modelId: "only-model", isDefault: true }),
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({ json: { isDefault: true } });
   });
 
   it("does not persist a missing model id as the string null", async () => {
@@ -4035,6 +4184,156 @@ describe("model credential persistence", () => {
     );
   });
 
+  it("adds another connection when the save names none, numbering its name", async () => {
+    const { deps, handler } = persistDeps();
+    const existing = {
+      id: "cred-personal",
+      userId: actor.userId,
+      provider: "anthropic",
+      label: "Anthropic",
+      secretId: "secret-personal",
+    };
+    const credentials = deps.prisma.userModelCredential as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    credentials.findFirst!.mockResolvedValue(existing);
+    credentials.findMany!.mockResolvedValue([{ label: "Anthropic" }]);
+    credentials.update = vi.fn();
+
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+      label: "Anthropic",
+      credentialId: null,
+      makeDefault: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(credentials.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ provider: "anthropic", label: "Anthropic 2" }),
+    });
+    expect(credentials.update).not.toHaveBeenCalled();
+  });
+
+  it("replaces only the connection a save names", async () => {
+    const { deps, handler } = persistDeps();
+    const work = {
+      id: "cred-work",
+      userId: actor.userId,
+      provider: "anthropic",
+      label: "Work",
+      secretId: "secret-work",
+    };
+    const credentials = deps.prisma.userModelCredential as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    credentials.findFirst!.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id === work.id ? work : null,
+    );
+    credentials.update = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...work,
+      ...data,
+    }));
+    credentials.count = vi.fn().mockResolvedValue(0);
+    Object.assign(deps.prisma, { secret: { findFirst: vi.fn().mockResolvedValue(null) } });
+    const transaction = deps.prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
+    transaction.mockImplementation(async (fn) =>
+      fn(
+        withMainRole({
+          userModelCredential: credentials,
+          userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
+          spaceModelPreference: deps.prisma.spaceModelPreference,
+          secret: {
+            create: vi.fn().mockResolvedValue({ id: "new-secret" }),
+            deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
+        }),
+      ),
+    );
+
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+      credentialId: work.id,
+      makeDefault: false,
+    });
+    expect(response.status).toBe(200);
+    expect(credentials.update).toHaveBeenCalledWith({
+      where: { id: work.id },
+      data: { secretId: "new-secret" },
+    });
+    expect(credentials.create).not.toHaveBeenCalled();
+
+    const missing = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+      credentialId: "cred-removed",
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it("binds an older app's sign-in to the provider's newest connection when it begins", async () => {
+    const { deps, handler } = persistDeps();
+    const begin = vi.fn(async () => ({
+      loginId: "login-1",
+      provider: "openai-codex",
+      mode: "auth-url" as const,
+      verificationUri: "https://auth.example.com/authorize",
+      expiresInSeconds: 60,
+    }));
+    Object.assign(deps.oauthLogins, { begin });
+    const credentials = deps.prisma.userModelCredential as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    credentials.findFirst!.mockResolvedValue({
+      id: "cred-newest",
+      userId: actor.userId,
+      provider: "openai-codex",
+      label: "ChatGPT",
+      secretId: "secret-newest",
+    });
+
+    expect((await call(handler, "models/beginOAuth", { provider: "openai-codex" })).status).toBe(
+      200,
+    );
+    expect(begin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ credentialId: "cred-newest" }),
+    );
+
+    // A new account stays a new account.
+    await call(handler, "models/beginOAuth", { provider: "openai-codex", credentialId: null });
+    expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
+  });
+
+  it("names a second subscription account by the email it signed in with", async () => {
+    const { finish, deps, handler } = persistDeps();
+    const access = `fake.${Buffer.from(
+      JSON.stringify({ "https://api.openai.com/profile": { email: "work@example.com" } }),
+    ).toString("base64url")}.fake`;
+    finish.mockImplementation(async (_loginId, _actor, persist) => ({
+      status: "connected" as const,
+      value: await persist({
+        status: "connected",
+        provider: "openai-codex",
+        credentialId: null,
+        credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
+        signal: new AbortController().signal,
+      }),
+    }));
+
+    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+
+    expect(response.status).toBe(200);
+    expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: "openai-codex", label: "work@example.com" }),
+      }),
+    );
+  });
+
   it.each([
     ["github-copilot", "GitHub Copilot"],
     ["openai-codex", "OpenAI Codex"],
@@ -4064,6 +4363,107 @@ describe("model credential persistence", () => {
         data: expect.objectContaining({ provider, label }),
       }),
     );
+  });
+});
+
+describe("model disconnect", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const connection = (id: string) => ({
+    id,
+    userId: actor.userId,
+    provider: "openai-codex",
+    label: id,
+    secretId: `${id}-secret`,
+  });
+
+  function disconnectDeps() {
+    const connections = [connection("personal"), connection("work")];
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ bypass: null }]),
+      spaceModelRoleChoice: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      spaceBackupModel: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      spaceModelPreference: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      userModelCredential: {
+        findMany: vi.fn(async () => connections),
+        deleteMany: vi.fn(async () => ({ count: 1 })),
+        count: vi.fn(async () => 0),
+      },
+      userVoiceCredential: { count: vi.fn(async () => 0) },
+      secret: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+    };
+    const cancelProvider = vi.fn(async () => undefined);
+    const deps = {
+      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      oauthLogins: { cancelProvider },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        agentRuntime: "pi",
+      },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const call = async (body: unknown) =>
+      (
+        await handler.handle(
+          new Request("http://127.0.0.1/rpc/models/disconnect", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json: body }),
+          }),
+          { prefix: "/rpc", context: { actor } },
+        )
+      ).response;
+    return { tx, cancelProvider, call };
+  }
+
+  it("removes one connection and its rows, keeping the other account's", async () => {
+    const { tx, cancelProvider, call } = disconnectDeps();
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+    expect(response.status).toBe(200);
+    expect(cancelProvider).toHaveBeenCalledWith({
+      userId: actor.userId,
+      provider: "openai-codex",
+      credentialId: "work",
+    });
+    expect(tx.spaceModelRoleChoice.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: actor.userId,
+        provider: "openai-codex",
+        OR: [{ credentialId: { in: ["work"] } }],
+      },
+    });
+    // The previous release's fallbacks still run on the remaining connection.
+    expect(tx.spaceBackupModel.deleteMany).not.toHaveBeenCalled();
+    expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, id: { in: ["work"] } },
+    });
+    expect(tx.secret.deleteMany).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "work-secret" },
+    });
+  });
+
+  it("removes every connection of the provider for an app that names none", async () => {
+    const { tx, call } = disconnectDeps();
+    expect((await call({ provider: "openai-codex" })).status).toBe(200);
+    expect(tx.spaceModelRoleChoice.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: actor.userId,
+        provider: "openai-codex",
+        OR: [{ credentialId: { in: ["personal", "work"] } }, { credentialId: null }],
+      },
+    });
+    expect(tx.spaceBackupModel.deleteMany).toHaveBeenCalled();
+    expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, id: { in: ["personal", "work"] } },
+    });
   });
 });
 
@@ -5861,6 +6261,8 @@ describe("openai-compatible enabled models", () => {
     archived?: boolean;
     spaceId?: string;
     userId?: string;
+    role?: string;
+    position?: number;
   };
   type PinWhere = {
     spaceId?: string;
@@ -5896,11 +6298,40 @@ describe("openai-compatible enabled models", () => {
             ? pin.modelId === where.modelId
             : !where.modelId?.notIn?.includes(pin.modelId)),
       )
-      .map(({ name, spaceId, modelId }) => ({ name, spaceId, modelId }));
+      .map(({ name, spaceId, modelId, role, position }) => ({
+        name,
+        spaceId,
+        modelId,
+        role,
+        position,
+      }));
   }
 
-  function pinStores(options: { bots?: Pin[]; routines?: Pin[]; backups?: string[] }) {
-    const backups = options.backups?.map((modelId) => ({ name: "", modelId }));
+  function pinStores(options: {
+    bots?: Pin[];
+    routines?: Pin[];
+    backups?: string[];
+    roleChoices?: string[];
+    mainPrimary?: string;
+  }) {
+    // The main model and its fallbacks are role choices too.
+    const roleChoices = [
+      ...(options.mainPrimary
+        ? [{ name: "", modelId: options.mainPrimary, role: "main", position: 0 }]
+        : []),
+      ...(options.backups ?? []).map((modelId, index) => ({
+        name: "",
+        modelId,
+        role: "main",
+        position: index + 1,
+      })),
+      ...(options.roleChoices ?? []).map((modelId) => ({
+        name: "",
+        modelId,
+        role: "approval",
+        position: 0,
+      })),
+    ];
     return {
       bots: (where: PinWhere) => matching(options.bots, where),
       routine: {
@@ -5908,8 +6339,8 @@ describe("openai-compatible enabled models", () => {
           matching(options.routines, where),
         ),
       },
-      spaceBackupModel: {
-        findMany: vi.fn(async ({ where }: { where: PinWhere }) => matching(backups, where)),
+      spaceModelRoleChoice: {
+        findMany: vi.fn(async ({ where }: { where: PinWhere }) => matching(roleChoices, where)),
       },
     };
   }
@@ -6002,6 +6433,8 @@ describe("openai-compatible enabled models", () => {
     bots?: Pin[];
     routines?: Pin[];
     backups?: string[];
+    roleChoices?: string[];
+    mainPrimary?: string;
   }) {
     const state = {
       credential: {
@@ -6148,6 +6581,7 @@ describe("openai-compatible enabled models", () => {
     ["bot", { bots: [{ name: "Ada", modelId: "m-b" }] }, "Ada"],
     ["routine", { routines: [{ name: "Nightly digest", modelId: "m-b" }] }, "Nightly digest"],
     ["backup", { backups: ["m-b"] }, "backup models"],
+    ["approval model", { roleChoices: ["m-b"] }, "backup models"],
   ])("refuses a shrunk list while a %s pins the removed id", async (_kind, pins, names) => {
     const { call, secrets, state, initialCredential, prisma } = fixture({
       plaintext: secretText(["m-a", "m-b"]),
@@ -6424,6 +6858,30 @@ describe("openai-compatible enabled models", () => {
       );
     },
   );
+
+  it("lets the main model leave an implicit compatible default it alone uses", async () => {
+    const { call } = fixture({
+      plaintext: secretText(),
+      defaultModel: "m-a",
+      mainPrimary: "m-a",
+    });
+    expect((await call("models/setDefault", { provider: compatible, modelId: "m-b" })).status).toBe(
+      200,
+    );
+  });
+
+  it("refuses leaving an implicit compatible default another purpose still uses", async () => {
+    const { call } = fixture({
+      plaintext: secretText(),
+      defaultModel: "m-a",
+      mainPrimary: "m-a",
+      roleChoices: ["m-a"],
+    });
+    expect(await call("models/setDefault", { provider: compatible, modelId: "m-b" })).toEqual({
+      status: 400,
+      message: refusal("backup models"),
+    });
+  });
 
   it("refuses setDefault to an id outside a listed secret", async () => {
     const { call, prisma } = fixture({
@@ -7571,6 +8029,7 @@ describe("API-key live model catalog", () => {
         bot: { findMany: vi.fn(async () => [{ modelProvider: "openai", modelId: saved }]) },
         routine: { findMany: vi.fn(async () => []) },
         spaceBackupModel: { findMany: vi.fn(async () => []) },
+        spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
         deploymentSettings: { findFirst: vi.fn(async () => null) },
       };
       const load = vi.fn(async () => "fake-api-key");

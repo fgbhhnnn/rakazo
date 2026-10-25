@@ -165,6 +165,36 @@ export const Composer = memo(function Composer({
   const mentionListboxId = useId();
   const dragDepth = useRef(0);
   const [draggingFiles, setDraggingFiles] = useState(false);
+  const [fileDragActive, setFileDragActive] = useState(false);
+  useEffect(() => {
+    // The transparent padding passes ordinary clicks through, but remains a file drop target.
+    let depth = 0;
+    const enter = (event: globalThis.DragEvent) => {
+      if (!isFileDrag(event.dataTransfer)) return;
+      depth += 1;
+      setFileDragActive(true);
+    };
+    const finish = () => {
+      depth = 0;
+      dragDepth.current = 0;
+      setFileDragActive(false);
+      setDraggingFiles(false);
+    };
+    const leave = () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) finish();
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", finish);
+    window.addEventListener("dragend", finish);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", finish);
+      window.removeEventListener("dragend", finish);
+    };
+  }, []);
   const canSend =
     draft.trim().length > 0 ||
     selectedSkill !== null ||
@@ -431,7 +461,7 @@ export const Composer = memo(function Composer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-3 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6 ${
+      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6 [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
@@ -745,7 +775,7 @@ export const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="rk-scroll max-h-25 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
+            className="rk-scroll max-h-25 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-body1 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
         <div
@@ -766,7 +796,7 @@ export const Composer = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={send}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95"
+                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>

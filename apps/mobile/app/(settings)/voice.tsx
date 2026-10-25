@@ -31,6 +31,7 @@ import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device
 import { useI18n } from "../../lib/i18n";
 import { withMemberSettingsGuard } from "../../lib/member-settings-guard";
 import { native, useThemedStyles } from "../../lib/native";
+import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 import { speakText } from "../../lib/voice";
 
@@ -58,6 +59,7 @@ type VoiceStatus = {
 type VoiceInfo = { id: string; label: string; description?: string };
 
 function VoiceSettingsScreen() {
+  const sideInsets = useSideInsets();
   const styles = useThemedStyles(createVoiceStyles);
   const { t } = useI18n();
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
@@ -361,7 +363,11 @@ function VoiceSettingsScreen() {
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+      <ScrollView
+        style={sideInsets}
+        contentContainerStyle={styles.content}
+        contentInsetAdjustmentBehavior="automatic"
+      >
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <View style={styles.group}>

@@ -60,8 +60,11 @@ export function SpaceMemorySection() {
       data-testid="space-memory-documents"
     >
       <SettingsSectionHeading className="mb-0">
-        <Trans>Shared documents</Trans>
+        <Trans>Shared memory</Trans>
       </SettingsSectionHeading>
+      <p className="mt-1 text-[13px] text-muted-foreground">
+        <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
+      </p>
       <div className="mt-3">
         <MemoryDocumentList
           load={() => rpc.memory.list({ scope: "user" })}

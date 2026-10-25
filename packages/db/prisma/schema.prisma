@@ -332,6 +332,7 @@ model SpaceMember {
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
   backupModels SpaceBackupModel[]
+  modelRoleChoices SpaceModelRoleChoice[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -413,6 +414,7 @@ model UserModelCredential {
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   preferences SpaceModelPreference[]
+  roleChoices SpaceModelRoleChoice[]
 
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
@@ -1760,4 +1762,21 @@ model BackgroundTaskQueue {
   @@index([workerRunId])
   @@index([workerBotId, status])
   @@map("background_task_queue")
+}
+
+model SpaceModelRoleChoice {
+  spaceId       String
+  userId        String
+  spaceMember   SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  role          String
+  position      Int
+  provider      String
+  modelId       String
+  thinkingLevel String?
+  credentialId  String?
+  credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
+
+  @@id([spaceId, userId, role, position])
+  @@index([credentialId, userId])
+  @@map("space_model_role_choices")
 }

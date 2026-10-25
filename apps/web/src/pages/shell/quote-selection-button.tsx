@@ -67,7 +67,7 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
       )}
     >
       <TextQuote size={13} strokeWidth={2} />
-      {t`Quote`}
+      {t`Reply`}
     </button>,
     document.body,
   );

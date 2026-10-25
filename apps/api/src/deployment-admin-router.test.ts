@@ -29,6 +29,7 @@ function client(user: { userId: string; email: string }) {
     },
     userModelCredential: { count: vi.fn().mockResolvedValue(0), findFirst: vi.fn() },
     spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+    spaceModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
     deploymentSettings: { findUnique: vi.fn().mockResolvedValue(row), upsert },
   } as unknown as PrismaClient;
   const deps = {
