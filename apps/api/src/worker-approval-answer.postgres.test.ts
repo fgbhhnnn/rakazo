@@ -60,6 +60,15 @@ async function createFixture(prisma: ReturnType<typeof createDb>["prisma"], id: 
       data: { id: organizationId, name: "WA", slug: id, createdAt: new Date() },
     });
     await prisma.space.create({ data: { id: spaceId, organizationId, name: "WA" } });
+    // The run's user belongs to the Space, as every real answerer does; confirmation rules
+    // are saved under that membership.
+    const createdAt = new Date();
+    await prisma.member.create({
+      data: { id: `${userId}-member`, organizationId, userId, role: "owner", createdAt },
+    });
+    await prisma.spaceMember.create({
+      data: { id: `${spaceId}-member`, spaceId, organizationId, userId, createdAt },
+    });
     const main = await prisma.bot.create({
       data: { spaceId, userId, name: "main", color: "ink" },
     });
@@ -358,12 +367,18 @@ postgres("worker approval answered in the main chat (PostgreSQL)", () => {
         effect: "approved",
         mirror: { status: "answered", answer: "always" },
       });
-      const rules = await system(() =>
+      // Confirmations are account-wide unless the Space overrides them, so the rule lands in
+      // the run's user's account copy and the Space keeps none of its own.
+      const spaceRules = await system(() =>
         fx.prisma.actionApprovalRule.findMany({ where: { spaceId: fx.owner.spaceId } }),
+      );
+      expect(spaceRules).toEqual([]);
+      const rules = await system(() =>
+        fx.prisma.userActionApprovalRule.findMany({ where: { userId: fx.owner.userId } }),
       );
       expect(rules).toEqual([
         expect.objectContaining({
-          createdByUserId: fx.owner.userId,
+          userId: fx.owner.userId,
           effect: "always_allow",
           matchKind: "site",
           matchValue: "example.com",
