@@ -1028,4 +1028,15 @@ export const JA_MESSAGES: Record<string, string> = {
   "This page changed since you opened it. Close it and open it again to edit the latest version.":
     "このページは開いた後に変更されました。最新版を編集するには、閉じてからもう一度開いてください。",
   "Updated {date}": "{date} に更新",
+  "Background tasks": "バックグラウンドタスク",
+  "Background tasks finished": "バックグラウンドタスク完了",
+  "{count} running": "{count} 件実行中",
+  "{count} done": "{count} 件完了",
+  "{count} not finished": "{count} 件未完了",
+  queued: "待機中",
+  "queued #{position}": "待機中 #{position}",
+  starting: "開始中",
+  "needs you": "要対応",
+  "no progress": "進捗なし",
+  done: "完了",
 };

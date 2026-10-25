@@ -12,6 +12,7 @@ import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
 import { PageCard } from "../../components/pages/PageCard";
 import { SubagentCard } from "../../components/SubagentCard";
+import { TaskProgressCard } from "../../components/TaskProgressCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
@@ -540,6 +541,9 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
+          if (block.kind === "task_progress") {
+            return <TaskProgressCard key={i} block={block} onOpenBot={onOpenBot} />;
+          }
           if (block.kind === "skill_draft") {
             return (
               <div key={i} className="flex justify-start">

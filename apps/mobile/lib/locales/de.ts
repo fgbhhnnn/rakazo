@@ -1037,4 +1037,15 @@ export const DE_MESSAGES: Record<string, string> = {
   "This page changed since you opened it. Close it and open it again to edit the latest version.":
     "Diese Seite wurde geändert, seit du sie geöffnet hast. Schließe sie und öffne sie erneut, um die neueste Version zu bearbeiten.",
   "Updated {date}": "Aktualisiert {date}",
+  "Background tasks": "Hintergrundaufgaben",
+  "Background tasks finished": "Hintergrundaufgaben abgeschlossen",
+  "{count} running": "{count} laufen",
+  "{count} done": "{count} erledigt",
+  "{count} not finished": "{count} nicht abgeschlossen",
+  queued: "in Warteschlange",
+  "queued #{position}": "Warteschlange #{position}",
+  starting: "startet",
+  "needs you": "braucht dich",
+  "no progress": "kein Fortschritt",
+  done: "erledigt",
 };

@@ -115,6 +115,10 @@ msgstr ""
 msgid "{0}'s screen"
 msgstr "Pantalla de {0}"
 
+#: src/components/TaskProgressCard.tsx
+msgid "{active} running"
+msgstr "{active} en curso"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr ""
@@ -150,6 +154,14 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "hace {days} d"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{done} done"
+msgstr "{done} hechas"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{failed} not finished"
+msgstr "{failed} sin terminar"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -897,6 +909,14 @@ msgstr "Atrás"
 msgid "Back to sign in"
 msgstr "Volver a iniciar sesión"
 
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks"
+msgstr "Tareas en segundo plano"
+
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks finished"
+msgstr "Tareas en segundo plano terminadas"
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "URL base"
@@ -1071,6 +1091,7 @@ msgid "Canceled"
 msgstr ""
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "cancelled"
 msgstr "cancelado"
 
@@ -2366,6 +2387,10 @@ msgstr "El documento ha cambiado. Vuelve a abrirlo para editar la última versi�
 msgid "Don’t have an account?"
 msgstr "¿No tienes una cuenta?"
 
+#: src/components/TaskProgressCard.tsx
+msgid "done"
+msgstr "hecha"
+
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2591,6 +2616,7 @@ msgid "Extra high"
 msgstr "Extra alto"
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "failed"
 msgstr "fallido"
 
@@ -3487,6 +3513,10 @@ msgstr "Necesita entrada"
 msgid "Needs takeover"
 msgstr "Necesita toma de control"
 
+#: src/components/TaskProgressCard.tsx
+msgid "needs you"
+msgstr "te necesita"
+
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
@@ -3612,6 +3642,10 @@ msgstr "No hay un catálogo de modelos disponible."
 #: src/lib/model-connection-preflight.ts
 msgid "No models listed."
 msgstr "No hay modelos en la lista."
+
+#: src/components/TaskProgressCard.tsx
+msgid "no progress"
+msgstr "sin avances"
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
@@ -4017,9 +4051,18 @@ msgstr "Proveedores"
 msgid "Pull request"
 msgstr "Solicitud de incorporación"
 
+#: src/components/TaskProgressCard.tsx
+msgid "queued"
+msgstr "en cola"
+
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "En cola"
+
+#. placeholder {0}: entry.position
+#: src/components/TaskProgressCard.tsx
+msgid "queued #{0}"
+msgstr "en cola #{0}"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -4419,6 +4462,7 @@ msgid "Run time must be in the future."
 msgstr "La hora de ejecución debe ser en el futuro."
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "en ejecución"
 
@@ -4866,6 +4910,10 @@ msgstr ""
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "Iniciar grabación"
+
+#: src/components/TaskProgressCard.tsx
+msgid "starting"
+msgstr "iniciando"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"

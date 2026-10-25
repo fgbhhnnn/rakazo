@@ -18,6 +18,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { refreshTaskProgressForWorkerRun } from "./background-task-progress.js";
 import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
 import { runPageBlocks } from "./pages.js";
@@ -442,6 +443,7 @@ async function markBotOutcomeReturned(
   await finalizeBackgroundTaskAfterReturn(prisma, runId, (threadId, seq) =>
     deps.events.notify(threadId, seq),
   );
+  await refreshTaskProgressForWorkerRun(deps, runId);
 }
 
 function isUniqueConstraintError(error: unknown) {

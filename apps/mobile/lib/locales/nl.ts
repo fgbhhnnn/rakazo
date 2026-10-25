@@ -991,4 +991,15 @@ export const NL_MESSAGES: Record<string, string> = {
   "This page changed since you opened it. Close it and open it again to edit the latest version.":
     "Deze pagina is gewijzigd sinds je hem opende. Sluit hem en open hem opnieuw om de nieuwste versie te bewerken.",
   "Updated {date}": "Bijgewerkt {date}",
+  "Background tasks": "Achtergrondtaken",
+  "Background tasks finished": "Achtergrondtaken klaar",
+  "{count} running": "{count} bezig",
+  "{count} done": "{count} klaar",
+  "{count} not finished": "{count} niet afgerond",
+  queued: "in wachtrij",
+  "queued #{position}": "wachtrij #{position}",
+  starting: "start",
+  "needs you": "wacht op jou",
+  "no progress": "geen voortgang",
+  done: "klaar",
 };

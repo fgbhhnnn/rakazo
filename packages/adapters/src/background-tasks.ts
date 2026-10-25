@@ -24,6 +24,11 @@ import {
   requestedLane,
   THINK_WORKER_INSTRUCTIONS,
 } from "./background-task-lanes.js";
+import {
+  refreshAllTaskProgressCards,
+  TASK_STUCK_NOTE,
+  taskStuckFields,
+} from "./background-task-progress.js";
 import { recoverBackgroundTasks } from "./background-task-recovery.js";
 import {
   ACTIVE_TASK_STATUSES,
@@ -740,6 +745,9 @@ export async function reconcileBackgroundTasks(
       getLogger().error("background queue reconcile drain", error),
     );
   }
+  await refreshAllTaskProgressCards(deps as QueueDeps).catch((error) =>
+    getLogger().error("background task progress cards", error),
+  );
 }
 
 /** Resolves a task_id: the task ref ("T1AB2C3D", "#T1AB2C3D"), "q:<row id>", or a row id. */
@@ -837,6 +845,7 @@ export async function backgroundTaskStatus(
             : undefined,
         last_progress: lastText(last?.blocks),
         ...activity,
+        ...(await taskStuckFields(deps.prisma, row, workerRun?.status)),
         ...(row.error || workerRun?.error
           ? { error: String(row.error ?? workerRun?.error).slice(0, 500) }
           : {}),
@@ -849,7 +858,7 @@ export async function backgroundTaskStatus(
     think_limit: laneLimit("think"),
     tasks,
     time_zone: zone ?? "UTC",
-    note: `Each task runs in a lane (computer or think); limit is the computer lane's, think_limit the think lane's, and position is the place in that task's own lane queue. Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task. ${WORKER_ACTIVITY_NOTE} ${WORKER_NEEDS_USER_NOTE}`,
+    note: `Each task runs in a lane (computer or think); limit is the computer lane's, think_limit the think lane's, and position is the place in that task's own lane queue. Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task. ${WORKER_ACTIVITY_NOTE} ${WORKER_NEEDS_USER_NOTE} ${TASK_STUCK_NOTE}`,
   };
 }
 

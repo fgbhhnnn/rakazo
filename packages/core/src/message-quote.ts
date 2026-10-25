@@ -1,5 +1,5 @@
 import type { MessageBlock, ReplyPreview } from "@rakazo/contracts";
-import { droppedTableHtmlText, truncateReplyQuote } from "@rakazo/contracts";
+import { droppedTableHtmlText, taskProgressHeadline, truncateReplyQuote } from "@rakazo/contracts";
 import { toText } from "hast-util-to-text";
 import { toHast } from "mdast-util-to-hast";
 import remarkGfm from "remark-gfm";
@@ -165,6 +165,8 @@ function replyBlockText(block: MessageBlock): string {
       return block.title;
     case "call_request":
       return block.reason;
+    case "task_progress":
+      return taskProgressHeadline(block);
     case "subagent":
       return block.name || block.task;
     case "child_bot":

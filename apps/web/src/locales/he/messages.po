@@ -115,6 +115,10 @@ msgstr "{0} ימשיך להגיב לאזכורים ישירים."
 msgid "{0}'s screen"
 msgstr "המסך של {0}"
 
+#: src/components/TaskProgressCard.tsx
+msgid "{active} running"
+msgstr "{active} פועלות"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -150,6 +154,14 @@ msgstr "{count} שנים"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "לפני {days} ימים"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{done} done"
+msgstr "{done} הושלמו"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{failed} not finished"
+msgstr "{failed} לא הושלמו"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -897,6 +909,14 @@ msgstr "חזרה"
 msgid "Back to sign in"
 msgstr "חזרה להתחברות"
 
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks"
+msgstr "משימות ברקע"
+
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks finished"
+msgstr "משימות הרקע הסתיימו"
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -1071,6 +1091,7 @@ msgid "Canceled"
 msgstr "בוטל"
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "cancelled"
 msgstr "בוטל"
 
@@ -2366,6 +2387,10 @@ msgstr "המסמך השתנה. יש לפתוח אותו מחדש כדי לערו
 msgid "Don’t have an account?"
 msgstr "אין חשבון?"
 
+#: src/components/TaskProgressCard.tsx
+msgid "done"
+msgstr "הושלם"
+
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2591,6 +2616,7 @@ msgid "Extra high"
 msgstr "גבוה מאוד"
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "failed"
 msgstr "נכשל"
 
@@ -3487,6 +3513,10 @@ msgstr "ממתין לקלט"
 msgid "Needs takeover"
 msgstr "נדרשת השתלטות"
 
+#: src/components/TaskProgressCard.tsx
+msgid "needs you"
+msgstr "ממתין לך"
+
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
@@ -3612,6 +3642,10 @@ msgstr "אין קטלוג מודלים זמין."
 #: src/lib/model-connection-preflight.ts
 msgid "No models listed."
 msgstr "לא נמצאו מודלים ברשימה."
+
+#: src/components/TaskProgressCard.tsx
+msgid "no progress"
+msgstr "אין התקדמות"
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
@@ -4017,9 +4051,18 @@ msgstr "ספקים"
 msgid "Pull request"
 msgstr "Pull request"
 
+#: src/components/TaskProgressCard.tsx
+msgid "queued"
+msgstr "בתור"
+
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "בתור"
+
+#. placeholder {0}: entry.position
+#: src/components/TaskProgressCard.tsx
+msgid "queued #{0}"
+msgstr "בתור #{0}"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -4419,6 +4462,7 @@ msgid "Run time must be in the future."
 msgstr "זמן ההרצה חייב להיות בעתיד."
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "פועל"
 
@@ -4866,6 +4910,10 @@ msgstr "התחלת תקופת ניסיון חינם של {trialDays} ימים"
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "התחלת הקלטה"
+
+#: src/components/TaskProgressCard.tsx
+msgid "starting"
+msgstr "מתחיל"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"

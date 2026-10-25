@@ -1,6 +1,7 @@
 import { BUILTIN_TOOL_NAMES, type MessageBlock } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { backgroundTaskCard } from "./background-task-cards.js";
+import { refreshTaskProgressCard } from "./background-task-progress.js";
 import {
   backgroundTaskMessage,
   backgroundTaskStatus,
@@ -29,6 +30,20 @@ export async function runBackgroundTaskTool(
     attachments: (taskText: string) => readonly AttachmentBlock[];
     publish: (blocks: MessageBlock[]) => Promise<unknown>;
   },
+): Promise<unknown> {
+  const { dispatcher } = input;
+  const result = await runTool(deps, name, args, input);
+  // The chat's progress card picks up the started, steered or cancelled task right away.
+  if (result !== undefined && name !== "background_task_status")
+    await refreshTaskProgressCard(deps, dispatcher.id);
+  return result;
+}
+
+async function runTool(
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "sandbox">,
+  name: string,
+  args: Record<string, unknown>,
+  input: Parameters<typeof runBackgroundTaskTool>[3],
 ): Promise<unknown> {
   const { run, dispatcher, effectKey } = input;
   if (name === "background_task") {

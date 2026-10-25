@@ -115,6 +115,10 @@ msgstr ""
 msgid "{0}'s screen"
 msgstr "{0}의 화면"
 
+#: src/components/TaskProgressCard.tsx
+msgid "{active} running"
+msgstr "{active}개 진행 중"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr ""
@@ -150,6 +154,14 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days}일 전"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{done} done"
+msgstr "{done}개 완료"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{failed} not finished"
+msgstr "{failed}개 미완료"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -897,6 +909,14 @@ msgstr "뒤로"
 msgid "Back to sign in"
 msgstr "로그인으로 돌아가기"
 
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks"
+msgstr "백그라운드 작업"
+
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks finished"
+msgstr "백그라운드 작업 완료"
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "서버 주소"
@@ -1071,6 +1091,7 @@ msgid "Canceled"
 msgstr ""
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "cancelled"
 msgstr "취소됨"
 
@@ -2366,6 +2387,10 @@ msgstr "문서가 변경되었습니다. 최신 버전을 편집하려면 다시
 msgid "Don’t have an account?"
 msgstr "계정이 없나요?"
 
+#: src/components/TaskProgressCard.tsx
+msgid "done"
+msgstr "완료"
+
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2591,6 +2616,7 @@ msgid "Extra high"
 msgstr "매우 높음"
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "failed"
 msgstr "실패"
 
@@ -3487,6 +3513,10 @@ msgstr "입력 필요"
 msgid "Needs takeover"
 msgstr "인수 필요"
 
+#: src/components/TaskProgressCard.tsx
+msgid "needs you"
+msgstr "확인 필요"
+
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
@@ -3612,6 +3642,10 @@ msgstr "사용 가능한 모델 목록이 없습니다."
 #: src/lib/model-connection-preflight.ts
 msgid "No models listed."
 msgstr "나열된 모델이 없습니다."
+
+#: src/components/TaskProgressCard.tsx
+msgid "no progress"
+msgstr "진행 없음"
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
@@ -4017,9 +4051,18 @@ msgstr "서비스"
 msgid "Pull request"
 msgstr "풀 리퀘스트"
 
+#: src/components/TaskProgressCard.tsx
+msgid "queued"
+msgstr "대기 중"
+
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "대기 중"
+
+#. placeholder {0}: entry.position
+#: src/components/TaskProgressCard.tsx
+msgid "queued #{0}"
+msgstr "대기 #{0}"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -4419,6 +4462,7 @@ msgid "Run time must be in the future."
 msgstr "실행 시간은 미래여야 합니다."
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "실행 중"
 
@@ -4866,6 +4910,10 @@ msgstr ""
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "작업 녹화 시작"
+
+#: src/components/TaskProgressCard.tsx
+msgid "starting"
+msgstr "시작 중"
 
 #: src/pages/ActivityList.tsx
 msgid "Starting"

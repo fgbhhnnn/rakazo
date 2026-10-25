@@ -994,4 +994,15 @@ export const ZH_MESSAGES: Record<string, string> = {
   "This page changed since you opened it. Close it and open it again to edit the latest version.":
     "此页面在你打开后已被更改。请关闭后重新打开，再编辑最新版本。",
   "Updated {date}": "更新于 {date}",
+  "Background tasks": "后台任务",
+  "Background tasks finished": "后台任务已结束",
+  "{count} running": "{count} 个进行中",
+  "{count} done": "{count} 个完成",
+  "{count} not finished": "{count} 个未完成",
+  queued: "排队中",
+  "queued #{position}": "排队第 {position} 位",
+  starting: "启动中",
+  "needs you": "等你处理",
+  "no progress": "没有进展",
+  done: "完成",
 };

@@ -3,6 +3,7 @@ import { botSecretDestinationSchema } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
 import { PageBlockMetaSchema } from "./pages.js";
+import { TaskProgressBlockSchema } from "./task-progress.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -244,6 +245,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     progress: z.string().optional(),
     result: z.string().optional(),
   }),
+  /** Live progress of a bot's background tasks, rewritten in place by the server. */
+  TaskProgressBlockSchema,
   z.object({
     kind: z.literal("child_bot"),
     botId: z.string(),

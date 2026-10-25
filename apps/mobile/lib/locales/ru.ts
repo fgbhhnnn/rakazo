@@ -1034,4 +1034,15 @@ export const RU_MESSAGES: Record<string, string> = {
   "This page changed since you opened it. Close it and open it again to edit the latest version.":
     "Страница изменилась после того, как вы её открыли. Закройте и откройте её снова, чтобы изменить последнюю версию.",
   "Updated {date}": "Обновлено {date}",
+  "Background tasks": "Фоновые задачи",
+  "Background tasks finished": "Фоновые задачи завершены",
+  "{count} running": "выполняется: {count}",
+  "{count} done": "готово: {count}",
+  "{count} not finished": "не завершено: {count}",
+  queued: "в очереди",
+  "queued #{position}": "в очереди #{position}",
+  starting: "запуск",
+  "needs you": "нужны вы",
+  "no progress": "нет прогресса",
+  done: "готово",
 };

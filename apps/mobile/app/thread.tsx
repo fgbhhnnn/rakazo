@@ -148,6 +148,7 @@ import { ScrollToBottomButton } from "../components/scroll-to-bottom-button";
 import { SecretAskSheet } from "../components/secret-ask-sheet";
 import { SelectTextSheet } from "../components/select-text-sheet";
 import { trailingHeaderOptions } from "../components/sheet-header";
+import { TaskProgressCard } from "../components/task-progress-card";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { ThreadErrorNotice } from "../components/thread-error-notice";
@@ -3891,11 +3892,16 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
 
 type SpecialMessageBlock = Extract<
   MessageBlock,
-  { kind: "subagent" | "child_bot" | "cloud_agent" }
+  { kind: "subagent" | "child_bot" | "cloud_agent" | "task_progress" }
 >;
 
 function isSpecialMessageBlock(block: MessageBlock): block is SpecialMessageBlock {
-  return block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent";
+  return (
+    block.kind === "subagent" ||
+    block.kind === "child_bot" ||
+    block.kind === "cloud_agent" ||
+    block.kind === "task_progress"
+  );
 }
 
 const MessageBubbleContent = memo(function MessageBubbleContent({
@@ -4641,6 +4647,17 @@ function SpecialMessageCard(props: SpecialMessageCardProps) {
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
+  if (special.kind === "task_progress") {
+    return (
+      <TaskProgressCard
+        block={special}
+        onOpenBot={(botId, taskName) =>
+          onOpenBot(botId, bots.find((bot) => bot.id === botId)?.name ?? taskName)
+        }
+        pressableProps={actionProps}
+      />
+    );
+  }
   if (special.kind === "cloud_agent") {
     const title = special.title || t("Cloud agent");
     const statusLabel =
