@@ -39,7 +39,7 @@
         "EXPO_PUBLIC_API_URL": "https://rakazo.lllltt.com"
       },
       "ios": {
-        "image": "macos-tahoe-26.5-xcode-26.6"
+        "image": "macos-tahoe-26.6-xcode-27.1"
       }
     },
     "diagnostic": {
