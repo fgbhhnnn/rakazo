@@ -364,6 +364,10 @@ msgstr ""
 msgid "A command's output"
 msgstr "A saída de um comando"
 
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1036,6 +1040,7 @@ msgstr "Não pode ler imagens"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1276,6 +1281,10 @@ msgstr "Fechar configurações do modelo"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "Fechar navegação"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1565,6 +1574,10 @@ msgstr "Copiar"
 msgid "Copy .env example"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
 msgstr "Custo"
@@ -1645,6 +1658,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "Não foi possível continuar"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr ""
 
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
@@ -1818,6 +1835,10 @@ msgstr "Não foi possível sair. Tente novamente."
 msgid "Could not open billing"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr ""
+
 #: src/components/PdfViewer.tsx
 msgid "Could not open this PDF. Download it to view it."
 msgstr ""
@@ -1939,6 +1960,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "Não foi possível salvar esta opção"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2402,6 +2427,10 @@ msgstr "Editar rótulo"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "Editar nome"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -3003,6 +3032,10 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "Vincular SSO"
@@ -3056,6 +3089,10 @@ msgstr "Carregando configurações de memória..."
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Carregando catálogo de modelos..."
+
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr ""
 
 #: src/components/ArtifactFileCard.tsx
 #: src/components/FileViewer.tsx
@@ -3687,6 +3724,10 @@ msgstr ""
 msgid "on the 1st at {0}"
 msgstr "no dia 1º às {0}"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -3743,6 +3784,10 @@ msgstr "Abrir em janela cheia"
 msgid "Open navigation"
 msgstr "Abrir a navegação"
 
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Trabalho aberto"
@@ -3794,8 +3839,16 @@ msgstr "Saída"
 msgid "Owner"
 msgstr "Proprietário"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
+msgstr ""
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
 msgstr ""
 
 #: src/components/PasskeySettings.tsx
@@ -4392,6 +4445,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5051,6 +5105,10 @@ msgstr "A janela de contexto deste modelo é pequena demais. Escolha outro model
 msgid "This month"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "Isso exclui permanentemente sua conta e seus dados."
@@ -5282,6 +5340,7 @@ msgstr "Atualizar instruções?"
 msgid "Update progress"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr ""

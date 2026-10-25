@@ -1025,4 +1025,16 @@ export const DE_MESSAGES: Record<string, string> = {
   "How big is your team?": "Wie groß ist dein Team?",
   "How did you hear about us?": "Wie hast du von uns erfahren?",
   "Welcome to {PRODUCT_NAME}": "Willkommen bei {PRODUCT_NAME}",
+  "A page can't be empty.": "Eine Seite darf nicht leer sein.",
+  "Could not open this page.": "Diese Seite konnte nicht geöffnet werden.",
+  "Could not save this page": "Diese Seite konnte nicht gespeichert werden",
+  "Could not share this page": "Diese Seite konnte nicht geteilt werden",
+  "On this page": "Auf dieser Seite",
+  "Opens the page": "Öffnet die Seite",
+  Page: "Seite",
+  "Page markdown": "Markdown der Seite",
+  Pages: "Seiten",
+  "This page changed since you opened it. Close it and open it again to edit the latest version.":
+    "Diese Seite wurde geändert, seit du sie geöffnet hast. Schließe sie und öffne sie erneut, um die neueste Version zu bearbeiten.",
+  "Updated {date}": "Aktualisiert {date}",
 };

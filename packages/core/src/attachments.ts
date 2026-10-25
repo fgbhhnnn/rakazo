@@ -138,6 +138,7 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
       if (block.kind === "file") {
+        if (block.page) return `[page: ${block.name} (page_id ${block.page.pageId})]`;
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
       // Keep attribution on peer messages: without it a later turn cannot tell

@@ -7,7 +7,9 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ listSpace: vi.fn() }));
-vi.mock("../lib/rpc", () => ({ rpc: { artifacts: api } }));
+// The Pages shelf above the list reads its own endpoint; these tests cover the artifact list.
+const pagesApi = vi.hoisted(() => ({ list: vi.fn(async () => []) }));
+vi.mock("../lib/rpc", () => ({ rpc: { artifacts: api, pages: pagesApi } }));
 vi.mock("../lib/bootstrap", () => ({
   takeInitialBootstrap: vi.fn().mockResolvedValue({ bots: [] }),
 }));

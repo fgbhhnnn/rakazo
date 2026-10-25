@@ -364,6 +364,10 @@ msgstr ""
 msgid "A command's output"
 msgstr "कमांड का आउटपुट"
 
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1036,6 +1040,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1276,6 +1281,10 @@ msgstr "मॉडल सेटिंग्स बंद करें"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "नेविगेशन बंद करें"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1565,6 +1574,10 @@ msgstr "कॉपी करें"
 msgid "Copy .env example"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
 msgstr "लागत"
@@ -1645,6 +1658,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "जारी नहीं रखा जा सका"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr ""
 
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
@@ -1818,6 +1835,10 @@ msgstr "लॉग आउट नहीं हो सका। फिर से �
 msgid "Could not open billing"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr ""
+
 #: src/components/PdfViewer.tsx
 msgid "Could not open this PDF. Download it to view it."
 msgstr ""
@@ -1939,6 +1960,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "यह विकल्प सहेजा नहीं जा सका"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2402,6 +2427,10 @@ msgstr "लेबल संपादित करें"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "नाम संपादित करें"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -3003,6 +3032,10 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO लिंक करें"
@@ -3056,6 +3089,10 @@ msgstr "मेमोरी सेटिंग्स लोड हो रही �
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "मॉडल कैटलॉग लोड हो रहा है…"
+
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr ""
 
 #: src/components/ArtifactFileCard.tsx
 #: src/components/FileViewer.tsx
@@ -3687,6 +3724,10 @@ msgstr ""
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -3743,6 +3784,10 @@ msgstr "पूरी विंडो में खोलें"
 msgid "Open navigation"
 msgstr "नेविगेशन खोलें"
 
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "खुला कार्य"
@@ -3794,8 +3839,16 @@ msgstr "आउटपुट"
 msgid "Owner"
 msgstr "मालिक"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
+msgstr ""
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
 msgstr ""
 
 #: src/components/PasskeySettings.tsx
@@ -4392,6 +4445,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5051,6 +5105,10 @@ msgstr "इस मॉडल की कॉन्टेक्स्ट विं�
 msgid "This month"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "इससे आपका खाता और डेटा स्थायी रूप से हट जाएगा।"
@@ -5282,6 +5340,7 @@ msgstr "निर्देश अपडेट करें?"
 msgid "Update progress"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr ""

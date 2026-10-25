@@ -402,6 +402,12 @@ import {
 } from "./model-vision.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
 import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
+import {
+  PAGE_DISPATCH_GUIDANCE,
+  PAGE_GUIDANCE,
+  PAGE_TOOL_NAMES,
+  runPageTool,
+} from "./page-tools.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
@@ -6657,6 +6663,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }),
             );
           }
+          if (PAGE_TOOL_NAMES.has(name)) {
+            if (!deps.artifacts) return finish({ error: "page storage unavailable" });
+            const outcome = await runPageTool(
+              { prisma: deps.prisma, artifacts: deps.artifacts },
+              {
+                spaceId: run.spaceId,
+                userId: run.userId,
+                botId: memoryBotId,
+                groupId: thread.groupId,
+                runId: run.id,
+                operationId: executionId,
+                secrets: runSecrets,
+              },
+              name,
+              args,
+            );
+            if (outcome.block) await publishMessage(deps, run, "bot", [outcome.block]);
+            return finish(outcome.result);
+          }
           if (name === "remember") {
             const path = String(args.path ?? "").trim() || "MEMORY.md";
             // A fact is added to the document, never replaces it. A concurrent save
@@ -10159,6 +10184,10 @@ export function userTurnInstructions(parts: {
       "render_plot",
       'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
     ),
+    offeredBuiltinClause(parts.disabledBuiltinTools, "write_page", PAGE_GUIDANCE),
+    parts.dispatcherRun
+      ? offeredBuiltinClause(parts.disabledBuiltinTools, "background_task", PAGE_DISPATCH_GUIDANCE)
+      : undefined,
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "add_mcp_server",

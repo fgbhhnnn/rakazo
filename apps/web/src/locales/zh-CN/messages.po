@@ -364,6 +364,10 @@ msgstr "什么都做一点"
 msgid "A command's output"
 msgstr "命令的输出"
 
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr "页面不能为空。"
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1036,6 +1040,7 @@ msgstr "无法读取图像"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1276,6 +1281,10 @@ msgstr "关闭模型设置"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "关闭导航"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr "关闭页面"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1565,6 +1574,10 @@ msgstr "复制"
 msgid "Copy .env example"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr "复制链接"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
 msgstr "费用"
@@ -1645,6 +1658,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "无法继续"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr "无法复制链接。"
 
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
@@ -1818,6 +1835,10 @@ msgstr "无法退出登录。请重试。"
 msgid "Could not open billing"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr "无法打开此页面。"
+
 #: src/components/PdfViewer.tsx
 msgid "Could not open this PDF. Download it to view it."
 msgstr "无法打开此 PDF。请下载后查看。"
@@ -1939,6 +1960,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "无法保存此选择"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr "无法保存此页面。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2402,6 +2427,10 @@ msgstr "编辑标签"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "编辑名称"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr "编辑页面"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -3003,6 +3032,10 @@ msgstr "Linear 工单"
 msgid "Link a chat app"
 msgstr "关联聊天应用"
 
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr "链接已复制"
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "关联 SSO"
@@ -3056,6 +3089,10 @@ msgstr "正在加载记忆设置…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "正在加载模型目录…"
+
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr "正在加载页面…"
 
 #: src/components/ArtifactFileCard.tsx
 #: src/components/FileViewer.tsx
@@ -3687,6 +3724,10 @@ msgstr "按计划"
 msgid "on the 1st at {0}"
 msgstr "每月 1 日 {0}"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr "本页内容"
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -3743,6 +3784,10 @@ msgstr "在完整窗口中打开"
 msgid "Open navigation"
 msgstr "打开导航"
 
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr "打开页面 {title}"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "待办"
@@ -3794,9 +3839,17 @@ msgstr "输出"
 msgid "Owner"
 msgstr "所有者"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr "页面 Markdown"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty 事件"
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
+msgstr "页面"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4392,6 +4445,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5051,6 +5105,10 @@ msgstr "此模型的上下文窗口太小。请选择其他模型。"
 msgid "This month"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr "此页面在你打开后已被更改。请关闭后重新打开，再编辑最新版本。"
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "此操作将永久删除您的账户和数据。"
@@ -5282,6 +5340,7 @@ msgstr "更新指令？"
 msgid "Update progress"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr ""

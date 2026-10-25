@@ -1277,6 +1277,9 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "write_file") return `Writing ${detail(record.path)}`;
   if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;
   if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
+  if (toolName === "write_page") return `Writing page: ${detail(record.title)}`;
+  if (toolName === "edit_page") return "Editing a page";
+  if (toolName === "read_page") return "Reading a page";
   if (toolName === "open_path") return `Opening ${detail(record.path)}`;
   if (toolName === "render_plot") return "Rendering a chart";
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;

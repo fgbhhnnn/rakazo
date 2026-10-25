@@ -207,6 +207,7 @@ export function narrateTool(toolName: string): string | null {
     [/^remember$/, "writing a memory"],
     [/^save_shared_memory$/, "saving shared memory"],
     [/^attach_file$/, "attaching a file"],
+    [/^(write|edit)_page$/, "writing a page"],
     [/^request_takeover$/, "asking you to take over"],
   ];
   for (const [pattern, phrase] of verbs) {

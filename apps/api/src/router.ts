@@ -327,6 +327,7 @@ import {
   promptFocus,
   startOnboarding,
 } from "./onboarding.js";
+import { getOwnedPage, listOwnedPages, updateOwnedPage } from "./pages.js";
 import { listRoutineRuns } from "./routine-runs.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
@@ -6645,6 +6646,18 @@ export function createRouter(deps: RouterDeps) {
       ),
       remove: authed.agentSecrets.remove.handler(async ({ context, input }) =>
         deleteAgentSecret({ prisma: deps.prisma, secrets: deps.secrets }, context.actor, input.id),
+      ),
+    },
+    pages: {
+      list: authed.pages.list.handler(async ({ context, input }) => {
+        if (input.botId) await repos.getBot(context.actor, input.botId);
+        return listOwnedPages(deps, context.actor, input);
+      }),
+      get: authed.pages.get.handler(({ context, input }) =>
+        getOwnedPage(deps, context.actor, input),
+      ),
+      update: authed.pages.update.handler(({ context, input }) =>
+        updateOwnedPage(deps, context.actor, input),
       ),
     },
     botSecrets: {

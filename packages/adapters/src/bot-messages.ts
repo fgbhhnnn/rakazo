@@ -20,6 +20,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
+import { runPageBlocks } from "./pages.js";
 import { attachmentBlocks } from "./task-attachments.js";
 import { workerOutcomeRelay } from "./worker-outcome-relay.js";
 import { slotFree } from "./worker-slot-mentions.js";
@@ -392,6 +393,16 @@ export async function returnBotMessageOutcome(
   }
   // The dispatcher names the task by its title and #ref; an over-long result travels as a file.
   const relay = await workerOutcomeRelay(deps, run, workerTitle, text, source.fromBotId);
+  // Pages the worker wrote or edited go back with its result, so they show in the main chat.
+  const pages =
+    workerTitle === undefined || intent !== "result"
+      ? []
+      : await runPageBlocks(deps.prisma, run).catch((error: unknown) => {
+          getLogger().warn("worker pages not relayed", {
+            reason: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        });
   const outcome = await messageBot(
     deps,
     run,
@@ -399,7 +410,7 @@ export async function returnBotMessageOutcome(
     {
       bot_id: source.fromBotId,
       message: relay.message,
-      attachments: relay.attachments,
+      attachments: pages.length ? [...pages, ...(relay.attachments ?? [])] : relay.attachments,
       intent,
       // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
       deliveryKey: `auto-outcome:${run.id}`,

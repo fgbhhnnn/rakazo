@@ -364,6 +364,10 @@ msgstr "קצת מהכול"
 msgid "A command's output"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1036,6 +1040,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1276,6 +1281,10 @@ msgstr "סגירת הגדרות המודל"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "סגירת הניווט"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1565,6 +1574,10 @@ msgstr "העתקה"
 msgid "Copy .env example"
 msgstr "העתקת דוגמת .env"
 
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
 msgstr "עלות"
@@ -1645,6 +1658,10 @@ msgstr "לא ניתן להתחבר למסך המחשב"
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "לא ניתן להמשיך"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr ""
 
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
@@ -1818,6 +1835,10 @@ msgstr "לא ניתן להתנתק. יש לנסות שוב."
 msgid "Could not open billing"
 msgstr "לא ניתן לפתוח את החיוב"
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr ""
+
 #: src/components/PdfViewer.tsx
 msgid "Could not open this PDF. Download it to view it."
 msgstr ""
@@ -1939,6 +1960,10 @@ msgstr "לא ניתן לשמור את פרטי הגישה"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "לא ניתן לשמור את הבחירה הזו"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2402,6 +2427,10 @@ msgstr "עריכת תווית"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "עריכת שם"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -3003,6 +3032,10 @@ msgstr "Issue ב-Linear"
 msgid "Link a chat app"
 msgstr "קישור אפליקציית צ׳אט"
 
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "קישור SSO"
@@ -3056,6 +3089,10 @@ msgstr "טוען הגדרות זיכרון…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "טוען קטלוג מודלים…"
+
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr ""
 
 #: src/components/ArtifactFileCard.tsx
 #: src/components/FileViewer.tsx
@@ -3687,6 +3724,10 @@ msgstr "לפי תזמון"
 msgid "on the 1st at {0}"
 msgstr "ב-1 לחודש בשעה {0}"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -3743,6 +3784,10 @@ msgstr "פתיחה בחלון מלא"
 msgid "Open navigation"
 msgstr "פתיחת הניווט"
 
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "עבודה פתוחה"
@@ -3794,9 +3839,17 @@ msgstr "פלט"
 msgid "Owner"
 msgstr "בעלים"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "תקרית PagerDuty"
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
+msgstr ""
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4392,6 +4445,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק הזה."
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5051,6 +5105,10 @@ msgstr "חלון ההקשר של המודל הזה קטן מדי. יש לבחו�
 msgid "This month"
 msgstr "החודש"
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "פעולה זו מוחקת לצמיתות את החשבון ואת הנתונים."
@@ -5282,6 +5340,7 @@ msgstr "לעדכן את ההוראות?"
 msgid "Update progress"
 msgstr "התקדמות העדכון"
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr "עודכן {updated}"

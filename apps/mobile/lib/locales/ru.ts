@@ -1022,4 +1022,16 @@ export const RU_MESSAGES: Record<string, string> = {
   "How big is your team?": "Сколько человек в вашей команде?",
   "How did you hear about us?": "Как вы о нас узнали?",
   "Welcome to {PRODUCT_NAME}": "Добро пожаловать в {PRODUCT_NAME}",
+  "A page can't be empty.": "Страница не может быть пустой.",
+  "Could not open this page.": "Не удалось открыть эту страницу.",
+  "Could not save this page": "Не удалось сохранить эту страницу",
+  "Could not share this page": "Не удалось поделиться этой страницей",
+  "On this page": "На этой странице",
+  "Opens the page": "Открывает страницу",
+  Page: "Страница",
+  "Page markdown": "Markdown страницы",
+  Pages: "Страницы",
+  "This page changed since you opened it. Close it and open it again to edit the latest version.":
+    "Страница изменилась после того, как вы её открыли. Закройте и откройте её снова, чтобы изменить последнюю версию.",
+  "Updated {date}": "Обновлено {date}",
 };

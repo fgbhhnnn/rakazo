@@ -982,4 +982,16 @@ export const ZH_MESSAGES: Record<string, string> = {
   "How big is your team?": "你的团队有多大？",
   "How did you hear about us?": "你是如何知道我们的？",
   "Welcome to {PRODUCT_NAME}": "欢迎使用 {PRODUCT_NAME}",
+  "A page can't be empty.": "页面不能为空。",
+  "Could not open this page.": "无法打开此页面。",
+  "Could not save this page": "无法保存此页面",
+  "Could not share this page": "无法分享此页面",
+  "On this page": "本页内容",
+  "Opens the page": "打开页面",
+  Page: "页面",
+  "Page markdown": "页面 Markdown",
+  Pages: "页面",
+  "This page changed since you opened it. Close it and open it again to edit the latest version.":
+    "此页面在你打开后已被更改。请关闭后重新打开，再编辑最新版本。",
+  "Updated {date}": "更新于 {date}",
 };

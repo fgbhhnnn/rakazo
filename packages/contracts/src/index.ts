@@ -26,6 +26,7 @@ export * from "./model-provider.js";
 export * from "./model-roles.js";
 export * from "./office-attachments.js";
 export * from "./openai-compatible-ui.js";
+export * from "./pages.js";
 export * from "./reactions.js";
 export * from "./routine-watch.js";
 export * from "./rpc.js";

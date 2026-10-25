@@ -1,0 +1,34 @@
+/* Document typography for a Page; chat bubbles keep the compact .rk-chat-markdown defaults. */
+.rk-page-body .rk-chat-markdown {
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.rk-page-body > section {
+  padding-top: 1.75em;
+}
+
+.rk-page-body > :first-child {
+  padding-top: 0;
+}
+
+.rk-page-body .rk-chat-markdown h1 {
+  font-size: 1.6em;
+  letter-spacing: -0.01em;
+}
+
+.rk-page-body .rk-chat-markdown h2 {
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--border);
+  font-size: 1.35em;
+  letter-spacing: -0.01em;
+}
+
+.rk-page-body .rk-chat-markdown h3 {
+  font-size: 1.12em;
+}
+
+.rk-page-body .rk-chat-markdown h2,
+.rk-page-body .rk-chat-markdown h3 {
+  margin-top: 1.4em;
+}

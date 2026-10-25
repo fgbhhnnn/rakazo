@@ -1016,4 +1016,16 @@ export const JA_MESSAGES: Record<string, string> = {
   "Security check failed. Complete it again and retry.":
     "セキュリティチェックに失敗しました。もう一度完了してから再試行してください。",
   "Your administrator manages this setting.": "この設定は管理者が管理しています。",
+  "A page can't be empty.": "ページを空にすることはできません。",
+  "Could not open this page.": "このページを開けませんでした。",
+  "Could not save this page": "このページを保存できませんでした",
+  "Could not share this page": "このページを共有できませんでした",
+  "On this page": "このページの内容",
+  "Opens the page": "ページを開きます",
+  Page: "ページ",
+  "Page markdown": "ページの Markdown",
+  Pages: "ページ",
+  "This page changed since you opened it. Close it and open it again to edit the latest version.":
+    "このページは開いた後に変更されました。最新版を編集するには、閉じてからもう一度開いてください。",
+  "Updated {date}": "{date} に更新",
 };

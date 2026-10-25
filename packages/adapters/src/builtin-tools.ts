@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
+import { pageTools } from "./page-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
 import { reportProgressTool } from "./worker-progress.js";
 
@@ -1195,6 +1196,7 @@ export const builtinAgentTools: ConnectorTool[] = [
       properties: { task_id: { type: "string" } },
     },
   },
+  ...pageTools,
   reportProgressTool,
   {
     name: "background_task_message",
