@@ -16,12 +16,15 @@ export function SpaceSettingsPanel({
   onDelete,
   onClose,
   onBusyChange,
+  memberSettingsLocked = false,
 }: {
   space: SettingsSpace;
   onRename: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
+  /** A locked deployment's member runs on the owner's models and voice in every Space. */
+  memberSettingsLocked?: boolean;
 }) {
   const { t } = useLingui();
   const nameId = useId();
@@ -127,7 +130,11 @@ export function SpaceSettingsPanel({
           />
         )}
       </SettingsGroup>
-      <SpaceSettingOverrides onClose={onClose} onBusyChange={onBusyChange} />
+      <SpaceSettingOverrides
+        onClose={onClose}
+        onBusyChange={onBusyChange}
+        memberSettingsLocked={memberSettingsLocked}
+      />
       {space.canDelete ? (
         <Button
           variant="destructive"

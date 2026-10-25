@@ -20,9 +20,12 @@ import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 export function SpaceSettingOverrides({
   onClose,
   onBusyChange,
+  memberSettingsLocked = false,
 }: {
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
+  /** Models and voice are the owner's on a locked deployment, so a member cannot customize them. */
+  memberSettingsLocked?: boolean;
 }) {
   const { t } = useLingui();
   const rpc = useSpaceRpc();
@@ -32,7 +35,7 @@ export function SpaceSettingOverrides({
   const [pending, setPending] = useState<SpaceSetting | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const settings: { id: SpaceSetting; label: string; panel: () => ReactNode }[] = [
+  const allSettings: { id: SpaceSetting; label: string; panel: () => ReactNode }[] = [
     {
       id: "models",
       label: t`Models`,
@@ -56,6 +59,10 @@ export function SpaceSettingOverrides({
       panel: () => <ApprovalRulesSettings scope="space" />,
     },
   ];
+
+  const settings = memberSettingsLocked
+    ? allSettings.filter(({ id }) => id !== "models" && id !== "voice")
+    : allSettings;
 
   async function setOverride(setting: SpaceSetting, enabled: boolean) {
     if (pending) return;

@@ -398,6 +398,7 @@ export function SettingsOverlay({
                     onDelete={() => onDeleteSpace?.(space.id) ?? Promise.resolve()}
                     onClose={requestClose}
                     onBusyChange={setVoiceBusy}
+                    memberSettingsLocked={memberSettingsLocked}
                   />
                 ) : null}
                 {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}

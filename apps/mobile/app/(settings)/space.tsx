@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeSwitch } from "../../components/native-switch";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { SkipApprovalsSwitch } from "../../components/skip-approvals-switch";
+import { rpc as accountRpc, type MobileMe } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
@@ -28,11 +29,18 @@ export default function SpaceSettings() {
   const [overrides, setOverrides] = useState<SpaceSetting[] | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A locked deployment's member runs on the owner's models and voice in every Space.
+  const [membersLocked, setMembersLocked] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       if (target.scope !== "space") return;
       let current = true;
+      void accountRpc<MobileMe>("me")
+        .then((me) => {
+          if (current) setMembersLocked(me.memberSettingsLocked === true);
+        })
+        .catch(() => undefined);
       void rpc<SpaceSetting[]>("spaceSettings/overrides")
         .then((next) => {
           if (current) setOverrides(next);
@@ -99,8 +107,8 @@ export default function SpaceSettings() {
           </Text>
         ) : null}
         <SettingsGroup accessibilityLabel={t("Customize")} label={t("Customize")}>
-          {row("models", t("Models"))}
-          {row("voice", t("Voice"))}
+          {membersLocked ? null : row("models", t("Models"))}
+          {membersLocked ? null : row("voice", t("Voice"))}
           {row("confirmations", t("Confirmations"))}
           {overrides?.includes("confirmations") ? <SkipApprovalsSwitch target={target} /> : null}
         </SettingsGroup>

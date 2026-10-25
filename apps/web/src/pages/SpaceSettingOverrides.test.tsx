@@ -161,3 +161,18 @@ it("keeps the row as it was when customizing fails", async () => {
   expect(button("Customize Models")).not.toBeNull();
   expect(panels).toEqual([]);
 });
+
+it("hides models and voice from a member of a locked deployment, even a customized Space", async () => {
+  spaceSettings.overrides.mockResolvedValue(["models", "voice", "confirmations"]);
+  await render(<SpaceSettingOverrides onClose={() => undefined} memberSettingsLocked />);
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="confirmations-panel"]')).not.toBeNull(),
+  );
+  expect(container.querySelector('[data-testid="space-setting-models"]')).toBeNull();
+  expect(container.querySelector('[data-testid="space-setting-voice"]')).toBeNull();
+  expect(container.querySelector('[data-testid="models-panel"]')).toBeNull();
+  expect(container.querySelector('[data-testid="voice-panel"]')).toBeNull();
+  expect(button("Use defaults for Models")).toBeNull();
+  expect(button("Use defaults for Voice")).toBeNull();
+  expect(new Set(panels)).toEqual(new Set(["confirmations:space"]));
+});

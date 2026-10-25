@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   push: vi.fn(),
   rpc: vi.fn(),
   overrides: [] as string[],
+  locked: false,
   autoReview: { enabled: false, skipApprovals: false },
 }));
 type SwitchProps = {
@@ -104,10 +105,12 @@ const control = (label: string) =>
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.overrides = [];
+  state.locked = false;
   state.push.mockReset();
   state.rpc
     .mockReset()
     .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+      if (proc === "me") return { memberSettingsLocked: state.locked };
       if (proc === "spaceSettings/overrides") return state.overrides;
       if (proc === "spaceSettings/setOverride") {
         const setting = input!.setting as string;
@@ -181,4 +184,14 @@ it("shows the account's skip-approvals switch for the Space once confirmations a
     spaceContext,
   );
   expect(control("Run actions without asking")?.checked).toBe(true);
+});
+
+it("hides models and voice from a member of a locked deployment", async () => {
+  state.locked = true;
+  state.overrides = ["models", "voice"];
+  await act(async () => root.render(createElement(SpaceSettings, { key: "locked" })));
+  expect(control("Customize Models")).toBeNull();
+  expect(control("Customize Voice")).toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+  expect(control("Customize Confirmations")?.checked).toBe(false);
 });
