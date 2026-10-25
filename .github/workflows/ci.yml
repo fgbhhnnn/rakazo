@@ -131,7 +131,9 @@ jobs:
   test-integration:
     name: Postgres journeys
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Each suite runs on its own fresh database clone, one after another; the job was at
+    # 9m56s with 70 suites, so 10 minutes no longer left room for one more suite.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
