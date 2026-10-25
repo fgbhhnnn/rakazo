@@ -39,6 +39,7 @@ import {
   previewAgentImport,
   undoAgentImport,
 } from "../agent-import.js";
+import { agentImportEnabled } from "../agent-import-flag.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
@@ -213,6 +214,13 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
 export function botsRoutes(ctx: RouterContext) {
   const { deps, repos, botModelValidation, removeBot, agentImportServices, groupRepos, authed } =
     ctx;
+  // Agent import is not offered here unless RAKAZO_AGENT_IMPORT_ENABLED=true; refuse before any work.
+  const importing = authed.use(async ({ next }) => {
+    if (!agentImportEnabled()) {
+      throw new ORPCError("NOT_FOUND", { message: "Agent import is not available." });
+    }
+    return next();
+  });
   return {
     bots: {
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
@@ -239,10 +247,10 @@ export function botsRoutes(ctx: RouterContext) {
         });
         return bot;
       }),
-      importPreview: authed.bots.importPreview.handler(async ({ context, input }) =>
+      importPreview: importing.bots.importPreview.handler(async ({ context, input }) =>
         previewAgentImport(agentImportServices as AgentImportServices, context.actor, input),
       ),
-      importCreate: authed.bots.importCreate.handler(async ({ context, input }) => {
+      importCreate: importing.bots.importCreate.handler(async ({ context, input }) => {
         let bot: Bot;
         try {
           bot = await createImportedBot(agentImportServices, context.actor, input, context.signal);
@@ -252,13 +260,13 @@ export function botsRoutes(ctx: RouterContext) {
         // An imported bot starts inert: no intro run, paused routines, unapproved servers.
         return bot;
       }),
-      importInfo: authed.bots.importInfo.handler(async ({ context, input }) =>
+      importInfo: importing.bots.importInfo.handler(async ({ context, input }) =>
         agentImportInfo(agentImportServices as AgentImportServices, context.actor, input.botId),
       ),
-      importSetupState: authed.bots.importSetupState.handler(async ({ context, input }) =>
+      importSetupState: importing.bots.importSetupState.handler(async ({ context, input }) =>
         agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),
       ),
-      importUndo: authed.bots.importUndo.handler(async ({ context, input }) =>
+      importUndo: importing.bots.importUndo.handler(async ({ context, input }) =>
         undoAgentImport(agentImportServices as AgentImportServices, context.actor, input),
       ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {

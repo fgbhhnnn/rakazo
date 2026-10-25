@@ -106,6 +106,7 @@ import { SidebarFooter } from "../components/SidebarFooter";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import { emptyActivityFilters } from "../lib/activity-list-filters";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
+import { AGENT_IMPORT_ENABLED } from "../lib/agent-import-flag";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { autoReadStillWanted } from "../lib/auto-read";
@@ -3776,11 +3777,15 @@ function SpaceShell() {
               speakingMessageId={speakingMessageId}
               onSpeak={speakMessage}
               onOpenComputer={onOpenComputer}
-              onOpenImport={() => {
-                setDroppedAgent(null);
-                setImportFromDialog(false);
-                setPanel("import-agent");
-              }}
+              onOpenImport={
+                AGENT_IMPORT_ENABLED
+                  ? () => {
+                      setDroppedAgent(null);
+                      setImportFromDialog(false);
+                      setPanel("import-agent");
+                    }
+                  : undefined
+              }
               onOpenImportSetup={(target) => {
                 importSetupOpen.current = true;
                 if (target.kind === "models") openSettings("models");
@@ -3807,11 +3812,15 @@ function SpaceShell() {
               key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               enterToSend={enterToSend}
-              onImportAgent={(agent) => {
-                setDroppedAgent(agent);
-                setImportFromDialog(false);
-                setPanel("import-agent");
-              }}
+              onImportAgent={
+                AGENT_IMPORT_ENABLED
+                  ? (agent) => {
+                      setDroppedAgent(agent);
+                      setImportFromDialog(false);
+                      setPanel("import-agent");
+                    }
+                  : undefined
+              }
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
               busy={composerRunning}
               disabled={Boolean(recordingSkill)}
@@ -3992,7 +4001,7 @@ function SpaceShell() {
                 covered={computerOpen}
               />
             ) : null}
-            {panel === "import-agent" ? (
+            {AGENT_IMPORT_ENABLED && panel === "import-agent" ? (
               <AgentImportForm
                 bots={bots.filter((bot) => !bot.archivedAt)}
                 initialSource={droppedAgent ?? undefined}
@@ -4220,12 +4229,16 @@ function SpaceShell() {
           <CreateBotDialog
             onCancel={() => setCreateBotOpen(false)}
             onCreate={createBot}
-            onImport={() => {
-              setCreateBotOpen(false);
-              setDroppedAgent(null);
-              setImportFromDialog(true);
-              setPanel("import-agent");
-            }}
+            onImport={
+              AGENT_IMPORT_ENABLED
+                ? () => {
+                    setCreateBotOpen(false);
+                    setDroppedAgent(null);
+                    setImportFromDialog(true);
+                    setPanel("import-agent");
+                  }
+                : undefined
+            }
           />
         ) : null}
 

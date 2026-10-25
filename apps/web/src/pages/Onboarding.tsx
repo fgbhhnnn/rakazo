@@ -50,6 +50,7 @@ import {
 import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
 import { PageLoading } from "../components/PageLoading";
 import { SignupSurvey } from "../components/SignupSurvey";
+import { AGENT_IMPORT_ENABLED } from "../lib/agent-import-flag";
 import { useCopyText } from "../lib/copy-text";
 import { providerDisplayName } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
@@ -565,7 +566,7 @@ export function OnboardingPage() {
                 setSurveyDone(true);
               }}
             />
-            {noModelStep && !importedBotId ? (
+            {AGENT_IMPORT_ENABLED && noModelStep && !importedBotId ? (
               <Button
                 variant="link"
                 className="mt-6 h-auto px-0 text-muted-foreground"
@@ -576,7 +577,7 @@ export function OnboardingPage() {
             ) : null}
           </>
         ) : null}
-        {(step === "model" || step === "survey") && importing ? (
+        {AGENT_IMPORT_ENABLED && (step === "model" || step === "survey") && importing ? (
           <OnboardingImport
             firstBot={{
               lock: withFirstBotLock,
@@ -1109,7 +1110,7 @@ export function OnboardingPage() {
                 </Button>
               ) : null}
             </div>
-            {importedBotId ? null : (
+            {importedBotId || !AGENT_IMPORT_ENABLED ? null : (
               <Button
                 variant="link"
                 className="mt-6 h-auto px-0 text-muted-foreground"

@@ -11,7 +11,7 @@ import type { AgentImportInfo, AgentImportPlan, Bot, MemoryDocument } from "@rak
 import { resolveEncryptionKey } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // The app's own logger module (the API resolves `@rakazo/logging` to this file).
 import { createLogger, createTestSink, installLogger } from "../../logging/src/index.js";
 import { sessionCookieHeader } from "./index.js";
@@ -120,6 +120,8 @@ describeIntegration("agent import", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-agent-import-"));
 
   beforeAll(async () => {
+    // Agent import is off by default on this deployment; these tests exercise it switched on.
+    vi.stubEnv("RAKAZO_AGENT_IMPORT_ENABLED", "true");
     const { createApp } = await import("../../../apps/api/src/app.ts");
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
@@ -144,6 +146,7 @@ describeIntegration("agent import", () => {
   });
 
   afterAll(async () => {
+    vi.unstubAllEnvs();
     await stop?.();
     rmSync(dataDir, { recursive: true, force: true });
   });

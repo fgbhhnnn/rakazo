@@ -63,6 +63,15 @@ const MEMBER_OPEN = [
 /** Only RAKAZO_ADMIN_EMAILS admins may call these. */
 const ADMIN_ONLY = ["deployment.get", "deployment.update"] as const;
 
+/** Agent import is refused unless RAKAZO_AGENT_IMPORT_ENABLED=true. */
+const AGENT_IMPORT = [
+  "bots.importPreview",
+  "bots.importCreate",
+  "bots.importInfo",
+  "bots.importSetupState",
+  "bots.importUndo",
+] as const;
+
 /** No app account has authority over these. */
 const NOBODY = ["security.events"] as const;
 
@@ -135,7 +144,13 @@ describe("router owner/admin guards", () => {
   const paths = procedurePaths(createRouter(deps()));
 
   it("enumerates the procedures each guard list names", () => {
-    for (const path of [...OWNER_MANAGED, ...MEMBER_OPEN, ...ADMIN_ONLY, ...NOBODY]) {
+    for (const path of [
+      ...OWNER_MANAGED,
+      ...MEMBER_OPEN,
+      ...ADMIN_ONLY,
+      ...NOBODY,
+      ...AGENT_IMPORT,
+    ]) {
       expect(paths, path).toContain(path);
     }
   });
@@ -184,6 +199,25 @@ describe("router owner/admin guards", () => {
     for (const user of [ADMIN, MEMBER, STORED_OWNER]) {
       expect(await failure(call(user, path)), user.userId).toMatchObject({ code: "FORBIDDEN" });
     }
+  });
+
+  it("gates every agent import procedure on the server flag", () => {
+    expect(paths.filter((path) => path.startsWith("bots.import"))).toEqual([...AGENT_IMPORT]);
+  });
+
+  it.each(AGENT_IMPORT)("%s is refused while agent import is off", async (path) => {
+    vi.stubEnv("RAKAZO_AGENT_IMPORT_ENABLED", "");
+    for (const user of [ADMIN, MEMBER]) {
+      expect(await failure(call(user, path)), user.userId).toMatchObject({
+        code: "NOT_FOUND",
+        message: "Agent import is not available.",
+      });
+    }
+  });
+
+  it.each(AGENT_IMPORT)("%s gets past the flag once agent import is on", async (path) => {
+    vi.stubEnv("RAKAZO_AGENT_IMPORT_ENABLED", "true");
+    expect((await failure(call(MEMBER, path)))?.message).not.toBe("Agent import is not available.");
   });
 
   it("keeps Space copies of models and voice behind the lock, but not confirmations", async () => {
