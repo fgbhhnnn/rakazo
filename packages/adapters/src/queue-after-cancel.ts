@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
+import { laneQueueOrder } from "./background-task-lanes.js";
 import { SLOT_HOLDING_STATUSES } from "./background-task-rows.js";
 
 /**
@@ -23,14 +24,16 @@ export async function queueChangeAfterCancel(
   const stillQueued = await prisma.backgroundTaskQueue.findMany({
     where: { botId, status: "queued" },
     orderBy: { createdAt: "asc" },
-    select: { id: true, ref: true, name: true },
+    select: { id: true, ref: true, name: true, args: true },
   });
+  // Positions are per lane: each lane is its own queue.
+  const order = laneQueueOrder(stillQueued);
   return {
     started_from_queue: started,
-    still_queued: stillQueued.map((row, index) => ({
+    still_queued: stillQueued.map((row) => ({
       task_id: row.ref ?? row.id,
       name: row.name,
-      position: index + 1,
+      position: order.get(row.id) ?? 1,
     })),
   };
 }

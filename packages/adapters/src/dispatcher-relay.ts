@@ -8,6 +8,7 @@ import { inferAttachmentMimeType } from "@rakazo/core";
 import type { parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { attachmentDisplayName } from "./attachment-display-name.js";
+import { isThinkWorker } from "./background-task-lanes.js";
 import { BACKGROUND_WORKER_SPAWN_PREFIX, parseWorkerReportFiles } from "./background-tasks.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 import type { ExecutorDeps } from "./executor.js";
@@ -114,9 +115,10 @@ export async function attachWorkerReportFiles(input: {
       id: input.report.fromBotId,
       spawnKey: { startsWith: `${BACKGROUND_WORKER_SPAWN_PREFIX}${input.bot.id}:` },
     },
-    select: { id: true },
+    select: { id: true, spawnKey: true },
   });
-  if (!worker) return [];
+  // A think worker has no computer: whatever its report lists, nothing is read from the computer.
+  if (!worker || isThinkWorker(worker)) return [];
   // A run resumed after ask_user (or retried) already attached these files in an earlier
   // attempt; the in-memory set starts empty, so check what this run already stored.
   const storedNames = new Set(

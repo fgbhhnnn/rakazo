@@ -218,6 +218,11 @@ import {
 import { reviewWithBackups } from "./auto-review-backups.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
+import {
+  isThinkWorker,
+  THINK_WORKER_COMPUTER_REFUSAL,
+  thinkWorkerToolRefusal,
+} from "./background-task-lanes.js";
 import { runBackgroundTaskTool } from "./background-task-tools.js";
 import { startQueuedBackgroundTasks } from "./background-tasks.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
@@ -3829,9 +3834,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // A dispatcher's main turn has no computer tools, so it never waits for the computer
       // (booting, suspending, or busy with a worker): the reply must not queue behind it.
       const dispatcherTurn = Boolean(deps.dispatcherMode) && isDispatcherBot(leaseTarget);
+      // A think-lane worker has no computer either: it never leases, wakes or holds one.
+      const thinkTurn = isThinkWorker(leaseTarget);
       const turnLedger = createDispatcherTurnLedger();
       const dispatcherVisible = slotFree(dispatcherTurn);
-      if (!leaseTarget.computerId && !dispatcherTurn) throw new Error("Bot has no computer");
+      if (!leaseTarget.computerId && !dispatcherTurn && !thinkTurn)
+        throw new Error("Bot has no computer");
       if (dispatcherTurn) {
         // Drain this dispatcher's persisted queue first: a worker that just finished (its result
         // is what woke this turn) or a restart may have freed a slot.
@@ -3858,7 +3866,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
-        if (dispatcherTurn || !leaseTarget.computerId) throw new SkipComputerLease();
+        if (dispatcherTurn || thinkTurn || !leaseTarget.computerId) throw new SkipComputerLease();
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
           runId,
@@ -4383,8 +4391,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
         }
 
-        if (!bot.computer && !dispatcherTurn) throw new Error("Bot has no computer");
-        const storedComputer = bot.computer ?? dispatcherComputerPlaceholder(bot.id);
+        if (!bot.computer && !dispatcherTurn && !thinkTurn) throw new Error("Bot has no computer");
+        const storedComputer =
+          (thinkTurn ? null : bot.computer) ?? dispatcherComputerPlaceholder(bot.id);
         const computerMode = parseComputerMode(storedComputer.scope);
         const artifacts = deps.artifacts;
         const recentFilesInput = {
@@ -4396,6 +4405,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const runComputer = lazyRunComputer(
           async () => {
             getLogger().info("computer.requested");
+            if (thinkTurn) throw new Error(THINK_WORKER_COMPUTER_REFUSAL);
             if (!bot.computer)
               throw new Error("This bot has no computer; hand the work to background_task.");
             const computer = await provisionWhenNotBusy(
@@ -5125,6 +5135,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (nestingRefusal) return { error: nestingRefusal };
           const userFacingRefusal = workerUserFacingRefusal(bot, name);
           if (userFacingRefusal) return { error: userFacingRefusal };
+          const thinkRefusal = thinkWorkerToolRefusal(bot, name);
+          if (thinkRefusal) return { error: thinkRefusal };
           if (disabledBuiltinTools.has(name)) {
             return { error: "This tool is disabled for this bot." };
           }

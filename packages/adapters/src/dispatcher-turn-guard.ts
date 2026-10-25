@@ -60,7 +60,7 @@ export async function deferDispatcherWake(
 export function dispatcherComputerPlaceholder(botId: string) {
   return {
     id: `no-computer:${botId}`,
-    scope: "bot",
+    scope: "dedicated",
     kind: "none",
     providerRef: null,
     homeKey: botId,

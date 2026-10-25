@@ -1150,7 +1150,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "background_task",
     description:
-      "Start heavy or long work in the background and return immediately, so you stay free to talk to the user. A background worker (same computer and tools, its own context) does the task; its concise final result comes back to you later as a message that wakes you. Use it for anything needing more than ~2 tool rounds or over a minute (long PDFs/many images, multi-shot video, batch data, coding, long research). Up to 4 run at once per bot; more are queued and start automatically. Give a self-contained task: inputs as file paths/URLs and the expected outputs. The worker has its own home directory (its shell working directory), not yours: never describe your directory as the worker's working directory. Name an output location only when the user asked for one, as an absolute path; otherwise let the worker write in its own home and list the files in its report.",
+      'Start heavy or long work in the background and return immediately, so you stay free to talk to the user. A background worker (its own context) does the task; lane "computer" (default) shares your computer and tools, lane "think" has no computer and only thinks, searches the web and uses connected apps; its concise final result comes back to you later as a message that wakes you. Use it for anything needing more than ~2 tool rounds or over a minute (long PDFs/many images, multi-shot video, batch data, coding, long research). Each lane has its own limit per bot (computer 4, think 20 by default); more are queued per lane and start automatically. Give a self-contained task: inputs as file paths/URLs and the expected outputs. The worker has its own home directory (its shell working directory), not yours: never describe your directory as the worker\'s working directory. Name an output location only when the user asked for one, as an absolute path; otherwise let the worker write in its own home and list the files in its report.',
     inputSchema: {
       type: "object",
       properties: {
@@ -1163,6 +1163,12 @@ export const builtinAgentTools: ConnectorTool[] = [
         instructions: {
           type: "string",
           description: "Optional extra system guidance for the worker.",
+        },
+        lane: {
+          type: "string",
+          enum: ["computer", "think"],
+          description:
+            "computer (default): needs the computer (shell, code, files or uploads, browser, desktop, images/video/charts). think: no computer at all (reasoning, writing, planning, web research, connected apps); never wakes the computer. When unsure, use computer.",
         },
         agent: {
           type: "string",

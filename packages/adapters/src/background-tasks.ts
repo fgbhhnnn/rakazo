@@ -12,6 +12,18 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { announceQueuedTaskStart } from "./background-task-cards.js";
+import {
+  type BackgroundTaskLane,
+  laneComputer,
+  laneDisabledTools,
+  laneHeads,
+  laneLimit,
+  laneOfTask,
+  laneQueueOrder,
+  laneQueuePosition,
+  requestedLane,
+  THINK_WORKER_INSTRUCTIONS,
+} from "./background-task-lanes.js";
 import { recoverBackgroundTasks } from "./background-task-recovery.js";
 import {
   ACTIVE_TASK_STATUSES,
@@ -43,10 +55,7 @@ import { WORKER_ALWAYS_DISABLED, workerDisabledTools } from "./worker-tool-polic
  * dispatcher automatically (bounded by the bot-message limit), and that reply wakes the dispatcher.
  */
 
-export function backgroundTaskConcurrency(env: Record<string, string | undefined> = process.env) {
-  const parsed = Number(env.RAKAZO_BACKGROUND_TASKS_PER_BOT?.trim() || Number.NaN);
-  return Number.isFinite(parsed) && parsed >= 1 ? Math.min(10, Math.floor(parsed)) : 4;
-}
+export { backgroundTaskConcurrency, thinkTaskConcurrency } from "./background-task-lanes.js";
 
 export const BACKGROUND_WORKER_SPAWN_PREFIX = HIDDEN_BOT_SPAWN_PREFIX;
 export function backgroundWorkerSpawnKey(botId: string, slot: number) {
@@ -274,7 +283,16 @@ async function launchBackgroundTaskNow(
   const toolsArg = Array.isArray(args.tools) ? args.tools.map(String) : undefined;
   const allowlist = toolsArg ?? BACKGROUND_AGENT_PROFILES[agent].tools;
   const instructions = args.instructions ? String(args.instructions) : undefined;
-  const taskHash = backgroundTaskHash({ name, task, instructions, agent });
+  const lanePick = requestedLane(args.lane);
+  if ("error" in lanePick) return { error: lanePick.error };
+  const { lane } = lanePick;
+  // A computer task hashes as before; a think task never dedupes against its computer re-dispatch.
+  const taskHash = backgroundTaskHash({
+    name,
+    task,
+    instructions,
+    agent: lane === "think" ? `${agent}:think` : agent,
+  });
 
   // Never start a second copy of the same work that is still running or queued (e.g. a retry
   // after a provider error while the first attempt is in fact still going). Same content only.
@@ -316,7 +334,12 @@ async function launchBackgroundTaskNow(
         args: {
           ...(instructions ? { instructions } : {}),
           agent,
-          disabled: workerDisabledTools(options.builtinToolNames, allowlist),
+          ...(lane === "think" ? { lane } : {}),
+          disabled: laneDisabledTools(
+            lane,
+            workerDisabledTools(options.builtinToolNames, allowlist),
+            options.builtinToolNames,
+          ),
           deliveryKey: options.deliveryKey,
           ...(options.attachments?.length
             ? { attachments: options.attachments.map((block) => ({ ...block })) }
@@ -329,7 +352,7 @@ async function launchBackgroundTaskNow(
   // This call's own card is posted by the tool; every other task started here gets one from the drain.
   await drainQueue(deps, bot.id, run, row.id);
   const now = await deps.prisma.backgroundTaskQueue.findUnique({ where: { id: row.id } });
-  const limit = backgroundTaskConcurrency();
+  const limit = laneLimit(lane);
   if (now && (now.status === "started" || now.status === "claiming") && now.workerBotId) {
     return {
       ok: true as const,
@@ -339,27 +362,25 @@ async function launchBackgroundTaskNow(
       worker_id: now.workerBotId,
       name,
       agent,
+      lane,
       note: "已在后台开始。结果完成后会自动作为消息发回给你并唤醒你；现在先简短告诉用户已派出，然后结束本轮或继续别的事。不要轮询等待。",
     };
   }
   if (!now || now.status === "failed" || now.status === "cancelled") {
     return { error: now?.error ?? "background task could not be started" };
   }
-  const position = await deps.prisma.backgroundTaskQueue.count({
-    where: { botId: bot.id, status: "queued", createdAt: { lte: now.createdAt } },
-  });
-  const busy = await deps.prisma.backgroundTaskQueue.count({
-    where: { botId: bot.id, status: { in: SLOT_HOLDING_STATUSES } },
-  });
+  const { position, busy } = await laneQueuePosition(deps.prisma, bot.id, now);
+  const laneName = lane === "think" ? "思考" : "电脑";
   return {
     ok: true as const,
     status: "queued" as const,
     task_id: now.ref ?? now.id,
     name,
+    lane,
     position,
     running: busy,
     limit,
-    note: `${busy} 个后台任务正在运行（上限 ${limit}），这个任务已排队，第 ${position} 位；有空位时自动开始，结果照常发回给你。如实告诉用户“已排队，第 ${position} 位”，不要说已开始。`,
+    note: `${busy} 个${laneName}后台任务正在运行（${laneName}任务上限 ${limit}），这个任务已排队，${laneName}队列第 ${position} 位；有空位时自动开始，结果照常发回给你。如实告诉用户“已排队，第 ${position} 位”，不要说已开始。`,
   };
 }
 
@@ -381,8 +402,14 @@ async function workerIsFree(
 }
 
 type Claim =
-  | { kind: "claimed"; row: NonNullable<TaskRow>; workerId: string; attempts: number }
-  | { kind: "spawn"; slot: number }
+  | {
+      kind: "claimed";
+      row: NonNullable<TaskRow>;
+      workerId: string;
+      attempts: number;
+      lane: BackgroundTaskLane;
+    }
+  | { kind: "spawn"; slot: number; row: NonNullable<TaskRow> }
   | { kind: "none" };
 
 /**
@@ -394,37 +421,53 @@ async function claimSlot(
   dispatcherBotId: string,
   spaceId: string,
 ): Promise<Claim> {
-  const limit = backgroundTaskConcurrency();
   return deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM bots WHERE id = ${dispatcherBotId} FOR UPDATE`;
-    const head = await tx.backgroundTaskQueue.findFirst({
+    const queued = await tx.backgroundTaskQueue.findMany({
       where: { botId: dispatcherBotId, status: "queued" },
       orderBy: { createdAt: "asc" },
     });
-    if (!head) return { kind: "none" } as const;
+    if (queued.length === 0) return { kind: "none" } as const;
     const existing = await workerBots({ prisma: tx as never }, dispatcherBotId, spaceId);
-    for (let slot = 1; slot <= limit; slot += 1) {
-      const worker = existing.find(
-        (b) => b.spawnKey === backgroundWorkerSpawnKey(dispatcherBotId, slot),
-      );
-      if (!worker) return { kind: "spawn", slot } as const;
-      if (!(await workerIsFree(tx as never, worker.id))) continue;
-      const attempts = head.attempts + 1;
-      await tx.backgroundTaskQueue.update({
-        where: { id: head.id },
-        data: {
-          status: "claiming",
-          workerBotId: worker.id,
-          leaseOwner: PROCESS_LEASE_OWNER,
-          leaseExpiresAt: new Date(Date.now() + CLAIM_LEASE_MS),
-          attempts,
-          startedAt: new Date(),
-        },
-      });
-      return { kind: "claimed", row: head, workerId: worker.id, attempts } as const;
+    // Each lane is its own FIFO queue with its own slots: a full computer lane never holds
+    // back think tasks, and the other way round.
+    for (const { lane, head, slots } of laneHeads(queued)) {
+      const claim = await claimLaneSlot(tx, dispatcherBotId, existing, lane, head, slots);
+      if (claim) return claim;
     }
     return { kind: "none" } as const;
   });
+}
+
+async function claimLaneSlot(
+  tx: Parameters<Parameters<QueueDeps["prisma"]["$transaction"]>[0]>[0],
+  dispatcherBotId: string,
+  existing: Awaited<ReturnType<typeof workerBots>>,
+  lane: BackgroundTaskLane,
+  head: NonNullable<TaskRow>,
+  slots: readonly number[],
+): Promise<Claim | undefined> {
+  for (const slot of slots) {
+    const worker = existing.find(
+      (b) => b.spawnKey === backgroundWorkerSpawnKey(dispatcherBotId, slot),
+    );
+    if (!worker) return { kind: "spawn", slot, row: head } as const;
+    if (!(await workerIsFree(tx as never, worker.id))) continue;
+    const attempts = head.attempts + 1;
+    await tx.backgroundTaskQueue.update({
+      where: { id: head.id },
+      data: {
+        status: "claiming",
+        workerBotId: worker.id,
+        leaseOwner: PROCESS_LEASE_OWNER,
+        leaseExpiresAt: new Date(Date.now() + CLAIM_LEASE_MS),
+        attempts,
+        startedAt: new Date(),
+      },
+    });
+    return { kind: "claimed", row: head, workerId: worker.id, attempts, lane } as const;
+  }
+  return undefined;
 }
 
 async function findTaskRow(deps: Pick<Deps, "prisma">, id: string) {
@@ -472,11 +515,7 @@ async function drainQueue(
     if (claim.kind === "none") break;
     if (claim.kind === "spawn") {
       const anchor = liveRun?.botId === bot.id ? liveRun : undefined;
-      const head = await deps.prisma.backgroundTaskQueue.findFirst({
-        where: { botId: bot.id, status: "queued" },
-        orderBy: { createdAt: "asc" },
-      });
-      if (!head) break;
+      const head = claim.row;
       const spawned = await spawnBot(deps, {
         spawnedBy: { id: bot.id, name: bot.name, spaceId: bot.spaceId, userId: head.userId },
         runId: anchor?.id ?? head.runId,
@@ -494,7 +533,7 @@ async function drainQueue(
       }
       continue;
     }
-    const { row, workerId, attempts } = claim;
+    const { row, workerId, attempts, lane } = claim;
     const live = liveRun && liveRun.botId === bot.id ? liveRun : undefined;
     // The run that queued this row has usually ended by now. Hand off from the dispatcher run
     // doing the drain when there is one; otherwise send on behalf of the ended source run.
@@ -525,6 +564,7 @@ async function drainQueue(
         attachments: Array.isArray(a.attachments) ? (a.attachments as AttachmentBlock[]) : [],
         deliveryKey: taskDeliveryKey(row, attempts),
         allowTerminalSource: sourceEnded,
+        lane,
       });
     } catch (error) {
       out = { error: error instanceof Error ? error.message : String(error) };
@@ -601,6 +641,7 @@ type StartSpec = {
   attachments: readonly AttachmentBlock[];
   deliveryKey: string;
   allowTerminalSource?: boolean;
+  lane: BackgroundTaskLane;
 };
 
 async function startOnSlot(
@@ -616,7 +657,9 @@ async function startOnSlot(
   const settings = await workerSettingsFromMain(
     deps.prisma,
     bot.id,
-    WORKER_INSTRUCTIONS,
+    spec.lane === "think"
+      ? `${WORKER_INSTRUCTIONS}\n\n${THINK_WORKER_INSTRUCTIONS}`
+      : WORKER_INSTRUCTIONS,
     spec.disabled,
   );
   await deps.prisma.bot.update({
@@ -628,7 +671,8 @@ async function startOnSlot(
       title: `${name.slice(0, 70)} #${ref}`,
       description: task.slice(0, 300),
       disabledBuiltinTools: settings.disabledBuiltinTools,
-      ...(bot.computerId ? { computerId: bot.computerId } : {}),
+      // A think worker has no computer, so its runs never wake or hold the dispatcher's.
+      ...laneComputer(spec.lane, bot.computerId),
     },
   });
   // An unrelated new task starts with a fresh context: earlier tasks stay visible in the
@@ -728,7 +772,7 @@ export async function backgroundTaskStatus(
         take: 30,
       });
   if (wanted && rows.length === 0) return { error: "no background task with that task_id" };
-  const queuedOrder = (await queuedTasks(deps, bot.id)).map((row) => row.id);
+  const queuedOrder = laneQueueOrder(await queuedTasks(deps, bot.id));
   const tasks = await Promise.all(
     rows.map(async (row) => {
       const workerRun = row.workerRunId
@@ -774,7 +818,8 @@ export async function backgroundTaskStatus(
         task: row.task.slice(0, 300),
         state: pending ? "needs_user" : state,
         ...(pending ? { pending } : {}),
-        ...(row.status === "queued" ? { position: queuedOrder.indexOf(row.id) + 1 } : {}),
+        lane: laneOfTask(row),
+        ...(row.status === "queued" ? { position: queuedOrder.get(row.id) ?? 1 } : {}),
         queued_at: formatInstantForUser(row.createdAt, zone),
         started_at: row.startedAt ? formatInstantForUser(row.startedAt, zone) : undefined,
         finished_at:
@@ -791,10 +836,11 @@ export async function backgroundTaskStatus(
   );
   return {
     ok: true as const,
-    limit: backgroundTaskConcurrency(),
+    limit: laneLimit("computer"),
+    think_limit: laneLimit("think"),
     tasks,
     time_zone: zone ?? "UTC",
-    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task. ${WORKER_ACTIVITY_NOTE} ${WORKER_NEEDS_USER_NOTE}`,
+    note: `Each task runs in a lane (computer or think); limit is the computer lane's, think_limit the think lane's, and position is the place in that task's own lane queue. Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task. ${WORKER_ACTIVITY_NOTE} ${WORKER_NEEDS_USER_NOTE}`,
   };
 }
 
