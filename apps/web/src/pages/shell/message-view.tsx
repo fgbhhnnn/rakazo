@@ -10,6 +10,7 @@ import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
+import { PageCard } from "../../components/pages/PageCard";
 import { SubagentCard } from "../../components/SubagentCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -423,6 +424,17 @@ export const MessageView = memo(function MessageView({
                   target={artifactTarget}
                   artifactId={block.artifactId}
                   name={block.name}
+                />
+              </div>
+            );
+          }
+          if (block.kind === "file" && block.page) {
+            return (
+              <div key={i} className="flex justify-start">
+                <PageCard
+                  pageId={block.page.pageId}
+                  title={block.name}
+                  snippet={block.page.snippet}
                 />
               </div>
             );

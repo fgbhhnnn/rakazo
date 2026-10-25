@@ -791,6 +791,61 @@ describe("automatic outcome return", () => {
     expect(prompt).not.toContain("后台1");
   });
 
+  it("returns the pages a hidden worker wrote with its result", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "write the plan",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "plan #AB12CD34" });
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "page-1",
+        rootArtifactId: null,
+        name: "Launch plan",
+        description: "Ship pages.",
+        mimeType: "text/markdown",
+        size: 20,
+        version: 1,
+      },
+      {
+        id: "page-1-v2",
+        rootArtifactId: "page-1",
+        name: "Launch plan",
+        description: "Ship pages today.",
+        mimeType: "text/markdown",
+        size: 26,
+        version: 2,
+      },
+    ]);
+    (harness.deps.prisma as unknown as { artifact: unknown }).artifact = { findMany };
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Plan is ready.",
+    );
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { spaceId: run.spaceId, runId: run.id, kind: "page" },
+      }),
+    );
+    const created = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(created).toContain('"artifactId":"page-1-v2"');
+    expect(created).toContain('"page":{"pageId":"page-1","snippet":"Ship pages today."}');
+    expect(created).not.toContain('"artifactId":"page-1",');
+  });
+
   it("never shows a worker slot name in a wake prompt", async () => {
     const harness = deps();
     await messageBot(

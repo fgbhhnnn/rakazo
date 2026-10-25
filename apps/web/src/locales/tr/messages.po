@@ -364,6 +364,10 @@ msgstr ""
 msgid "A command's output"
 msgstr "Bir komutun çıktısı"
 
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1036,6 +1040,7 @@ msgstr "Görselleri okuyamaz"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1276,6 +1281,10 @@ msgstr "Model ayarlarını kapat"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "Gezinmeyi kapat"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1565,6 +1574,10 @@ msgstr "Kopyala"
 msgid "Copy .env example"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
 msgstr "Maliyet"
@@ -1645,6 +1658,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "Devam edilemedi"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr ""
 
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
@@ -1818,6 +1835,10 @@ msgstr "Çıkış yapılamadı. Tekrar deneyin."
 msgid "Could not open billing"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr ""
+
 #: src/components/PdfViewer.tsx
 msgid "Could not open this PDF. Download it to view it."
 msgstr ""
@@ -1939,6 +1960,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "Bu seçim kaydedilemedi"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2402,6 +2427,10 @@ msgstr "Etiketi düzenle"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "Adı düzenle"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -3003,6 +3032,10 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO bağla"
@@ -3056,6 +3089,10 @@ msgstr "Hafıza ayarları yükleniyor…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Model kataloğu yükleniyor…"
+
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr ""
 
 #: src/components/ArtifactFileCard.tsx
 #: src/components/FileViewer.tsx
@@ -3687,6 +3724,10 @@ msgstr ""
 msgid "on the 1st at {0}"
 msgstr "her ayın 1'inde saat {0}"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -3743,6 +3784,10 @@ msgstr "Tam pencerede aç"
 msgid "Open navigation"
 msgstr "Gezinmeyi aç"
 
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Açık işler"
@@ -3794,8 +3839,16 @@ msgstr "Çıktı"
 msgid "Owner"
 msgstr "Sahip"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
+msgstr ""
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
 msgstr ""
 
 #: src/components/PasskeySettings.tsx
@@ -4392,6 +4445,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5051,6 +5105,10 @@ msgstr "Bu modelin bağlam penceresi çok küçük. Başka bir model seçin."
 msgid "This month"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "Bu işlem hesabınızı ve verilerinizi kalıcı olarak siler."
@@ -5282,6 +5340,7 @@ msgstr "Talimatlar güncellensin mi?"
 msgid "Update progress"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr ""

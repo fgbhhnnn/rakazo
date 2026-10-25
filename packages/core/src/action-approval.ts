@@ -183,6 +183,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
   "connect_app",
   "attach_file",
+  "edit_page",
   "end_call",
   "list_fleet",
   "list_secrets",
@@ -206,6 +207,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "skill_read",
   "task_catalog",
   "write_file",
+  "write_page",
 ]);
 
 export function toolResultTaintsRun(toolName: string): boolean {

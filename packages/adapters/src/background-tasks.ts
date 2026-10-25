@@ -72,6 +72,9 @@ export const BACKGROUND_AGENT_PROFILES = {
       "read_history",
       "skill_read",
       "attach_file",
+      "write_page",
+      "edit_page",
+      "read_page",
     ],
   },
   coder: {
@@ -86,6 +89,9 @@ export const BACKGROUND_AGENT_PROFILES = {
       "web_fetch",
       "skill_read",
       "attach_file",
+      "write_page",
+      "edit_page",
+      "read_page",
     ],
   },
   media: {
@@ -100,6 +106,9 @@ export const BACKGROUND_AGENT_PROFILES = {
       "web_fetch",
       "skill_read",
       "render_plot",
+      "write_page",
+      "edit_page",
+      "read_page",
     ],
   },
 } as const;
@@ -114,7 +123,7 @@ ${WORKER_PROGRESS_INSTRUCTION}
 - 等待后台命令时不要设定时提醒：在本轮里隔一会儿（如 sleep 30–60）查一次 status.json / 日志，直到跑完。
 - 大任务按 "Heavy Task Workflow" 技能来：计划清单写文件、素材存文件；技能里说交给子代理或 background_task 的步骤，你自己分批做（看图每批 3-4 张，看完只留文字笔记写进文件）。
 - 产物写到电脑工作区里的文件（shell 的默认当前目录就是工作区，建议 ./jobs/<任务名>/out/），结果里给出路径。不要把要交付的文件放在工作区外（如 shell 的 ~、/tmp），那里的文件发不出去；如已写在外面，先复制进工作区。
-- 最后的回复就是交给主 bot 的结果：简洁（建议 1500 字以内），包括 完成情况 / 结果要点 / 遇到的问题 / 建议的下一步。短结果（答案、短名单、短文案）直接写进回复；长材料（长报告、长名单、大段正文，超过约 3000 字）写进工作区的报告文件（如 ./jobs/<任务名>/out/report.md），回复里只写要点摘要，并在下面的“文件：”里列出这个报告文件。
+- 最后的回复就是交给主 bot 的结果：简洁（建议 1500 字以内），包括 完成情况 / 结果要点 / 遇到的问题 / 建议的下一步。短结果（答案、短名单、短文案）直接写进回复；报告、方案、备忘录、跟踪表这类给用户读的成文材料，用 write_page 写成页面（标题 + markdown 正文，可用表格和 mermaid），页面会自动以卡片出现在用户聊天里；回复里只写一两句要点和页面标题，不要再写 report.md。要改已有页面就用 edit_page（主 bot 会给出页面 id，可先 read_page）。其它长材料（数据、代码、长名单原始文件等）写进工作区的文件，回复里只写要点摘要，并在下面的“文件：”里列出。
 - 要交给用户的产物文件，在回复最后单独列出（每行一个绝对路径，用 realpath 确认存在），格式严格如下，系统会自动把这些文件发给用户：
 文件：
 - /绝对路径/文件名.扩展名`;

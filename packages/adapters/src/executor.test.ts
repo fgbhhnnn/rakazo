@@ -36,6 +36,7 @@ import {
 } from "./executor.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
+import { PAGE_DISPATCH_GUIDANCE, PAGE_GUIDANCE } from "./page-tools.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
 import { modelsForRequest } from "./pi-runtime.js";
 import { withMainRole } from "./testing/model-roles.js";
@@ -1293,6 +1294,7 @@ describe("userTurnInstructions", () => {
     "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
   const stableTail = [
     'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
+    PAGE_GUIDANCE,
     "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. If it uses browser sign-in, an approval card appears in the chat — tell the user to click Authorize on it.",
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
@@ -1394,6 +1396,33 @@ describe("userTurnInstructions", () => {
       archiveBot,
       ...stableTail,
     ]);
+  });
+
+  it("tells a bot with page tools to deliver reports as pages", () => {
+    const options = {
+      ...base,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+    };
+    const worker = userTurnInstructions(options);
+    expect(worker).toContain(PAGE_GUIDANCE);
+    expect(worker).not.toContain(PAGE_DISPATCH_GUIDANCE);
+    // A dispatcher has no page tools: it asks a worker for the page instead.
+    const dispatcher = userTurnInstructions({
+      ...options,
+      dispatcherRun: true,
+      disabledBuiltinTools: new Set(["write_page", "edit_page", "read_page"]),
+    });
+    expect(dispatcher).toContain(PAGE_DISPATCH_GUIDANCE);
+    expect(dispatcher).not.toContain(PAGE_GUIDANCE);
   });
 
   it("omits paired history guidance when either history tool is disabled", () => {

@@ -364,6 +364,10 @@ msgstr "Van alles een beetje"
 msgid "A command's output"
 msgstr "De uitvoer van een commando"
 
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr "Een pagina mag niet leeg zijn."
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1036,6 +1040,7 @@ msgstr "Kan afbeeldingen niet lezen"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1276,6 +1281,10 @@ msgstr "Modelinstellingen sluiten"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "Navigatie sluiten"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr "Pagina sluiten"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1565,6 +1574,10 @@ msgstr "Kopiëren"
 msgid "Copy .env example"
 msgstr ".env-voorbeeld kopiëren"
 
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr "Link kopiëren"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
 msgstr "Kosten"
@@ -1645,6 +1658,10 @@ msgstr "Verbinden met het computerscherm mislukt"
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "Doorgaan mislukt"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr "Kan de link niet kopiëren."
 
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
@@ -1818,6 +1835,10 @@ msgstr "Uitloggen mislukt. Probeer het opnieuw."
 msgid "Could not open billing"
 msgstr "Facturatie openen mislukt"
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr "Kan deze pagina niet openen."
+
 #: src/components/PdfViewer.tsx
 msgid "Could not open this PDF. Download it to view it."
 msgstr ""
@@ -1939,6 +1960,10 @@ msgstr "De gegevens opslaan mislukt"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "Deze keuze opslaan mislukt"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr "Kan deze pagina niet opslaan."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2402,6 +2427,10 @@ msgstr "Label bewerken"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "Naam bewerken"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr "Pagina bewerken"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -3003,6 +3032,10 @@ msgstr "Linear-issue"
 msgid "Link a chat app"
 msgstr "Een chattoepassing koppelen"
 
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr "Link gekopieerd"
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO koppelen"
@@ -3056,6 +3089,10 @@ msgstr "Geheugeninstellingen laden…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Modelcatalogus laden…"
+
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr "Pagina laden…"
 
 #: src/components/ArtifactFileCard.tsx
 #: src/components/FileViewer.tsx
@@ -3687,6 +3724,10 @@ msgstr "Op een schema"
 msgid "on the 1st at {0}"
 msgstr "op de 1e om {0}"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr "Op deze pagina"
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -3743,6 +3784,10 @@ msgstr "In volledig venster openen"
 msgid "Open navigation"
 msgstr "Navigatie openen"
 
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr "Pagina {title} openen"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Openstaand werk"
@@ -3794,9 +3839,17 @@ msgstr "Uitvoer"
 msgid "Owner"
 msgstr "Eigenaar"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr "Markdown van pagina"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty-incident"
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
+msgstr "Pagina's"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4392,6 +4445,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontvangt."
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5051,6 +5105,10 @@ msgstr "Het contextvenster van dit model is te klein. Kies een ander model."
 msgid "This month"
 msgstr "Deze maand"
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr "Deze pagina is gewijzigd sinds je hem opende. Sluit hem en open hem opnieuw om de nieuwste versie te bewerken."
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "Hiermee worden je account en gegevens definitief verwijderd."
@@ -5282,6 +5340,7 @@ msgstr "Instructies bijwerken?"
 msgid "Update progress"
 msgstr "Updatevoortgang"
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr "{updated} bijgewerkt"

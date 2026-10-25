@@ -107,6 +107,8 @@ export * from "./openai-compatible-voice.js";
 export * from "./openai-voice.js";
 export * from "./openrouter-usage.js";
 export * from "./page-browser-session.js";
+export * from "./page-tools.js";
+export * from "./pages.js";
 export * from "./parallel-web.js";
 export * from "./pi-catalog-availability.js";
 export * from "./pi-codex-catalog.js";

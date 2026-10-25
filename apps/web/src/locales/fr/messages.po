@@ -364,6 +364,10 @@ msgstr "Un peu de tout"
 msgid "A command's output"
 msgstr "La sortie d’une commande"
 
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1036,6 +1040,7 @@ msgstr "Ne peut pas lire les images"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1276,6 +1281,10 @@ msgstr "Fermer les paramètres de modèle"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "Fermer la navigation"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1565,6 +1574,10 @@ msgstr "Copier"
 msgid "Copy .env example"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
 msgstr "Coût"
@@ -1645,6 +1658,10 @@ msgstr "Impossible de se connecter à l'écran de l'ordinateur"
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "Impossible de continuer"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr ""
 
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
@@ -1818,6 +1835,10 @@ msgstr "Impossible de se déconnecter. Réessayez."
 msgid "Could not open billing"
 msgstr ""
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr ""
+
 #: src/components/PdfViewer.tsx
 msgid "Could not open this PDF. Download it to view it."
 msgstr ""
@@ -1939,6 +1960,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "Impossible d'enregistrer ce choix"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2402,6 +2427,10 @@ msgstr "Modifier l’étiquette"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "Modifier le nom"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -3003,6 +3032,10 @@ msgstr "Incident Linear"
 msgid "Link a chat app"
 msgstr "Connecter une application de discussion"
 
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "Associer SSO"
@@ -3056,6 +3089,10 @@ msgstr "Chargement des paramètres de mémoire…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Chargement du catalogue de modèles…"
+
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr ""
 
 #: src/components/ArtifactFileCard.tsx
 #: src/components/FileViewer.tsx
@@ -3687,6 +3724,10 @@ msgstr "Sur planification"
 msgid "on the 1st at {0}"
 msgstr "le 1er à {0}"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -3743,6 +3784,10 @@ msgstr "Ouvrir en fenêtre complète"
 msgid "Open navigation"
 msgstr "Ouvrir la navigation"
 
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Travaux en cours"
@@ -3794,9 +3839,17 @@ msgstr "Sortie"
 msgid "Owner"
 msgstr "Propriétaire"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "Incident PagerDuty"
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
+msgstr ""
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4392,6 +4445,7 @@ msgid "Runs when this bot receives a verified message from this provider."
 msgstr "S'exécute lorsque ce bot reçoit un message vérifié de ce fournisseur."
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -5051,6 +5105,10 @@ msgstr "La fenêtre de contexte de ce modèle est trop petite. Choisissez un aut
 msgid "This month"
 msgstr "Ce mois-ci"
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr ""
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "Cela supprime définitivement votre compte et vos données."
@@ -5282,6 +5340,7 @@ msgstr "Mettre à jour les instructions ?"
 msgid "Update progress"
 msgstr "Progression de la mise à jour"
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr ""

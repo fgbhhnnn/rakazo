@@ -1208,9 +1208,12 @@ model Artifact {
   version        Int        @default(1)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
+  // "page" for a bot-written Page (a markdown family the reader opens); null for plain files.
+  kind           String?
 
   @@unique([spaceId, userId, clientNonce])
   @@index([spaceId, botId])
+  @@index([spaceId, kind])
   @@index([groupId])
   @@index([rootArtifactId])
   // artifacts_family_version_key is raw SQL: Prisma cannot express COALESCE indexes.

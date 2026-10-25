@@ -979,4 +979,16 @@ export const NL_MESSAGES: Record<string, string> = {
   "How big is your team?": "Hoe groot is je team?",
   "How did you hear about us?": "Hoe heb je over ons gehoord?",
   "Welcome to {PRODUCT_NAME}": "Welkom bij {PRODUCT_NAME}",
+  "A page can't be empty.": "Een pagina mag niet leeg zijn.",
+  "Could not open this page.": "Kan deze pagina niet openen.",
+  "Could not save this page": "Kan deze pagina niet opslaan",
+  "Could not share this page": "Kan deze pagina niet delen",
+  "On this page": "Op deze pagina",
+  "Opens the page": "Opent de pagina",
+  Page: "Pagina",
+  "Page markdown": "Markdown van pagina",
+  Pages: "Pagina's",
+  "This page changed since you opened it. Close it and open it again to edit the latest version.":
+    "Deze pagina is gewijzigd sinds je hem opende. Sluit hem en open hem opnieuw om de nieuwste versie te bewerken.",
+  "Updated {date}": "Bijgewerkt {date}",
 };

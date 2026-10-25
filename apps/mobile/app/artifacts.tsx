@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { FileKindIcon } from "../components/file-kind-icon";
+import { PagesShelf } from "../components/pages-shelf";
 import { formatActivityRelativeTime } from "../lib/activity";
 import type { MobileBot } from "../lib/api";
 import { rpc } from "../lib/api";
@@ -227,45 +228,48 @@ export default function ArtifactsScreen() {
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
-          <ScrollView
-            ref={chipsScrollRef}
-            onLayout={(event) => {
-              initialChipLayout.current.viewportWidth = event.nativeEvent.layout.width;
-              revealInitialChip();
-            }}
-            onContentSizeChange={(width) => {
-              initialChipLayout.current.contentWidth = width;
-              revealInitialChip();
-            }}
-            horizontal
-            contentInsetAdjustmentBehavior="never"
-            showsHorizontalScrollIndicator={false}
-            style={styles.chipsScroll}
-            contentContainerStyle={styles.chipsRow}
-          >
-            <Chip
-              label={t("All bots")}
-              active={activeBotId === null}
-              onPress={() => setActiveBotId(null)}
-            />
-            {bots.map((bot) => (
+          <>
+            <ScrollView
+              ref={chipsScrollRef}
+              onLayout={(event) => {
+                initialChipLayout.current.viewportWidth = event.nativeEvent.layout.width;
+                revealInitialChip();
+              }}
+              onContentSizeChange={(width) => {
+                initialChipLayout.current.contentWidth = width;
+                revealInitialChip();
+              }}
+              horizontal
+              contentInsetAdjustmentBehavior="never"
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipsScroll}
+              contentContainerStyle={styles.chipsRow}
+            >
               <Chip
-                key={bot.id}
-                onLayout={
-                  bot.id === botId && activeBotId === botId
-                    ? (event) => {
-                        initialChipLayout.current.chip = event.nativeEvent.layout;
-                        revealInitialChip();
-                      }
-                    : undefined
-                }
-                label={bot.name}
-                active={activeBotId === bot.id}
-                onPress={() => setActiveBotId(bot.id)}
-                avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
+                label={t("All bots")}
+                active={activeBotId === null}
+                onPress={() => setActiveBotId(null)}
               />
-            ))}
-          </ScrollView>
+              {bots.map((bot) => (
+                <Chip
+                  key={bot.id}
+                  onLayout={
+                    bot.id === botId && activeBotId === botId
+                      ? (event) => {
+                          initialChipLayout.current.chip = event.nativeEvent.layout;
+                          revealInitialChip();
+                        }
+                      : undefined
+                  }
+                  label={bot.name}
+                  active={activeBotId === bot.id}
+                  onPress={() => setActiveBotId(bot.id)}
+                  avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
+                />
+              ))}
+            </ScrollView>
+            <PagesShelf botId={activeBotId ?? undefined} />
+          </>
         }
         style={[styles.listView, sideInsets]}
         contentInsetAdjustmentBehavior="automatic"

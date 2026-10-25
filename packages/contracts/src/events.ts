@@ -2,6 +2,7 @@ import * as z from "zod";
 import { botSecretDestinationSchema } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
+import { PageBlockMetaSchema } from "./pages.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -302,6 +303,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     mimeType: z.string(),
     name: z.string(),
     size: z.number().int().nonnegative(),
+    /** Set when the file is a Page; clients that know Pages open the reader. */
+    page: PageBlockMetaSchema.optional(),
   }),
   z.object({
     kind: z.literal("handoff"),

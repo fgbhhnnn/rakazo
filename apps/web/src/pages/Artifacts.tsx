@@ -41,6 +41,7 @@ import { FileKindBadge, FileKindIcon } from "../components/FileKindIcon";
 import { FileViewerBody } from "../components/FileViewer";
 import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
+import { PagesShelf } from "../components/pages/PagesShelf";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
@@ -346,16 +347,19 @@ export function ArtifactsPage() {
             />
           </>
         ) : (
-          <BrowsingPane
-            items={filteredItems}
-            loadError={loadError}
-            viewMode={viewMode}
-            botsById={botsById}
-            onRequestDelete={setPendingDelete}
-            nextCursor={nextCursor}
-            loadingMore={loadingMore}
-            onLoadMore={() => void loadMore()}
-          />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <PagesShelf botId={activeBotId ?? undefined} />
+            <BrowsingPane
+              items={filteredItems}
+              loadError={loadError}
+              viewMode={viewMode}
+              botsById={botsById}
+              onRequestDelete={setPendingDelete}
+              nextCursor={nextCursor}
+              loadingMore={loadingMore}
+              onLoadMore={() => void loadMore()}
+            />
+          </div>
         )}
       </div>
 
