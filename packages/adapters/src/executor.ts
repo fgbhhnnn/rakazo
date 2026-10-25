@@ -432,6 +432,7 @@ import { mirrorWorkerApproval } from "./worker-needs-user.js";
 import { workerNestingRefusal } from "./worker-nesting.js";
 import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
 import { dataBotId, loadWorkerOwner, recallForRun } from "./worker-owner-scope.js";
+import { REPORT_PROGRESS_TOOL, reportWorkerProgress } from "./worker-progress.js";
 import { slotFree } from "./worker-slot-mentions.js";
 import { workerUserFacingRefusal } from "./worker-user-facing-tools.js";
 
@@ -6466,6 +6467,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 throw error;
               }
             }, finish);
+          }
+          if (name === REPORT_PROGRESS_TOOL) {
+            return finish(
+              await reportWorkerProgress(deps, {
+                run,
+                threadId: thread.id,
+                bot,
+                args,
+                secrets: runSecrets,
+              }),
+            );
           }
           if (name === "remember") {
             const path = String(args.path ?? "").trim() || "MEMORY.md";

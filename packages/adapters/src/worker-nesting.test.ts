@@ -74,7 +74,8 @@ describe("worker nesting policy", () => {
   it("leaves a regular bot and the dispatcher's own tools unchanged", () => {
     const regularDisabled = new Set<string>();
     expect(applyDispatcherToolPolicy(false, regular, regularDisabled, offered)).toBe(false);
-    expect(regularDisabled.size).toBe(0);
+    // Only the worker-only progress tool (worker-progress.ts) is withheld from a regular bot.
+    expect([...regularDisabled]).toEqual(["report_progress"]);
 
     const dispatcherDisabled = new Set<string>();
     expect(applyDispatcherToolPolicy(true, regular, dispatcherDisabled, offered)).toBe(true);

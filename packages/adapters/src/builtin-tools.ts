@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { messageUserMaxLength } from "./user-progress.js";
+import { reportProgressTool } from "./worker-progress.js";
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
 // parses .env once the entry module is already executing), so the model-facing
@@ -1179,12 +1180,13 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "background_task_status",
     description:
-      'List your background tasks (or one by task_id) with their name, task and state. Results arrive automatically; use this when the user asks about progress or names a task to stop or change (e.g. "the video one") so you act on the right task_id.',
+      'List your background tasks (or one by task_id) with their name, task and state. Results arrive automatically; use this when the user asks about progress or names a task to stop or change (e.g. "the video one") so you act on the right task_id. A running task also shows what its worker is doing: current_call (tool and how long it has been running), recent_activity (its last tool calls with outcome and duration), last_event_at, and last_progress (the worker\'s own latest note). Answer "where is it at" from these fields only; say plainly when a call has run long or nothing happened for a while, and never invent progress.',
     inputSchema: {
       type: "object",
       properties: { task_id: { type: "string" } },
     },
   },
+  reportProgressTool,
   {
     name: "background_task_message",
     description: "Send extra information or a correction to a running background task.",

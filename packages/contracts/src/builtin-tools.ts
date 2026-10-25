@@ -77,6 +77,7 @@ export const BUILTIN_TOOL_NAMES = [
   "run_subagent",
   "background_task",
   "background_task_status",
+  "report_progress",
   "background_task_message",
   "background_task_cancel",
   "propose_instructions_update",

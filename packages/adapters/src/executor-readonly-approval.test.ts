@@ -288,6 +288,7 @@ function fixture({
         id: "event-1",
         ...data,
       })),
+      findFirst: vi.fn(async () => null),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })) },
     connection: { findMany: vi.fn(async () => []) },
@@ -360,6 +361,7 @@ function fixture({
     yield { type: "done" as const, text: "Done" };
   });
   const enqueue = vi.fn(async (_job: unknown) => undefined);
+  const eventAppend = vi.fn(async (_input: Record<string, unknown>) => undefined);
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
     prisma: transactionalPrisma,
@@ -422,7 +424,7 @@ function fixture({
     },
     memoryProviders: { resolve: async () => null },
     events: {
-      append: vi.fn(async () => undefined),
+      append: eventAppend,
       notify: vi.fn(async () => undefined),
       pauseRunForInput,
       finalizeRun,
@@ -435,6 +437,7 @@ function fixture({
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     effects,
+    eventAppend,
     web,
     fetchedUrls,
     fleetBots,
@@ -592,6 +595,44 @@ describe("hidden background workers never nest agents", () => {
     await f.run();
     expect(f.offeredTools()).toContain("run_subagent");
     expect(f.results).toEqual([{ ok: true, result: "convert" }]);
+  });
+});
+
+describe("report_progress is a worker-only note", () => {
+  it("is offered to a hidden worker and saves a progress note without pausing or posting", async () => {
+    const f = fixture({ name: "report_progress", builtin: true, spawnKey: "bg-worker:main-bot:1" });
+    f.setCalls([{ args: { text: "APK built; booting emulator" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.offeredTools()).toContain("report_progress");
+    expect(f.results).toEqual([expect.objectContaining({ ok: true })]);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.execute).not.toHaveBeenCalled();
+    const notes = f.eventAppend.mock.calls
+      .map(([input]) => input)
+      .filter((input) => (input.payload as { notice?: string } | undefined)?.notice);
+    expect(notes).toEqual([
+      expect.objectContaining({
+        type: "thread.progress",
+        payload: expect.objectContaining({
+          notice: "worker_progress",
+          note: "APK built; booting emulator",
+        }),
+      }),
+    ]);
+  });
+
+  it("is neither offered to nor run for a regular bot", async () => {
+    const f = fixture({ name: "report_progress", builtin: true });
+    f.setCalls([{ args: { text: "hello" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.offeredTools()).not.toContain("report_progress");
+    expect(f.results).toEqual([{ error: "This tool is disabled for this bot." }]);
+    expect(
+      f.eventAppend.mock.calls.some(
+        ([input]) =>
+          (input.payload as { notice?: string } | undefined)?.notice === "worker_progress",
+      ),
+    ).toBe(false);
   });
 });
 

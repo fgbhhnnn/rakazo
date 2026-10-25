@@ -1,5 +1,7 @@
 /** Which builtin tools a background worker gets. */
 
+import { REPORT_PROGRESS_TOOL } from "./worker-progress.js";
+
 export const BACKGROUND_TASK_TOOL_NAMES = [
   "background_task",
   "background_task_status",
@@ -42,7 +44,9 @@ export function workerDisabledTools(
   const disabled = new Set<string>(WORKER_ALWAYS_DISABLED);
   if (allowlist && allowlist.length > 0) {
     const allowed = new Set(allowlist);
-    for (const name of allBuiltinNames) if (!allowed.has(name)) disabled.add(name);
+    // report_progress is how every worker talks back; a profile allowlist never removes it.
+    for (const name of allBuiltinNames)
+      if (!allowed.has(name) && name !== REPORT_PROGRESS_TOOL) disabled.add(name);
   }
   return [...disabled].filter((name) => allBuiltinNames.includes(name)).sort();
 }

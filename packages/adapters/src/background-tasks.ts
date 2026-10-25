@@ -27,8 +27,10 @@ import { QUEUE_AFTER_CANCEL_NOTE, queueChangeAfterCancel } from "./queue-after-c
 import { type AttachmentBlock, attachmentBlocks } from "./task-attachments.js";
 import { backgroundTaskHash, newTaskRef, taskTitle } from "./task-identity.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
+import { WORKER_ACTIVITY_NOTE, workerActivityFields } from "./worker-activity.js";
 import { workerSettingsFromMain } from "./worker-main-settings.js";
 import { WORKER_NEEDS_USER_NOTE, workerPending } from "./worker-needs-user.js";
+import { WORKER_PROGRESS_INSTRUCTION } from "./worker-progress.js";
 import { WORKER_ALWAYS_DISABLED, workerDisabledTools } from "./worker-tool-policy.js";
 
 /**
@@ -103,8 +105,9 @@ export const BACKGROUND_AGENT_PROFILES = {
 } as const;
 export type BackgroundAgentProfile = keyof typeof BACKGROUND_AGENT_PROFILES;
 
-const WORKER_INSTRUCTIONS = `你是后台工作者（background worker），由主 bot 派来做一项具体任务。
-- 你有自己的上下文；主 bot 和用户看不到你的中间过程，只看到你最后的回复。
+export const WORKER_INSTRUCTIONS = `你是后台工作者（background worker），由主 bot 派来做一项具体任务。
+- 你有自己的上下文；用户看不到你的中间过程，主 bot 只看得到你最近的工具调用和你用 report_progress 留的进度，最终以你最后的回复为准。
+${WORKER_PROGRESS_INSTRUCTION}
 - 只做任务说明里的事。不要问用户问题；信息不够就做合理假设并在结果里写明。
 - 你不能再开子任务、子代理或新 bot（background_task、run_subagent、spawn_bot 等都不可用），所有活自己做完。
 - 你不能直接找用户：要用户输入、密钥/登录、授权、连接应用、接管电脑或定时提醒时（request_secret、connect_app、request_takeover、schedule_create 等都不可用），先停下，在结果里写清楚具体需要什么、为什么；主 bot 会去找用户处理，再通知你继续。
@@ -748,6 +751,10 @@ export async function backgroundTaskStatus(
               select: { blocks: true },
             })
           : null;
+      const activity =
+        row.status === "started" && row.workerRunId
+          ? await workerActivityFields(deps.prisma, row.workerRunId, zone)
+          : {};
       const state =
         row.status === "queued"
           ? "queued"
@@ -775,6 +782,7 @@ export async function backgroundTaskStatus(
             ? formatInstantForUser(finishedAt, zone)
             : undefined,
         last_progress: lastText(last?.blocks),
+        ...activity,
         ...(row.error || workerRun?.error
           ? { error: String(row.error ?? workerRun?.error).slice(0, 500) }
           : {}),
@@ -786,7 +794,7 @@ export async function backgroundTaskStatus(
     limit: backgroundTaskConcurrency(),
     tasks,
     time_zone: zone ?? "UTC",
-    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task. ${WORKER_NEEDS_USER_NOTE}`,
+    note: `Times above are in ${zone ?? "UTC"}; quote them to the user with that offset label, never as bare UTC unless the zone is UTC. task_id is the task's #ref. Only state "done" for a task whose state is completed here or whose result you received; running/queued/starting/finishing tasks are not done. Routing: send a new request to an existing task_id with background_task_message only when, by its meaning, it continues that same task's work or deliverable (a follow-up, correction or change to it). A request about a different subject or deliverable is new work: start a new background_task, even if a worker is idle. When unsure, start a new background_task. ${WORKER_ACTIVITY_NOTE} ${WORKER_NEEDS_USER_NOTE}`,
   };
 }
 

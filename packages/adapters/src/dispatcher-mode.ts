@@ -3,6 +3,7 @@ import { isHiddenBot } from "@rakazo/db";
 import { DISPATCHER_OWNER_TOOL_NAMES } from "./dispatcher-owner-tools.js";
 import type { ExecutorDeps } from "./executor.js";
 import { withholdNestedAgentTools } from "./worker-nesting.js";
+import { withholdWorkerOnlyTools } from "./worker-progress.js";
 import { withholdUserFacingTools } from "./worker-user-facing-tools.js";
 
 /*
@@ -190,6 +191,7 @@ export function applyDispatcherToolPolicy(
   if (isHiddenBot(bot)) for (const name of DISPATCH_ONLY_TOOL_NAMES) disabled.add(name);
   withholdNestedAgentTools(bot, disabled);
   withholdUserFacingTools(bot, disabled);
+  withholdWorkerOnlyTools(bot, disabled);
   const dispatcherRun = Boolean(dispatcherMode) && isDispatcherBot(bot);
   if (dispatcherRun) {
     for (const tool of offered) if (!DISPATCHER_TOOL_NAMES.has(tool.name)) disabled.add(tool.name);
