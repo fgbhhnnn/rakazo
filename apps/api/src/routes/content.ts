@@ -15,6 +15,7 @@ import {
   listArtifactVersions,
   listSpaceArtifacts,
 } from "../artifacts.js";
+import { getOwnedPage, listOwnedPages, updateOwnedPage } from "../pages.js";
 import { listSpaceRuns } from "../runs.js";
 import { querySpaceSearch } from "../search.js";
 import { loadAllMessages } from "../thread-message-pages.js";
@@ -25,6 +26,18 @@ const EXPORT_MESSAGE_PAGE_SIZE = 500;
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed } = ctx;
   return {
+    pages: {
+      list: authed.pages.list.handler(async ({ context, input }) => {
+        if (input.botId) await repos.getBot(context.actor, input.botId);
+        return listOwnedPages(deps, context.actor, input);
+      }),
+      get: authed.pages.get.handler(({ context, input }) =>
+        getOwnedPage(deps, context.actor, input),
+      ),
+      update: authed.pages.update.handler(({ context, input }) =>
+        updateOwnedPage(deps, context.actor, input),
+      ),
+    },
     artifacts: {
       list: authed.artifacts.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);

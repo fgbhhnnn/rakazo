@@ -18,6 +18,7 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { answerComputerRestartPrompt } from "../computer-restart-answer.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
 import {
   isBackgroundRun,
@@ -37,8 +38,9 @@ import {
   threadHead,
   threadSnapshot,
 } from "../thread-target.js";
+import { answerWorkerApprovalMirror } from "../worker-approval-answer.js";
 import { mapBotSecretInputError } from "./bots.js";
-import { releaseComputerControl } from "./computer.js";
+import { releaseComputerControl, runComputerReplace } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
   computerContext,
@@ -495,6 +497,14 @@ export function threadsRoutes(ctx: RouterContext) {
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (
+          await answerComputerRestartPrompt(deps, context.actor, target, input, (botId) =>
+            runComputerReplace(deps, context, botId, "reset", "reset"),
+          )
+        )
+          return { ok: true as const };
+        if (await answerWorkerApprovalMirror(deps, context.actor, target, input))
+          return { ok: true as const };
         const answered = await deps.events
           .answerRunInput({
             spaceId: context.actor.spaceId,

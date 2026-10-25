@@ -44,7 +44,7 @@ import { threadsRoutes } from "./routes/threads.js";
 
 export { nextConnectionLabel } from "./model-credentials.js";
 export { botIntroPrompt, enqueueBotIntroRun } from "./routes/bots.js";
-export { HEARTBEAT_MS, SESSION_RECHECK_MS } from "./routes/shared.js";
+export { HEARTBEAT_MS, lockedForActor, SESSION_RECHECK_MS } from "./routes/shared.js";
 export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {

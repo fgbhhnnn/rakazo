@@ -7,7 +7,15 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, canonicalPiProviderId } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
+import {
+  isDeploymentAdmin,
+  memberSettingsPolicy,
+  ownsMemberSettings,
+  sharedModelScope,
+} from "@rakazo/db";
 import type { RouterDeps } from "../router.js";
+import { turnstileView } from "../turnstile-settings.js";
 
 export function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
   return {
@@ -26,6 +34,14 @@ function hostCredentials(active: boolean, provider: string) {
     : { hostCredentialProvider: null, hostCredentialSource: null };
 }
 
+/** Locked applies to members only; admins (else the stored owner) manage their own settings. */
+export function lockedForActor(
+  policy: { locked: boolean; ownerUserId: string | null },
+  user: { userId: string; email?: string | null },
+): boolean {
+  return policy.locked && !ownsMemberSettings(user, policy.ownerUserId);
+}
+
 export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   const [user, setup] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({
@@ -42,7 +58,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     email: user.email,
     name: user.name,
     spaceId: actor.spaceId,
-    isDeploymentOwner: false,
+    isDeploymentOwner: isDeploymentAdmin(actor),
     needsModel: setup.needsModel,
     defaultProvider: canonicalPiProviderId(setup.model?.provider ?? deps.env.defaultProvider),
     defaultModel: setup.model?.modelId ?? deps.env.defaultModel,
@@ -60,6 +76,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),
+    // Admins come from RAKAZO_ADMIN_EMAILS, else the stored owner; app accounts carry no authority.
+    memberSettingsLocked: lockedForActor(memberSettingsPolicy(setup.settings), actor),
     // Only billing deployments ask; self-hosted installs never see the survey.
     needsSignupSurvey: Boolean(deps.billing) && !user.signupSurvey,
   };
@@ -75,10 +93,35 @@ function computerHostFor(
   return null;
 }
 
+export async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
+  const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+  return {
+    ownerUserId: settings?.ownerUserId ?? null,
+    signupsEnabled: settings?.signupsEnabled ?? true,
+    signupAllowlist: settings?.signupAllowlist
+      ? settings.signupAllowlist.split(",").filter(Boolean)
+      : [],
+    hasDeploymentModelCredential: Boolean(settings?.deploymentModelCredentialCipher),
+    defaultProvider: settings?.defaultModelProvider
+      ? canonicalPiProviderId(settings.defaultModelProvider)
+      : null,
+    defaultModel: settings?.defaultModelId ?? null,
+    computerHost: computerHostFor(settings?.computerHost, sandboxProvider),
+    canChooseHostComputer: sandboxProvider === "docker",
+    sandboxProvider,
+    lockMemberSettings: memberSettingsPolicy(settings).locked,
+    shareOwnerModels: memberSettingsPolicy(settings).shareOwner,
+    ...turnstileView(settings),
+  };
+}
+
 /** The main model chat runs: the member's while it can run, else the deployment's. */
 export async function modelSetup(deps: RouterDeps, actor: Actor) {
   const [member, settings] = await Promise.all([
-    resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, actor),
+    resolveMemberMainModel(
+      { prisma: deps.prisma, secretStore: deps.secrets },
+      await sharedModelScope(deps.prisma, actor),
+    ),
     deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
   ]);
   const main =

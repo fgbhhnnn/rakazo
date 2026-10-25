@@ -20,6 +20,7 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
+import { assertMemberSettingsUnlocked } from "../member-settings-guard.js";
 import type { RouterDeps } from "../router.js";
 import { listRoutinesDto } from "../routines.js";
 import { deleteSpaceWithContent } from "../space-deletion.js";
@@ -52,9 +53,13 @@ export function spacesRoutes(ctx: RouterContext) {
       overrides: authed.spaceSettings.overrides.handler(({ context }) =>
         spaceSettingOverrides(deps.prisma, context.actor),
       ),
-      setOverride: authed.spaceSettings.setOverride.handler(({ context, input }) =>
-        setSpaceSettingOverride(deps.prisma, context.actor, input.setting, input.enabled),
-      ),
+      setOverride: authed.spaceSettings.setOverride.handler(async ({ context, input }) => {
+        // A Space copy of models or voice is a model/voice change a locked deployment reserves.
+        if (input.setting === "models" || input.setting === "voice") {
+          await assertMemberSettingsUnlocked(deps.prisma, context.actor);
+        }
+        return setSpaceSettingOverride(deps.prisma, context.actor, input.setting, input.enabled);
+      }),
     },
     spaces: {
       list: authed.spaces.list.handler(async ({ context }) =>
@@ -160,7 +165,14 @@ export function spacesRoutes(ctx: RouterContext) {
         groupRepos.listGroups(actor, { archived: true }),
       ]);
       const { bots, groups, botSections } = navigation.current;
-      const active = bots.find((bot) => bot.id === input.botId) ?? bots[0];
+      // A hidden background worker opened from its task card: serve its thread, keep it unlisted.
+      const hiddenActive =
+        input.botId && !bots.some((bot) => bot.id === input.botId)
+          ? (await repos.listBots(actor, { includeHidden: true })).find(
+              (bot) => bot.id === input.botId,
+            )
+          : undefined;
+      const active = bots.find((bot) => bot.id === input.botId) ?? hiddenActive ?? bots[0];
       const [thread, routines] = active
         ? await Promise.all([
             resolveThreadTarget(deps.prisma, actor, { botId: active.id }).then((target) =>

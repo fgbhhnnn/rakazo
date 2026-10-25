@@ -47,6 +47,7 @@ export function mcpRoutes(ctx: RouterContext) {
     insertMcpServer,
     announceMcpServer,
     authed,
+    ownerManaged,
   } = ctx;
   return {
     capabilities: {
@@ -267,14 +268,14 @@ export function mcpRoutes(ctx: RouterContext) {
             ),
           );
         }),
-        create: authed.mcp.servers.create.handler(async ({ context, input }) => {
+        create: ownerManaged.mcp.servers.create.handler(async ({ context, input }) => {
           const stored = await prepareMcpServer(context.actor, input);
           const row = await deps.prisma.$transaction((tx) =>
             insertMcpServer(tx, context.actor, input, stored),
           );
           return announceMcpServer(row, context.actor);
         }),
-        update: authed.mcp.servers.update.handler(async ({ context, input }) => {
+        update: ownerManaged.mcp.servers.update.handler(async ({ context, input }) => {
           for (let attempt = 0; attempt < 5; attempt++) {
             const { existing, existingSecret } = await deps.prisma.$transaction(async (tx) => {
               const existing = await tx.mcpServer.findFirst({
@@ -477,7 +478,7 @@ export function mcpRoutes(ctx: RouterContext) {
           if (!fresh) throw new IsolationError();
           return mcpServerDto(fresh, oauth);
         }),
-        remove: authed.mcp.servers.remove.handler(async ({ context, input }) => {
+        remove: ownerManaged.mcp.servers.remove.handler(async ({ context, input }) => {
           const server = await deps.prisma.mcpServer.findFirst({
             where: {
               id: input.id,
@@ -528,7 +529,7 @@ export function mcpRoutes(ctx: RouterContext) {
           });
           return rows.map(mcpAssignmentDto);
         }),
-        approve: authed.mcp.assignments.approve.handler(async ({ context, input }) => {
+        approve: ownerManaged.mcp.assignments.approve.handler(async ({ context, input }) => {
           const row = await resolveMcpApprovalCards(
             onboardingDeps,
             context.actor,
@@ -589,7 +590,7 @@ export function mcpRoutes(ctx: RouterContext) {
           });
           return { ok: true as const };
         }),
-        replace: authed.mcp.assignments.replace.handler(async ({ context, input }) => {
+        replace: ownerManaged.mcp.assignments.replace.handler(async ({ context, input }) => {
           const { rows, seqs } = await deps.prisma.$transaction(async (tx) => {
             const bot = await tx.bot.findFirst({
               where: {
@@ -666,7 +667,7 @@ export function mcpRoutes(ctx: RouterContext) {
         }),
       },
       oauth: {
-        begin: authed.mcp.oauth.begin.handler(async ({ context, input }) => {
+        begin: ownerManaged.mcp.oauth.begin.handler(async ({ context, input }) => {
           try {
             const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
             if (new URL(input.redirectUri).toString() !== expectedRedirect) {
@@ -683,7 +684,7 @@ export function mcpRoutes(ctx: RouterContext) {
             });
           }
         }),
-        complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
+        complete: ownerManaged.mcp.oauth.complete.handler(async ({ context, input }) => {
           try {
             // complete() consumes the session, so which server it belongs to is read first.
             const session = deps.mcp
@@ -730,7 +731,7 @@ export function mcpRoutes(ctx: RouterContext) {
             });
           }
         }),
-        disconnect: authed.mcp.oauth.disconnect.handler(async ({ context, input }) => {
+        disconnect: ownerManaged.mcp.oauth.disconnect.handler(async ({ context, input }) => {
           await mcpOAuth.disconnect({
             ...input,
             spaceId: context.actor.spaceId,

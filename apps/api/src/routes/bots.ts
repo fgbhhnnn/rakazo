@@ -220,7 +220,10 @@ export function botsRoutes(ctx: RouterContext) {
         repos.listBots(context.actor, { archived: true }),
       ),
       get: authed.bots.get.handler(async ({ context, input }) => {
-        const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
+        // Hidden background workers are not listed but stay openable from their task card.
+        const found = (await repos.listBots(context.actor, { includeHidden: true })).find(
+          (bot) => bot.id === input.botId,
+        );
         if (!found) throw new IsolationError();
         return found;
       }),

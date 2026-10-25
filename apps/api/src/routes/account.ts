@@ -12,6 +12,7 @@ import {
   findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
+  isDeploymentAdmin,
   listApprovalRules,
   listVoicePreferences,
   lockSpaceSettings,
@@ -21,10 +22,12 @@ import {
   saveApprovalRule,
   saveAutoReviewPreference,
   selectVoicePreference,
+  sharedVoiceScope,
   voicePreferenceTarget,
 } from "@rakazo/db";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
+import { memberAndSignupCheckUpdate } from "../member-settings-guard.js";
 import type { RouterDeps } from "../router.js";
 import { withSerializableRetry } from "../serializable-retry.js";
 import {
@@ -42,10 +45,10 @@ import {
   voiceProviderFor,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
-import { meDto } from "./shared.js";
+import { deploymentDto, meDto } from "./shared.js";
 
 export function accountRoutes(ctx: RouterContext) {
-  const { deps, os, authed } = ctx;
+  const { deps, os, authed, ownerManaged } = ctx;
   return {
     aiConsent: {
       status: authed.aiConsent.status.handler(({ context, input }) =>
@@ -113,13 +116,42 @@ export function accountRoutes(ctx: RouterContext) {
         },
       ),
     },
-    // Retain wire compatibility for older clients, but app accounts have no server authority.
+    // Retain wire compatibility for older clients; only RAKAZO_ADMIN_EMAILS admins have authority.
     deployment: {
-      get: authed.deployment.get.handler(() => {
-        throw new ORPCError("FORBIDDEN");
+      // Only admins named in RAKAZO_ADMIN_EMAILS may read or change these.
+      get: authed.deployment.get.handler(({ context }) => {
+        if (!isDeploymentAdmin(context.actor)) throw new ORPCError("FORBIDDEN");
+        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
       }),
-      update: authed.deployment.update.handler(() => {
-        throw new ORPCError("FORBIDDEN");
+      update: authed.deployment.update.handler(async ({ context, input }) => {
+        if (!isDeploymentAdmin(context.actor)) throw new ORPCError("FORBIDDEN");
+        if (input.computerHost === "this-mac" && deps.env.sandboxProvider !== "docker") {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "This Mac mode is only available when SANDBOX_PROVIDER=docker on a personal local app.",
+          });
+        }
+        await deps.prisma.deploymentSettings.upsert({
+          where: { id: "default" },
+          create: {
+            id: "default",
+            ownerUserId: context.actor.userId,
+            signupsEnabled: input.signupsEnabled ?? true,
+            signupAllowlist: (input.signupAllowlist ?? []).join(","),
+            signupPolicyInitialized: true,
+            computerHost: input.computerHost ?? undefined,
+          },
+          update: {
+            ...(input.signupsEnabled === undefined ? {} : { signupsEnabled: input.signupsEnabled }),
+            ...(input.signupAllowlist ? { signupAllowlist: input.signupAllowlist.join(",") } : {}),
+            ...(input.signupsEnabled === undefined && input.signupAllowlist === undefined
+              ? {}
+              : { signupPolicyInitialized: true }),
+            ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
+            ...(await memberAndSignupCheckUpdate(deps.secrets, context.actor, input)),
+          },
+        });
+        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
       }),
     },
     security: {
@@ -195,7 +227,13 @@ export function accountRoutes(ctx: RouterContext) {
         listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint }),
       ),
       status: authed.voice.status.handler(async ({ context, input }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor, input?.scope);
+        // A member of a shared deployment sees the owner's voice, whichever copy applies to the owner.
+        const scope = await sharedVoiceScope(deps.prisma, context.actor);
+        const cred = await findDefaultVoiceCredential(
+          deps.prisma,
+          scope,
+          scope.userId === context.actor.userId ? input?.scope : undefined,
+        );
         return toVoiceStatus(cred);
       }),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
@@ -220,7 +258,7 @@ export function accountRoutes(ctx: RouterContext) {
           }),
         );
       }),
-      connect: authed.voice.connect.handler(async ({ context, input }) =>
+      connect: ownerManaged.voice.connect.handler(async ({ context, input }) =>
         persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
@@ -233,10 +271,10 @@ export function accountRoutes(ctx: RouterContext) {
           signal: context.signal,
         }),
       ),
-      disconnect: authed.voice.disconnect.handler(async ({ context, input }) =>
+      disconnect: ownerManaged.voice.disconnect.handler(async ({ context, input }) =>
         disconnectVoiceCredential(deps, context.actor, { provider: input.provider }),
       ),
-      setVoice: authed.voice.setVoice.handler(async ({ context, input }) => {
+      setVoice: ownerManaged.voice.setVoice.handler(async ({ context, input }) => {
         const cred = await withSerializableRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
@@ -260,7 +298,7 @@ export function accountRoutes(ctx: RouterContext) {
         );
         return toVoiceStatus(cred);
       }),
-      setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
+      setSpeechModel: ownerManaged.voice.setSpeechModel.handler(async ({ context, input }) =>
         updateVoiceSpeechModel(deps, context.actor, input),
       ),
       voices: authed.voice.voices.handler(async ({ context, input }) => {
@@ -269,7 +307,7 @@ export function accountRoutes(ctx: RouterContext) {
           ? await loadVoiceCredential(deps, context.actor, input.provider, input.scope)
           : await loadDefaultVoiceCredential(deps, context.actor, input.scope);
         if (!row) return [];
-        return (await voiceProviderFor(deps, context.actor, row.cred.provider)).listVoices(
+        return (await voiceProviderFor(deps, row.actor, row.cred.provider)).listVoices(
           row.apiKey,
           voiceContext(context.actor, context.signal),
         );

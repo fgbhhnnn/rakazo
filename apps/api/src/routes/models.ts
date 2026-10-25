@@ -38,7 +38,9 @@ import {
   Prisma,
   runAsSystemInTransaction,
   saveModelPreference,
+  sharedModelScope,
   updateModelRole,
+  withinScope,
   writeModelRole,
 } from "@rakazo/db";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
@@ -63,10 +65,15 @@ export function modelsRoutes(ctx: RouterContext) {
     modelRoleCatalog,
     validateRoleChoices,
     authed,
+    ownerManaged,
   } = ctx;
   return {
     models: {
-      list: authed.models.list.handler(async ({ context }) => chatCatalog(context.actor)),
+      list: authed.models.list.handler(async ({ context }) => {
+        const scope = await sharedModelScope(deps.prisma, context.actor);
+        // The owner's credentials are row-secured to the owner; read them as the owner.
+        return withinScope(scope, () => chatCatalog({ ...context.actor, ...scope }));
+      }),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([
           deps.prisma.userModelCredential.findMany({
@@ -158,7 +165,7 @@ export function modelsRoutes(ctx: RouterContext) {
           ),
         );
       }),
-      setRole: authed.models.setRole.handler(async ({ context, input }) => {
+      setRole: ownerManaged.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
         const { role, primary, backups, scope } = input;
@@ -181,7 +188,7 @@ export function modelsRoutes(ctx: RouterContext) {
           ({ provider, modelId }) => ({ provider, modelId }),
         ),
       ),
-      setBackups: authed.models.setBackups.handler(async ({ context, input }) => {
+      setBackups: ownerManaged.models.setBackups.handler(async ({ context, input }) => {
         await validateRoleChoices(context.actor, "main", input);
         await updateModelRole(
           deps.prisma,
@@ -191,10 +198,10 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
-      connect: authed.models.connect.handler(async ({ context, input }) =>
+      connect: ownerManaged.models.connect.handler(async ({ context, input }) =>
         connectModelCredential(context.actor, input, context.signal),
       ),
-      probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
+      probeOpenAiCompatible: ownerManaged.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           let apiKey = input.apiKey;
           let headers = input.headers;
@@ -262,7 +269,7 @@ export function modelsRoutes(ctx: RouterContext) {
           }
         },
       ),
-      probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
+      probeCatalog: ownerManaged.models.probeCatalog.handler(async ({ context, input }) => {
         try {
           const models = await probeCatalogProviderModels(
             { provider: input.provider, apiKey: input.apiKey },
@@ -276,7 +283,7 @@ export function modelsRoutes(ctx: RouterContext) {
           });
         }
       }),
-      beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+      beginOAuth: ownerManaged.models.beginOAuth.handler(async ({ context, input }) => {
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
         const target = await modelConnectionTarget(
@@ -298,17 +305,17 @@ export function modelsRoutes(ctx: RouterContext) {
           signal: context.signal,
         });
       }),
-      submitOAuthCode: authed.models.submitOAuthCode.handler(async ({ context, input }) => {
+      submitOAuthCode: ownerManaged.models.submitOAuthCode.handler(async ({ context, input }) => {
         return deps.oauthLogins.submit(input.loginId, context.actor, input.code);
       }),
-      completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
+      completeOAuth: ownerManaged.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, {
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
         });
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
-      finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
+      finishOAuth: ownerManaged.models.finishOAuth.handler(async ({ context, input }) => {
         throwIfAborted(context.signal);
         const result = await deps.oauthLogins.finish(
           input.loginId,
@@ -354,7 +361,7 @@ export function modelsRoutes(ctx: RouterContext) {
         await deps.oauthLogins.cancel(input.loginId, context.actor);
         return { ok: true as const };
       }),
-      setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
+      setDefault: ownerManaged.models.setDefault.handler(async ({ context, input }) => {
         const modelId = usableModelId(input.modelId);
         if (!modelId) throw new ORPCError("BAD_REQUEST", { message: "Choose a model" });
         // An omitted level keeps the one this model already has in the main list: on the
@@ -536,7 +543,7 @@ export function modelsRoutes(ctx: RouterContext) {
         });
         return { ok: true as const };
       }),
-      rename: authed.models.rename.handler(async ({ context, input }) => {
+      rename: ownerManaged.models.rename.handler(async ({ context, input }) => {
         const renamed = await deps.prisma.userModelCredential.updateMany({
           where: { id: input.credentialId, userId: context.actor.userId },
           data: { label: input.label },
@@ -545,7 +552,7 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
         return { ok: true as const };
       }),
-      disconnect: authed.models.disconnect.handler(async ({ context, input }) => {
+      disconnect: ownerManaged.models.disconnect.handler(async ({ context, input }) => {
         // Retire pending sign-ins in every space first — the credentials are
         // account-wide, so a finishing OAuth session anywhere could otherwise
         // re-persist a credential the delete below just removed. Removing one

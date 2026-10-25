@@ -871,7 +871,7 @@ export async function releaseComputerControl(
   scheduleComputerSleep(deps.jobs, bot.computer.id);
 }
 
-async function runComputerReplace(
+export async function runComputerReplace(
   deps: RouterDeps,
   context: { actor: Actor },
   botId: string,

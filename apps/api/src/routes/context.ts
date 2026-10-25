@@ -33,12 +33,14 @@ import {
   canonicalPiProviderId,
   modelSupportsRole,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  PRODUCT_NAME,
 } from "@rakazo/contracts";
 import { createGroupRepos, createRepos, recordSecurityEvent, runAsTenant } from "@rakazo/db";
 import { createAgentImportServices } from "../agent-import-services.js";
 import { createAgentSkillsService } from "../agent-skills.js";
 import { createBotRemoval } from "../bot-removal.js";
 import { createMcpServers } from "../mcp-servers.js";
+import { assertMemberSettingsUnlocked } from "../member-settings-guard.js";
 import { createModelConnector, prepareAllowedThinkingLevels } from "../model-credentials.js";
 import type { RouterDeps } from "../router.js";
 import { createRoutineAnnouncer } from "../routines.js";
@@ -173,7 +175,7 @@ export function createRouterContext(deps: RouterDeps) {
               auth.secretIdByModel[entry.provider]?.[entry.id] ||
               auth.secretIdByProvider[entry.provider]
                 ? entry.billing
-                : "Uses Rakazo credits",
+                : `Uses ${PRODUCT_NAME} credits`,
           }
         : entry,
     );
@@ -340,6 +342,12 @@ export function createRouterContext(deps: RouterDeps) {
       return result;
     });
 
+  /** Model, voice and MCP changes a locked deployment reserves for its owner. */
+  const ownerManaged = authed.use(async ({ context, next }) => {
+    await assertMemberSettingsUnlocked(deps.prisma, context.actor);
+    return next();
+  });
+
   const callsEnabled = authed.use(async ({ next }) => {
     if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
     return next();
@@ -390,6 +398,7 @@ export function createRouterContext(deps: RouterDeps) {
     taughtSkills,
     agentSkills,
     authed,
+    ownerManaged,
     callsEnabled,
     boardEnabled,
     ticketDeps,
