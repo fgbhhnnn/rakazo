@@ -1,4 +1,5 @@
 import { isSecretAskBlock } from "./action-approval.js";
+import { isOpenComputerRestartPrompt } from "./computer-restart-prompt.js";
 import { isOpenWorkerApprovalMirror } from "./worker-approval-mirror.js";
 
 type AskSnapshot = {
@@ -11,6 +12,7 @@ type AskSnapshot = {
       input?: string;
       approvalEffectId?: string;
       workerApproval?: { runId: string; closed?: string };
+      computerRestart?: { computerId: string; closed?: string };
     }[];
   }[];
   run?: { id: string; status: string; userId?: string } | null;
@@ -27,7 +29,11 @@ export function answerableAskMessageIds(snapshot: AskSnapshot | null): Set<strin
   );
   for (const message of snapshot.messages) {
     // A worker's mirrored approval: its run lives in the hidden worker chat, not this one.
-    if (message.blocks.some(isOpenWorkerApprovalMirror)) {
+    // A restart card has no run either; the server checks the owner and the computer.
+    if (
+      message.blocks.some(isOpenWorkerApprovalMirror) ||
+      message.blocks.some(isOpenComputerRestartPrompt)
+    ) {
       answerable.add(message.id);
       continue;
     }

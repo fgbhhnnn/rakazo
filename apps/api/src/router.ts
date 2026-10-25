@@ -283,6 +283,7 @@ import {
   listSpaceArtifacts,
 } from "./artifacts.js";
 import type { BillingService } from "./billing.js";
+import { answerComputerRestartPrompt } from "./computer-restart-answer.js";
 import {
   executionBlocksUserTakeover,
   resolveBusyBotName,
@@ -2975,6 +2976,12 @@ export function createRouter(deps: RouterDeps) {
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (
+          await answerComputerRestartPrompt(deps, context.actor, target, input, (botId) =>
+            runComputerReplace(deps, context, botId, "reset", "reset"),
+          )
+        )
+          return { ok: true as const };
         if (await answerWorkerApprovalMirror(deps, context.actor, target, input))
           return { ok: true as const };
         const answered = await deps.events

@@ -106,6 +106,19 @@ export const WorkerApprovalMirror = z.object({
 });
 export type WorkerApprovalMirror = z.infer<typeof WorkerApprovalMirror>;
 
+/**
+ * A card in the owner's main chat asking whether to restart a computer that stopped answering.
+ * It has no run: answering it restarts the computer from its last checkpoint, or leaves it.
+ */
+export const ComputerRestartPrompt = z.object({
+  computerId: Id,
+  botId: Id,
+  closed: z.enum(["expired", "recovered"]).optional(),
+  /** What happened after a "restart" answer. */
+  outcome: z.enum(["restarted", "failed"]).optional(),
+});
+export type ComputerRestartPrompt = z.infer<typeof ComputerRestartPrompt>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -142,6 +155,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     dismissed: z.literal(true).optional(),
     /** A hidden background worker's approval, mirrored into the main chat and answered there. */
     workerApproval: WorkerApprovalMirror.optional(),
+    /** A system card asking whether to restart an unresponsive computer; answered in place. */
+    computerRestart: ComputerRestartPrompt.optional(),
     actions: z
       .array(
         z.object({

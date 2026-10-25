@@ -1133,9 +1133,35 @@ model Computer {
   executionLeases         ComputerExecutionLease[]
   maintenanceId           String?
   updates                 ComputerUpdate[]
+  health                  ComputerHealth?
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// Disk/memory readings and unresponsiveness of a computer, kept apart from `computers` so these
+/// writes never move its lifecycle claim stamp (`computers.updatedAt`).
+model ComputerHealth {
+  id                  String    @id @default(cuid())
+  computerId          String    @unique
+  computer            Computer  @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  spaceId             String
+  /// Last disk/memory reading, which rate-limits the next one.
+  checkedAt           DateTime?
+  diskPercent         Int?
+  memoryPercent       Int?
+  /// Resources ("disk", "memory" or "disk,memory") the last notice covered; null once all are
+  /// back under the threshold, which re-arms the notice.
+  alertedResources    String?
+  alertedAt           DateTime?
+  /// Consecutive failed sleep checkpoints or health probes; any success resets it.
+  unresponsiveCount   Int       @default(0)
+  restartPromptedAt   DateTime?
+  restartMessageId    String?
+  restartThreadId     String?
+  updatedAt           DateTime  @updatedAt
+
+  @@map("computer_health")
 }
 
 model ComputerExecutionLease {

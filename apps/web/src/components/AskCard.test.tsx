@@ -314,3 +314,40 @@ it("keeps a connector code card open to others in the chat, without Dismiss", as
   expect(button("Save")).toBeDefined();
   expect(button("Dismiss")).toBeUndefined();
 });
+
+it("asks before restarting a computer and shows the closed card as no longer active", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    text: "电脑连续 3 次没有响应，要重启吗？",
+    detail: "会恢复到上次保存的状态（10 分钟前），之后的改动可能会丢失。",
+    detailFormat: "text",
+    status: "pending",
+    actions: [
+      { id: "restart", label: "重启电脑" },
+      { id: "keep", label: "先不重启" },
+    ],
+    computerRestart: { computerId: "computer1", botId: "bot1" },
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  await render(block, undefined, onAnswer);
+  expect(container.textContent).toContain("之后的改动可能会丢失");
+  expect(button("先不重启")).toBeTruthy();
+  await act(async () => button("重启电脑")!.click());
+  expect(onAnswer).toHaveBeenCalledWith("restart", undefined);
+  expect(container.textContent).toContain("Answered: 重启电脑");
+
+  await act(async () =>
+    root.render(
+      <AskCard
+        key="closed"
+        block={{ ...block, computerRestart: { ...block.computerRestart!, closed: "recovered" } }}
+        canAnswer={false}
+        canDismiss={false}
+        onAnswer={onAnswer}
+        onDismiss={async () => undefined}
+      />,
+    ),
+  );
+  expect(container.textContent).toContain("No longer active");
+  expect(container.querySelector("button")).toBeNull();
+});

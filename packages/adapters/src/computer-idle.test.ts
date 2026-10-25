@@ -8,6 +8,11 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { boatError, FakeBoatApi, fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import {
+  COMPUTER_CHECKPOINT_DEADLINE_MS,
+  COMPUTER_STOP_DEADLINE_MS,
+  SUSPEND_CLAIM_STALE_MS,
+} from "./computer-health.js";
+import {
   BACKGROUND_WORK_LAUNCH,
   BACKGROUND_WORK_PROBE,
   CANCEL_COMPUTER_RUN_WORK,
@@ -302,6 +307,148 @@ describe("sandbox idle", () => {
         reason: "unavailable",
       }),
     );
+  });
+
+  it("gives up a hung checkpoint at its deadline and keeps the computer running", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness();
+    let exportSignal: AbortSignal | undefined;
+    harness.deps.sandbox.exportWorkspace = async function* (_computer, context) {
+      exportSignal = context?.signal;
+      await new Promise(() => undefined);
+      yield { path: "never", content: new Uint8Array() };
+    };
+    const deps = { ...harness.deps, deadlines: { checkpointMs: 30 } };
+
+    await expect(sleepComputerIfIdle(deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(exportSignal?.aborted).toBe(true);
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.computer.homeRevision).toBe("rev-before");
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(harness.health()?.unresponsiveCount).toBe(1);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "checkpoint_timeout",
+      }),
+    );
+  });
+
+  it("gives up a hung stop at its deadline, keeps the checkpoint and the computer running", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness();
+    let stopSignal: AbortSignal | undefined;
+    harness.sandbox.stop.mockImplementation((_ref: unknown, context: { signal: AbortSignal }) => {
+      stopSignal = context.signal;
+      return new Promise(() => undefined);
+    });
+    const deps = { ...harness.deps, deadlines: { stopMs: 30 } };
+
+    await expect(sleepComputerIfIdle(deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(stopSignal?.aborted).toBe(true);
+    expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+    expect(harness.computer.state).toBe("running");
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(harness.events.append).not.toHaveBeenCalled();
+    expect(harness.health()?.unresponsiveCount).toBe(1);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "stop_timeout",
+      }),
+    );
+  });
+
+  it("still reports a stop that fails outright to the job, with the computer running", async () => {
+    const harness = idleHarness();
+    harness.sandbox.stop.mockRejectedValueOnce(new Error("pause rejected"));
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toThrow(
+      "pause rejected",
+    );
+    expect(harness.computer.state).toBe("running");
+  });
+
+  it("takes back a suspending claim left past both deadlines", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness();
+    harness.computer.state = "suspending";
+    harness.computer.updatedAt = new Date(Date.now() - SUSPEND_CLAIM_STALE_MS - 1000);
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("running");
+    expect(harness.sandbox.exportWorkspace).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(harness.health()?.unresponsiveCount).toBe(1);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "computer.suspend_claim_recovered" }),
+    );
+    expect(SUSPEND_CLAIM_STALE_MS).toBeGreaterThan(
+      COMPUTER_CHECKPOINT_DEADLINE_MS + COMPUTER_STOP_DEADLINE_MS,
+    );
+  });
+
+  it("leaves a suspending claim alone while its sleep job may still be working", async () => {
+    const harness = idleHarness();
+    harness.computer.state = "suspending";
+    harness.computer.updatedAt = new Date(Date.now() - 60_000);
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("suspending");
+    expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
+    // One look back once the claim would be stale, in case its holder died.
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "computer.sleep",
+        payload: { computerId: harness.computer.id },
+        availableAt: new Date(harness.computer.updatedAt.getTime() + 30 * 60_000 + 1_000),
+      }),
+    );
+  });
+
+  it("does not take back a stale claim someone else changed meanwhile", async () => {
+    const harness = idleHarness();
+    harness.computer.state = "suspending";
+    const stale = new Date(Date.now() - SUSPEND_CLAIM_STALE_MS - 1000);
+    harness.computer.updatedAt = stale;
+    harness.prisma.computer.findUnique.mockImplementationOnce(async () => ({
+      ...harness.computer,
+    }));
+    harness.prisma.computer.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ state: "suspending", updatedAt: stale }),
+      }),
+    );
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(harness.health()?.unresponsiveCount).toBe(0);
+  });
+
+  it("resets the failed-check count after a checkpoint succeeds", async () => {
+    const harness = idleHarness({
+      health: { computerId: "computer-id", checkedAt: new Date(), unresponsiveCount: 2 },
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.health()?.unresponsiveCount).toBe(0);
   });
 
   it("stops a computer whose sandbox is gone instead of retrying the checkpoint", async () => {
@@ -1039,8 +1186,14 @@ function idleHarness(
     runningSince?: Date | null;
     billsWhileRunning?: boolean;
     takeoverRequestedAt?: Date;
+    /** The computer_health row; by default a fresh reading, so no resource probe runs. */
+    health?: Record<string, unknown> | null;
   } = {},
 ) {
+  let health: Record<string, unknown> | null =
+    options.health === undefined
+      ? { computerId: "computer-id", checkedAt: new Date(), unresponsiveCount: 0 }
+      : options.health;
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
   const computer = {
     id: "computer-id",
@@ -1083,6 +1236,18 @@ function idleHarness(
       ),
     },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    computerHealth: {
+      findUnique: vi.fn(async () => (health ? { ...health } : null)),
+      upsert: vi.fn(async ({ create, update }) => {
+        if (!health) health = { unresponsiveCount: 0, ...create };
+        else
+          for (const [key, value] of Object.entries(update as Record<string, unknown>)) {
+            const increment = (value as { increment?: number } | null)?.increment;
+            health[key] = increment === undefined ? value : Number(health[key] ?? 0) + increment;
+          }
+        return { ...health };
+      }),
+    },
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "bot", thread: { id: "thread" } }]),
     },
@@ -1118,8 +1283,12 @@ function idleHarness(
     cancel: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
   };
-  const events = { append: vi.fn().mockResolvedValue({}) };
+  const events = {
+    append: vi.fn().mockResolvedValue({}),
+    notify: vi.fn().mockResolvedValue(undefined),
+  };
   return {
+    health: () => health,
     computer,
     prisma,
     sandbox,

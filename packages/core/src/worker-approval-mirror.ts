@@ -8,6 +8,7 @@ type MirrorLike = {
   kind: string;
   status?: string;
   workerApproval?: { runId: string; closed?: string };
+  computerRestart?: { computerId: string; closed?: string };
 };
 
 /** The block is a mirrored worker approval the user can still answer. */
@@ -27,13 +28,18 @@ export function workerApprovalClosedState(block: MirrorLike): "cancelled" | "exp
   return closed === "cancelled" || closed === "expired" ? closed : undefined;
 }
 
-/** The run an answer to this message goes to: the worker's run for a mirrored approval. */
+/**
+ * The run an answer to this message goes to: the worker's run for a mirrored approval, or the
+ * computer for a restart card (see computer-restart-prompt.ts).
+ */
 export function askAnswerRunId(message: {
   runId?: string | null;
   blocks: readonly MirrorLike[];
 }): string | undefined {
   for (const block of message.blocks) {
     if (block.kind === "ask" && block.workerApproval) return block.workerApproval.runId;
+    // A restart card has no run; its answer names the computer instead.
+    if (block.kind === "ask" && block.computerRestart) return block.computerRestart.computerId;
   }
   return message.runId ?? undefined;
 }

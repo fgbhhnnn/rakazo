@@ -116,4 +116,37 @@ it("answers the copy through the screen's handler with the worker's run", async 
   });
   await answerMessage({ id: "none", runId: null, blocks: [{ kind: "text", text: "x" }] }, "x");
   expect(rpc).toHaveBeenCalledTimes(2);
+
+  // A computer restart card has no run; it answers with the computer it is about.
+  await answerMessage(
+    {
+      id: "restart-card",
+      runId: null,
+      blocks: [
+        {
+          kind: "ask",
+          status: "pending",
+          computerRestart: { computerId: "computer1", botId: "main-bot" },
+        },
+      ],
+    },
+    "restart",
+  );
+  expect(rpc).toHaveBeenLastCalledWith("threads/answer", {
+    botId: "main-bot",
+    runId: "computer1",
+    messageId: "restart-card",
+    answer: "restart",
+  });
+});
+
+it("shows a closed computer restart card as no longer active", () => {
+  expect(
+    inactiveAskText({
+      kind: "ask",
+      text: "电脑连续 3 次没有响应，要重启吗？",
+      status: "pending",
+      computerRestart: { computerId: "computer1", botId: "main-bot", closed: "recovered" },
+    }),
+  ).toBe("No longer active");
 });

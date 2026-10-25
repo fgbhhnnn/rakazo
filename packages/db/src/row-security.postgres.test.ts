@@ -358,7 +358,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
           },
         }),
       );
-      keep(
+      const computer = keep(
         "computer",
         await o.computer.create({
           data: {
@@ -368,6 +368,12 @@ describePostgres("row-level security (PostgreSQL)", () => {
             homeKey: `rls-${tag}`,
             kind: "fake",
           },
+        }),
+      );
+      keep(
+        "computerHealth",
+        await o.computerHealth.create({
+          data: { computerId: computer.id, spaceId: t.spaceId, diskPercent: 50 },
         }),
       );
       const board = keep("board", await o.board.create({ data: { spaceId: t.spaceId } }));

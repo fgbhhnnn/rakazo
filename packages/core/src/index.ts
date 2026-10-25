@@ -26,6 +26,7 @@ export * from "./compose-update.js";
 export * from "./composer-mention-picker.js";
 export * from "./composer-mentions.js";
 export * from "./composer-slash.js";
+export * from "./computer-restart-prompt.js";
 export * from "./computer-updates.js";
 export * from "./connection-catalog.js";
 export * from "./cron.js";
