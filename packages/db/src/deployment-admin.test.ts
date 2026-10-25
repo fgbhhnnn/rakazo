@@ -84,11 +84,14 @@ describe("member lock and shared models with RAKAZO_ADMIN_EMAILS", () => {
         findMany: vi.fn(async () => Object.entries(emails).map(([id, email]) => ({ id, email }))),
       },
       userModelCredential: { count: vi.fn().mockResolvedValue(0) },
-      spaceModelPreference: {
-        findFirst: vi.fn(async ({ where }: { where: { userId: string } }) => ({
-          spaceId: `space-of-${where.userId}`,
-        })),
+      // The admin's account-wide main model, read through the Space that follows the account.
+      spaceMember: {
+        findMany: vi.fn(async ({ where }: { where: { userId: string } }) => [
+          { spaceId: `space-of-${where.userId}` },
+        ]),
       },
+      spaceSettingOverride: { findMany: vi.fn().mockResolvedValue([]) },
+      userModelRoleChoice: { count: vi.fn().mockResolvedValue(1) },
     } as never;
   }
 

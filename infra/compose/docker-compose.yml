@@ -362,6 +362,8 @@ services:
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
       SIGNUPS_ENABLED:
       SIGNUP_ALLOWLIST:
+      # Agent import stays off unless this is "true" (API only).
+      RAKAZO_AGENT_IMPORT_ENABLED:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       # Signup Turnstile is checked by the API only.
       TURNSTILE_SITE_KEY:
