@@ -9,4 +9,9 @@ describe("built-in skills", () => {
     expect(text).toContain(`最多同时 ${limit} 个`);
     expect(text).not.toMatch(/最多同时 (?!4 )\d+ 个/);
   });
+
+  it("sends page-only reports to the think lane", () => {
+    const text = BUILTIN_AGENT_SKILLS.map((skill) => skill.content).join("\n");
+    expect(text).toContain('页面存在服务器上，不占电脑）的报告、方案也用 `lane: "think"`');
+  });
 });

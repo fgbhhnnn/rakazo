@@ -260,6 +260,11 @@ describe("background task lanes: guidance", () => {
     expect(BACKGROUND_LANE_GUIDANCE).toContain('When unsure, use "computer"');
     expect(BACKGROUND_LANE_GUIDANCE).toContain("需要电脑");
     expect(BACKGROUND_LANE_GUIDANCE).toContain("Queue positions are per lane");
+    // Pages live on the server: a page-only report or plan must not wake the computer.
+    expect(BACKGROUND_LANE_GUIDANCE).toContain("write_page/edit_page/read_page live on the server");
+    expect(BACKGROUND_LANE_GUIDANCE).toMatch(
+      /delivered as a page \(with no computer work\) goes to lane "think"/,
+    );
   });
 
   it("offers the lane on the background_task tool", () => {

@@ -1169,7 +1169,7 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           enum: ["computer", "think"],
           description:
-            "computer (default): needs the computer (shell, code, files or uploads, browser, desktop, images/video/charts). think: no computer at all (reasoning, writing, planning, web research, connected apps); never wakes the computer. When unsure, use computer.",
+            "computer (default): needs the computer (shell, code, files or uploads, browser, desktop, images/video/charts). think: no computer at all (reasoning, writing, planning, web research, connected apps, and reports or plans written as pages with write_page/edit_page); never wakes the computer. When unsure, use computer.",
         },
         agent: {
           type: "string",
