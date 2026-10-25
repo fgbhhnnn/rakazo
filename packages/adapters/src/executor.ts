@@ -3011,15 +3011,41 @@ export async function deferFutureRoutine(
   return true;
 }
 
-async function loadLivePluginSlugs(
+/**
+ * Longest a dispatcher turn waits for the live Composio listing before it falls back to the
+ * stored connection rows. The turn has a short reply budget and never uses connector tools.
+ */
+export const DISPATCHER_PLUGIN_LISTING_MAX_MS = 5_000;
+
+export async function loadLivePluginSlugs(
   listConnectedPluginSlugs: ExecutorDeps["listConnectedPluginSlugs"],
   userId: string,
+  maxMs?: number,
 ): Promise<{ ok: true; slugs: string[] } | { ok: false }> {
   if (!listConnectedPluginSlugs) return { ok: false };
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return { ok: true, slugs: await listConnectedPluginSlugs(userId) };
+    const listing = listConnectedPluginSlugs(userId).then((slugs) => ({
+      ok: true as const,
+      slugs,
+    }));
+    if (maxMs === undefined) return await listing;
+    // A late or failed listing after the cap is ignored; the stored rows already answered.
+    listing.catch(() => undefined);
+    return await Promise.race([
+      listing,
+      new Promise<{ ok: false }>((resolve) => {
+        timer = setTimeout(() => {
+          getLogger().warn("connected plugin listing timed out", { "timeout.ms": maxMs });
+          resolve({ ok: false });
+        }, maxMs);
+        timer.unref?.();
+      }),
+    ]);
   } catch {
     return { ok: false };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -4073,7 +4099,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         let liveSlugs: string[] = [];
         if (needsLivePluginSync(composioRows)) {
-          const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+          const listing = await loadLivePluginSlugs(
+            deps.listConnectedPluginSlugs,
+            run.userId,
+            dispatcherTurn ? DISPATCHER_PLUGIN_LISTING_MAX_MS : undefined,
+          );
           if (listing.ok) {
             liveSlugs = listing.slugs;
             await persistLivePluginConnections(deps.prisma, run, composioRows, listing.slugs).catch(
@@ -4123,9 +4153,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           payload: { trigger: run.trigger, routineId: run.routineId },
         });
 
-        const discoveredPromise = deps.connector
-          ? deps.connector.discoverTools(context)
-          : Promise.resolve([]);
+        // Dispatcher turns never expose connector tools (see exposedConnectorTools), so they
+        // must not wait on a slow or failing provider before answering.
+        const discoveredPromise =
+          deps.connector && !dispatcherTurn
+            ? deps.connector.discoverTools(context)
+            : Promise.resolve([]);
         const threadContext = threadContextForRun(
           run.trigger,
           {
@@ -8145,6 +8178,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           where: { id: runId },
           select: { status: true, leaseOwner: true, leaseFence: true },
         });
+        let setupTimeout: DispatcherTurnTimeout | undefined;
         if (
           !mayOpenModelStream(
             beforeModel,
@@ -8153,7 +8187,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             !leaseValid || Boolean(runAbortController?.signal.aborted),
           )
         ) {
-          return;
+          // The reply budget ran out during setup while this worker still owns the run.
+          // Returning here would leave it "running" until the lease expires; fail it as a
+          // timeout instead so the bounded restart or a truthful message follows.
+          if (
+            !dispatcherWatchdogFired ||
+            !leaseValid ||
+            !mayOpenModelStream(beforeModel, workerId, fence, false)
+          ) {
+            return;
+          }
+          setupTimeout = new DispatcherTurnTimeout(dispatcherTurnMaxMs());
         }
 
         let fallbackModels: { provider: string; modelId: string }[] = [];
@@ -8180,6 +8224,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
 
         try {
+          if (setupTimeout) throw setupTimeout;
           if (checkpointLoadError) throw checkpointLoadError;
           const runtimeEvents = deps.runtime.run(
             {
@@ -9008,6 +9053,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           } catch (computerError) {
             if (!(computerError instanceof SandboxRateLimitError)) throw computerError;
             error = computerError;
+          }
+          // The runtime reports the watchdog's abort as a generic "Request was aborted";
+          // record what actually happened.
+          if (
+            dispatcherWatchdogFired &&
+            !(error instanceof DispatcherTurnTimeout) &&
+            !(error instanceof SandboxRateLimitError)
+          ) {
+            error = new DispatcherTurnTimeout(dispatcherTurnMaxMs());
           }
           if (!terminalCheckpointComplete) {
             await workspaceCheckpoint.flush().catch(() => undefined);
