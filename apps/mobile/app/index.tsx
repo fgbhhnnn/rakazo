@@ -709,6 +709,14 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         const refresh = async () => {
           spaceActionRef.current.recoveryId = null;
           setSpaceRecoveryId(null);
+          // A space seen before opens as it was saved; polling stays off until it is painted.
+          const saved = await loadSavedInbox().catch(() => null);
+          if (saved?.me.spaceId === spaceId) {
+            setBots(saved.bots);
+            setBotSections(saved.botSections);
+            setGroups(saved.groups);
+            setMe(saved.me);
+          }
           spaceActionRef.current.busy = false;
           await refreshBots();
           await loadActivity();
@@ -831,8 +839,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       undefined,
       [
         { text: t("New bot"), onPress: () => runCreateAction("bot") },
-        { text: t("New group"), onPress: () => runCreateAction("group") },
-        { text: t("New space"), onPress: () => runCreateAction("space") },
+        { text: t("New group chat"), onPress: () => runCreateAction("group") },
+        { text: t("New private space"), onPress: () => runCreateAction("space") },
       ],
       { cancelable: true },
     );
@@ -887,13 +895,13 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
               },
               {
                 type: "action" as const,
-                label: t("New group"),
+                label: t("New group chat"),
                 icon: { type: "sfSymbol" as const, name: "person.2" },
                 onPress: () => runCreateAction("group"),
               },
               {
                 type: "action" as const,
-                label: t("New space"),
+                label: t("New private space"),
                 icon: { type: "sfSymbol" as const, name: "square.grid.2x2" },
                 onPress: () => runCreateAction("space"),
               },
@@ -1218,30 +1226,42 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
             >
               <Text style={styles.spaceTitle}>{item.title}</Text>
             </Pressable>
-            {canDeleteInboxSpace(item.space) ? (
-              <MenuView
-                actions={[
-                  {
-                    id: "delete",
-                    title: t("Delete space"),
-                    image: "trash",
-                    attributes: { destructive: true, disabled: spaceBusy || !!spaceRecoveryId },
-                  },
-                ]}
-                colorScheme={appearance}
-                onPressAction={() => {
-                  if (item.space) confirmDeleteSpace(item.space);
-                }}
+            <MenuView
+              actions={[
+                { id: "settings", title: t("Settings"), image: "gearshape" },
+                ...(canDeleteInboxSpace(item.space)
+                  ? [
+                      {
+                        id: "delete",
+                        title: t("Delete space"),
+                        image: "trash" as const,
+                        attributes: {
+                          destructive: true,
+                          disabled: spaceBusy || !!spaceRecoveryId,
+                        },
+                      },
+                    ]
+                  : []),
+              ]}
+              colorScheme={appearance}
+              onPressAction={({ nativeEvent }) => {
+                if (!item.space) return;
+                if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
+                else
+                  router.push({
+                    pathname: "/space",
+                    params: { spaceId: item.space.id, name: item.space.name },
+                  });
+              }}
+            >
+              <View
+                accessibilityLabel={t("Space actions for {name}", { name: item.title })}
+                accessibilityRole="button"
+                style={styles.spaceActions}
               >
-                <View
-                  accessibilityLabel={t("Space actions for {name}", { name: item.title })}
-                  accessibilityRole="button"
-                  style={styles.spaceActions}
-                >
-                  <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
-                </View>
-              </MenuView>
-            ) : null}
+                <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
+              </View>
+            </MenuView>
           </View>
         ) : (
           <View style={styles.sectionHeadingRow}>
@@ -1339,6 +1359,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       organizeBot,
       organizeFromMenu,
       organizeGroup,
+      router,
       spaceBusy,
       spaceRecoveryId,
       styles,
@@ -1409,8 +1430,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
               <MenuView
                 actions={[
                   { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
-                  { id: "group", title: t("New group"), image: "person.2" },
-                  { id: "space", title: t("New space"), image: "square.grid.2x2" },
+                  { id: "group", title: t("New group chat"), image: "person.2" },
+                  { id: "space", title: t("New private space"), image: "square.grid.2x2" },
                 ]}
                 colorScheme={appearance}
                 onPressAction={({ nativeEvent }) => {

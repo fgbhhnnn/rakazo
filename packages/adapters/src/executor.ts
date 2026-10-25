@@ -133,11 +133,13 @@ import {
   createThreadMessageInTransaction,
   dropRunTurnCheckpoint,
   effectiveMemoryScope,
+  findAutoReviewPreference,
   InstructionConflictError,
   InvalidSpaceNameError,
   isHiddenBot,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
+  listApprovalRules,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
   parseComputerMode,
@@ -2825,7 +2827,9 @@ export function desktopProtectionGuardMessage(reason: string): string {
       ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
       : reason.startsWith("unresolved variable")
         ? " Write the value literally in the command, or put the logic in a script file (for example with the file tools) and run it with bash script.sh. $? $# $$ and $! are allowed."
-        : "";
+        : reason === "command substitution" || reason === "backtick"
+          ? " For HTTP authentication, use the client's auth support or python3 -c reading the saved command credential from os.environ. Never print credentials. No request ran, so this refusal does not indicate invalid credentials."
+          : "";
   return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
 }
 
@@ -4607,12 +4611,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         let approvalRulesPromise: Promise<ActionApprovalRule[]> | undefined;
         const loadApprovalRules = () => {
-          approvalRulesPromise ??= deps.prisma.actionApprovalRule
-            .findMany({
-              where: { spaceId: run.spaceId, createdByUserId: run.userId },
-              select: { effect: true, matchKind: true, matchValue: true },
-            })
-            .then((rules) => rules as ActionApprovalRule[]);
+          approvalRulesPromise ??= listApprovalRules(deps.prisma, {
+            userId: run.userId,
+            spaceId: run.spaceId,
+          }).then((rules) => rules as ActionApprovalRule[]);
           return approvalRulesPromise;
         };
         let approvalModelPromise: Promise<EffectiveModelRole> | undefined;
@@ -4622,20 +4624,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           | Promise<{ enabled: boolean; skipApprovals: boolean }>
           | undefined;
         const loadAutoReviewPreference = () => {
-          autoReviewPreferencePromise ??= deps.prisma.actionAutoReviewPreference
-            .findUnique({
-              where: {
-                spaceId_userId: {
-                  spaceId: run.spaceId,
-                  userId: run.userId,
-                },
-              },
-              select: { enabled: true, skipApprovals: true },
-            })
-            .then((row) => ({
-              enabled: row?.enabled ?? deploymentAutoReviewDefault(),
-              skipApprovals: row?.skipApprovals ?? false,
-            }));
+          autoReviewPreferencePromise ??= findAutoReviewPreference(deps.prisma, {
+            userId: run.userId,
+            spaceId: run.spaceId,
+          }).then((row) => ({
+            enabled: row?.enabled ?? deploymentAutoReviewDefault(),
+            skipApprovals: row?.skipApprovals ?? false,
+          }));
           return autoReviewPreferencePromise;
         };
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
@@ -4802,7 +4797,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ? `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash. Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`
           : undefined;
         const computerInstruction = [
-          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. Do not inspect the computer just to prepare for an unrelated task.",
+          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.",
           hostInstruction
             ? `${baseComputerInstruction} ${hostInstruction}`
             : dockerToolInstruction

@@ -161,7 +161,7 @@ function fakeFleet(input: {
           })),
       ),
     },
-    spaceModelPreference: { findMany: vi.fn(async () => input.credentials ?? []) },
+    userModelPreference: { findMany: vi.fn(async () => input.credentials ?? []) },
     userModelCredential: { findMany: vi.fn(async () => []) },
   };
   const deps: FleetPrepareDeps = {

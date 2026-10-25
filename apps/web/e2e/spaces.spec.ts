@@ -181,7 +181,7 @@ test("deleting the last bot in a space stays in the app after first use", async 
   await expect(page).not.toHaveURL(/\/onboarding/);
   await expect(sidebar.getByRole("button", { name: "Open Side" })).toBeVisible();
   await expect(
-    page.locator("main").getByRole("button", { name: "Create new Bot", exact: true }),
+    page.locator("main").getByRole("button", { name: "New bot", exact: true }),
   ).toBeVisible();
 
   await sidebar.getByRole("button", { name: "Actions for Side" }).click();
@@ -243,7 +243,38 @@ test("a space's menu opens its settings in place, and settings can switch space"
   expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
   await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
 
+  // Models, voice, and confirmations follow the account until this space customizes them.
+  const overrides = settings.getByTestId("space-setting-overrides");
+  for (const name of ["Models", "Voice", "Confirmations"]) {
+    await expect(overrides.getByRole("button", { name: `Customize ${name}` })).toBeVisible();
+  }
+  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(3);
+  await captureScreenshot(page, testInfo, "space-settings-uses-defaults");
+
+  await overrides.getByRole("button", { name: "Customize Confirmations" }).click();
+  const confirmations = overrides.getByTestId("space-setting-confirmations");
+  const skipApprovals = confirmations.getByTestId("skip-approvals-toggle");
+  await expect(skipApprovals).toBeVisible();
+  await expect(skipApprovals).not.toBeChecked();
+  await skipApprovals.click();
+  await expect(skipApprovals).toBeChecked();
+  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(2);
+  await captureScreenshot(page, testInfo, "space-settings-customized-confirmations");
+
+  // The account's own confirmations stay as they were.
+  await settings.getByTestId("settings-nav-confirmations").click();
+  await expect(settings.getByTestId("settings-space")).toHaveCount(0);
+  await expect(settings.getByTestId("skip-approvals-toggle")).not.toBeChecked();
+
+  await settings.getByTestId("settings-nav-space").click();
+  await expect(picker).toHaveText("Support");
+  await overrides.getByRole("button", { name: "Use defaults for Confirmations" }).click();
+  await expect(confirmations.getByTestId("skip-approvals-toggle")).toHaveCount(0);
+  await expect(overrides.getByRole("button", { name: "Customize Confirmations" })).toBeVisible();
+
   // Sections that are not per space show no picker.
   await settings.getByTestId("settings-nav-general").click();
+  await expect(settings.getByTestId("settings-space")).toHaveCount(0);
+  await settings.getByTestId("settings-nav-models").click();
   await expect(settings.getByTestId("settings-space")).toHaveCount(0);
 });

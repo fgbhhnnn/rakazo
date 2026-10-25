@@ -89,16 +89,8 @@ export async function signupThroughForm(
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);
-  await showPasswordForm(page);
   await page.getByPlaceholder("Password").fill(password);
   await page.getByRole("button", { name: "Create account" }).click();
-}
-
-/** With email delivery the auth form opens on the emailed-code flow; switch to the password form. */
-export async function showPasswordForm(page: Page) {
-  const usePassword = page.getByRole("button", { name: "Use password" });
-  await expect(usePassword.or(page.getByPlaceholder("Password"))).toBeVisible();
-  if (await usePassword.isVisible()) await usePassword.click();
 }
 
 /** Open Advanced through its trigger, preserving an already-expanded section. */
@@ -332,6 +324,25 @@ export async function stopActiveWork(page: Page) {
   // The API stop alone emits no terminal thread event; reload so the shell reads the new state.
   await page.reload();
   await expect(busyComposer(page)).toHaveCount(0, { timeout: 30_000 });
+}
+
+/**
+ * Clicks a button and waits for the RPC it sends to succeed, so what the test reads next
+ * reflects it. The wait starts before the click, so a fast reply is never missed.
+ */
+export async function clickAndWaitForRpc(page: Page, button: Locator, path: string) {
+  const [reply] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/rpc/${path}` &&
+        response.request().method() === "POST",
+    ),
+    button.click(),
+  ]);
+  expect(reply.status()).toBe(200);
+  // The whole reply has arrived, not just its headers.
+  const failure = await reply.finished();
+  if (failure) throw new Error(`/rpc/${path} reply did not finish: ${failure.message}`);
 }
 
 /** Presents a deployment default the offline E2E server cannot run, as host credentials would. */

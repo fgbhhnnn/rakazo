@@ -65,8 +65,60 @@ async function borrowedOwner(prisma: PrismaClient, policy: MemberSettingsPolicy,
 }
 
 /**
+ * The owner's Space a borrowed lookup runs in. Models and voice are account-wide with per-Space
+ * overrides, so a Space without an override resolves to the owner's account copy. That copy wins
+ * when it holds a setting; otherwise a Space whose own override holds one; otherwise the owner's
+ * first Space, so the account copy (and the deployment defaults behind it) still apply.
+ */
+async function ownerSettingsSpace(
+  prisma: PrismaClient,
+  ownerUserId: string,
+  setting: "models" | "voice",
+): Promise<string | null> {
+  if (typeof prisma.spaceMember?.findMany !== "function") return null;
+  // These rows are tenant-scoped and the caller is the member, so list only the owner's
+  // Space ids here; the settings themselves are read as the owner.
+  return runAsSystem("shared owner settings space", async () => {
+    const memberships = await prisma.spaceMember.findMany({
+      where: { userId: ownerUserId },
+      orderBy: [{ createdAt: "asc" }, { spaceId: "asc" }],
+      select: { spaceId: true },
+    });
+    if (memberships.length === 0) return null;
+    const overrides = await prisma.spaceSettingOverride.findMany({
+      where: { userId: ownerUserId, setting },
+      select: { spaceId: true },
+    });
+    const overridden = new Set(overrides.map((row) => row.spaceId));
+    const followsAccount = memberships.find((row) => !overridden.has(row.spaceId))?.spaceId;
+    const accountHasSetting =
+      setting === "models"
+        ? (await prisma.userModelRoleChoice.count({
+            where: { userId: ownerUserId, role: "main", position: 0 },
+          })) > 0
+        : (await prisma.userVoicePreference.count({ where: { userId: ownerUserId } })) > 0;
+    if (followsAccount && accountHasSetting) return followsAccount;
+    const spaceIds = memberships.map((row) => row.spaceId).filter((id) => overridden.has(id));
+    const withOwn =
+      spaceIds.length === 0
+        ? []
+        : setting === "models"
+          ? await prisma.spaceModelRoleChoice.findMany({
+              where: { userId: ownerUserId, spaceId: { in: spaceIds }, role: "main", position: 0 },
+              select: { spaceId: true },
+            })
+          : await prisma.spaceVoicePreference.findMany({
+              where: { userId: ownerUserId, spaceId: { in: spaceIds } },
+              select: { spaceId: true },
+            });
+    const own = new Set(withOwn.map((row) => row.spaceId));
+    return spaceIds.find((id) => own.has(id)) ?? followsAccount ?? memberships[0]?.spaceId ?? null;
+  });
+}
+
+/**
  * The scope model lookups run under. A member with no model of their own borrows the
- * owner's default space, so credential, secret and backup lookups all resolve as the owner
+ * owner's models, so credential, secret and backup lookups all resolve as the owner
  * would. Server-side only: the owner's secrets never leave the process.
  */
 export async function sharedModelScope<S extends Scope>(
@@ -78,30 +130,7 @@ export async function sharedModelScope<S extends Scope>(
   if (!ownerUserId) return scope;
   const own = await prisma.userModelCredential.count({ where: { userId: scope.userId } });
   if (own > 0 && !policy.locked) return scope;
-  // The owner's main model lives in their main role; the legacy default preference is
-  // frozen since role writes stopped mirroring into it, so it only breaks ties between
-  // Spaces that each have a main model, and covers owners who never wrote a role.
-  const legacy = await prisma.spaceModelPreference.findFirst({
-    where: { userId: ownerUserId, isDefault: true },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    select: { spaceId: true },
-  });
-  const roles =
-    typeof prisma.spaceModelRoleChoice?.findMany === "function"
-      ? // Role rows are tenant-scoped and the caller is the member, so list only the
-        // owner's Space ids across their Spaces; the choices themselves are read as the owner.
-        await runAsSystem("shared owner model space", () =>
-          prisma.spaceModelRoleChoice.findMany({
-            where: { userId: ownerUserId, role: "main", position: 0 },
-            orderBy: { spaceId: "asc" },
-            select: { spaceId: true },
-          }),
-        )
-      : [];
-  const spaceId =
-    roles.find((role) => role.spaceId === legacy?.spaceId)?.spaceId ??
-    roles[0]?.spaceId ??
-    legacy?.spaceId;
+  const spaceId = await ownerSettingsSpace(prisma, ownerUserId, "models");
   return spaceId ? { userId: ownerUserId, spaceId } : scope;
 }
 
@@ -115,10 +144,6 @@ export async function sharedVoiceScope<S extends Scope>(
   if (!ownerUserId) return scope;
   const own = await prisma.userVoiceCredential.count({ where: { userId: scope.userId } });
   if (own > 0 && !policy.locked) return scope;
-  const owner = await prisma.spaceVoicePreference.findFirst({
-    where: { userId: ownerUserId, isDefault: true },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    select: { spaceId: true },
-  });
-  return owner ? { userId: ownerUserId, spaceId: owner.spaceId } : scope;
+  const spaceId = await ownerSettingsSpace(prisma, ownerUserId, "voice");
+  return spaceId ? { userId: ownerUserId, spaceId } : scope;
 }

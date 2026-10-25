@@ -25,7 +25,7 @@ import {
   withDeadline,
 } from "./computer-health.js";
 import { toComputerRef } from "./computer-lifecycle.js";
-import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { checkpointComputerWorkspace, deletedTeamBotFolders } from "./computer-workspace.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
@@ -424,10 +424,14 @@ export async function sleepComputerIfIdle(
     const revision = await withDeadline(
       checkpointMs,
       (signal) =>
-        checkpointComputerWorkspace(deps.home, deps.sandbox, computer.homeKey, ref, {
-          ...ctx,
-          signal,
-        }),
+        checkpointComputerWorkspace(
+          deps.home,
+          deps.sandbox,
+          computer.homeKey,
+          ref,
+          { ...ctx, signal },
+          () => deletedTeamBotFolders(deps.prisma, computer),
+        ),
       () => new ComputerDeadlineError("checkpoint", checkpointMs),
     );
     const saved = await deps.prisma.computer.updateMany({
@@ -641,6 +645,7 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       homeKey: true,
       providerRef: true,
       kind: true,
+      scope: true,
       state: true,
       spaceId: true,
       userId: true,

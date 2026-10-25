@@ -13,9 +13,11 @@ const settingsScreens = new Set([
   "change-password",
   "integration-setup",
   "integrations",
+  "messaging",
   "language",
   "models",
   "signup-survey",
+  "space",
   "voice",
 ]);
 

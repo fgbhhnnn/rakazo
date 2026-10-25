@@ -7,8 +7,11 @@ import {
   FLEET_TOOL_NAMES,
   SecretAskPurpose,
   SecretHttpRequest,
+  TICKET_COMMENT_MAX_LENGTH,
+  TICKET_DESCRIPTION_MAX_LENGTH,
   TICKET_PRIORITIES,
   TICKET_STATUSES,
+  TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
@@ -89,7 +92,7 @@ const scheduleCreateProperties = {
   prompt: {
     type: "string",
     description:
-      "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
+      "Concrete steps for when the schedule fires: what to use, what to extract, and how to report. Name the connected plugin tools to call when one covers the data (e.g. GITHUB_LIST_RELEASES for owner/repo), preferring them over the computer browser or web search; for a website without one, describe the pages and actions to take in the computer's browser. Keep the user's standing preferences separate from decisions that only applied this time, such as skipping an item that was out of stock, and write those as conditions.",
   },
   timezone: { type: "string", description: "IANA timezone (default: the user's timezone)." },
 };
@@ -951,8 +954,16 @@ export const builtinAgentTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Short ticket title." },
-        description: { type: "string", description: "Optional detail." },
+        title: {
+          type: "string",
+          maxLength: TICKET_TITLE_MAX_LENGTH,
+          description: "Short ticket title.",
+        },
+        description: {
+          type: "string",
+          maxLength: TICKET_DESCRIPTION_MAX_LENGTH,
+          description: "Optional detail.",
+        },
         priority: {
           type: "string",
           enum: TICKET_PRIORITIES,
@@ -973,8 +984,8 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "Ticket id." },
-        title: { type: "string" },
-        description: { type: "string" },
+        title: { type: "string", maxLength: TICKET_TITLE_MAX_LENGTH },
+        description: { type: "string", maxLength: TICKET_DESCRIPTION_MAX_LENGTH },
         priority: { type: "string", enum: TICKET_PRIORITIES },
         status: { type: "string", enum: TICKET_STATUSES },
         ownerBotId: { type: "string" },
@@ -989,7 +1000,11 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "Ticket id." },
-        body: { type: "string", description: "Comment text." },
+        body: {
+          type: "string",
+          maxLength: TICKET_COMMENT_MAX_LENGTH,
+          description: "Comment text.",
+        },
       },
       required: ["id", "body"],
     },

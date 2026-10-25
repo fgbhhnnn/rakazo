@@ -14,19 +14,31 @@ import {
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
-import type { Actor, VoiceAccountErrorCode, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
+import type {
+  Actor,
+  SettingsScope,
+  VoiceAccountErrorCode,
+  VoiceCredential,
+  VoiceStatus,
+} from "@rakazo/contracts";
+import { SettingsScopeSchema } from "@rakazo/contracts";
 import { toUtterances } from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
   findVoiceCredential,
+  findVoicePreference,
   IsolationError,
+  lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
+  runAsSystemInTransaction,
   runAsTenant,
-  selectSpaceVoicePreference,
+  saveVoicePreference,
+  selectVoicePreference,
   sharedVoiceScope,
+  voicePreferenceTarget,
   withinScope,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -191,23 +203,30 @@ export function fishSpeechModelValue(speechModel: string): string | null {
   return trimmed;
 }
 
-export async function loadDefaultVoiceCredential(deps: VoiceDeps, actor: Actor) {
-  return loadVoiceCredential(deps, actor);
+export async function loadDefaultVoiceCredential(
+  deps: VoiceDeps,
+  actor: Actor,
+  scope?: SettingsScope,
+) {
+  return loadVoiceCredential(deps, actor, undefined, scope);
 }
 
 export async function loadVoiceCredential(
   deps: VoiceDeps,
   requester: Actor,
   provider?: string,
+  requestedScope?: SettingsScope,
   { shareOwner = true }: { shareOwner?: boolean } = {},
 ) {
   // A member without a voice of their own may speak with the owner's; the key stays server-side.
   const actor = shareOwner
     ? { ...requester, ...(await sharedVoiceScope(deps.prisma, requester)) }
     : requester;
+  // A borrowed voice is whichever copy applies to the owner, never the member's requested one.
+  const scope = actor.userId === requester.userId ? requestedScope : undefined;
   const cred = provider
-    ? await findVoiceCredential(deps.prisma, actor, provider)
-    : await findDefaultVoiceCredential(deps.prisma, actor);
+    ? await findVoiceCredential(deps.prisma, actor, provider, scope)
+    : await findDefaultVoiceCredential(deps.prisma, actor, scope);
   if (!cred) return null;
   // The secret is row-secured to its owner; a shared voice reads it as the owner, server-side.
   const apiKey = await withinScope(actor, async () => {
@@ -223,7 +242,7 @@ export async function loadVoiceCredential(
 export async function resolveVoiceTarget(
   deps: VoiceDeps,
   actor: Actor,
-  input: { botId?: string; voiceId?: string },
+  input: { botId?: string; voiceId?: string; scope?: SettingsScope },
 ) {
   let botVoiceId: string | null = null;
   if (input.botId) {
@@ -234,7 +253,7 @@ export async function resolveVoiceTarget(
     if (!bot) throw new IsolationError();
     botVoiceId = bot.voiceId;
   }
-  const loaded = await loadDefaultVoiceCredential(deps, actor);
+  const loaded = await loadDefaultVoiceCredential(deps, actor, input.scope);
   if (!loaded) throw new NoVoiceConfigured("key");
   const voiceId = input.voiceId || botVoiceId || loaded.cred.voiceId;
   if (!voiceId) throw new NoVoiceConfigured("voice");
@@ -252,6 +271,8 @@ export async function persistVoiceCredential(
     baseUrl?: string;
     ttsModel?: string;
     sttModel?: string;
+    /** Which copy the connection becomes the default voice in; omitted is what applies. */
+    scope?: SettingsScope;
     signal?: AbortSignal;
   },
 ): Promise<VoiceCredential> {
@@ -261,9 +282,9 @@ export async function persistVoiceCredential(
   const previous =
     input.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID
       ? // An unreadable old secret only means nothing is inherited; the form must be complete.
-        await loadVoiceCredential(deps, actor, input.provider, { shareOwner: false }).catch(
-          () => null,
-        )
+        await loadVoiceCredential(deps, actor, input.provider, undefined, {
+          shareOwner: false,
+        }).catch(() => null)
       : null;
   const allowPrivateEndpoint = await voiceMayUsePrivateEndpoint(deps, actor, input.provider);
   const plaintext = voiceCredentialPlaintext({
@@ -321,16 +342,10 @@ export async function persistVoiceCredential(
               where: { id: existing.id },
               data: { secretId: secret.id },
             });
+        await lockSpaceSettings(tx, actor);
+        const target = await voicePreferenceTarget(tx, actor, input.scope);
         const previousPreference = existing
-          ? await tx.spaceVoicePreference.findUnique({
-              where: {
-                spaceId_userId_credentialId: {
-                  spaceId: actor.spaceId,
-                  userId: actor.userId,
-                  credentialId: existing.id,
-                },
-              },
-            })
+          ? await findVoicePreference(tx, target, existing.id)
           : null;
         const selectedVoiceId =
           voiceId || (choicesChanged ? "" : previousPreference?.voiceId) || "";
@@ -338,19 +353,35 @@ export async function persistVoiceCredential(
           requestedSpeechModel !== undefined
             ? requestedSpeechModel
             : previousPreference?.speechModel;
-        await selectSpaceVoicePreference(tx, actor, credential.id, selectedVoiceId, speechModel);
+        await selectVoicePreference(tx, target, credential.id, selectedVoiceId, speechModel);
         if (existing && choicesChanged) {
-          // The credential is account-wide but each space keeps its own voice. Move every
-          // other space whose voice the new server or model lacks onto the new default.
-          await tx.spaceVoicePreference.updateMany({
-            where: {
-              userId: actor.userId,
-              credentialId: existing.id,
-              spaceId: { not: actor.spaceId },
-              voiceId: { notIn: validVoiceIds },
-            },
-            data: { voiceId: selectedVoiceId },
-          });
+          // The credential is account-wide but the account and each Space that overrides
+          // voice keep their own voice. Move every other copy whose voice the new server
+          // or model lacks onto the new default.
+          const stale = {
+            userId: actor.userId,
+            credentialId: existing.id,
+            voiceId: { notIn: validVoiceIds },
+          };
+          if (target.scope === "space") {
+            await tx.userVoicePreference.updateMany({
+              where: stale,
+              data: { voiceId: selectedVoiceId },
+            });
+          }
+          await runAsSystemInTransaction(
+            tx,
+            "move a voice connection's other Spaces onto its new server",
+            () =>
+              tx.spaceVoicePreference.updateMany({
+                where: {
+                  ...stale,
+                  spaceMember: { settingOverrides: { some: { setting: "voice" } } },
+                  ...(target.scope === "space" ? { spaceId: { not: actor.spaceId } } : {}),
+                },
+                data: { voiceId: selectedVoiceId },
+              }),
+          );
         }
         if (existing) {
           await deleteUnreferencedCredentialSecret(tx, {
@@ -390,9 +421,9 @@ export async function disconnectVoiceCredential(
         });
         if (existing.length === 0) return;
         const ids = existing.map((row) => row.id);
-        await tx.spaceVoicePreference.deleteMany({
-          where: { userId: actor.userId, credentialId: { in: ids } },
-        });
+        const removed = { userId: actor.userId, credentialId: { in: ids } };
+        await tx.userVoicePreference.deleteMany({ where: removed });
+        await tx.spaceVoicePreference.deleteMany({ where: removed });
         await tx.userVoiceCredential.deleteMany({
           where: { userId: actor.userId, id: { in: ids } },
         });
@@ -413,7 +444,7 @@ export async function disconnectVoiceCredential(
 export async function updateVoiceSpeechModel(
   deps: VoiceDeps,
   actor: Actor,
-  input: { provider: string; speechModel: string },
+  input: { provider: string; speechModel: string; scope?: SettingsScope },
 ): Promise<VoiceCredential> {
   if (input.provider !== FISH_AUDIO_PROVIDER) {
     throw new ORPCError("BAD_REQUEST", { message: "Speech model applies to Fish Audio." });
@@ -429,44 +460,20 @@ export async function updateVoiceSpeechModel(
         if (!found) {
           throw new ORPCError("BAD_REQUEST", { message: "Connect a voice provider first." });
         }
-        const where = {
-          spaceId_userId_credentialId: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            credentialId: found.id,
-          },
-        };
-        const preference = await tx.spaceVoicePreference.findUnique({ where });
-        if (!preference) {
-          // Remember the model without taking the default. Another provider may
-          // already be selected, and this row still has no voice.
-          if (speechModel === null) {
-            return toVoiceCredential({ ...found, isDefault: false, voiceId: "", speechModel: "" });
-          }
-          const created = await tx.spaceVoicePreference.create({
-            data: {
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              credentialId: found.id,
-              speechModel,
-            },
-          });
-          return toVoiceCredential({
-            ...found,
-            isDefault: created.isDefault,
-            voiceId: created.voiceId,
-            speechModel: created.speechModel,
-          });
+        await lockSpaceSettings(tx, actor);
+        const target = await voicePreferenceTarget(tx, actor, input.scope);
+        const preference = await findVoicePreference(tx, target, found.id);
+        // Remember the model without taking the default. Another provider may already be
+        // selected, and a new row still has no voice.
+        if (!preference && speechModel === null) {
+          return toVoiceCredential({ ...found, isDefault: false, voiceId: "", speechModel: "" });
         }
-        const updated = await tx.spaceVoicePreference.update({
-          where: { id: preference.id },
-          data: { speechModel },
-        });
+        const saved = await saveVoicePreference(tx, target, found.id, { speechModel });
         return toVoiceCredential({
           ...found,
-          isDefault: preference.isDefault,
-          voiceId: preference.voiceId,
-          speechModel: updated.speechModel,
+          isDefault: saved.isDefault,
+          voiceId: saved.voiceId,
+          speechModel: saved.speechModel,
         });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -477,7 +484,7 @@ export async function updateVoiceSpeechModel(
 export async function prepareVoice(
   deps: VoiceDeps,
   actor: Actor,
-  input: { text: string; voiceId?: string; botId?: string },
+  input: { text: string; voiceId?: string; botId?: string; scope?: SettingsScope },
 ) {
   try {
     await resolveVoiceTarget(deps, actor, input);
@@ -493,7 +500,13 @@ export async function prepareVoice(
 export async function synthesizeVoice(
   deps: VoiceDeps,
   actor: Actor,
-  input: { text: string; voiceId?: string; botId?: string; signal?: AbortSignal },
+  input: {
+    text: string;
+    voiceId?: string;
+    botId?: string;
+    scope?: SettingsScope;
+    signal?: AbortSignal;
+  },
 ) {
   const target = await resolveVoiceTarget(deps, actor, input);
   const text = input.text.trim();
@@ -559,6 +572,7 @@ export function mountVoiceHttpRoutes(
           text: String((body as { text?: unknown }).text ?? ""),
           voiceId: optionalString((body as { voiceId?: unknown }).voiceId),
           botId: optionalString((body as { botId?: unknown }).botId),
+          scope: SettingsScopeSchema.safeParse((body as { scope?: unknown }).scope).data,
           signal: AbortSignal.any(
             [c.req.raw.signal, AbortSignal.timeout(SPEAK_TIMEOUT_MS)].filter(
               Boolean,
