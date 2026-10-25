@@ -99,6 +99,10 @@ async function main() {
     // Model and speech fixtures listen on loopback, and most test accounts are not the owner.
     process.env.MCP_ALLOW_PRIVATE_ENDPOINT = "true";
     process.env.CI = "1";
+    // Agent import is off in deployments; the harness turns it on (API and web build) so its
+    // specs and integration tests keep exercising it.
+    process.env.RAKAZO_AGENT_IMPORT_ENABLED = "true";
+    process.env.VITE_AGENT_IMPORT_ENABLED = "true";
 
     execSync("pnpm --filter @rakazo/db generate", { stdio: "inherit", env: process.env });
     execSync("pnpm db:migrate", { stdio: "inherit", env: process.env });

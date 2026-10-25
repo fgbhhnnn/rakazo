@@ -3871,8 +3871,8 @@ msgid "Not imported"
 msgstr "לא יובא"
 
 #: src/pages/shell/import-status.ts
-msgid "Not in Rakazo's catalog"
-msgstr "לא בקטלוג של Rakazo"
+msgid "Not in {PRODUCT_NAME}'s catalog"
+msgstr "לא בקטלוג של {PRODUCT_NAME}"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3884,12 +3884,12 @@ msgstr "לא עכשיו"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
-msgid "Not supported in Rakazo"
-msgstr "לא נתמך ב-Rakazo"
+msgid "Not supported in {PRODUCT_NAME}"
+msgstr "לא נתמך ב-{PRODUCT_NAME}"
 
 #: src/pages/shell/agent-import.tsx
-msgid "Not used by Rakazo"
-msgstr "לא בשימוש ב-Rakazo"
+msgid "Not used by {PRODUCT_NAME}"
+msgstr "לא בשימוש ב-{PRODUCT_NAME}"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"

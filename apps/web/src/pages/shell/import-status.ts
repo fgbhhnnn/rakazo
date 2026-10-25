@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentImportNeed, AgentImportStatus } from "@rakazo/contracts";
+import { PRODUCT_NAME } from "@rakazo/contracts";
 
 /** Short labels for what an imported item needs, shared by the preview and the chat checklist. */
 export function useImportStatusText() {
@@ -44,8 +45,8 @@ export function useImportStatusText() {
         return t`Contains code to run`;
       case "unsupported":
         return value.reason === "not_in_catalog"
-          ? t`Not in Rakazo's catalog`
-          : t`Not supported in Rakazo`;
+          ? t`Not in ${PRODUCT_NAME}'s catalog`
+          : t`Not supported in ${PRODUCT_NAME}`;
     }
   };
   return { need, status };

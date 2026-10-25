@@ -84,7 +84,7 @@ import {
 } from "@rakazo/adapters";
 import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
-import { SERVER_BUILD_HEADER } from "@rakazo/contracts";
+import { PRODUCT_NAME, SERVER_BUILD_HEADER } from "@rakazo/contracts";
 import { signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
@@ -794,7 +794,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         );
         return c.redirect(new URL("/app?messaging", env.webOrigin).toString());
       } catch {
-        return c.text("Slack connection failed. Return to Rakazo and try again.", 400);
+        return c.text(`Slack connection failed. Return to ${PRODUCT_NAME} and try again.`, 400);
       }
     });
   }

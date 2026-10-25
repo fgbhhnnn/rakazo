@@ -13,6 +13,7 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
+  PRODUCT_NAME,
 } from "@rakazo/contracts";
 import type { AgentImportReader } from "@rakazo/core";
 import {
@@ -482,10 +483,10 @@ export function AgentImportForm({
   };
   const skipReason = (reason: AgentImportSkipReason) =>
     ({
-      runtime: t`Not used by Rakazo`,
+      runtime: t`Not used by ${PRODUCT_NAME}`,
       invalid_skill: t`Not a valid skill`,
       builtin: t`Built-in`,
-      unsupported: t`Not supported in Rakazo`,
+      unsupported: t`Not supported in ${PRODUCT_NAME}`,
       connected: t`Already connected`,
       invalid_file: t`Could not read these files`,
       default: defaultNote,
