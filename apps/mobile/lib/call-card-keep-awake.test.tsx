@@ -9,11 +9,20 @@ import { CallCard } from "../components/CallCard";
 import type { CallDeps } from "./call-session";
 import { endCall, startCall } from "./call-session";
 
-const { activeTags, useKeepAwake } = vi.hoisted(() => ({
+const { activeTags, startBackground, stopBackground, useKeepAwake } = vi.hoisted(() => ({
   activeTags: new Set<string>(),
+  startBackground: vi.fn(async () => false),
+  stopBackground: vi.fn(async () => undefined),
   useKeepAwake: vi.fn(),
 }));
 
+vi.mock("./call-background", () => ({
+  startCallBackground: startBackground,
+  stopCallBackground: stopBackground,
+}));
+vi.mock("expo-audio", () => ({
+  AudioModule: { getRecordingPermissionsAsync: async () => ({ granted: true }) },
+}));
 vi.mock("expo-keep-awake", () => ({ useKeepAwake }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("react-native-reanimated", () => ({ useReducedMotion: () => true }));
@@ -47,7 +56,7 @@ vi.mock("react-native", () => {
       timing: vi.fn(),
       delay: vi.fn(),
     },
-    Platform: { OS: "ios", Version: 18 },
+    Platform: { OS: "android", Version: 35 },
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   };
 });
@@ -72,6 +81,7 @@ vi.mock("./voice", () => ({
   setCallAudioActive: vi.fn(),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
+  setVoiceBackgroundPlayback: vi.fn(),
 }));
 vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 vi.mock("./call-sounds", () => ({
@@ -82,7 +92,20 @@ vi.mock("./call-sounds", () => ({
   stopWaitSound: vi.fn(),
 }));
 
-describe("CallCard keep-awake lifetime", () => {
+const deps: CallDeps = {
+  dictate: async () => true,
+  record: vi.fn(),
+  transcribe: vi.fn(),
+  send: vi.fn(),
+  endCall: async () => undefined,
+  speak: async () => undefined,
+  watch: () => vi.fn(),
+  stopSpeaking: vi.fn(),
+  cue: async () => undefined,
+  waitSound: vi.fn(),
+};
+
+describe("CallCard background lifetime", () => {
   let root: Root;
   let container: HTMLDivElement;
 
@@ -96,6 +119,10 @@ describe("CallCard keep-awake lifetime", () => {
         };
       }, [tag]);
     });
+    activeTags.clear();
+    startBackground.mockReset();
+    startBackground.mockResolvedValue(false);
+    stopBackground.mockReset();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -108,38 +135,35 @@ describe("CallCard keep-awake lifetime", () => {
     });
     container.remove();
     activeTags.clear();
-    useKeepAwake.mockReset();
     vi.unstubAllGlobals();
   });
 
-  it("keeps the screen awake only while a call is active", async () => {
-    const deps: CallDeps = {
-      dictate: async () => true,
-      record: vi.fn(),
-      transcribe: vi.fn(),
-      send: vi.fn(),
-      endCall: async () => undefined,
-      speak: async () => undefined,
-      watch: () => vi.fn(),
-      stopSpeaking: vi.fn(),
-      cue: async () => undefined,
-      waitSound: vi.fn(),
-    };
-
+  it("keeps the screen awake while the native service has not started", async () => {
     act(() => root.render(<CallCard />));
-    expect(container.childElementCount).toBe(0);
-    expect(useKeepAwake).not.toHaveBeenCalled();
-    expect(activeTags.has("rakazo-call")).toBe(false);
+    expect(activeTags.size).toBe(0);
 
     await act(async () => {
       startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await Promise.resolve();
     });
-    expect(container.textContent).toContain("Ada");
-    expect(useKeepAwake).toHaveBeenCalledWith("rakazo-call");
+
+    expect(startBackground).toHaveBeenCalledWith("Ada");
     expect(activeTags.has("rakazo-call")).toBe(true);
+  });
+
+  it("releases the screen awake hold once the native service starts", async () => {
+    startBackground.mockResolvedValue(true);
+    act(() => root.render(<CallCard />));
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await Promise.resolve();
+    });
+
+    expect(startBackground).toHaveBeenCalledWith("Ada");
+    expect(activeTags.has("rakazo-call")).toBe(false);
 
     await act(async () => endCall());
-    expect(container.childElementCount).toBe(0);
-    expect(activeTags.has("rakazo-call")).toBe(false);
+    expect(stopBackground).toHaveBeenCalled();
   });
 });

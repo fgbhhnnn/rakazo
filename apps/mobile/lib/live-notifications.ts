@@ -2,7 +2,8 @@ import { requireNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { apiBaseWarning, normalizeApiBase } from "./endpoint";
-import { t } from "./i18n";
+import { getActiveUiLocale, t } from "./i18n";
+import { withLegacyArity } from "./native-arity-compat";
 
 export interface LiveNotificationSettings {
   liveConnection: boolean;
@@ -25,8 +26,9 @@ type NativeNotifications = {
     endpoint: string,
     token: string,
     spaceId: string,
+    locale: string,
   ): Promise<void>;
-  resume(endpoint: string, token: string, spaceId: string): Promise<void>;
+  resume(endpoint: string, token: string, spaceId: string, locale: string): Promise<void>;
   stop(clearSession: boolean): Promise<void>;
   setOpenThread(botId: string | null, threadId: string | null): Promise<void>;
   openSettings(): Promise<void>;
@@ -86,6 +88,17 @@ export function configureForegroundNotifications(): void {
   });
 }
 
+/** The same bridge in native builds before the locale argument (app 1.0.7). */
+type LegacyNativeNotifications = {
+  setSettings(
+    value: LiveNotificationSettings,
+    endpoint: string,
+    token: string,
+    spaceId: string,
+  ): Promise<void>;
+  resume(endpoint: string, token: string, spaceId: string): Promise<void>;
+};
+
 export async function getLiveNotificationSettings(): Promise<LiveNotificationSettings> {
   return nativeNotifications?.getSettings() ?? DEFAULT_LIVE_NOTIFICATION_SETTINGS;
 }
@@ -106,7 +119,18 @@ export async function setLiveNotificationSettings(
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
     if (!granted) throw new Error(t("Android blocked notifications."));
   }
-  await nativeNotifications.setSettings(settings, parsed.url, token, spaceId);
+  // Builds before the locale argument take four arguments; see native-arity-compat.
+  await withLegacyArity(
+    () =>
+      nativeNotifications.setSettings(settings, parsed.url, token, spaceId, getActiveUiLocale()),
+    () =>
+      (nativeNotifications as unknown as LegacyNativeNotifications).setSettings(
+        settings,
+        parsed.url,
+        token,
+        spaceId,
+      ),
+  );
 }
 
 export async function resumeLiveNotifications(
@@ -117,7 +141,15 @@ export async function resumeLiveNotifications(
   if (!nativeNotifications || !token) return;
   const parsed = normalizeApiBase(endpoint);
   if (!parsed.ok || apiBaseWarning(parsed.url)) return;
-  await nativeNotifications.resume(parsed.url, token, spaceId);
+  await withLegacyArity(
+    () => nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale()),
+    () =>
+      (nativeNotifications as unknown as LegacyNativeNotifications).resume(
+        parsed.url,
+        token,
+        spaceId,
+      ),
+  );
 }
 
 export async function stopLiveNotifications(clearSession = false): Promise<void> {

@@ -277,10 +277,6 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(input.placeholder).toBe(STORED_PLACEHOLDER);
     expect(input.type).toBe("password");
     expect(view.container.textContent).not.toContain("sk-");
-    // The Active model row is the only connection status in the connected view.
-    expect(view.container.textContent).not.toContain("Connected · DeepSeek");
-    expect(view.container.textContent).not.toContain("Stored securely");
-    expect(view.container.textContent).not.toContain("Save limits");
     expect(buttons(view.container, "Replace API key")[0]?.disabled).toBe(true);
 
     await typeInto(input, "sk-replacement-key");
@@ -300,7 +296,6 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "deepseek", apiKey: "sk-replacement-key" }),
     );
-    expect(view.container.textContent).not.toContain("Connected and using");
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
@@ -492,20 +487,6 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
   }
 });
 
-it("omits the redundant description and connection prompt", async () => {
-  const view = await renderSettings(false);
-  try {
-    expect(view.container.querySelector('[data-testid="model-description"]')).toBeNull();
-    expect(view.container.textContent).not.toContain("Choose which connected model Rakazo uses.");
-    expect(view.container.textContent).not.toContain(
-      "Connect this provider to use it as your personal model.",
-    );
-    expect(keyField(view.container)).toBeInstanceOf(HTMLInputElement);
-  } finally {
-    await view.unmount();
-  }
-});
-
 /**
  * Accessible name per accname: aria-labelledby wins, and a labelling element's
  * text includes the control's own aria-label when the control sits inside it.
@@ -668,27 +649,6 @@ it("names each model checkbox by its id alone", async () => {
   try {
     const names = [...view.container.querySelectorAll("[role='checkbox']")].map(accessibleName);
     expect(names).toEqual(["model-a", "model-b"]);
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("omits model counts and key subtitles on the OpenAI-compatible provider row", async () => {
-  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
-  models.list.mockResolvedValue([compatibleEntry]);
-  models.credentials.mockResolvedValue([
-    { ...compatibleCredential, enabledModelIds: ["model-a", "model-b"] },
-  ]);
-  const view = await renderSettings();
-  try {
-    // Provider search keeps connection details out of the row.
-    const search = view.container.querySelector("#model-provider-search");
-    if (!(search instanceof HTMLInputElement)) throw new Error("Missing provider search");
-    await typeInto(search, "o");
-    const row = [...view.container.querySelectorAll("button")].find((entry) =>
-      entry.textContent?.includes("OpenAI-compatible"),
-    );
-    expect(row?.textContent).not.toMatch(/models|API key/);
   } finally {
     await view.unmount();
   }

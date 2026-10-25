@@ -4,6 +4,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   clearRunTurnCheckpoints,
+  deleteRunSecretsInTransaction,
   expireComputerExecutionLeases,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -34,10 +35,11 @@ export async function stopThreadRunsForBots(
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },
-      select: { id: true, botId: true },
+      select: { id: true, botId: true, userId: true, spaceId: true },
     });
     const ids = cancelled.map((run) => run.id);
     await clearRunTurnCheckpoints(tx, ids);
+    await deleteRunSecretsInTransaction(tx, cancelled);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: [...target.botIds] },

@@ -29,7 +29,7 @@ import {
   appendEventInTransaction,
   backgroundWorkOf,
   backgroundWorkSelection,
-  clearRunTurnCheckpoints,
+  clearEndedRunState,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
@@ -247,7 +247,7 @@ export async function cancelSupersededQueuedRuns(
     where: { id: { in: superseded.map((run) => run.id) } },
     data: { status: "cancelled", completedAt: now },
   });
-  await clearRunTurnCheckpoints(
+  await clearEndedRunState(
     tx,
     superseded.map((run) => run.id),
   );

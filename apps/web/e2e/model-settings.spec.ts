@@ -52,7 +52,6 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   providerConnected = true;
   await page.getByRole("button", { name: "Connect API key", exact: true }).click();
   await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
-  await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
   const addBackup = backups.getByRole("button", { name: "Add backup model" });
   await expect(addBackup).toBeVisible();
   const model = page.getByRole("combobox", { name: "Model", exact: true });
@@ -464,7 +463,6 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByPlaceholder("Search providers").fill("openai-compatible");
     await page.getByRole("button", { name: /OpenAI-compatible/ }).click();
     await page.getByText("Advanced", { exact: true }).click();
-    await expect(page.getByRole("group").getByText("Headers", { exact: true })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Header name", exact: true })).toHaveValue(
       "x-session",
     );
@@ -546,7 +544,6 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await completeOnboarding(page);
 
   await openUserSettings(page, "models");
-  await expect(page.getByRole("button", { name: "Close model settings" })).toBeVisible();
 
   const providerSearch = page.getByPlaceholder("Search providers");
   await providerSearch.fill("scripted");

@@ -54,10 +54,14 @@ describe("queued run supersession", () => {
     const tx = {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-old", taskId: "task-old" }]),
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([{ id: "run-old", taskId: "task-old" }])
+          .mockResolvedValueOnce([{ id: "run-old", userId: "user-1", spaceId: "space-1" }]),
         updateMany: vi.fn(),
       },
       task: { updateMany: vi.fn() },
+      secret: { deleteMany: vi.fn(async () => ({ count: 1 })) },
     };
     await cancelSupersededQueuedRuns(tx as never, {
       threadId: "thread-1",
@@ -77,6 +81,10 @@ describe("queued run supersession", () => {
     expect(tx.task.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["task-old"] } },
       data: { status: "cancelled" },
+    });
+    // A superseded run may hold an answered one-time value that it will now never read.
+    expect(tx.secret.deleteMany).toHaveBeenCalledWith({
+      where: { OR: [{ userId: "user-1", spaceId: "space-1", kind: "run-secret:run-old" }] },
     });
   });
 });
@@ -1645,6 +1653,7 @@ describe("sendThreadMessage", () => {
         })),
       },
       attempt: { updateMany: vi.fn() },
+      secret: { deleteMany: vi.fn() },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
       task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -1686,6 +1695,12 @@ describe("sendThreadMessage", () => {
     expect(tx.run.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: "run-waiting-2", status: "waiting_input" }),
       data: expect.objectContaining({ status: "cancelled" }),
+    });
+    // The retired run never resumes to read a waiting secret answer.
+    expect(tx.secret.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [{ userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-waiting-2" }],
+      },
     });
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "ask-older" },
@@ -1827,6 +1842,7 @@ describe("sendThreadMessage", () => {
         create: vi.fn(),
       },
       attempt: { updateMany: vi.fn() },
+      secret: { deleteMany: vi.fn() },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
       task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -1952,6 +1968,7 @@ describe("sendThreadMessage", () => {
             updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
           attempt: { updateMany: vi.fn() },
+          secret: { deleteMany: vi.fn() },
           task: { create: vi.fn().mockResolvedValue({ id: "task-new" }), updateMany: vi.fn() },
           steeringMessage: { create: vi.fn() },
           event: { create: vi.fn().mockResolvedValue({ seq: 4 }) },
@@ -3700,6 +3717,7 @@ describe("stopThreadRuns", () => {
         findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }),
       },
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       computer: {
         // Production team ownership is lease-only: Computer.executionRunId stays null.
         findMany: vi.fn().mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
@@ -3838,6 +3856,7 @@ describe("stopThreadRuns", () => {
         findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }),
       },
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       computer: {
         // Selected via lease for cancelled run A, but legacy columns still name
         // unrelated live run B. Legacy teardown must not cancel/release B.
@@ -3944,13 +3963,14 @@ describe("stopThreadRuns", () => {
       },
       run: {
         updateManyAndReturn: vi.fn().mockResolvedValue([
-          { id: "run-a", botId: "bot-a" },
-          { id: "run-b", botId: "bot-b" },
+          { id: "run-a", botId: "bot-a", userId: "user-1", spaceId: "workspace-1" },
+          { id: "run-b", botId: "bot-b", userId: "user-1", spaceId: "workspace-1" },
         ]),
         // appendEventInTransaction re-reads the run after the flip.
         findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }),
       },
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       computer: { findMany: vi.fn().mockResolvedValue([]) },
       computerExecutionLease: { findMany: vi.fn().mockResolvedValue([]) },
       event: {
@@ -4026,6 +4046,15 @@ describe("stopThreadRuns", () => {
       where: { type: "thread.progress", runId: { in: ["run-a", "run-b"] } },
     });
     expect(notify).toHaveBeenCalledWith("thread-1", 3);
+    // A stopped run never resumes to read a waiting secret answer.
+    expect(transaction.secret.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-a" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-b" },
+        ],
+      },
+    });
   });
 
   it("emits no event and skips the wake when nothing was running", async () => {
@@ -4038,6 +4067,7 @@ describe("stopThreadRuns", () => {
         findUnique: vi.fn(),
       },
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       computer: { findMany: vi.fn() },
       computerExecutionLease: { findMany: vi.fn() },
       event: { create: vi.fn(), deleteMany: vi.fn() },
@@ -4076,6 +4106,7 @@ describe("stopThreadRuns", () => {
     expect(transaction.event.deleteMany).not.toHaveBeenCalled();
     expect(transaction.thread.update).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
+    expect(transaction.secret.deleteMany).not.toHaveBeenCalled();
   });
 });
 

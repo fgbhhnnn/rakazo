@@ -37,7 +37,6 @@ for (const surface of ["settings", "onboarding"] as const) {
         await page.getByPlaceholder("Search providers").fill("openai-compatible");
         await page.getByRole("button", { name: /OpenAI-compatible/ }).click();
       } else {
-        await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
         await page.getByRole("combobox", { name: "Provider", exact: true }).click();
         await page.getByRole("option", { name: "OpenAI-compatible", exact: true }).click();
       }

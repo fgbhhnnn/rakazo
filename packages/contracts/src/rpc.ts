@@ -99,6 +99,7 @@ import {
   UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
   UsageRecordSchema,
+  UsageSummarySchema,
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
   VoiceInfoSchema,
@@ -952,7 +953,9 @@ export const appContract = {
   },
   autoReview: {
     get: oc.output(ActionAutoReviewSettingsSchema),
-    set: oc.input(z.object({ enabled: z.boolean() })).output(ActionAutoReviewSettingsSchema),
+    set: oc
+      .input(z.object({ enabled: z.boolean().optional(), skipApprovals: z.boolean().optional() }))
+      .output(ActionAutoReviewSettingsSchema),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),
@@ -991,15 +994,7 @@ export const appContract = {
   },
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
-    summary: oc.output(
-      z.object({
-        inputTokens: z.number().nullable(),
-        outputTokens: z.number().nullable(),
-        totalTokens: z.number().nullable().optional(),
-        modelCalls: z.number().optional(),
-        runs: z.number(),
-      }),
-    ),
+    summary: oc.output(UsageSummarySchema),
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),
