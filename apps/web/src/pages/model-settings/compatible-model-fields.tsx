@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
+import { isOllamaCloudBaseUrl, PRODUCT_NAME } from "@rakazo/contracts";
 import { toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
@@ -127,7 +127,7 @@ export function CompatibleModelFields({
           summary={<Trans>Setup help</Trans>}
         >
           <p className="mt-1">
-            {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
+            {t`Paste the OpenAI-compatible address from your server. ${PRODUCT_NAME} adds /v1 if needed.`}
           </p>
         </Disclosure>
       ) : null}

@@ -194,6 +194,10 @@ msgstr "{name} 选项"
 msgid "{name} stopped"
 msgstr "{name} 已停止"
 
+#: src/components/ModelCredits.tsx
+msgid "{PRODUCT_NAME} credits"
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{provider} could not find the requested model."
@@ -675,8 +679,8 @@ msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "用于读取数据的现有 Honcho peer。Rakazo 绝不会向其写入数据。"
+msgid "An existing Honcho peer to read from. {PRODUCT_NAME} never writes to it."
+msgstr "用于读取数据的现有 Honcho peer。{PRODUCT_NAME} 绝不会向其写入数据。"
 
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
@@ -1195,7 +1199,7 @@ msgid "Choose file"
 msgstr "选择文件"
 
 #: src/components/ModelCredits.tsx
-msgid "Choose how to use Rakazo"
+msgid "Choose how to use {PRODUCT_NAME}"
 msgstr ""
 
 #: src/lib/localized-provider-hint.ts
@@ -2061,8 +2065,8 @@ msgid "Create space"
 msgstr "创建工作区"
 
 #: src/pages/Auth.tsx
-msgid "Create your Rakazo"
-msgstr "创建你的 Rakazo"
+msgid "Create your {PRODUCT_NAME}"
+msgstr "创建你的 {PRODUCT_NAME}"
 
 #: src/components/AskCard.tsx
 msgid "Created"
@@ -2815,7 +2819,7 @@ msgid "How to check"
 msgstr "如何检查"
 
 #: src/components/SignupSurvey.tsx
-msgid "How will you use Rakazo?"
+msgid "How will you use {PRODUCT_NAME}?"
 msgstr ""
 
 #: src/pages/shell/computer-release-actions.tsx
@@ -3837,8 +3841,8 @@ msgid "Paste a replacement key"
 msgstr "粘贴替换密钥"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
-msgstr "粘贴服务器的 OpenAI 兼容地址。需要时 Rakazo 会补上 /v1。"
+msgid "Paste the OpenAI-compatible address from your server. {PRODUCT_NAME} adds /v1 if needed."
+msgstr "粘贴服务器的 OpenAI 兼容地址。需要时 {PRODUCT_NAME} 会补上 /v1。"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
@@ -3964,12 +3968,8 @@ msgstr "拉取请求"
 msgid "Queued"
 msgstr "排队中"
 
-#: src/components/ModelCredits.tsx
-msgid "Rakazo credits"
-msgstr ""
-
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
+msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
@@ -4310,14 +4310,14 @@ msgstr "立即重试"
 msgid "Retry screen"
 msgstr ""
 
+#: src/pages/McpOAuthCallback.tsx
+msgid "Return to {PRODUCT_NAME}"
+msgstr "返回 {PRODUCT_NAME}"
+
 #. placeholder {0}: call.botName
 #: src/components/call/CallCard.tsx
 msgid "Return to call with {0}"
 msgstr ""
-
-#: src/pages/McpOAuthCallback.tsx
-msgid "Return to Rakazo"
-msgstr "返回 Rakazo"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
@@ -4705,8 +4705,8 @@ msgid "Sign in again"
 msgstr "重新登录"
 
 #: src/pages/Auth.tsx
-msgid "Sign in to Rakazo"
-msgstr "登录 Rakazo"
+msgid "Sign in to {PRODUCT_NAME}"
+msgstr "登录 {PRODUCT_NAME}"
 
 #: src/lib/user-error.ts
 msgid "Sign in to your existing account to link SSO"
@@ -5088,8 +5088,8 @@ msgid "This server is already connected. Disconnect it first to authorize again.
 msgstr "此服务器已连接。请先断开再重新授权。"
 
 #: src/pages/model-settings/connection-controls.tsx
-msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
-msgstr "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选择其他提供方。"
+msgid "This subscription sign-in is not available in {PRODUCT_NAME} yet. Use a deployment credential or choose another provider."
+msgstr "此订阅登录在 {PRODUCT_NAME} 中尚不可用。请使用部署凭据或选择其他提供方。"
 
 #: src/pages/Artifacts.tsx
 msgid "This week"
@@ -5334,6 +5334,11 @@ msgstr "使用 {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "访问令牌请使用 {oauthEnvReference}。"
 
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "Use {PRODUCT_NAME} credits"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -5361,11 +5366,6 @@ msgstr "使用密码"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/space-bots-model.tsx
@@ -5458,7 +5458,7 @@ msgid "Weekdays"
 msgstr "工作日"
 
 #: src/components/SignupSurvey.tsx
-msgid "Welcome to Rakazo"
+msgid "Welcome to {PRODUCT_NAME}"
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
@@ -5466,7 +5466,7 @@ msgid "What about its memories?"
 msgstr "它的记忆怎么处理？"
 
 #: src/components/SignupSurvey.tsx
-msgid "What do you most want Rakazo to help with?"
+msgid "What do you most want {PRODUCT_NAME} to help with?"
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx

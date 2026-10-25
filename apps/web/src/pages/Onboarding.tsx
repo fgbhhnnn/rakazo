@@ -15,6 +15,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  PRODUCT_NAME,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -1024,7 +1025,7 @@ export function OnboardingPage() {
                       .catch(() => setError(t`Could not open billing`))
                   }
                 >
-                  <Trans>Use Rakazo credits</Trans>
+                  <Trans>Use {PRODUCT_NAME} credits</Trans>
                 </Button>
               ) : null}
             </div>

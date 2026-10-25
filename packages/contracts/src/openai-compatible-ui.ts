@@ -13,8 +13,9 @@ export function compatibleConnectionName(baseUrl: string | undefined, fallback: 
   return isOllamaCloudBaseUrl(baseUrl) ? "Ollama Cloud" : fallback;
 }
 
+/** A message catalog key: `{PRODUCT_NAME}` is filled in where it is translated. */
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
-  "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
+  "Paste the OpenAI-compatible address from your server. {PRODUCT_NAME} adds /v1 if needed.";
 
 /** Connect when base URL and model id are set. */
 export function openAiCompatibleConnectReady(input: {

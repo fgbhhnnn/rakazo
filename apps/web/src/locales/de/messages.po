@@ -194,6 +194,10 @@ msgstr "{name} Optionen"
 msgid "{name} stopped"
 msgstr "{name} wurde gestoppt"
 
+#: src/components/ModelCredits.tsx
+msgid "{PRODUCT_NAME} credits"
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{provider} could not find the requested model."
@@ -675,8 +679,8 @@ msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Für diesen Anbieter ist ein API-Schlüssel gespeichert, keine Anmeldung per Abonnement."
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "Ein bestehender Honcho-Peer, aus dem gelesen wird. Rakazo schreibt niemals in diesen Peer."
+msgid "An existing Honcho peer to read from. {PRODUCT_NAME} never writes to it."
+msgstr "Ein bestehender Honcho-Peer, aus dem gelesen wird. {PRODUCT_NAME} schreibt niemals in diesen Peer."
 
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
@@ -1195,7 +1199,7 @@ msgid "Choose file"
 msgstr "Datei wählen"
 
 #: src/components/ModelCredits.tsx
-msgid "Choose how to use Rakazo"
+msgid "Choose how to use {PRODUCT_NAME}"
 msgstr ""
 
 #: src/lib/localized-provider-hint.ts
@@ -2061,8 +2065,8 @@ msgid "Create space"
 msgstr ""
 
 #: src/pages/Auth.tsx
-msgid "Create your Rakazo"
-msgstr "Dein Rakazo erstellen"
+msgid "Create your {PRODUCT_NAME}"
+msgstr "Dein {PRODUCT_NAME} erstellen"
 
 #: src/components/AskCard.tsx
 msgid "Created"
@@ -2815,7 +2819,7 @@ msgid "How to check"
 msgstr "So wird geprüft"
 
 #: src/components/SignupSurvey.tsx
-msgid "How will you use Rakazo?"
+msgid "How will you use {PRODUCT_NAME}?"
 msgstr ""
 
 #: src/pages/shell/computer-release-actions.tsx
@@ -3837,8 +3841,8 @@ msgid "Paste a replacement key"
 msgstr "Ersatzschlüssel einfügen"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
-msgstr "Füge die OpenAI-kompatible Adresse deines Servers ein. Rakazo ergänzt /v1 bei Bedarf."
+msgid "Paste the OpenAI-compatible address from your server. {PRODUCT_NAME} adds /v1 if needed."
+msgstr "Füge die OpenAI-kompatible Adresse deines Servers ein. {PRODUCT_NAME} ergänzt /v1 bei Bedarf."
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
@@ -3964,12 +3968,8 @@ msgstr "Pull Request"
 msgid "Queued"
 msgstr "In Warteschlange"
 
-#: src/components/ModelCredits.tsx
-msgid "Rakazo credits"
-msgstr ""
-
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
+msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
@@ -4310,14 +4310,14 @@ msgstr "Jetzt erneut versuchen"
 msgid "Retry screen"
 msgstr ""
 
+#: src/pages/McpOAuthCallback.tsx
+msgid "Return to {PRODUCT_NAME}"
+msgstr "Zurück zu {PRODUCT_NAME}"
+
 #. placeholder {0}: call.botName
 #: src/components/call/CallCard.tsx
 msgid "Return to call with {0}"
 msgstr "Zurück zum Anruf mit {0}"
-
-#: src/pages/McpOAuthCallback.tsx
-msgid "Return to Rakazo"
-msgstr "Zurück zu Rakazo"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
@@ -4705,8 +4705,8 @@ msgid "Sign in again"
 msgstr "Erneut anmelden"
 
 #: src/pages/Auth.tsx
-msgid "Sign in to Rakazo"
-msgstr "Bei Rakazo anmelden"
+msgid "Sign in to {PRODUCT_NAME}"
+msgstr "Bei {PRODUCT_NAME} anmelden"
 
 #: src/lib/user-error.ts
 msgid "Sign in to your existing account to link SSO"
@@ -5088,8 +5088,8 @@ msgid "This server is already connected. Disconnect it first to authorize again.
 msgstr "Dieser Server ist bereits verbunden. Trenne zuerst die Verbindung, um ihn erneut zu autorisieren."
 
 #: src/pages/model-settings/connection-controls.tsx
-msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
-msgstr "Diese Abonnementanmeldung ist in Rakazo noch nicht verfügbar. Verwende Zugangsdaten der Bereitstellung oder wähle einen anderen Anbieter."
+msgid "This subscription sign-in is not available in {PRODUCT_NAME} yet. Use a deployment credential or choose another provider."
+msgstr "Diese Abonnementanmeldung ist in {PRODUCT_NAME} noch nicht verfügbar. Verwende Zugangsdaten der Bereitstellung oder wähle einen anderen Anbieter."
 
 #: src/pages/Artifacts.tsx
 msgid "This week"
@@ -5334,6 +5334,11 @@ msgstr "{hostLabel} verwenden"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "Verwende {oauthEnvReference} für das Zugriffstoken."
 
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "Use {PRODUCT_NAME} credits"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -5361,11 +5366,6 @@ msgstr "Passwort verwenden"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/space-bots-model.tsx
@@ -5458,7 +5458,7 @@ msgid "Weekdays"
 msgstr "Wochentage"
 
 #: src/components/SignupSurvey.tsx
-msgid "Welcome to Rakazo"
+msgid "Welcome to {PRODUCT_NAME}"
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
@@ -5466,7 +5466,7 @@ msgid "What about its memories?"
 msgstr "Was soll mit seinen Erinnerungen geschehen?"
 
 #: src/components/SignupSurvey.tsx
-msgid "What do you most want Rakazo to help with?"
+msgid "What do you most want {PRODUCT_NAME} to help with?"
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx

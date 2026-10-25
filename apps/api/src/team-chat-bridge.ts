@@ -7,7 +7,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT, AutomatedSenderPoliciesSchema } from "@rakazo/contracts";
+import {
+  ATTACHMENT_MAX_COUNT,
+  AutomatedSenderPoliciesSchema,
+  PRODUCT_NAME,
+} from "@rakazo/contracts";
 import { botMessageMaxHops, messageBlockForArtifact, promptTextForAttachments } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearEndedRunState } from "@rakazo/db";
@@ -978,7 +982,7 @@ export class TeamChatBridge {
       const blocks = Array.isArray(response?.blocks) ? (response.blocks as MessageBlock[]) : [];
       const content =
         run.status === "failed"
-          ? `${target.name} could not complete the delegated request. Open Rakazo for details.`
+          ? `${target.name} could not complete the delegated request. Open ${PRODUCT_NAME} for details.`
           : teamChatResponseText(blocks, target.name, true);
       if (content) {
         await this.deps.send({
@@ -1449,7 +1453,7 @@ export class TeamChatBridge {
     await this.sendOnce(message.id, {
       conversationId: message.externalConversation.conversationId,
       replyThreadId: message.replyThreadId,
-      content: `${this.target?.name ?? "The agent"} could not complete that request. Open Rakazo for details.`,
+      content: `${this.target?.name ?? "The agent"} could not complete that request. Open ${PRODUCT_NAME} for details.`,
       idempotencyKey: `external-message:${message.id}:failure`,
     });
   }

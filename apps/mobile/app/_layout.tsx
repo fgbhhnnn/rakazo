@@ -6,6 +6,7 @@ import {
   MermaidDiagramContext,
   RemoteImagesContext,
 } from "@rakazo/chat-ui/native";
+import { PRODUCT_NAME } from "@rakazo/contracts/brand";
 import { analyticsScreen } from "@rakazo/core";
 import {
   DarkTheme,
@@ -356,7 +357,10 @@ function LayoutContent() {
                       contentStyle: { backgroundColor: String(native.page) },
                     }}
                   >
-                    <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
+                    <Stack.Screen
+                      name="index"
+                      options={{ headerShown: false, title: PRODUCT_NAME }}
+                    />
                     <Stack.Screen
                       name="search"
                       options={{

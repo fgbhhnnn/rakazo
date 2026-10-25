@@ -186,6 +186,7 @@ import {
   mcpOAuthEnvReferences,
   modelSupportsRole,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  PRODUCT_NAME,
   parseTicketRef,
   signupSurveyAsksTeamSize,
   storedPiProviderIds,
@@ -1113,7 +1114,7 @@ export function createRouter(deps: RouterDeps) {
               auth.secretIdByModel[entry.provider]?.[entry.id] ||
               auth.secretIdByProvider[entry.provider]
                 ? entry.billing
-                : "Uses Rakazo credits",
+                : `Uses ${PRODUCT_NAME} credits`,
           }
         : entry,
     );

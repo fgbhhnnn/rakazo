@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@rakazo/contracts";
 import type { BotColorDef } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
@@ -372,7 +373,7 @@ export function Wordmark({ className }: { className?: string }) {
         <span className="h-4 w-[7px] rounded-full bg-primary" />
       </div>
       <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-foreground">
-        Rakazo
+        {PRODUCT_NAME}
       </span>
     </div>
   );

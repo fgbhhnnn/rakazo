@@ -169,7 +169,7 @@ export default function BillingScreen() {
           {status.funding === "byok" && (status.balanceUsd ?? 0) > 0 ? (
             <SettingsGroup>
               <SettingsRow
-                title={t("Use Rakazo credits")}
+                title={t("Use {PRODUCT_NAME} credits")}
                 disabled={pending || !status.creditPurchasesEnabled}
                 onPress={() =>
                   void action(async () => {

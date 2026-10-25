@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs";
 import { webDarkTokens } from "@rakazo/ui-tokens";
 import type { Rolldown } from "vite";
 import { describe, expect, it } from "vitest";
-import { injectShell, shellFiles, webManifest } from "./plugin.js";
+import { brandIndexHtml, injectShell, shellFiles, webManifest } from "./plugin.js";
 
 function chunk(fileName: string, imports: string[], css: string[] = [], isEntry = false) {
   return {
@@ -54,5 +55,14 @@ describe("PWA build", () => {
       theme_color: webDarkTokens.background,
     });
     expect(manifest.icons.filter((icon) => icon.purpose === "maskable")).toHaveLength(2);
+  });
+
+  it("names the installed app and the page title after the product", () => {
+    expect(webManifest()).toMatchObject({ name: "Gose Bot", short_name: "Gose Bot" });
+    const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+    const branded = brandIndexHtml(html);
+    expect(branded).toContain("<title>Gose Bot</title>");
+    expect(branded).toContain('<meta name="apple-mobile-web-app-title" content="Gose Bot" />');
+    expect(branded).not.toContain("__PRODUCT_NAME__");
   });
 });

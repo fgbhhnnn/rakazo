@@ -1,6 +1,7 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
 import type { ProductAnalytics, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { PRODUCT_NAME } from "@rakazo/contracts";
 import {
   displayName,
   emailAllowed,
@@ -159,7 +160,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   let authContext: Promise<{ secretConfig: TokenKey }> | undefined;
   const tokenKey = async () => (await authContext!).secretConfig;
   const auth = betterAuth({
-    appName: "Rakazo",
+    appName: PRODUCT_NAME,
     logger: env.logger,
     secret: env.secret,
     baseURL: env.baseURL,
@@ -317,7 +318,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         ? [
             passkey({
               rpID: relyingParty.rpID,
-              rpName: "Rakazo",
+              rpName: PRODUCT_NAME,
               origin: relyingParty.origins,
             }) as BetterAuthPlugin,
           ]

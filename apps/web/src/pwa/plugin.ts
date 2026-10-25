@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { PRODUCT_NAME } from "@rakazo/contracts/brand";
 import { isBuildId } from "@rakazo/contracts/client-build";
 import { webDarkTokens } from "@rakazo/ui-tokens";
 import type { Plugin, Rolldown } from "vite";
@@ -17,8 +18,8 @@ export function webManifest() {
   }));
   return {
     id: "/",
-    name: "Rakazo",
-    short_name: "Rakazo",
+    name: PRODUCT_NAME,
+    short_name: PRODUCT_NAME,
     description: "Your team of always-on agents.",
     start_url: "/",
     scope: "/",
@@ -74,11 +75,17 @@ export function injectShell(code: string, precache: readonly string[], buildId: 
 }
 
 /** Installable PWA shell: the web manifest and the service worker. */
+/** index.html names the product with a placeholder so its title follows PRODUCT_NAME. */
+export function brandIndexHtml(html: string): string {
+  return html.replaceAll("__PRODUCT_NAME__", PRODUCT_NAME);
+}
+
 export function rakazoPwa(buildId: string): Plugin[] {
   const manifest = () => JSON.stringify(webManifest(), null, 2);
   return [
     {
       name: "rakazo-pwa-manifest",
+      transformIndexHtml: brandIndexHtml,
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           if (req.url?.split("?", 1)[0] !== `/${MANIFEST_FILE}`) {
