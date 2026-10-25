@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
@@ -67,11 +68,25 @@ export function attachedPathKey(resolvedPath: string): string {
   return `resolved:${resolvedPath.replace(/^\/+/, "")}`;
 }
 
+/** Key for "these exact bytes were already attached in this turn", whatever the path or name. */
+export function attachedContentKey(bytes: Uint8Array): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+/**
+ * The computer's real workspace prefix (…/rakazo-home) mapped onto the workspace root "/", or
+ * null when the path does not name it. Workers list such realpath'd paths in their reports.
+ */
+export function realWorkspacePathToRoot(file: string): string | null {
+  const match = /^\/(?:[^/]+\/)*?rakazo-home(?:\/(.*))?$/.exec(file);
+  return match ? `/${match[1] ?? ""}` : null;
+}
+
 export function workerReportWorkspacePath(file: string): string | null {
   if (/^[A-Za-z]:[\\/]/.test(file)) return null; // Windows host path: not in the workspace
   if (file.startsWith("~/")) return file.slice(2);
-  const match = /^\/(?:[^/]+\/)*?rakazo-home(?:\/(.*))?$/.exec(file);
-  if (match) return `/${match[1] ?? ""}`;
+  const rooted = realWorkspacePathToRoot(file);
+  if (rooted !== null) return rooted;
   // A real path outside the workspace (the shell's own home, /tmp, ...). Computer file reads are
   // confined to the workspace, so prefixing it would name a file that does not exist; skip it.
   if (OUTSIDE_WORKSPACE_ROOTS.test(file)) return null;
@@ -129,6 +144,9 @@ export async function attachWorkerReportFiles(input: {
       })
     ).map((artifact) => artifact.name),
   );
+  // The same bytes under another path or name (a copy in shared/, a file the model attached
+  // itself, an earlier wake turn for this task) are already in the chat: never post them again.
+  const postedHashes = await hashesPostedSinceTask(deps.prisma, run, input.bot.id, worker.id);
   const computer = await input.readComputer();
   const attached: string[] = [];
   for (const [index, file] of files.entries()) {
@@ -149,6 +167,8 @@ export async function attachWorkerReportFiles(input: {
       const bytes = await deps.sandbox.readFile(computer, resolved, input.context, {
         maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
       });
+      const contentKey = attachedContentKey(bytes);
+      if (input.alreadyAttached.has(contentKey) || postedHashes.has(contentKey)) continue;
       const result = await attachWorkspaceFileToThread(
         {
           prisma: deps.prisma,
@@ -169,6 +189,7 @@ export async function attachWorkerReportFiles(input: {
       await input.publish([result.block]);
       input.alreadyAttached.add(file);
       input.alreadyAttached.add(attachedPathKey(resolved));
+      input.alreadyAttached.add(contentKey);
       attached.push(file);
     } catch (error) {
       getLogger().warn(
@@ -177,4 +198,53 @@ export async function attachWorkerReportFiles(input: {
     }
   }
   return attached;
+}
+
+/**
+ * Content keys of the files this main bot already posted in this thread since it started the
+ * worker's latest background task (this run's own attachments included). Without a task row only
+ * this run counts.
+ */
+async function hashesPostedSinceTask(
+  prisma: ExecutorDeps["prisma"],
+  run: { id: string; spaceId: string; threadId: string },
+  botId: string,
+  workerBotId: string,
+): Promise<Set<string>> {
+  try {
+    const task = await prisma.backgroundTaskQueue.findFirst({
+      where: { botId, workerBotId, threadId: run.threadId },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    const runIds = task
+      ? (
+          await prisma.run.findMany({
+            where: { threadId: run.threadId, botId, createdAt: { gte: task.createdAt } },
+            select: { id: true },
+          })
+        ).map((row) => row.id)
+      : [];
+    if (!runIds.includes(run.id)) runIds.push(run.id);
+    const rows = await prisma.artifact.findMany({
+      where: { spaceId: run.spaceId, botId, runId: { in: runIds } },
+      select: { hash: true },
+    });
+    return new Set(rows.map((row) => `sha256:${row.hash}`));
+  } catch (error) {
+    getLogger().warn(
+      `worker report dedup lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return new Set();
+  }
+}
+
+/** Tells a wake turn which report files the system already posted to the chat for it. */
+export function workerFilesAttachedNote(files: readonly string[]): string | undefined {
+  if (!files.length) return;
+  const names = [...new Set(files.map((file) => path.basename(file) || file))];
+  return [
+    `已自动附上：${names.join("、")}`,
+    "后台任务报告「文件：」里的这些文件，系统已经发到聊天里了（就在你这条回复上方）。不要再用 attach_file 发它们，不要让后台任务重新发送或复制，也不要说“预览还在补”“稍后发你”；直接告诉用户结果，说明文件已经发在上面。",
+  ].join("\n");
 }
