@@ -7,7 +7,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor.js";
 
-/** The chat card for a started background task: its title and #ref, linking the worker's live progress. */
+/** The chat card for a started background task: its title and #ref. Clients never open the worker from it. */
 export function backgroundTaskCard(
   workerId: string,
   name: string,
@@ -17,7 +17,7 @@ export function backgroundTaskCard(
     kind: "child_bot",
     botId: workerId,
     name: `后台任务：${name} #${ref}`,
-    title: `任务 #${ref} · 点开看实时进度`,
+    title: `任务 #${ref} · 进度见后台任务卡片`,
     status: "created",
   };
 }

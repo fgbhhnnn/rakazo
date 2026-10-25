@@ -82,13 +82,16 @@ describe("TaskProgressCard", () => {
     );
   });
 
-  it("opens a task's worker from its row", () => {
-    const onOpenBot = vi.fn();
-    const card = mount({ block, now, onOpenBot });
-    card.querySelectorAll<HTMLButtonElement>("li button")[1]!.click();
-    expect(onOpenBot).toHaveBeenCalledWith("worker-2");
-    // Queued tasks have no worker yet: nothing to open.
-    expect(card.querySelectorAll("li")[2]!.querySelector("button")).toBeNull();
+  it("is view-only: no row opens its hidden worker", () => {
+    const card = mount({ block, now });
+    const rows = [...card.querySelectorAll("li")];
+    expect(rows).toHaveLength(4);
+    // Rows with a worker look like the rest: no button, link, hover or chevron.
+    expect(block.tasks.filter((task) => task.workerBotId)).toHaveLength(2);
+    expect(card.querySelector("button, a, [role=button], [role=link]")).toBeNull();
+    expect(card.querySelector(".hover\\:bg-accent")).toBeNull();
+    expect(card.querySelector(".lucide-chevron-right")).toBeNull();
+    for (const row of rows) expect(row.firstElementChild?.tagName).toBe("DIV");
   });
 
   it("counts run time up on its own while tasks run", () => {

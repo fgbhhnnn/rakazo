@@ -2,7 +2,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown, LinkifiedText, withBlockMentions } from "@rakazo/chat-ui/web";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import type { ChildBotBlock } from "@rakazo/core";
-import { isPeerReceiptBlocks, isSecretAskBlock, isToolActivityBlock } from "@rakazo/core";
+import {
+  isBackgroundTaskStartCard,
+  isPeerReceiptBlocks,
+  isSecretAskBlock,
+  isToolActivityBlock,
+} from "@rakazo/core";
 import { BotAvatar, Button, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useMemo } from "react";
@@ -542,7 +547,7 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
           if (block.kind === "task_progress") {
-            return <TaskProgressCard key={i} block={block} onOpenBot={onOpenBot} />;
+            return <TaskProgressCard key={i} block={block} />;
           }
           if (block.kind === "skill_draft") {
             return (
@@ -620,6 +625,17 @@ function BotMention({
     return (
       <span data-testid="bot-mention" className="inline-flex items-baseline gap-1.5">
         <UserRound className="size-4 self-center text-muted-foreground" aria-hidden="true" />
+        {name}
+      </span>
+    );
+  }
+  // A background task's card names its hidden worker; that chat is never opened from here.
+  if (isBackgroundTaskStartCard(block)) {
+    return (
+      <span data-testid="bot-mention" className="inline-flex items-baseline gap-1.5">
+        <span className="self-center">
+          <BotAvatar color={color} identity={block.botId} size={18} />
+        </span>
         {name}
       </span>
     );

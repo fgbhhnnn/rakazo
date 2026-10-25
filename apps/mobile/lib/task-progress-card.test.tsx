@@ -14,6 +14,8 @@ vi.mock("react-native", () => {
     accessibilityRole?: string;
     disabled?: boolean;
     onPress?: () => void;
+    onLongPress?: () => void;
+    style?: unknown;
   };
   return {
     ActivityIndicator: () => createElement("rn-spinner"),
@@ -24,6 +26,8 @@ vi.mock("react-native", () => {
       accessibilityLabel,
       accessibilityRole,
       disabled,
+      onLongPress,
+      style,
     }: Props) =>
       createElement(
         "rn-pressable",
@@ -32,6 +36,10 @@ vi.mock("react-native", () => {
           onClick: disabled ? undefined : onPress,
           "aria-label": accessibilityLabel,
           role: accessibilityRole,
+          onContextMenu: onLongPress,
+          // Exposes a tap handler or pressed-state feedback, which a view-only row must not have.
+          "data-tappable": onPress && !disabled ? "true" : undefined,
+          "data-press-feedback": typeof style === "function" ? "true" : undefined,
         },
         children,
       ),
@@ -145,13 +153,24 @@ it("shows every task's state, run time and latest step", () => {
   );
 });
 
-it("opens a worker from its row, not a queued task", () => {
-  const onOpenBot = vi.fn();
-  const card = mount({ block, now, onOpenBot });
-  act(() => card.querySelector<HTMLElement>('[data-testid="task-progress-TASK0002"]')!.click());
-  expect(onOpenBot).toHaveBeenCalledWith("worker-2", "登录后台");
-  act(() => card.querySelector<HTMLElement>('[data-testid="task-progress-TQUEUE01"]')!.click());
-  expect(onOpenBot).toHaveBeenCalledTimes(1);
+it("is view-only: no row opens its hidden worker, long-press still reaches the message", () => {
+  const onLongPress = vi.fn();
+  const card = mount({ block, now, pressableProps: { onLongPress } });
+  const rows = [...card.querySelectorAll<HTMLElement>("rn-pressable")];
+  expect(rows).toHaveLength(block.tasks.length);
+  expect(block.tasks.filter((task) => task.workerBotId).length).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.dataset.tappable).toBeUndefined();
+    expect(row.dataset.pressFeedback).toBeUndefined();
+    expect(row.getAttribute("role")).toBe("text");
+  }
+  expect(card.querySelector('rn-symbol[data-ios="chevron.right"]')).toBeNull();
+  act(() =>
+    card
+      .querySelector('[data-testid="task-progress-TASK0002"]')!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+  );
+  expect(onLongPress).toHaveBeenCalledOnce();
 });
 
 it("counts up on its own and reads in Chinese", () => {

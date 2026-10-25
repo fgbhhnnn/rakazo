@@ -27,7 +27,7 @@ export const TaskProgressEntrySchema = z.object({
   name: z.string().max(120),
   state: TaskProgressState,
   lane: z.enum(["computer", "think"]).optional(),
-  /** The hidden worker carrying the task; opens its live thread. */
+  /** The hidden worker carrying the task. Clients never open its thread from the card. */
   workerBotId: z.string().optional(),
   queuedAt: z.string(),
   startedAt: z.string().optional(),

@@ -76,16 +76,17 @@ function StateIcon({ state, color }: { state: TaskProgressEntry["state"]; color:
 
 type TaskProgressCardProps = {
   block: TaskProgressBlock;
-  /** Opens a task's worker chat; the task's name stands in when the worker is not listed. */
-  onOpenBot?: (botId: string, taskName: string) => void;
   /** Long-press and accessibility actions from the message row. */
   pressableProps?: Omit<PressableProps, "onPress" | "style" | "children">;
   /** Tests and screenshots pin the clock. */
   now?: Date;
 };
 
-/** The main chat's one card for background tasks: state, run time and latest step of each. */
-export function TaskProgressCard({ block, onOpenBot, pressableProps, now }: TaskProgressCardProps) {
+/**
+ * The main chat's one card for background tasks: state, run time and latest step of each.
+ * View-only: a row never opens its hidden worker's chat (long-press still reaches the message).
+ */
+export function TaskProgressCard({ block, pressableProps, now }: TaskProgressCardProps) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const live =
@@ -156,21 +157,15 @@ export function TaskProgressCard({ block, onOpenBot, pressableProps, now }: Task
         {block.tasks.map((entry, index) => {
           const seconds = taskProgressRunSeconds(entry, clock);
           const label = stateLabel(entry, t);
-          const workerBotId = entry.workerBotId;
-          const openable = Boolean(workerBotId && onOpenBot);
           const color = stateColor(entry.state, tokens);
           return (
             <Pressable
               key={entry.ref}
               {...pressableProps}
               testID={`task-progress-${entry.ref}`}
-              accessibilityRole={openable ? "button" : "text"}
+              accessibilityRole="text"
               accessibilityLabel={`${entry.name} #${entry.ref}: ${label}`}
-              disabled={!openable}
-              onPress={() => {
-                if (workerBotId) onOpenBot?.(workerBotId, entry.name);
-              }}
-              style={({ pressed }) => ({
+              style={{
                 flexDirection: "row",
                 alignItems: "flex-start",
                 gap: 12,
@@ -178,8 +173,7 @@ export function TaskProgressCard({ block, onOpenBot, pressableProps, now }: Task
                 paddingLeft: 9,
                 borderTopWidth: index ? 1 : 0,
                 borderTopColor: tokens.border,
-                opacity: pressed ? 0.6 : 1,
-              })}
+              }}
             >
               <StateIcon state={entry.state} color={color} />
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -200,14 +194,6 @@ export function TaskProgressCard({ block, onOpenBot, pressableProps, now }: Task
                     >
                       {formatTaskRunTime(seconds)}
                     </Text>
-                  ) : null}
-                  {openable ? (
-                    <NativeSymbol
-                      ios="chevron.right"
-                      android="chevron-forward"
-                      size={12}
-                      color={tokens.mutedForeground}
-                    />
                   ) : null}
                 </View>
                 <Text numberOfLines={2} style={{ ...typeScale.caption, marginTop: 2 }}>

@@ -4648,15 +4648,7 @@ function SpecialMessageCard(props: SpecialMessageCardProps) {
   const { t } = useI18n();
   if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
   if (special.kind === "task_progress") {
-    return (
-      <TaskProgressCard
-        block={special}
-        onOpenBot={(botId, taskName) =>
-          onOpenBot(botId, bots.find((bot) => bot.id === botId)?.name ?? taskName)
-        }
-        pressableProps={actionProps}
-      />
-    );
+    return <TaskProgressCard block={special} pressableProps={actionProps} />;
   }
   if (special.kind === "cloud_agent") {
     const title = special.title || t("Cloud agent");
