@@ -16,6 +16,7 @@ vi.mock("react-native", () => {
     onPress?: () => void;
   };
   return {
+    ActivityIndicator: () => createElement("rn-spinner"),
     Pressable: ({
       children,
       onPress,
@@ -39,6 +40,10 @@ vi.mock("react-native", () => {
       createElement("rn-view", { "data-testid": testID }, children),
   };
 });
+vi.mock("../components/native-symbol", () => ({
+  NativeSymbol: ({ ios, android }: { ios: string; android: string }) =>
+    createElement("rn-symbol", { "data-ios": ios, "data-android": android }),
+}));
 vi.mock("./native", () => ({
   useMobileTokens: () => ({
     card: "card",
@@ -130,6 +135,14 @@ it("shows every task's state, run time and latest step", () => {
   expect(row("TQUEUE01").textContent).toContain("queued #1");
   expect(row("TFAIL001").textContent).toContain("3m");
   expect(card.textContent).toContain("3 running · 1 not finished");
+  // Running spins; other states show their symbol on both platforms.
+  expect(row("TAB12CD3").querySelector("rn-spinner")).not.toBeNull();
+  expect(row("TASK0002").querySelector("rn-symbol")?.getAttribute("data-ios")).toBe(
+    "hand.raised.fill",
+  );
+  expect(row("TFAIL001").querySelector("rn-symbol")?.getAttribute("data-android")).toBe(
+    "close-circle",
+  );
 });
 
 it("opens a worker from its row, not a queued task", () => {

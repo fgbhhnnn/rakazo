@@ -7,9 +7,31 @@ import {
   taskProgressCounts,
   taskProgressRunSeconds,
 } from "@rakazo/contracts";
-import { Badge } from "@rakazo/ui-web/components/ui/badge";
-import { Card, CardContent } from "@rakazo/ui-web/components/ui/card";
+import {
+  ChevronRight,
+  CircleCheck,
+  CircleMinus,
+  CircleX,
+  Clock,
+  Hand,
+  History,
+  Layers,
+  LoaderCircle,
+  type LucideIcon,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useState } from "react";
+
+const STATE_ICON: Record<TaskProgressEntry["state"], LucideIcon> = {
+  queued: Clock,
+  starting: History,
+  running: LoaderCircle,
+  needs_user: Hand,
+  stuck: TriangleAlert,
+  done: CircleCheck,
+  failed: CircleX,
+  cancelled: CircleMinus,
+};
 
 const STATE_TONE: Record<TaskProgressEntry["state"], string> = {
   queued: "text-muted-foreground",
@@ -69,78 +91,99 @@ export function TaskProgressCard({
   const now = fixedNow ?? ticking;
   const { active, done, failed } = taskProgressCounts(block);
   return (
-    <Card size="sm" className="w-[26rem] max-w-full" data-testid="task-progress-card">
-      <CardContent className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-medium">
+    <div
+      className="w-[min(440px,100%)] min-w-[280px] rounded-2xl border border-border bg-card px-4 pt-3.5 pb-1.5 text-foreground"
+      data-testid="task-progress-card"
+    >
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
+          <Layers size={19} strokeWidth={1.8} aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14.5px] leading-5 font-semibold">
             {block.closed ? (
               <Trans>Background tasks finished</Trans>
             ) : (
               <Trans>Background tasks</Trans>
             )}
           </span>
-          <span className="text-muted-foreground text-sm" data-testid="task-progress-counts">
+          <span
+            className="mt-0.5 block truncate text-[13px] leading-5 text-muted-foreground"
+            data-testid="task-progress-counts"
+          >
             {active ? <Trans>{active} running</Trans> : null}
             {active && (done || failed) ? " · " : null}
             {done ? <Trans>{done} done</Trans> : null}
             {done && failed ? " · " : null}
             {failed ? <Trans>{failed} not finished</Trans> : null}
           </span>
-        </div>
-        <ul className="flex flex-col divide-y divide-border">
-          {block.tasks.map((entry) => {
-            const seconds = taskProgressRunSeconds(entry, now);
-            const open = entry.workerBotId && onOpenBot ? entry.workerBotId : undefined;
-            const row = (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate font-medium text-sm" dir="auto">
-                    {entry.name}{" "}
-                    <span className="font-normal text-muted-foreground">#{entry.ref}</span>
+        </span>
+      </div>
+      <ul className="mt-2 flex flex-col divide-y divide-border">
+        {block.tasks.map((entry) => {
+          const seconds = taskProgressRunSeconds(entry, now);
+          const open = entry.workerBotId && onOpenBot ? entry.workerBotId : undefined;
+          const Icon = STATE_ICON[entry.state];
+          const row = (
+            <>
+              <Icon
+                size={17}
+                strokeWidth={1.9}
+                aria-hidden="true"
+                className={`mt-0.5 shrink-0 ${STATE_TONE[entry.state]} ${entry.state === "running" ? "animate-spin" : ""}`}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[14px] leading-5" dir="auto">
+                    {entry.name} <span className="text-muted-foreground">#{entry.ref}</span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    {seconds !== undefined ? (
-                      <span
-                        className="text-muted-foreground text-xs tabular-nums"
-                        data-testid="task-progress-time"
-                      >
-                        {formatTaskRunTime(seconds)}
-                      </span>
-                    ) : null}
-                    <Badge variant="secondary" className={STATE_TONE[entry.state]}>
-                      <StateLabel entry={entry} />
-                    </Badge>
+                  {seconds !== undefined ? (
+                    <span
+                      className="shrink-0 text-[12.5px] text-muted-foreground tabular-nums"
+                      data-testid="task-progress-time"
+                    >
+                      {formatTaskRunTime(seconds)}
+                    </span>
+                  ) : null}
+                  {open ? (
+                    <ChevronRight
+                      size={14}
+                      aria-hidden="true"
+                      className="shrink-0 text-muted-foreground"
+                    />
+                  ) : null}
+                </span>
+                <span className="mt-0.5 line-clamp-2 block text-[12.5px] leading-[18px]" dir="auto">
+                  <span className={STATE_TONE[entry.state]}>
+                    <StateLabel entry={entry} />
                   </span>
-                </div>
-                {entry.step ? (
-                  <span
-                    className="line-clamp-2 text-muted-foreground text-xs"
-                    dir="auto"
-                    data-testid="task-progress-step"
-                  >
-                    {entry.step}
-                  </span>
-                ) : null}
-              </>
-            );
-            return (
-              <li key={entry.ref} data-state={entry.state} className="py-1.5">
-                {open ? (
-                  <button
-                    type="button"
-                    className="flex w-full flex-col gap-0.5 text-start hover:opacity-80"
-                    onClick={() => onOpenBot?.(open)}
-                  >
-                    {row}
-                  </button>
-                ) : (
-                  <div className="flex flex-col gap-0.5">{row}</div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </CardContent>
-    </Card>
+                  {entry.step ? (
+                    <span className="text-muted-foreground" data-testid="task-progress-step">
+                      {" · "}
+                      {entry.step}
+                    </span>
+                  ) : null}
+                </span>
+              </span>
+            </>
+          );
+          return (
+            <li key={entry.ref} data-state={entry.state}>
+              {open ? (
+                <button
+                  type="button"
+                  className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-2.5 text-start hover:bg-accent"
+                  onClick={() => onOpenBot?.(open)}
+                >
+                  {row}
+                </button>
+              ) : (
+                <div className="flex items-start gap-3 py-2.5">{row}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

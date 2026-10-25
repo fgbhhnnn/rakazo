@@ -9,9 +9,10 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
-import { Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { NativeSymbol } from "./native-symbol";
 
 type Tokens = ReturnType<typeof useMobileTokens>;
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -45,6 +46,32 @@ function stateColor(state: TaskProgressEntry["state"], tokens: Tokens): string {
   if (state === "stuck" || state === "needs_user") return tokens.warning;
   if (state === "running") return tokens.foreground;
   return tokens.mutedForeground;
+}
+
+const STATE_SYMBOL: Record<
+  Exclude<TaskProgressEntry["state"], "running">,
+  { ios: string; android: Parameters<typeof NativeSymbol>[0]["android"] }
+> = {
+  queued: { ios: "clock", android: "time-outline" },
+  starting: { ios: "clock.arrow.circlepath", android: "hourglass-outline" },
+  needs_user: { ios: "hand.raised.fill", android: "hand-left-outline" },
+  stuck: { ios: "exclamationmark.triangle.fill", android: "warning-outline" },
+  done: { ios: "checkmark.circle.fill", android: "checkmark-circle" },
+  failed: { ios: "xmark.circle.fill", android: "close-circle" },
+  cancelled: { ios: "minus.circle", android: "remove-circle-outline" },
+};
+
+/** Running tasks spin (the platform's own indicator); every other state is a symbol. */
+function StateIcon({ state, color }: { state: TaskProgressEntry["state"]; color: string }) {
+  return (
+    <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
+      {state === "running" ? (
+        <ActivityIndicator size="small" color={color} />
+      ) : (
+        <NativeSymbol {...STATE_SYMBOL[state]} size={17} color={color} />
+      )}
+    </View>
+  );
 }
 
 type TaskProgressCardProps = {
@@ -83,82 +110,117 @@ export function TaskProgressCard({ block, onOpenBot, pressableProps, now }: Task
       testID="task-progress-card"
       style={{
         width: "90%",
-        borderRadius: 18,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: tokens.border,
         backgroundColor: tokens.card,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: 14,
+        paddingTop: 12,
+        paddingBottom: 4,
       }}
     >
-      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-        <Text style={{ flexShrink: 1, color: tokens.cardForeground, ...typeScale.cardTitle }}>
-          {block.closed ? t("Background tasks finished") : t("Background tasks")}
-        </Text>
-        <Text style={{ color: tokens.mutedForeground, ...typeScale.caption }}>{counts}</Text>
-      </View>
-      {block.tasks.map((entry, index) => {
-        const seconds = taskProgressRunSeconds(entry, clock);
-        const label = stateLabel(entry, t);
-        const workerBotId = entry.workerBotId;
-        return (
-          <Pressable
-            key={entry.ref}
-            {...pressableProps}
-            testID={`task-progress-${entry.ref}`}
-            accessibilityRole={workerBotId && onOpenBot ? "button" : "text"}
-            accessibilityLabel={`${entry.name} #${entry.ref}: ${label}`}
-            disabled={!workerBotId || !onOpenBot}
-            onPress={() => {
-              if (workerBotId) onOpenBot?.(workerBotId, entry.name);
-            }}
-            style={({ pressed }) => ({
-              opacity: pressed ? 0.6 : 1,
-              paddingVertical: 8,
-              borderTopWidth: index ? 1 : 0,
-              borderTopColor: tokens.border,
-              marginTop: index ? 0 : 6,
-            })}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <View
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 10,
+            backgroundColor: tokens.muted,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <NativeSymbol
+            ios="square.stack.3d.up"
+            android="layers-outline"
+            size={19}
+            color={tokens.mutedForeground}
+          />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text
+            numberOfLines={1}
+            style={{ color: tokens.foreground, ...typeScale.secondary, fontWeight: "600" }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text
-                numberOfLines={1}
-                style={{
-                  flex: 1,
-                  color: tokens.foreground,
-                  ...typeScale.secondary,
-                  fontWeight: "600",
-                }}
-              >
-                {entry.name}{" "}
-                <Text style={{ color: tokens.mutedForeground, fontWeight: "400" }}>
-                  #{entry.ref}
+            {block.closed ? t("Background tasks finished") : t("Background tasks")}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={{ color: tokens.mutedForeground, ...typeScale.caption, marginTop: 1 }}
+          >
+            {counts}
+          </Text>
+        </View>
+      </View>
+      <View style={{ marginTop: 8 }}>
+        {block.tasks.map((entry, index) => {
+          const seconds = taskProgressRunSeconds(entry, clock);
+          const label = stateLabel(entry, t);
+          const workerBotId = entry.workerBotId;
+          const openable = Boolean(workerBotId && onOpenBot);
+          const color = stateColor(entry.state, tokens);
+          return (
+            <Pressable
+              key={entry.ref}
+              {...pressableProps}
+              testID={`task-progress-${entry.ref}`}
+              accessibilityRole={openable ? "button" : "text"}
+              accessibilityLabel={`${entry.name} #${entry.ref}: ${label}`}
+              disabled={!openable}
+              onPress={() => {
+                if (workerBotId) onOpenBot?.(workerBotId, entry.name);
+              }}
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "flex-start",
+                gap: 12,
+                paddingVertical: 10,
+                paddingLeft: 9,
+                borderTopWidth: index ? 1 : 0,
+                borderTopColor: tokens.border,
+                opacity: pressed ? 0.6 : 1,
+              })}
+            >
+              <StateIcon state={entry.state} color={color} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{ flex: 1, color: tokens.foreground, ...typeScale.secondary }}
+                  >
+                    {entry.name} <Text style={{ color: tokens.mutedForeground }}>#{entry.ref}</Text>
+                  </Text>
+                  {seconds !== undefined ? (
+                    <Text
+                      style={{
+                        color: tokens.mutedForeground,
+                        ...typeScale.caption,
+                        fontVariant: ["tabular-nums"],
+                      }}
+                    >
+                      {formatTaskRunTime(seconds)}
+                    </Text>
+                  ) : null}
+                  {openable ? (
+                    <NativeSymbol
+                      ios="chevron.right"
+                      android="chevron-forward"
+                      size={12}
+                      color={tokens.mutedForeground}
+                    />
+                  ) : null}
+                </View>
+                <Text numberOfLines={2} style={{ ...typeScale.caption, marginTop: 2 }}>
+                  <Text style={{ color }}>{label}</Text>
+                  {entry.step ? (
+                    <Text style={{ color: tokens.mutedForeground }}> · {entry.step}</Text>
+                  ) : null}
                 </Text>
-              </Text>
-              {seconds !== undefined ? (
-                <Text
-                  style={{
-                    color: tokens.mutedForeground,
-                    ...typeScale.caption,
-                    fontVariant: ["tabular-nums"],
-                  }}
-                >
-                  {formatTaskRunTime(seconds)}
-                </Text>
-              ) : null}
-              <Text style={{ color: stateColor(entry.state, tokens), ...typeScale.caption }}>
-                {label}
-              </Text>
-            </View>
-            {entry.step ? (
-              <Text
-                numberOfLines={2}
-                style={{ color: tokens.mutedForeground, ...typeScale.caption, marginTop: 2 }}
-              >
-                {entry.step}
-              </Text>
-            ) : null}
-          </Pressable>
-        );
-      })}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
