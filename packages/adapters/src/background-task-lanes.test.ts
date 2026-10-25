@@ -188,7 +188,16 @@ describe("background task lanes: think workers have no computer tools", () => {
       workerDisabledTools(BUILTIN_TOOL_NAMES, undefined),
       BUILTIN_TOOL_NAMES,
     );
-    for (const name of ["web_search", "web_fetch", "recall_memory", "skill_read"])
+    // Pages are stored server-side, so think workers write their reports as pages.
+    for (const name of [
+      "web_search",
+      "web_fetch",
+      "recall_memory",
+      "skill_read",
+      "write_page",
+      "edit_page",
+      "read_page",
+    ])
       expect(general).not.toContain(name);
     // A computer task's tool set is exactly what it was before lanes.
     const before = workerDisabledTools(BUILTIN_TOOL_NAMES, undefined);
@@ -204,6 +213,7 @@ describe("background task lanes: think workers have no computer tools", () => {
     for (const name of THINK_LANE_WITHHELD_TOOLS) expect(surface).not.toContain(name);
     expect(surface).toContain("web_search");
     expect(surface).toContain("report_progress");
+    expect(surface).toContain("write_page");
     // The nesting ban still holds in the think lane.
     expect(surface).not.toContain("background_task");
     expect(surface).not.toContain("run_subagent");

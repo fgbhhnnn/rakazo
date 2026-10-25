@@ -221,7 +221,7 @@ export function thinkWorkerToolRefusal(
 
 /** Appended to a think worker's instructions. */
 export const THINK_WORKER_INSTRUCTIONS =
-  "【思考任务】你没有电脑：没有 shell、浏览器、桌面、文件工具，也看不到电脑上的文件。只用推理、web_search / web_fetch、记忆和已连接的应用完成任务。如果做到一半发现必须用电脑（跑代码、打开或生成文件、操作网页/桌面），立刻停下，把已有发现作为结果返回，第一行写「需要电脑：<原因>」，主 bot 会改派给电脑任务。";
+  "【思考任务】你没有电脑：没有 shell、浏览器、桌面、文件工具，也看不到电脑上的文件。只用推理、web_search / web_fetch、记忆和已连接的应用完成任务。如果做到一半发现必须用电脑（跑代码、打开或生成文件、操作网页/桌面），立刻停下，把已有发现作为结果返回，第一行写「需要电脑：<原因>」，主 bot 会改派给电脑任务。上面关于电脑工作区文件和「文件：」列表的说明对你不适用；报告、方案这类成文材料用 write_page 写成页面（页面不需要电脑），短结果直接写在回复里。";
 
 /** Appended to the dispatcher's background_task guidance. */
 export const BACKGROUND_LANE_GUIDANCE =
