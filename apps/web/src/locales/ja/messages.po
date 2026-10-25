@@ -119,6 +119,10 @@ msgstr "{0}の画面"
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
 
+#: src/pages/shell/dialogs.tsx
+msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
+msgstr "{botCount, plural, other {{name} と # 個のボットを削除しますか？}}"
+
 #: src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "{botName}のコンピューター"
@@ -1041,6 +1045,7 @@ msgstr "画像を読み取れません"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "キャンセル"
 
@@ -1860,7 +1865,7 @@ msgstr "接続の名前を変更できませんでした"
 msgid "Could not rename section"
 msgstr "セクションの名前を変更できませんでした"
 
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "スペースの名前を変更できませんでした"
 
@@ -2203,6 +2208,7 @@ msgid "Delete section"
 msgstr "セクションを削除"
 
 #: src/pages/Shell.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr "スペースを削除"
 
@@ -2377,6 +2383,7 @@ msgstr "各名前は一度だけ使用できます。"
 
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "編集"
 
@@ -3061,9 +3068,9 @@ msgid "Loading voice providers…"
 msgstr "音声プロバイダーを読み込み中…"
 
 #: src/components/MemberAccessSettings.tsx
+#: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
@@ -3411,6 +3418,7 @@ msgstr "ミュート中"
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Name"
 msgstr "名前"
 
@@ -3679,10 +3687,6 @@ msgstr "毎月1日 {0}"
 msgid "One-time purchase. Credits do not expire."
 msgstr "1回限りの購入です。クレジットは失効しません。"
 
-#: src/pages/Shell.tsx
-msgid "Only empty spaces can be deleted. Delete its bots and groups first."
-msgstr "削除できるのは空のスペースのみです。先にボットとグループを削除してください。"
-
 #: src/components/MemberAccessSettings.tsx
 msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 msgstr "モデル、音声、MCPサーバーは私だけが管理します（メンバーは私の設定を使用し、変更できません）"
@@ -3747,14 +3751,6 @@ msgstr "OpenAI API"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI互換サーバーのURL"
-
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "チャットを開いています…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "スペースを開いています…"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -4184,8 +4180,7 @@ msgstr "名前を変更"
 msgid "Rename section"
 msgstr "セクション名を変更"
 
-#: src/pages/Shell.tsx
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Rename space"
 msgstr "スペース名を変更"
 
@@ -4410,6 +4405,7 @@ msgstr "このボットがこのプロバイダーから検証済みのメッセ
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "保存"
 

@@ -386,7 +386,12 @@ export async function destroyBot(
   deps: BotLifecycleDeps,
   bot: LifecycleBot,
   context: AdapterContext,
-  options: { deleteMemories: boolean },
+  options: {
+    deleteMemories: boolean;
+    /** Fail before deleting anything when the provider cannot confirm the sandbox is gone,
+     * so the computer row keeps its handle for a retry. */
+    strictTeardown?: boolean;
+  },
 ) {
   const [dedicated, activeRuns, routines] = await Promise.all([
     deps.prisma.computer.findUnique({
@@ -419,7 +424,8 @@ export async function destroyBot(
     cancelRunWork: true,
   });
   if (dedicated?.providerRef) {
-    await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
+    const destroyed = deps.sandbox.destroy(toComputerRef(dedicated), context);
+    await (options.strictTeardown ? destroyed : destroyed.catch(() => undefined));
   }
   // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
   await removePiBotSessions(deps.dataDir, bot.userId, bot.id);

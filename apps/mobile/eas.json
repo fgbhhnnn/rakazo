@@ -41,6 +41,10 @@
       "ios": {
         "image": "macos-tahoe-26.5-xcode-26.6"
       }
+    },
+    "diagnostic": {
+      "extends": "production",
+      "channel": "diagnostic"
     }
   },
   "submit": {

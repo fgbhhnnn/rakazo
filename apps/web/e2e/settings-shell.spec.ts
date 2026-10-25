@@ -13,16 +13,19 @@ test("changing language updates settings overflow without resizing", async ({ pa
   await signup(page, `settings-language-${stamp}@rakazo.test`, "password12", "Settings");
   await completeOnboarding(page);
   const settings = await openUserSettings(page);
-  await page.setViewportSize({ width: 740, height: 700 });
+  // Below the desktop breakpoint, where the section list scrolls sideways.
+  await page.setViewportSize({ width: 767, height: 700 });
   const nav = settings.getByTestId("settings-nav");
   const next = settings.getByRole("button", { name: "Next settings sections" });
-  await expect.poll(() => nav.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-  await expect(next).toBeHidden();
+  const overflow = () => nav.evaluate((node) => node.scrollWidth - node.clientWidth);
+  const english = await overflow();
 
   const language = settings.getByTestId("ui-locale-select");
   await language.click();
   await page.getByRole("option", { name: "Deutsch", exact: true }).click();
   await expect(settings.getByRole("heading", { name: "Allgemein", exact: true })).toBeVisible();
+  // Longer German labels overflow further, and the scroll control follows without a resize.
+  await expect.poll(overflow).toBeGreaterThan(english);
   await expect(next).toBeVisible();
   await expect(next).toBeEnabled();
   await captureScreenshot(page, testInfo, "settings-tabs-language-overflow");
@@ -30,7 +33,7 @@ test("changing language updates settings overflow without resizing", async ({ pa
   await language.click();
   await page.getByRole("option", { name: "English", exact: true }).click();
   await expect(settings.getByRole("heading", { name: "General", exact: true })).toBeVisible();
-  await expect(next).toBeHidden();
+  await expect.poll(overflow).toBe(english);
 });
 
 test("narrow settings reveals the active section and offers scroll controls", async ({

@@ -1,5 +1,6 @@
 import type { PrismaClient } from "./client.js";
 import { ownsMemberSettingsUser, sharedOwnerUserId } from "./deployment-admin.js";
+import { runAsSystem } from "./row-security.js";
 
 type Scope = { userId: string; spaceId: string };
 
@@ -77,23 +78,31 @@ export async function sharedModelScope<S extends Scope>(
   if (!ownerUserId) return scope;
   const own = await prisma.userModelCredential.count({ where: { userId: scope.userId } });
   if (own > 0 && !policy.locked) return scope;
-  const owner = await prisma.spaceModelPreference.findFirst({
+  // The owner's main model lives in their main role; the legacy default preference is
+  // frozen since role writes stopped mirroring into it, so it only breaks ties between
+  // Spaces that each have a main model, and covers owners who never wrote a role.
+  const legacy = await prisma.spaceModelPreference.findFirst({
     where: { userId: ownerUserId, isDefault: true },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     select: { spaceId: true },
   });
-  if (owner) return { userId: ownerUserId, spaceId: owner.spaceId };
-  // An owner whose main model has no default connection (one run on deployment credits)
-  // still chose it in the space their main model role lives in.
-  const role =
-    typeof prisma.spaceModelRoleChoice?.findFirst === "function"
-      ? await prisma.spaceModelRoleChoice.findFirst({
-          where: { userId: ownerUserId, role: "main", position: 0 },
-          orderBy: { spaceId: "asc" },
-          select: { spaceId: true },
-        })
-      : null;
-  return role ? { userId: ownerUserId, spaceId: role.spaceId } : scope;
+  const roles =
+    typeof prisma.spaceModelRoleChoice?.findMany === "function"
+      ? // Role rows are tenant-scoped and the caller is the member, so list only the
+        // owner's Space ids across their Spaces; the choices themselves are read as the owner.
+        await runAsSystem("shared owner model space", () =>
+          prisma.spaceModelRoleChoice.findMany({
+            where: { userId: ownerUserId, role: "main", position: 0 },
+            orderBy: { spaceId: "asc" },
+            select: { spaceId: true },
+          }),
+        )
+      : [];
+  const spaceId =
+    roles.find((role) => role.spaceId === legacy?.spaceId)?.spaceId ??
+    roles[0]?.spaceId ??
+    legacy?.spaceId;
+  return spaceId ? { userId: ownerUserId, spaceId } : scope;
 }
 
 /** Same as sharedModelScope, for the voice provider. */

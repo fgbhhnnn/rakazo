@@ -60,6 +60,7 @@ import { t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
 import { reportMobileError } from "./monitoring";
+import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import {
   clearSessionToken,
   currentSessionGeneration,
@@ -75,7 +76,6 @@ import { clearUnsentSends } from "./thread-feedback";
 import { captchaHeaders } from "./turnstile";
 import { authResponseErrorText, errorText, sessionSaveErrorText } from "./user-error";
 
-const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
 const SPACE_ROLLBACK_KEY = "rakazo.space_rollback";
 const RPC_TIMEOUT_MS = 8_000;
