@@ -8,7 +8,6 @@ import {
   taskProgressRunSeconds,
 } from "@rakazo/contracts";
 import {
-  ChevronRight,
   CircleCheck,
   CircleMinus,
   CircleX,
@@ -76,13 +75,12 @@ function useNow(live: boolean): Date {
   return now;
 }
 
+/** View-only: a task's row never opens its hidden worker's chat. */
 export function TaskProgressCard({
   block,
-  onOpenBot,
   now: fixedNow,
 }: {
   block: TaskProgressBlock;
-  onOpenBot?: (botId: string) => void;
   /** Tests and screenshots pin the clock. */
   now?: Date;
 }) {
@@ -122,7 +120,6 @@ export function TaskProgressCard({
       <ul className="mt-2 flex flex-col divide-y divide-border">
         {block.tasks.map((entry) => {
           const seconds = taskProgressRunSeconds(entry, now);
-          const open = entry.workerBotId && onOpenBot ? entry.workerBotId : undefined;
           const Icon = STATE_ICON[entry.state];
           const row = (
             <>
@@ -145,13 +142,6 @@ export function TaskProgressCard({
                       {formatTaskRunTime(seconds)}
                     </span>
                   ) : null}
-                  {open ? (
-                    <ChevronRight
-                      size={14}
-                      aria-hidden="true"
-                      className="shrink-0 text-muted-foreground"
-                    />
-                  ) : null}
                 </span>
                 <span className="mt-0.5 line-clamp-2 block text-[12.5px] leading-[18px]" dir="auto">
                   <span className={STATE_TONE[entry.state]}>
@@ -169,17 +159,7 @@ export function TaskProgressCard({
           );
           return (
             <li key={entry.ref} data-state={entry.state}>
-              {open ? (
-                <button
-                  type="button"
-                  className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-2.5 text-start hover:bg-accent"
-                  onClick={() => onOpenBot?.(open)}
-                >
-                  {row}
-                </button>
-              ) : (
-                <div className="flex items-start gap-3 py-2.5">{row}</div>
-              )}
+              <div className="flex items-start gap-3 py-2.5">{row}</div>
             </li>
           );
         })}

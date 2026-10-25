@@ -89,7 +89,7 @@ function renderMessage(
     ),
   );
   const mention = container.querySelector<HTMLElement>('[data-testid="bot-mention"]')!;
-  act(() => mention.click());
+  if (mention) act(() => mention.click());
   return { mention, onOpenBot };
 }
 
@@ -126,6 +126,60 @@ it.each([
   expect(mention.textContent).toBe("Planner");
   expect(mention.tagName).toBe("SPAN");
   expect(mention.querySelector("span[dir]")?.getAttribute("style")).toBeNull();
+  expect(onOpenBot).not.toHaveBeenCalled();
+});
+
+it("never opens a background task's hidden worker from its card", () => {
+  const card = {
+    kind: "child_bot" as const,
+    botId: "hidden-worker",
+    name: "后台任务：整理报表 #TAB12CD3",
+    title: "任务 #TAB12CD3",
+    status: "created" as const,
+  };
+  const { mention, onOpenBot } = renderMessage([card], existingBot);
+  expect(mention.textContent).toBe(card.name);
+  expect(mention.tagName).toBe("SPAN");
+  expect(container.querySelector("button[data-testid=bot-mention]")).toBeNull();
+  expect(onOpenBot).not.toHaveBeenCalled();
+});
+
+it("shows the background task progress card view-only, with no way into a worker", () => {
+  const { onOpenBot } = renderMessage(
+    [
+      {
+        kind: "task_progress",
+        botId: "parent",
+        updatedAt: new Date().toISOString(),
+        tasks: [
+          {
+            ref: "TAB12CD3",
+            name: "整理报表",
+            state: "running",
+            workerBotId: "hidden-worker",
+            queuedAt: new Date().toISOString(),
+            startedAt: new Date().toISOString(),
+          },
+          {
+            ref: "TDONE001",
+            name: "生成小狗图片",
+            state: "done",
+            workerBotId: "hidden-worker-2",
+            queuedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    ],
+    existingBot,
+  );
+  const card = container.querySelector<HTMLElement>('[data-testid="task-progress-card"]')!;
+  expect(card.textContent).toContain("整理报表");
+  expect(card.querySelector("button, a, [role=button], [role=link]")).toBeNull();
+  expect(card.querySelector(".lucide-chevron-right")).toBeNull();
+  act(() => {
+    for (const element of card.querySelectorAll("li, li *"))
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
   expect(onOpenBot).not.toHaveBeenCalled();
 });
 

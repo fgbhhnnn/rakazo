@@ -269,6 +269,28 @@ describe("thread cards", () => {
     expect(onOpenBot).not.toHaveBeenCalled();
   });
 
+  it("never opens a background task's hidden worker from its card", () => {
+    const onOpenBot = vi.fn();
+    const taskCard = {
+      kind: "child_bot",
+      botId: "hidden-worker",
+      name: "后台任务：整理报表 #TAB12CD3",
+      title: "任务 #TAB12CD3",
+      status: "created",
+    } as MessageBlock;
+    renderBlocks([taskCard], {
+      bots: [{ id: "hidden-worker", name: "Assistant · 后台1", color: "orange" }],
+      onOpenBot,
+    });
+    const row = container.firstElementChild as HTMLElement;
+    expect(row.textContent).toContain("后台任务：整理报表 #TAB12CD3");
+    expect(row.querySelector('[role="link"]')).toBeNull();
+    act(() => {
+      for (const span of row.querySelectorAll("span")) span.click();
+    });
+    expect(onOpenBot).not.toHaveBeenCalled();
+  });
+
   it("keeps child navigation and long-press actions on each card and text piece", () => {
     const onOpenBot = vi.fn();
     const onLongPress = vi.fn();

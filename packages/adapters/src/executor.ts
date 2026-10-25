@@ -323,9 +323,12 @@ import {
 } from "./dispatcher-mode.js";
 import { dispatcherOwnerToolsClause } from "./dispatcher-owner-tools.js";
 import {
+  attachedContentKey,
   attachedPathKey,
   attachWorkerReportFiles,
+  realWorkspacePathToRoot,
   withoutMessagesOwnedByOtherLiveRuns,
+  workerFilesAttachedNote,
 } from "./dispatcher-relay.js";
 import {
   createDispatcherTurnLedger,
@@ -4976,10 +4979,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           publishedMidTurnUserMessage = true;
         };
         // A worker's files and forwarded result go out with the dispatcher's relay of its report.
-        const relayWorkerReportAttachments = async () => {
-          if (!dispatcherTurn || !peerMessage) return;
+        const relayWorkerReportAttachments = async (): Promise<string[]> => {
+          if (!dispatcherTurn || !peerMessage) return [];
+          let attachedReportFiles: string[] = [];
           if (deps.artifacts) {
-            await attachWorkerReportFiles({
+            attachedReportFiles = await attachWorkerReportFiles({
               deps,
               run,
               bot,
@@ -4990,7 +4994,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
               alreadyAttached: attachedFilePaths,
               publish: (blocks) => publishMessage(deps, run, "bot", blocks),
-            }).catch((error) => getLogger().error("worker report attach", error));
+            }).catch((error) => {
+              getLogger().error("worker report attach", error);
+              return [];
+            });
           }
           await forwardWorkerRelayAttachments({
             prisma: deps.prisma,
@@ -4999,6 +5006,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             report: peerMessage,
             publish: (blocks) => publishMessage(deps, run, "bot", blocks),
           }).catch((error) => getLogger().error("worker result forward", error));
+          return attachedReportFiles;
         };
         // ask_user pauses the turn without a final reply, so a dispatcher's text before the
         // card (e.g. its relay of a worker result) and the report's files are posted first.
@@ -6373,7 +6381,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return finish({ error, path: filePath });
             };
             if (!deps.artifacts) return failAttach("artifact storage unavailable");
-            const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
+            // A worker's report lists real paths (/home/user/rakazo-home/...); "/" is the
+            // workspace root here, so the real prefix is mapped onto it before resolving.
+            const storedPath = resolveBotWorkspacePath(
+              computerMode,
+              bot.id,
+              realWorkspacePathToRoot(filePath) ?? filePath,
+            );
             let bytes: Uint8Array;
             try {
               bytes = await deps.sandbox.readFile(
@@ -6389,6 +6403,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             const mimeType = inferAttachmentMimeType(filePath);
             if (!mimeType) return failAttach("unsupported attachment type");
+            const contentKey = attachedContentKey(bytes);
+            if (attachedFilePaths.has(contentKey)) {
+              // The same bytes are already in the chat this turn (e.g. a worker report's file).
+              await recordComputerAction("attach_file", filePath);
+              return finish({
+                ok: true,
+                path: filePath,
+                alreadyAttached: true,
+                note: "This file is already attached in the chat above; do not attach or promise it again.",
+              });
+            }
             try {
               const attached = await attachWorkspaceFileToThread(
                 {
@@ -6414,6 +6439,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // Also by resolved location, so a worker report naming the same file another way
               // (absolute vs relative) is not attached a second time.
               attachedFilePaths.add(attachedPathKey(storedPath));
+              attachedFilePaths.add(contentKey);
               await recordComputerAction("attach_file", filePath);
               return finish({ ok: true, artifactId: attached.artifactId, path: filePath });
             } catch (error) {
@@ -8208,9 +8234,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             // Lateness is optional context; a lookup failure must not prevent a run.
           }
         }
+        // A worker result's listed files go out before the model's turn, and the model is told
+        // so: it then relays the result instead of re-attaching, re-asking the worker or
+        // promising a "preview". The end-of-turn relay below only catches what is still missing.
+        const workerFilesNote = workerFilesAttachedNote(await relayWorkerReportAttachments());
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
+          workerFilesNote,
           takeoverResume?.promptNote,
           approvalContinuation,
           // A hang-up turn is read, not heard: no spoken-reply constraint.

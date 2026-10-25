@@ -1,5 +1,5 @@
 import type { ChildBotBlock } from "@rakazo/core";
-import { resolvePersonaColorDef } from "@rakazo/core";
+import { isBackgroundTaskStartCard, resolvePersonaColorDef } from "@rakazo/core";
 import type { ColorTokens } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Text, View } from "react-native";
@@ -22,10 +22,12 @@ export function BotMention({
   onOpenBot: (botId: string, name: string) => void;
 }) {
   const live = block.status === "created" && color;
+  // A background task's card names its hidden worker; that chat is never opened from here.
+  const openable = live && !isBackgroundTaskStartCard(block);
   return (
     <Text
-      accessibilityRole={live ? "link" : undefined}
-      onPress={live ? () => onOpenBot(block.botId, block.name) : undefined}
+      accessibilityRole={openable ? "link" : undefined}
+      onPress={openable ? () => onOpenBot(block.botId, block.name) : undefined}
       style={{
         color: live ? resolvePersonaColorDef(block.botId, color).light : tokens.foreground,
         fontWeight: "500",
