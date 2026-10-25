@@ -1,4 +1,5 @@
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { TransientModelError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import { appendEventInTransaction } from "@rakazo/db";
@@ -343,6 +344,32 @@ describe("dispatcher turn setup", () => {
     expect(failed?.[0].error).not.toContain("Request was aborted");
     expect(result.restartRuns).toEqual(["retry-run-1"]);
     expect(texts(result.messages).join("\n")).not.toContain("Request was aborted");
+  });
+});
+
+describe("dispatcher turn model outage", () => {
+  it("fails fast and tells the user instead of waiting for the lease to expire", async () => {
+    const result = await runDispatcherTurn({
+      // pi has already spent its retries when it surfaces a TransientModelError.
+      runtime: async function* () {
+        yield* [];
+        throw new TransientModelError(
+          "Service temporarily unavailable. The model did not respond to this request.",
+        );
+      },
+    });
+    expect(result.elapsedMs).toBeLessThan(5_000);
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed",
+        error: "Service temporarily unavailable. The model did not respond to this request.",
+      }),
+    );
+    // An outage is not a hang: no restart loop against a provider that is down.
+    expect(result.restartRuns).toEqual([]);
+    expect(texts(result.messages)).toContain(
+      "这次回复失败了：Service temporarily unavailable. The model did not respond to this request.",
+    );
   });
 });
 
