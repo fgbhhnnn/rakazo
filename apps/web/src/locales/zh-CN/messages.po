@@ -6118,6 +6118,10 @@ msgstr ""
 msgid "You have control"
 msgstr "你已接管"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Your administrator manages this setting."
+msgstr "此设置由管理员统一管理。"
+
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "Your Anthropic"

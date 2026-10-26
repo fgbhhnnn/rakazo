@@ -6118,6 +6118,10 @@ msgstr "Vous avez refusé"
 msgid "You have control"
 msgstr "Vous avez le contrôle"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Your administrator manages this setting."
+msgstr "Votre administrateur gère ce paramètre."
+
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "Your Anthropic"

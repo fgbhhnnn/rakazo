@@ -69,7 +69,7 @@ const settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAva
 
 beforeEach(() => vi.resetAllMocks());
 
-async function render(scope: "account" | "space" = "account") {
+async function render(scope: "account" | "space" = "account", readOnly = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement("div");
   document.body.append(container);
@@ -77,7 +77,7 @@ async function render(scope: "account" | "space" = "account") {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <ApprovalRulesSettings scope={scope} />
+        <ApprovalRulesSettings scope={scope} readOnly={readOnly} />
       </QueryClientProvider>,
     );
   });
@@ -148,6 +148,44 @@ it("blocks or removes an allowed tool", async () => {
       id: "rule-2",
     });
     await vi.waitFor(() => expect(container.querySelector(rules)).toBeNull());
+    await act(async () => root.unmount());
+  } finally {
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows a locked member the approvals read-only", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([
+    {
+      id: "rule-1",
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "GMAIL_SEND_EMAIL",
+      createdAt: "2026-10-25T00:00:00.000Z",
+    },
+  ]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  const { container, root } = await render("account", true);
+  const rules = '[data-testid="approval-rules"]';
+  try {
+    await vi.waitFor(() => expect(container.textContent).toContain("Gmail send email"));
+    expect(container.querySelector('[data-testid="approval-settings-locked"]')?.textContent).toBe(
+      "Your administrator manages this setting.",
+    );
+    expect(container.querySelector('[data-testid="approval-mode"]')?.hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(
+      container.querySelector(`${rules} [aria-label="Gmail send email"]`)?.hasAttribute("disabled"),
+    ).toBe(true);
+    expect(button(container, "Remove", rules)).toBeUndefined();
+    await act(async () => button(container, "Never ask")?.click());
+    await act(async () => button(container, "Block", rules)?.click());
+    expect(rpcMock.autoReview.set).not.toHaveBeenCalled();
+    expect(rpcMock.approvalRules.set).not.toHaveBeenCalled();
+    expect(button(container, "Ask")?.getAttribute("aria-pressed")).toBe("true");
     await act(async () => root.unmount());
   } finally {
     container.remove();

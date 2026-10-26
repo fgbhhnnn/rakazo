@@ -58,8 +58,8 @@ vi.mock("./VoiceSettingsOverlay", () => ({
   },
 }));
 vi.mock("../components/ApprovalRulesSettings", () => ({
-  ApprovalRulesSettings: ({ scope }: { scope: string }) => {
-    panels.push(`confirmations:${scope}`);
+  ApprovalRulesSettings: ({ scope, readOnly }: { scope: string; readOnly?: boolean }) => {
+    panels.push(`confirmations:${scope}${readOnly ? ":read-only" : ""}`);
     return <div data-testid="confirmations-panel" />;
   },
 }));
@@ -162,7 +162,7 @@ it("keeps the row as it was when customizing fails", async () => {
   expect(panels).toEqual([]);
 });
 
-it("hides models and voice from a member of a locked deployment, even a customized Space", async () => {
+it("hides models and voice from a member of a locked deployment, and shows approvals read-only", async () => {
   spaceSettings.overrides.mockResolvedValue(["models", "voice", "confirmations"]);
   await render(<SpaceSettingOverrides onClose={() => undefined} memberSettingsLocked />);
   await vi.waitFor(() =>
@@ -174,5 +174,17 @@ it("hides models and voice from a member of a locked deployment, even a customiz
   expect(container.querySelector('[data-testid="voice-panel"]')).toBeNull();
   expect(button("Use defaults for Models")).toBeNull();
   expect(button("Use defaults for Voice")).toBeNull();
-  expect(new Set(panels)).toEqual(new Set(["confirmations:space"]));
+  // Approvals stay visible but only the owner or an admin changes them.
+  expect(button("Use defaults for Approvals")).toBeNull();
+  expect(new Set(panels)).toEqual(new Set(["confirmations:space:read-only"]));
+});
+
+it("does not let a locked member customize a Space's approvals", async () => {
+  spaceSettings.overrides.mockResolvedValue([]);
+  await render(<SpaceSettingOverrides onClose={() => undefined} memberSettingsLocked />);
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="space-setting-confirmations"]')).not.toBeNull(),
+  );
+  expect(button("Customize Approvals")).toBeNull();
+  expect(spaceSettings.setOverride).not.toHaveBeenCalled();
 });

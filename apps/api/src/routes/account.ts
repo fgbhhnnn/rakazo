@@ -171,18 +171,20 @@ export function accountRoutes(ctx: RouterContext) {
         throw new ORPCError("FORBIDDEN");
       }),
     },
+    // Approval mode and the allow/block lists are owner/admin settings on a locked deployment;
+    // members still read them.
     approvalRules: {
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
         return rows.map(approvalRuleDto);
       }),
-      set: authed.approvalRules.set.handler(async ({ context, input }) => {
+      set: ownerManaged.approvalRules.set.handler(async ({ context, input }) => {
         const { scope, ...rule } = input;
         return approvalRuleDto(
           await deps.prisma.$transaction((tx) => saveApprovalRule(tx, context.actor, rule, scope)),
         );
       }),
-      remove: authed.approvalRules.remove.handler(async ({ context, input }) => {
+      remove: ownerManaged.approvalRules.remove.handler(async ({ context, input }) => {
         await deps.prisma.$transaction((tx) =>
           removeApprovalRule(tx, context.actor, input.id, input.scope),
         );
@@ -193,7 +195,7 @@ export function accountRoutes(ctx: RouterContext) {
       get: authed.autoReview.get.handler(async ({ context, input }) => {
         return loadAutoReviewSettings(deps, context.actor, input?.scope);
       }),
-      set: authed.autoReview.set.handler(async ({ context, input }) => {
+      set: ownerManaged.autoReview.set.handler(async ({ context, input }) => {
         await deps.prisma.$transaction((tx) =>
           saveAutoReviewPreference(
             tx,

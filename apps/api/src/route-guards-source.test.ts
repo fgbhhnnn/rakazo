@@ -54,8 +54,17 @@ const REQUIRED: Record<string, { root: string; tokens: string[] }> = {
   "bots.get": { root: "authed", tokens: ["includeHidden: true"] },
   "threads.answer": {
     root: "authed",
-    tokens: ["answerComputerRestartPrompt(", "answerWorkerApprovalMirror("],
+    tokens: [
+      "answerComputerRestartPrompt(",
+      "answerWorkerApprovalMirror(",
+      "approvalAnswerPermission(",
+      "mayChangeApprovalRules,",
+      "approvalRulesLockedError(",
+    ],
   },
+  "approvalRules.set": { root: "ownerManaged", tokens: ["saveApprovalRule("] },
+  "approvalRules.remove": { root: "ownerManaged", tokens: ["removeApprovalRule("] },
+  "autoReview.set": { root: "ownerManaged", tokens: ["saveAutoReviewPreference("] },
   "pages.list": { root: "authed", tokens: ["repos.getBot(", "listOwnedPages("] },
   "pages.get": { root: "authed", tokens: ["getOwnedPage("] },
   "pages.update": { root: "authed", tokens: ["updateOwnedPage("] },

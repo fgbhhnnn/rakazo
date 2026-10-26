@@ -7,6 +7,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { SettingsFooter, SettingsGroup, SettingsRow } from "../../components/settings-group";
+import { rpc as accountRpc, type MobileMe } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
@@ -19,7 +20,8 @@ type RuleAction = "always_allow" | "deny" | "remove";
 /**
  * How bots ask before acting, and the tools and sites always allowed or blocked. Rules come from
  * approval cards, so this screen only switches or removes them. Opened with a Space, it edits that
- * Space's override instead of the account's.
+ * Space's override instead of the account's. A locked deployment's member only reads them: the
+ * owner or an admin manages approvals there.
  */
 export default function Approvals() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
@@ -34,6 +36,7 @@ export default function Approvals() {
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
   // Counts saves, so a read that started before one never shows what it replaced.
   const saves = useRef(0);
 
@@ -41,6 +44,12 @@ export default function Approvals() {
     useCallback(() => {
       let current = true;
       const savesAtRead = saves.current;
+      // The server refuses a locked member's change either way; this only keeps it read-only.
+      void accountRpc<MobileMe>("me")
+        .then((me) => {
+          if (current) setLocked(me.memberSettingsLocked === true);
+        })
+        .catch(() => undefined);
       void Promise.all([
         rpc<ActionAutoReviewSettings>("autoReview/get", { scope }),
         rpc<ActionApprovalRule[]>("approvalRules/list", { scope }),
@@ -60,6 +69,7 @@ export default function Approvals() {
   );
 
   async function save(change: () => Promise<void>) {
+    if (locked) return;
     saves.current += 1;
     setPending(true);
     setError(null);
@@ -128,7 +138,7 @@ export default function Approvals() {
         <View style={styles.section}>
           <NativeSegmentedControl
             accessibilityLabel={t("Approvals")}
-            disabled={!settings || pending}
+            disabled={!settings || pending || locked}
             onChange={(mode) => void setMode(mode)}
             options={modes}
             value={settings?.mode}
@@ -136,12 +146,18 @@ export default function Approvals() {
           {settings?.mode === "auto" && !settings.checkerAvailable ? (
             <SettingsFooter>{t("Add a model in Settings to use this.")}</SettingsFooter>
           ) : null}
+          {locked ? (
+            <SettingsFooter>{t("Your administrator manages this setting.")}</SettingsFooter>
+          ) : null}
         </View>
         <SettingsGroup>
           {rules.map((rule) => {
             const title =
               rule.matchKind === "tool" ? humanizeToolName(rule.matchValue) : rule.matchValue;
             const switchable = rule.matchKind !== "category";
+            if (locked) {
+              return <SettingsRow key={rule.id} title={title} value={effectLabel(rule.effect)} />;
+            }
             return (
               <MenuView
                 key={rule.id}

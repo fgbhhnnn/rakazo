@@ -63,6 +63,7 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: toggle }));
 vi.mock("../components/settings-group", () => ({
+  SettingsFooter: element("small"),
   SettingsGroup: element("section"),
   SettingsRow: ({
     title,
@@ -177,4 +178,27 @@ it("hides models and voice from a member of a locked deployment", async () => {
   expect(control("Customize Voice")).toBeNull();
   expect(container.querySelector("button")).toBeNull();
   expect(control("Customize Approvals")?.checked).toBe(false);
+  // Approvals are the owner's or an admin's to change; the member cannot customize them.
+  expect(control("Customize Approvals")?.disabled).toBe(true);
+  expect(container.querySelector("small")?.textContent).toBe(
+    "Your administrator manages this setting.",
+  );
+});
+
+it("still opens a locked member's customized Space approvals, read-only", async () => {
+  state.locked = true;
+  state.overrides = ["confirmations"];
+  await act(async () => root.render(createElement(SpaceSettings, { key: "locked" })));
+  expect(control("Customize Approvals")?.checked).toBe(true);
+  expect(control("Customize Approvals")?.disabled).toBe(true);
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.push).toHaveBeenCalledWith({
+    pathname: "/approvals",
+    params: { spaceId: "space-other" },
+  });
+  expect(state.rpc).not.toHaveBeenCalledWith(
+    "spaceSettings/setOverride",
+    expect.anything(),
+    expect.anything(),
+  );
 });

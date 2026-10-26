@@ -17,8 +17,17 @@ import { SettingsGroup, SettingsRow } from "./SettingsRows";
 const segmented = "rounded-lg bg-muted p-1";
 const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
 
-/** Approvals for the account, or for the bound Space when it customizes them. */
-export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
+/**
+ * Approvals for the account, or for the bound Space when it customizes them. A locked
+ * deployment's member sees them read-only: the owner or an admin manages them.
+ */
+export function ApprovalRulesSettings({
+  scope,
+  readOnly = false,
+}: {
+  scope: SettingsScope;
+  readOnly?: boolean;
+}) {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -54,7 +63,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   }
 
   async function save(work: () => Promise<unknown>, failure: string) {
-    if (saving) return;
+    if (saving || readOnly) return;
     setSaving(true);
     setError(null);
     try {
@@ -93,6 +102,11 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
 
   return (
     <div data-testid="approval-settings" className="space-y-8">
+      {readOnly ? (
+        <p data-testid="approval-settings-locked" className="text-[13px] text-muted-foreground">
+          <Trans>Your administrator manages this setting.</Trans>
+        </p>
+      ) : null}
       <SettingsGroup>
         <SettingsRow
           label={<Trans>Mode</Trans>}
@@ -104,7 +118,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
               onValueChange={([next]) => {
                 if (next && next !== autoReview?.mode) void setMode(next as ApprovalMode);
               }}
-              disabled={loading || saving || !autoReview}
+              disabled={readOnly || loading || saving || !autoReview}
               spacing={1}
               className={segmented}
             >
@@ -148,7 +162,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
                       onValueChange={([next]) => {
                         if (next === "always_allow" || next === "deny") void setEffect(rule, next);
                       }}
-                      disabled={saving}
+                      disabled={readOnly || saving}
                       spacing={1}
                       className={segmented}
                     >
@@ -166,15 +180,17 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
                       </ToggleGroupItem>
                     </ToggleGroup>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground"
-                    disabled={saving}
-                    onClick={() => void removeRule(rule)}
-                  >
-                    <Trans>Remove</Trans>
-                  </Button>
+                  {readOnly ? null : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      disabled={saving}
+                      onClick={() => void removeRule(rule)}
+                    >
+                      <Trans>Remove</Trans>
+                    </Button>
+                  )}
                 </>
               }
             />

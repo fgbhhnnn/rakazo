@@ -12,7 +12,7 @@ import { createRouter, type RouterDeps } from "./router.js";
 
 const LOCK_MESSAGE = "Your administrator manages this setting.";
 
-/** Model, voice and MCP changes a locked deployment reserves for its owner. */
+/** Model, voice, MCP and approval changes a locked deployment reserves for its owner. */
 const OWNER_MANAGED = [
   "models.setRole",
   "models.setBackups",
@@ -38,6 +38,9 @@ const OWNER_MANAGED = [
   "mcp.oauth.begin",
   "mcp.oauth.complete",
   "mcp.oauth.disconnect",
+  "approvalRules.set",
+  "approvalRules.remove",
+  "autoReview.set",
 ] as const;
 
 /** Reads (and cancels/tests that change nothing stored) a locked member still needs. */
@@ -58,6 +61,8 @@ const MEMBER_OPEN = [
   "mcp.assignments.list",
   "mcp.servers.list",
   "mcp.servers.test",
+  "approvalRules.list",
+  "autoReview.get",
 ] as const;
 
 /** Only RAKAZO_ADMIN_EMAILS admins may call these. */
@@ -155,10 +160,11 @@ describe("router owner/admin guards", () => {
     }
   });
 
-  it("classifies every model, voice and MCP procedure", () => {
+  it("classifies every model, voice, MCP and approval procedure", () => {
     const classified = new Set<string>([...OWNER_MANAGED, ...MEMBER_OPEN]);
     const unclassified = paths.filter(
-      (path) => /^(models|voice|mcp)\./.test(path) && !classified.has(path),
+      (path) =>
+        /^(models|voice|mcp|approvalRules|autoReview)\./.test(path) && !classified.has(path),
     );
     expect(unclassified).toEqual([]);
   });
@@ -220,9 +226,9 @@ describe("router owner/admin guards", () => {
     expect((await failure(call(MEMBER, path)))?.message).not.toBe("Agent import is not available.");
   });
 
-  it("keeps Space copies of models and voice behind the lock, but not confirmations", async () => {
+  it("keeps Space copies of models, voice and confirmations behind the lock", async () => {
     vi.stubEnv("RAKAZO_ADMIN_EMAILS", ADMIN.email);
-    for (const setting of ["models", "voice"]) {
+    for (const setting of ["models", "voice", "confirmations"]) {
       expect(
         await failure(call(MEMBER, "spaceSettings.setOverride", { setting, enabled: true })),
         setting,
@@ -232,12 +238,5 @@ describe("router owner/admin guards", () => {
           ?.message,
       ).not.toBe(LOCK_MESSAGE);
     }
-    expect(
-      (
-        await failure(
-          call(MEMBER, "spaceSettings.setOverride", { setting: "confirmations", enabled: true }),
-        )
-      )?.message,
-    ).not.toBe(LOCK_MESSAGE);
   });
 });

@@ -54,6 +54,14 @@ import {
 } from "./worker-approval-mirror.js";
 
 /** A one-time answer longer than a saved value may be. Nothing is stored or echoed. */
+/** An "always" answer saves an allow rule, which a locked deployment reserves for its admins. */
+export class ApprovalRulesLockedError extends Error {
+  constructor() {
+    super("Your administrator manages this setting.");
+    this.name = "ApprovalRulesLockedError";
+  }
+}
+
 export class AnswerTooLongError extends Error {
   constructor() {
     super("This answer is too long.");
@@ -252,6 +260,8 @@ export interface AnswerRunInput {
   username?: string;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
+  /** False when the answerer cannot change approval rules, so an "always" answer is refused. */
+  mayChangeApprovalRules?: boolean;
 }
 
 /** What request_secret returns to the bot once the user dismissed its card. */
@@ -817,6 +827,7 @@ async function commitAnswerRunInput(
     }
     if (input.answer === "always") {
       if (run.userId !== input.answeredByUserId) return null;
+      if (input.mayChangeApprovalRules === false) throw new ApprovalRulesLockedError();
       approvalUserId = input.answeredByUserId;
     }
   }

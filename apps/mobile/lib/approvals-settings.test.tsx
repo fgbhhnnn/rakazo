@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   spaceId: undefined as string | undefined,
   settings: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false },
   rules: [] as Rule[],
+  locked: false,
 }));
 const { element } = vi.hoisted(() => ({
   element:
@@ -146,9 +147,11 @@ beforeEach(() => {
   state.spaceId = undefined;
   state.settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false };
   state.rules = [];
+  state.locked = false;
   state.rpc
     .mockReset()
     .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+      if (proc === "me") return { memberSettingsLocked: state.locked };
       if (proc === "autoReview/get") return state.settings;
       if (proc === "autoReview/set") {
         state.settings = { ...state.settings, mode: input!.mode as string };
@@ -259,4 +262,20 @@ it("keeps a saved mode when a read that started before the save lands after it",
   await act(async () => (container.querySelector('[role="radio"]') as HTMLElement | null)?.click());
   await act(async () => resolveRead(stale));
   expect(modes()).not.toContain("Ask*");
+});
+
+it("shows a locked member the approvals read-only", async () => {
+  state.locked = true;
+  state.settings = { ...state.settings, checkerAvailable: true };
+  state.rules = [rule({ id: "tool", matchValue: "send_email" })];
+  await render();
+  expect(rows()).toEqual(["Send email: Allow"]);
+  // No rule menu to switch or remove a rule.
+  expect(container.querySelector('[aria-label="Send email"]')).toBeNull();
+  expect(container.querySelector("small")?.textContent).toBe(
+    "Your administrator manages this setting.",
+  );
+  await act(async () => (container.querySelector('[role="radio"]') as HTMLElement).click());
+  expect(state.rpc).not.toHaveBeenCalledWith("autoReview/set", expect.anything());
+  expect(modes()).toEqual(["Never ask", "Auto", "Ask*"]);
 });

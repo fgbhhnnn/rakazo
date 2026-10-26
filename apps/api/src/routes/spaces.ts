@@ -54,10 +54,8 @@ export function spacesRoutes(ctx: RouterContext) {
         spaceSettingOverrides(deps.prisma, context.actor),
       ),
       setOverride: authed.spaceSettings.setOverride.handler(async ({ context, input }) => {
-        // A Space copy of models or voice is a model/voice change a locked deployment reserves.
-        if (input.setting === "models" || input.setting === "voice") {
-          await assertMemberSettingsUnlocked(deps.prisma, context.actor);
-        }
+        // A Space copy of models, voice or approvals is a change a locked deployment reserves.
+        await assertMemberSettingsUnlocked(deps.prisma, context.actor);
         return setSpaceSettingOverride(deps.prisma, context.actor, input.setting, input.enabled);
       }),
     },

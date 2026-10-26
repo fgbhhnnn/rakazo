@@ -401,7 +401,9 @@ export function SettingsOverlay({
                     memberSettingsLocked={memberSettingsLocked}
                   />
                 ) : null}
-                {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
+                {section === "confirmations" ? (
+                  <ApprovalRulesSettings scope="account" readOnly={memberSettingsLocked} />
+                ) : null}
                 {section === "usage" ? (
                   <UsageSettingsPanel usage={usage} panelRef={usageRef} />
                 ) : null}

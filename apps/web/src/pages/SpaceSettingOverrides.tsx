@@ -24,7 +24,10 @@ export function SpaceSettingOverrides({
 }: {
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
-  /** Models and voice are the owner's on a locked deployment, so a member cannot customize them. */
+  /**
+   * Models and voice are the owner's on a locked deployment, so a member cannot customize them;
+   * approvals stay visible but read-only.
+   */
   memberSettingsLocked?: boolean;
 }) {
   const { t } = useLingui();
@@ -56,7 +59,7 @@ export function SpaceSettingOverrides({
     {
       id: "confirmations",
       label: t`Approvals`,
-      panel: () => <ApprovalRulesSettings scope="space" />,
+      panel: () => <ApprovalRulesSettings scope="space" readOnly={memberSettingsLocked} />,
     },
   ];
 
@@ -114,16 +117,18 @@ export function SpaceSettingOverrides({
                   </>
                 }
                 control={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full"
-                    aria-label={custom ? t`Use defaults for ${label}` : t`Customize ${label}`}
-                    disabled={pending !== null}
-                    onClick={() => void setOverride(id, !custom)}
-                  >
-                    {custom ? t`Use defaults` : t`Customize`}
-                  </Button>
+                  memberSettingsLocked ? null : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full"
+                      aria-label={custom ? t`Use defaults for ${label}` : t`Customize ${label}`}
+                      disabled={pending !== null}
+                      onClick={() => void setOverride(id, !custom)}
+                    >
+                      {custom ? t`Use defaults` : t`Customize`}
+                    </Button>
+                  )
                 }
               >
                 {custom ? <div className="pt-3">{panel()}</div> : null}

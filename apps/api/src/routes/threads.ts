@@ -19,6 +19,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { answerComputerRestartPrompt } from "../computer-restart-answer.js";
+import { approvalAnswerPermission, approvalRulesLockedError } from "../member-settings-guard.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
 import {
   isBackgroundRun,
@@ -503,7 +504,18 @@ export function threadsRoutes(ctx: RouterContext) {
           )
         )
           return { ok: true as const };
-        if (await answerWorkerApprovalMirror(deps, context.actor, target, input))
+        // "Always" also saves an allow rule, which a locked deployment reserves for its admins.
+        const mayChangeApprovalRules = await approvalAnswerPermission(
+          deps.prisma,
+          context.actor,
+          input.answer,
+        );
+        if (
+          await answerWorkerApprovalMirror(deps, context.actor, target, {
+            ...input,
+            mayChangeApprovalRules,
+          })
+        )
           return { ok: true as const };
         const answered = await deps.events
           .answerRunInput({
@@ -516,10 +528,13 @@ export function threadsRoutes(ctx: RouterContext) {
             clientNonce: input.clientNonce,
             username: input.username,
             dismiss: input.dismiss,
+            mayChangeApprovalRules,
           })
           .catch((error: unknown) => {
             if (error instanceof AnswerTooLongError)
               throw new ORPCError("BAD_REQUEST", { message: error.message });
+            const locked = approvalRulesLockedError(error);
+            if (locked !== error) throw locked;
             // A typed credential its destination cannot carry (e.g. a header with a line break).
             throw mapBotSecretInputError(error);
           });

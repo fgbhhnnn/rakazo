@@ -10,6 +10,7 @@ import type { PrismaClient } from "./client.js";
 import { CrossSpaceCommunicationBlockedError } from "./cross-space-communication.js";
 import {
   AnswerTooLongError,
+  ApprovalRulesLockedError,
   answerRunInput,
   answerWaitingRunWithTextInTransaction,
   appendEvent,
@@ -2389,6 +2390,63 @@ describe("answerRunInput", () => {
     ).resolves.toBe(false);
 
     expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(tx.actionApprovalRule.upsert).not.toHaveBeenCalled();
+    expect(tx.userActionApprovalRule.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses an always answer from a run owner who cannot change approval rules", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              approvalEffectId: "effect-1",
+              text: "Review before writing",
+              status: "pending",
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "always", label: "Always allow" },
+                { id: "deny", label: "Deny" },
+              ],
+            },
+          ],
+        }),
+        update: vi.fn(),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        findUnique: vi.fn().mockResolvedValue({ userId: "user-1" }),
+        updateMany: vi.fn(),
+      },
+      externalEffect: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "effect-1", status: "intended", kind: "destination.write" }),
+        update: vi.fn(),
+      },
+      actionApprovalRule: { upsert: vi.fn() },
+      userActionApprovalRule: { upsert: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const input = {
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answeredByUserId: "user-1",
+      mayChangeApprovalRules: false,
+    };
+
+    await expect(answerRunInput(prisma, { ...input, answer: "always" })).rejects.toBeInstanceOf(
+      ApprovalRulesLockedError,
+    );
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(tx.externalEffect.update).not.toHaveBeenCalled();
     expect(tx.actionApprovalRule.upsert).not.toHaveBeenCalled();
     expect(tx.userActionApprovalRule.upsert).not.toHaveBeenCalled();
   });

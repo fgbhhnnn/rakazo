@@ -114,8 +114,8 @@ const { scopes, recordScope } = vi.hoisted(() => {
     scopes,
     recordScope:
       (name: string) =>
-      ({ scope }: { scope: string }) => {
-        scopes.push(`${name}:${scope}`);
+      ({ scope, readOnly }: { scope: string; readOnly?: boolean }) => {
+        scopes.push(`${name}:${scope}${readOnly ? ":read-only" : ""}`);
         return null;
       },
   };
@@ -298,6 +298,18 @@ it("edits the account's models, voice, and confirmations with no space picker", 
     expect(new Set(scopes)).toEqual(
       new Set(["models:account", "voice:account", "confirmations:account"]),
     );
+  } finally {
+    await cleanup();
+  }
+});
+
+it("shows a locked member the account's approvals read-only", async () => {
+  scopes.length = 0;
+  const props = { space: acme, spaces, onSpaceChange: vi.fn(), memberSettingsLocked: true };
+  const { cleanup } = await render({ ...props, section: "confirmations" });
+  try {
+    expect(scopes).toContain("confirmations:account:read-only");
+    expect(scopes).not.toContain("confirmations:account");
   } finally {
     await cleanup();
   }

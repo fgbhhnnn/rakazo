@@ -4,6 +4,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { closeWorkerApprovalMirrors, findWorkerApprovalMirror } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { approvalRulesLockedError } from "./member-settings-guard.js";
 
 /*
  * Answering the main-chat copy of a hidden worker's approval card answers the worker's own card:
@@ -24,7 +25,15 @@ export async function answerWorkerApprovalMirror(
   deps: Deps,
   actor: { spaceId: string; userId: string },
   target: { threadId: string },
-  input: { runId: string; messageId: string; answer: string; username?: string; dismiss?: true },
+  input: {
+    runId: string;
+    messageId: string;
+    answer: string;
+    username?: string;
+    dismiss?: true;
+    /** False for a locked deployment's member, whose "always" answer is refused. */
+    mayChangeApprovalRules?: boolean;
+  },
 ): Promise<boolean> {
   const mirror = await findWorkerApprovalMirror(deps.prisma, {
     spaceId: actor.spaceId,
@@ -38,14 +47,19 @@ export async function answerWorkerApprovalMirror(
   // An approval has no dismissal or login; the run named must be the worker's.
   if (!mirror.open || input.runId !== mirror.workerRunId || input.dismiss || input.username)
     throw new ORPCError("CONFLICT", { message: WORKER_APPROVAL_GONE });
-  const answered = await deps.events.answerRunInput({
-    spaceId: actor.spaceId,
-    threadId: mirror.run.threadId,
-    runId: mirror.workerRunId,
-    messageId: mirror.workerMessageId,
-    answeredByUserId: actor.userId,
-    answer: input.answer,
-  });
+  const answered = await deps.events
+    .answerRunInput({
+      spaceId: actor.spaceId,
+      threadId: mirror.run.threadId,
+      runId: mirror.workerRunId,
+      messageId: mirror.workerMessageId,
+      answeredByUserId: actor.userId,
+      answer: input.answer,
+      mayChangeApprovalRules: input.mayChangeApprovalRules,
+    })
+    .catch((error: unknown) => {
+      throw approvalRulesLockedError(error);
+    });
   if (!answered) {
     // The worker ended (or was answered) meanwhile; show that on the copy instead.
     const closed = await closeWorkerApprovalMirrors(deps.prisma, mirror.workerRunId).catch(

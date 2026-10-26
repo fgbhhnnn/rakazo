@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeSwitch } from "../../components/native-switch";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
+import { SettingsFooter, SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc as accountRpc, type MobileMe } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
@@ -28,7 +28,8 @@ export default function SpaceSettings() {
   const [overrides, setOverrides] = useState<SpaceSetting[] | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // A locked deployment's member runs on the owner's models and voice in every Space.
+  // A locked deployment's member runs on the owner's models and voice in every Space, and only
+  // reads its approvals.
   const [membersLocked, setMembersLocked] = useState(false);
 
   useFocusEffect(
@@ -88,7 +89,7 @@ export default function SpaceSettings() {
           <NativeSwitch
             accessibilityLabel={t("Customize {setting}", { setting: title })}
             value={customized}
-            disabled={!overrides || pending}
+            disabled={!overrides || pending || membersLocked}
             onValueChange={(next) => void customize(setting, next)}
           />
         }
@@ -113,6 +114,9 @@ export default function SpaceSettings() {
           {membersLocked ? null : row("voice", t("Voice"))}
           {row("confirmations", t("Approvals"))}
         </SettingsGroup>
+        {membersLocked ? (
+          <SettingsFooter>{t("Your administrator manages this setting.")}</SettingsFooter>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
