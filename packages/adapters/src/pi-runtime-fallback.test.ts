@@ -60,9 +60,16 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 
 import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
-import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE, PiAgentRuntime } from "./pi-runtime.js";
+import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE } from "./pi-runtime-stream.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
+import {
+  acquireProviderLane,
+  noteProviderConcurrencyLimit,
+  resetProviderLanesForTest,
+  workerPauseRemainingMs,
+} from "./provider-lanes.js";
 
 const primary = model("provider-a", "primary", 32_768);
 const backupA = model("provider-b", "backup-a", 8_192);
@@ -2692,5 +2699,117 @@ describe("Pi runtime fallback error classes and mid-run switches", () => {
       backupA.provider,
       backupA.provider,
     ]);
+  });
+});
+
+describe("Pi runtime provider lanes and overflow recovery", () => {
+  afterEach(() => {
+    resetProviderLanesForTest();
+    vi.unstubAllEnvs();
+  });
+
+  const concurrencyError = "Concurrency limit exceeded for account, please retry later";
+
+  it("retries a gateway concurrency limit past the ordinary retry budget with jittered backoff", async () => {
+    providerState.stream.mockImplementation(() =>
+      providerState.stream.mock.calls.length <= 5
+        ? stream(primary, message(primary, [], "error", concurrencyError))
+        : stream(primary, message(primary, [{ type: "text", text: "Recovered." }], "stop")),
+    );
+    expect(await run(request())).toContainEqual({ type: "text", text: "Recovered." });
+    expect(providerState.stream).toHaveBeenCalledTimes(6);
+    const delays = providerState.delay.mock.calls.map(([delay]) => delay);
+    const bases = [1_000, 2_000, 4_000, 8_000, 12_000];
+    expect(delays).toHaveLength(bases.length);
+    delays.forEach((delay, index) => {
+      expect(delay).toBeGreaterThanOrEqual(bases[index]! * 0.75);
+      expect(delay).toBeLessThanOrEqual(bases[index]! * 1.25);
+    });
+    // The limit paused background workers; the recovered call reset the strike count.
+    expect(workerPauseRemainingMs()).toBeGreaterThan(0);
+    // After five strikes the next pause would be the 60 s cap; a reset starts again at 5 s.
+    const later = Date.now() + 10 * 60_000;
+    noteProviderConcurrencyLimit(later);
+    expect(workerPauseRemainingMs(later)).toBe(5_000);
+  });
+
+  it("holds a model-call lane while the provider streams and releases it after", async () => {
+    vi.stubEnv("RAKAZO_MODEL_MAX_CONCURRENCY", "1");
+    let probe: Promise<string> | undefined;
+    providerState.stream.mockImplementation(() => {
+      // While this call streams, the only lane is taken: another call must wait for it.
+      probe = Promise.race([
+        acquireProviderLane("main").then((release) => {
+          release();
+          return "acquired";
+        }),
+        new Promise<string>((resolve) => setTimeout(() => resolve("blocked"), 20)),
+      ]);
+      const delayed = new AssistantMessageEventStream();
+      const done = message(primary, [{ type: "text", text: "Done." }], "stop");
+      setTimeout(() => {
+        const source = stream(primary, done);
+        void (async () => {
+          for await (const event of source) delayed.push(event);
+          delayed.end(done);
+        })();
+      }, 60);
+      return delayed;
+    });
+    expect(await run(request())).toContainEqual({ type: "text", text: "Done." });
+    expect(await probe).toBe("blocked");
+    const release = await acquireProviderLane("main");
+    release();
+  });
+
+  it("retries once with only the newest images when an image-heavy request overflows", async () => {
+    const input = request();
+    input.tools = [
+      {
+        name: "computer_observe",
+        description: "Read the screen",
+        inputSchema: { type: "object", properties: {} },
+        readOnly: true,
+      },
+    ];
+    input.executeTool = vi.fn(async () => ({
+      kind: "agent_tool_result",
+      content: [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }],
+      details: { frameId: "test-frame" },
+    }));
+    const counts: number[] = [];
+    let overflowed = false;
+    providerState.stream.mockImplementation(
+      (target: Model<"openai-completions">, context: Context) => {
+        const images = countContextImages(context);
+        counts.push(images);
+        if (overflowed || counts.length > 12)
+          return stream(target, message(target, [{ type: "text", text: "Done" }], "stop"));
+        if (images < 4)
+          return stream(
+            target,
+            message(
+              target,
+              [
+                {
+                  type: "toolCall",
+                  id: `frame-${counts.length}`,
+                  name: "computer_observe",
+                  arguments: {},
+                },
+              ],
+              "toolUse",
+            ),
+          );
+        overflowed = true;
+        return stream(target, message(target, [], "error", "Too many images in request"));
+      },
+    );
+    await run(input);
+    expect(overflowed).toBe(true);
+    // Four observed frames overflow once; the retry and later calls keep at most two images.
+    expect(counts.slice(0, 5)).toEqual([0, 1, 2, 3, 4]);
+    expect(counts).toHaveLength(6);
+    expect(counts[5]).toBeLessThanOrEqual(2);
   });
 });

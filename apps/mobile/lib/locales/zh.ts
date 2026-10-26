@@ -61,9 +61,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Limit: "限额",
   "Provider message": "提供商消息",
   Status: "状态",
-  "Set your own key": "设置自己的密钥",
-  "Add your own key or pick another model.": "添加自己的密钥或选择其他模型。",
-  "Choose another model to keep chatting.": "选择其他模型以继续聊天。",
   "Resets {date}.": "将于 {date} 重置。",
 
   "Model provider": "模型提供商",
@@ -89,13 +86,16 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Your OpenAI": "你的 OpenAI",
   "Your Anthropic": "你的 Anthropic",
   "Your model provider": "你的模型提供商",
+  "Connect a model in Settings before running bots.": "运行机器人前，请先在设置中连接模型。",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "请在“模型”中连接你自己的 API 密钥，或在“账单”中选择 Rakazo 额度。",
   "The model provider returned an error.": "模型提供商返回了错误。",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider}正在限制请求频率。请稍后重试。",
   "{summary} Resets {date}.": "{summary} 将于{date}重置。",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider}拒绝了 API 密钥。请检查连接设置。",
-  "{provider} could not find the requested model.": "{provider}找不到请求的模型。",
+  "{provider} can't run this model.": "{provider}无法运行此模型。",
   "{provider} denied access to this model.": "{provider}拒绝了对此模型的访问。",
   "The model returned an unusable response. Try again.": "模型返回了无法使用的回复。请重试。",
   "This model's context window is too small. Choose another model.":
@@ -1046,6 +1046,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{bot} default": "{bot} 默认",
   "{bot} will still respond to direct mentions.": "{bot} 仍会回应直接提及。",
   "{sender} rollup hours": "{sender} 合并间隔（小时）",
+  "Link DMs": "关联私信",
   "One-time": "一次性",
   "Every hour": "每小时",
   Cron: "Cron",
@@ -1075,4 +1076,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",
+  "Add workspace": "添加工作区",
+  "Chat with your bot from Slack.": "在 Slack 中与你的机器人聊天。",
+  "Markdown file": "Markdown 文件",
 };

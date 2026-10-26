@@ -4091,7 +4091,7 @@ describe("clearThread", () => {
 });
 
 describe("appendEvent", () => {
-  it("exports only committed run metadata without reading error text", async () => {
+  it("exports only committed run metadata and a coarse error kind, never error text", async () => {
     const created = { ...event(4), type: "run.failed", runId: "run-1" };
     const tx = {
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
@@ -4102,7 +4102,7 @@ describe("appendEvent", () => {
     const run = {
       userId: "user-1",
       trigger: "user",
-      error: "No API key: private@example.test",
+      error: '401: {"error":{"message":"Invalid API key for private@example.test"}}',
       createdAt: at,
       startedAt: at,
       completedAt: at,
@@ -4127,7 +4127,7 @@ describe("appendEvent", () => {
     );
     expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
       "user-1",
-      { name: "run_failed", trigger: "user" },
+      { name: "run_failed", trigger: "user", errorKind: "auth" },
       { id: "run-1", at },
     );
     expect(JSON.stringify(analytics.capture.mock.calls)).not.toContain("private@example.test");
@@ -4136,6 +4136,7 @@ describe("appendEvent", () => {
       select: {
         userId: true,
         trigger: true,
+        error: true,
         startedAt: true,
         completedAt: true,
         createdAt: true,

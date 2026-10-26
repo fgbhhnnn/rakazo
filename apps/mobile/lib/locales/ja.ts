@@ -64,10 +64,6 @@ export const JA_MESSAGES: Record<string, string> = {
   Limit: "上限",
   "Provider message": "プロバイダーからのメッセージ",
   Status: "ステータス",
-  "Set your own key": "自分のキーを設定",
-  "Add your own key or pick another model.":
-    "自分のキーを追加するか、別のモデルを選択してください。",
-  "Choose another model to keep chatting.": "チャットを続けるには別のモデルを選択してください。",
   "Resets {date}.": "{date}にリセットされます。",
   "Model provider": "モデルプロバイダー",
   "Change model": "モデルを変更",
@@ -95,14 +91,17 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your OpenAI": "お使いのOpenAI",
   "Your Anthropic": "お使いのAnthropic",
   "Your model provider": "お使いのモデルプロバイダー",
+  "Connect a model in Settings before running bots.":
+    "ボットを実行する前に、設定でモデルを接続してください。",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "モデルで自分のAPIキーを接続するか、請求でRakazoクレジットを選択してください。",
   "The model provider returned an error.": "モデルプロバイダーがエラーを返しました。",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider}がリクエストを制限しています。しばらくしてからもう一度お試しください。",
   "{summary} Resets {date}.": "{summary} {date}にリセットされます。",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider}がAPIキーを拒否しました。接続設定を確認してください。",
-  "{provider} could not find the requested model.":
-    "{provider}でリクエストされたモデルが見つかりませんでした。",
+  "{provider} can't run this model.": "{provider}ではこのモデルを実行できません。",
   "{provider} took too long to respond. Try again.":
     "{provider}の応答に時間がかかりすぎました。もう一度お試しください。",
   "{provider} is overloaded right now. Try again in a moment.":
@@ -1081,6 +1080,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "{bot} default": "{bot}のデフォルト",
   "{bot} will still respond to direct mentions.": "{bot}は直接のメンションには引き続き応答します。",
   "{sender} rollup hours": "{sender}のまとめ間隔（時間）",
+  "Link DMs": "DMを連携",
   "One-time": "1回のみ",
   "Every hour": "毎時",
   Cron: "Cron",
@@ -1110,4 +1110,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}〜{to}",
   "Every {day}": "毎週{day}",
   "Every {days} and {last}": "毎週{days}と{last}",
+  "Add workspace": "ワークスペースを追加",
+  "Chat with your bot from Slack.": "Slackからボットとチャットできます。",
+  "Markdown file": "Markdown ファイル",
 };

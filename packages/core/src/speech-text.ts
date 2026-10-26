@@ -114,6 +114,9 @@ const BOUNDARY =
 const CJK_BOUNDARY = /([。！？；!?;．])(["'”’」』）)\]]*)\s*/g;
 const HAS_CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
+/** CJK scripts plus CJK/fullwidth punctuation — never insert a Latin space when gluing these. */
+const TIGHT_GLUE =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]/u;
 
 /** CJK characters carry about a word each, so they count double toward a fragment's length. */
 function weight(text: string): number {
@@ -123,8 +126,12 @@ function weight(text: string): number {
 /**
  * Split speakable text into utterances a synthesizer can start on.
  * Short fragments are glued onto their neighbour so the voice keeps context.
+ * maxChars bounds UTF-16 code units, matching the synthesis API's limit.
  */
 export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = {}): string[] {
+  if (!Number.isInteger(maxChars) || maxChars < 2) {
+    throw new RangeError("maxChars must be an integer of at least 2");
+  }
   const text = speakable(input);
   if (!text) return [];
 
@@ -141,13 +148,17 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
   const out: string[] = [];
   for (const piece of rough) {
     const parts = piece.length <= maxChars ? [piece] : splitLong(piece, maxChars);
-    for (const part of parts) {
+    for (const [index, part] of parts.entries()) {
       const prev = out[out.length - 1];
-      if (prev && (weight(prev) < minChars || weight(part) < minChars)) {
-        out[out.length - 1] = HAS_CJK.test(prev.slice(-2)) ? `${prev}${part}` : `${prev} ${part}`;
-      } else {
-        out.push(part);
+      if (index === 0 && prev && (weight(prev) < minChars || weight(part) < minChars)) {
+        const tight = TIGHT_GLUE.test(prev) || TIGHT_GLUE.test(part);
+        const joined = tight ? `${prev}${part}` : `${prev} ${part}`;
+        if (joined.length <= maxChars) {
+          out[out.length - 1] = joined;
+          continue;
+        }
       }
+      out.push(part);
     }
   }
   return out;
@@ -155,6 +166,10 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
 
 function splitLong(text: string, maxChars: number): string[] {
   const out: string[] = [];
+  const segmenter =
+    typeof Intl.Segmenter === "function"
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : undefined;
   let rest = text;
   while (rest.length > maxChars) {
     const window = rest.slice(0, maxChars);
@@ -163,8 +178,24 @@ function splitLong(text: string, maxChars: number): string[] {
       window.lastIndexOf("; "),
       window.lastIndexOf(" — "),
     );
-    const cut = at > maxChars / 2 ? at + 1 : window.lastIndexOf(" ");
-    if (cut <= 0) break;
+    let cut = at > maxChars / 2 ? at + 1 : window.lastIndexOf(" ");
+    if (cut <= 0) {
+      cut = 0;
+      if (segmenter) {
+        for (const { index, segment } of segmenter.segment(rest)) {
+          const end = index + segment.length;
+          if (end > maxChars) break;
+          cut = end;
+        }
+      }
+      // A single grapheme may exceed the budget; older native runtimes may
+      // also lack Segmenter. Still make progress without splitting a surrogate pair.
+      if (cut === 0) {
+        cut = maxChars;
+        const last = rest.charCodeAt(cut - 1);
+        if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
+      }
+    }
     out.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
   }

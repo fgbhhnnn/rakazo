@@ -62,9 +62,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Limit: "Limiet",
   "Provider message": "Bericht van aanbieder",
   Status: "Status",
-  "Set your own key": "Eigen sleutel instellen",
-  "Add your own key or pick another model.": "Voeg je eigen sleutel toe of kies een ander model.",
-  "Choose another model to keep chatting.": "Kies een ander model om verder te chatten.",
   "Resets {date}.": "Wordt gereset op {date}.",
 
   "Model provider": "Modelprovider",
@@ -93,14 +90,17 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your OpenAI": "Jouw OpenAI",
   "Your Anthropic": "Jouw Anthropic",
   "Your model provider": "Jouw modelaanbieder",
+  "Connect a model in Settings before running bots.":
+    "Verbind een model in Instellingen voordat je bots uitvoert.",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "Verbind je eigen API-sleutel bij Modellen of kies Rakazo-tegoed bij Facturatie.",
   "The model provider returned an error.": "De modelaanbieder heeft een fout teruggegeven.",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} beperkt het aantal verzoeken. Probeer het zo nog eens.",
   "{summary} Resets {date}.": "{summary} Wordt gereset op {date}.",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} heeft de API-sleutel geweigerd. Controleer je verbindingsinstellingen.",
-  "{provider} could not find the requested model.":
-    "{provider} kon het gevraagde model niet vinden.",
+  "{provider} can't run this model.": "{provider} kan dit model niet uitvoeren.",
   "{provider} denied access to this model.": "{provider} heeft toegang tot dit model geweigerd.",
   "The model returned an unusable response. Try again.":
     "Het model gaf een onbruikbaar antwoord. Probeer het opnieuw.",
@@ -1045,6 +1045,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "{bot} will still respond to direct mentions.":
     "{bot} reageert nog steeds op directe vermeldingen.",
   "{sender} rollup hours": "Bundeluren voor {sender}",
+  "Link DMs": "DM’s koppelen",
   "One-time": "Eenmalig",
   "Every hour": "Elk uur",
   Cron: "Cron",
@@ -1074,4 +1075,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",
+  "Add workspace": "Werkruimte toevoegen",
+  "Chat with your bot from Slack.": "Chat vanuit Slack met je bot.",
+  "Markdown file": "Markdown-bestand",
 };

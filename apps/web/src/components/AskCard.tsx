@@ -183,7 +183,7 @@ export function AskCard({
             ? "instruction-approval-card"
             : undefined
       }
-      className={`w-full min-w-0 ${secretInput ? "" : "max-w-xl "}px-5 py-4`}
+      className="w-full min-w-0 max-w-xl px-5 py-4"
     >
       <WorkerApprovalLabel block={block} />
       <div className="text-[15.5px] leading-[1.5] text-foreground">
@@ -270,8 +270,15 @@ export function AskCard({
           {displayActions?.map((action) => (
             <Button
               key={action.id}
-              variant={approvalActions && action.id === "allow" ? "default" : "outline"}
-              className={`h-auto min-w-0 whitespace-normal px-3.5 py-3 text-start font-normal ${approvalActions ? "" : "w-full justify-start border-input bg-secondary"}`}
+              variant={
+                approvalActions ? (action.id === "allow" ? "default" : "outline") : "secondary"
+              }
+              // Approvals match the other cards' buttons and wrap long site names; options are rows.
+              className={
+                approvalActions
+                  ? "h-auto min-h-8 min-w-0 whitespace-normal py-1 text-start"
+                  : "h-auto w-full min-w-0 justify-start whitespace-normal px-3.5 py-3 text-start font-normal"
+              }
               disabled={submitting}
               onClick={() =>
                 action.id === "edit" && block.instructionUpdate
@@ -333,7 +340,6 @@ export function AskCard({
           <div className="flex gap-2">
             <Button
               type="submit"
-              className="h-auto min-w-0 flex-1 whitespace-normal"
               disabled={answer.length === 0 || (loginInput && !username.trim()) || submitting}
             >
               {pendingAction === "submit" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
@@ -342,7 +348,6 @@ export function AskCard({
               <Button
                 type="button"
                 variant="outline"
-                className="h-auto min-w-0 flex-1 whitespace-normal"
                 disabled={submitting}
                 onClick={() => void dismissSecret()}
               >

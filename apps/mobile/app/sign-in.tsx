@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
 import { TurnstileWidget } from "../components/turnstile-widget";
-import type { MobileMe, PasswordResetCapabilities } from "../lib/api";
+import type { PasswordResetCapabilities } from "../lib/api";
 import {
   currentApiBase,
   displayApiHost,
@@ -217,7 +217,7 @@ export default function SignIn() {
 
   // Any sign-in can create the account (a code, SSO), so ask the server rather than the form.
   async function openApp() {
-    const me = await rpc<MobileMe>("me").catch(() => null);
+    const me = await rpc("me").catch(() => null);
     router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
   }
 

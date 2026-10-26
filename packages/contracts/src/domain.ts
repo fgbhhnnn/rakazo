@@ -1048,10 +1048,13 @@ export const MessagingInstallationSummarySchema = z.object({
   provider: z.string(),
   workspaceName: z.string(),
   botId: Id,
+  botName: z.string().optional(),
 });
 export type MessagingInstallationSummary = z.infer<typeof MessagingInstallationSummarySchema>;
 export const MessagingInstallationsStatusSchema = z.object({
   available: z.boolean(),
+  /** A teammate's workspace in this space accepts the user's personal DM link. */
+  personalLinkAvailable: z.boolean().optional(),
   installations: z.array(MessagingInstallationSummarySchema),
 });
 export type MessagingInstallationsStatus = z.infer<typeof MessagingInstallationsStatusSchema>;

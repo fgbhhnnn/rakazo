@@ -9,17 +9,17 @@ import {
   renderGroupMembersContext,
   resolveBotAddress,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
   lockOwnedGroup,
-  type PrismaClient,
   touchGroupUpdatedAt,
   VISIBLE_BOT_WHERE,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ExecutorDeps } from "./executor.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 
 export async function handoffToGroupBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,

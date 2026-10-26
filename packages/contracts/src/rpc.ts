@@ -1,3 +1,8 @@
+import type {
+  AnyContractProcedure,
+  InferContractRouterInputs,
+  InferContractRouterOutputs,
+} from "@orpc/contract";
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import {
@@ -969,6 +974,7 @@ export const appContract = {
   messaging: {
     installations: {
       list: oc.output(MessagingInstallationsStatusSchema),
+      /** Connect a chat app for a specific bot — never the workspace default/first bot. */
       start: oc.input(z.object({ botId: Id })).output(z.object({ url: z.string() })),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     },
@@ -1187,3 +1193,24 @@ export const appContract = {
 };
 
 export type AppContract = typeof appContract;
+
+type ProcedurePaths<Router, Prefix extends string = ""> = {
+  [Key in keyof Router & string]: Router[Key] extends AnyContractProcedure
+    ? `${Prefix}${Key}`
+    : ProcedurePaths<Router[Key], `${Prefix}${Key}/`>;
+}[keyof Router & string];
+
+type AtPath<Tree, Path extends string> = Path extends `${infer Head}/${infer Rest}`
+  ? Head extends keyof Tree
+    ? AtPath<Tree[Head], Rest>
+    : never
+  : Path extends keyof Tree
+    ? Tree[Path]
+    : never;
+
+/** A procedure's URL path under `/rpc/`, such as `bots/list`. */
+export type RpcPath = ProcedurePaths<AppContract>;
+type RpcInputs = { [Path in RpcPath]: AtPath<InferContractRouterInputs<AppContract>, Path> };
+type RpcOutputs = { [Path in RpcPath]: AtPath<InferContractRouterOutputs<AppContract>, Path> };
+export type RpcInput<Path extends RpcPath> = RpcInputs[Path];
+export type RpcOutput<Path extends RpcPath> = RpcOutputs[Path];

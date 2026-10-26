@@ -62,9 +62,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Limit: "Лимит",
   "Provider message": "Сообщение провайдера",
   Status: "Статус",
-  "Set your own key": "Добавить свой ключ",
-  "Add your own key or pick another model.": "Добавьте свой ключ или выберите другую модель.",
-  "Choose another model to keep chatting.": "Выберите другую модель, чтобы продолжить общение.",
   "Resets {date}.": "Сброс {date}.",
 
   "Model provider": "Провайдер модели",
@@ -93,13 +90,17 @@ export const RU_MESSAGES: Record<string, string> = {
   "Your OpenAI": "Ваш OpenAI",
   "Your Anthropic": "Ваш Anthropic",
   "Your model provider": "Ваш поставщик моделей",
+  "Connect a model in Settings before running bots.":
+    "Подключите модель в настройках, прежде чем запускать ботов.",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "Подключите свой API-ключ в разделе «Модели» или выберите кредиты Rakazo в разделе «Оплата».",
   "The model provider returned an error.": "Поставщик моделей вернул ошибку.",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} ограничивает частоту запросов. Повторите попытку чуть позже.",
   "{summary} Resets {date}.": "{summary} Сброс: {date}.",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} отклонил API-ключ. Проверьте настройки подключения.",
-  "{provider} could not find the requested model.": "{provider} не смог найти запрошенную модель.",
+  "{provider} can't run this model.": "{provider} не может запустить эту модель.",
   "{provider} denied access to this model.": "{provider} отказал в доступе к этой модели.",
   "The model returned an unusable response. Try again.":
     "Модель вернула непригодный ответ. Попробуйте ещё раз.",
@@ -1088,6 +1089,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "{bot} will still respond to direct mentions.":
     "{bot} по-прежнему отвечает на прямые упоминания.",
   "{sender} rollup hours": "{sender}: интервал группировки в часах",
+  "Link DMs": "Привязать ЛС",
   "One-time": "Один раз",
   "Every hour": "Каждый час",
   Cron: "Cron",
@@ -1117,4 +1119,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} — {to}",
   "Every {day}": "Каждую неделю: {day}",
   "Every {days} and {last}": "Каждую неделю: {days} и {last}",
+  "Add workspace": "Добавить рабочее пространство",
+  "Chat with your bot from Slack.": "Общайтесь с ботом из Slack.",
+  "Markdown file": "Файл Markdown",
 };

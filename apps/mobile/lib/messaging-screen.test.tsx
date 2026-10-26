@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Linking } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MessagingSettings from "../app/(settings)/messaging";
 import { rpc } from "./api";
@@ -155,7 +156,9 @@ beforeEach(() => {
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
     },
   });
-  vi.mocked(rpc).mockImplementation(async (path: string) => responses[path] ?? { ok: true });
+  vi.mocked(rpc).mockImplementation(
+    async (path: string) => (responses[path] ?? { ok: true }) as never,
+  );
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -255,4 +258,126 @@ it("opens a team conversation's room settings", async () => {
     pathname: "/team-conversation",
     params: { conversationId: "room-1" },
   });
+});
+
+// Fork: upstream's Slack one-click (#2199/#2245) is left out. A workspace install
+// is an explicit choice for the picked bot, and Slack keeps its code link.
+it("installs a Slack workspace for the picked bot and keeps Slack's code link", async () => {
+  responses["messaging/status"] = { enabled: true, providers: ["slack"], identities: [] };
+  responses["messaging/installations/list"] = { available: true, installations: [] };
+  responses["messaging/installations/start"] = { url: "https://slack.example.test/authorize" };
+  await act(async () => root.render(<MessagingSettings />));
+  const buttons = [...container.querySelectorAll("button")];
+  expect(container.textContent).toContain("Chat with your bot from Slack.");
+  expect(buttons.filter((button) => button.textContent === "Connect")).toHaveLength(1);
+  expect(buttons.some((button) => button.textContent === "Slack")).toBe(true);
+  expect(buttons.some((button) => button.textContent === "Link DMs")).toBe(false);
+  await act(async () => buttons.find((button) => button.textContent === "Connect")!.click());
+  expect(rpc).toHaveBeenCalledWith("messaging/installations/start", { botId: "bot-1" });
+  expect(rpc).not.toHaveBeenCalledWith("messaging/link/start", expect.anything());
+  expect(Linking.openURL).toHaveBeenCalledWith("https://slack.example.test/authorize");
+});
+
+it("links DMs to the bot that answers in the workspace", async () => {
+  responses["messaging/status"] = {
+    enabled: true,
+    providers: ["slack", "telegram"],
+    identities: [
+      { id: "mi-other", provider: "telegram", botId: "bot-2", botName: "Team", address: "12345" },
+    ],
+  };
+  responses["messaging/installations/list"] = {
+    available: true,
+    installations: [
+      { id: "install-1", provider: "slack", workspaceName: "Example workspace", botId: "bot-2" },
+    ],
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  await press("Slack", "Link DMs");
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+  expect(container.textContent).toContain("ABCD-2345");
+});
+
+it("lets a workspace member link DMs without installing the app again", async () => {
+  responses["messaging/status"] = { enabled: true, providers: ["slack"], identities: [] };
+  responses["messaging/installations/list"] = {
+    available: true,
+    installations: [],
+    personalLinkAvailable: true,
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Link DMs")!
+      .click(),
+  );
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" });
+  expect(rpc).not.toHaveBeenCalledWith("messaging/installations/start", expect.anything());
+});
+
+it("keeps a new DM code visible when Slack is already linked in another workspace", async () => {
+  responses["messaging/status"] = {
+    enabled: true,
+    providers: ["slack"],
+    identities: [
+      {
+        id: "mi-existing",
+        provider: "slack",
+        botId: "bot-1",
+        botName: "Chief",
+        address: "T-OTHER:U1",
+      },
+    ],
+  };
+  responses["messaging/installations/list"] = {
+    available: true,
+    installations: [],
+    personalLinkAvailable: true,
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Link DMs")!
+      .click(),
+  );
+  expect(container.textContent).toContain("ABCD-2345");
+});
+
+it("lets a member choose which bot their DMs link to in a teammate's workspace", async () => {
+  responses["bots/list"] = [
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Lead" },
+  ];
+  responses["messaging/status"] = { enabled: true, providers: ["slack"], identities: [] };
+  responses["messaging/installations/list"] = {
+    available: true,
+    installations: [],
+    personalLinkAvailable: true,
+  };
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((candidate) => candidate.textContent === "Lead")!
+      .click(),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((candidate) => candidate.textContent === "Link DMs")!
+      .click(),
+  );
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+});
+
+it("links Slack DMs with a code even where workspace installs are offered", async () => {
+  responses["messaging/status"] = { enabled: true, providers: ["slack"], identities: [] };
+  responses["messaging/installations/list"] = { available: true, installations: [] };
+  await act(async () => root.render(<MessagingSettings />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((candidate) => candidate.textContent === "Slack")!
+      .click(),
+  );
+  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" });
+  expect(rpc).not.toHaveBeenCalledWith("messaging/installations/start", expect.anything());
+  expect(container.textContent).toContain("ABCD-2345");
 });

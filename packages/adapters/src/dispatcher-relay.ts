@@ -18,6 +18,7 @@ import {
   attachWorkspaceFileToThread,
   postedAttachmentHashes,
 } from "./thread-artifacts.js";
+import { forwardWorkerRelayAttachments } from "./worker-outcome-relay.js";
 
 /* How a dispatcher's main turn reads its thread and relays a worker's report files. */
 
@@ -264,4 +265,59 @@ export function workerFilesAttachedNote(files: readonly string[]): string | unde
     `已自动附上：${names.join("、")}`,
     "后台任务报告「文件：」里的这些文件，系统已经发到聊天里了（就在你这条回复上方）。不要再用 attach_file 发它们，不要让后台任务重新发送或复制，也不要说“预览还在补”“稍后发你”；直接告诉用户结果，说明文件已经发在上面。",
   ].join("\n");
+}
+
+/**
+ * A worker's files and forwarded result go out with the dispatcher's relay of its report.
+ * Safe to call before the model turn, before ask_user, and at end of turn: alreadyAttached
+ * and posted hashes skip anything that already went out.
+ */
+export async function relayWorkerReportAttachments(input: {
+  deps: ExecutorDeps;
+  run: {
+    id: string;
+    spaceId: string;
+    threadId: string;
+    botId: string;
+    userId: string;
+    trigger: string;
+    sourceMessageId?: string | null;
+  };
+  bot: { id: string };
+  threadGroupId?: string;
+  peerMessage: { fromBotId: string; text: string } | null | undefined;
+  dispatcherTurn: boolean;
+  computerMode: ReturnType<typeof parseComputerMode>;
+  readComputer: () => Promise<Parameters<ExecutorDeps["sandbox"]["readFile"]>[0]>;
+  context: Parameters<ExecutorDeps["sandbox"]["readFile"]>[2];
+  alreadyAttached: Set<string>;
+  publish: (blocks: MessageBlock[]) => Promise<unknown>;
+}): Promise<string[]> {
+  if (!input.dispatcherTurn || !input.peerMessage) return [];
+  let attachedReportFiles: string[] = [];
+  if (input.deps.artifacts) {
+    attachedReportFiles = await attachWorkerReportFiles({
+      deps: input.deps,
+      run: input.run,
+      bot: input.bot,
+      threadGroupId: input.threadGroupId,
+      report: input.peerMessage,
+      computerMode: input.computerMode,
+      readComputer: input.readComputer,
+      context: input.context,
+      alreadyAttached: input.alreadyAttached,
+      publish: input.publish,
+    }).catch((error) => {
+      getLogger().error("worker report attach", error);
+      return [];
+    });
+  }
+  await forwardWorkerRelayAttachments({
+    prisma: input.deps.prisma,
+    run: input.run,
+    bot: input.bot,
+    report: input.peerMessage,
+    publish: input.publish,
+  }).catch((error) => getLogger().error("worker result forward", error));
+  return attachedReportFiles;
 }

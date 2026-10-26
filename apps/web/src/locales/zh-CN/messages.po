@@ -40,13 +40,13 @@ msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minu
 msgstr ""
 
 #. placeholder {0}: file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0}（最多 {ATTACHMENT_MAX_COUNT} 个附件）"
 
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (over {1})"
 msgstr "{0}（超过 {1}）"
 
@@ -228,8 +228,8 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
-msgid "{provider} could not find the requested model."
-msgstr "{provider}找不到请求的模型。"
+msgid "{provider} can't run this model."
+msgstr "{provider}无法运行此模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -441,7 +441,7 @@ msgstr "{name} 的账户菜单"
 msgid "Actions for {0}"
 msgstr "{0} 的操作"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
 msgstr ""
 
@@ -593,6 +593,10 @@ msgstr "添加 Treg"
 msgid "Add trigger"
 msgstr "添加触发器"
 
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Add workspace"
+msgstr "添加工作区"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Added"
 msgstr ""
@@ -618,7 +622,7 @@ msgstr "高级"
 msgid "Advanced..."
 msgstr "高级..."
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Agent computer"
 msgstr "Agent 电脑"
 
@@ -788,7 +792,7 @@ msgstr "审批模型"
 msgid "Approvals"
 msgstr "审批"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "批准"
@@ -905,6 +909,7 @@ msgstr "头像工作室"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "返回"
@@ -956,8 +961,8 @@ msgstr ""
 msgid "Board"
 msgstr ""
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Booting live desktop…"
 msgstr "正在启动实时桌面…"
 
@@ -967,7 +972,7 @@ msgstr "Bot"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1029,7 +1034,7 @@ msgstr ""
 msgid "Built-in"
 msgstr "内置"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr ""
 
@@ -1087,7 +1092,6 @@ msgstr "无法读取图像"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "取消"
 
@@ -1144,6 +1148,10 @@ msgstr "图表渲染失败：{error}"
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
 msgstr "聊天设置"
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Chat with your bot from Slack."
+msgstr "在 Slack 中与你的机器人聊天。"
 
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
@@ -1222,6 +1230,7 @@ msgid "Choose a bot shape, color, or upload an image"
 msgstr "选择机器人形状和颜色，或上传图片"
 
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Choose a model"
 msgstr "选择模型"
 
@@ -1278,7 +1287,7 @@ msgstr "正在清空…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1312,16 +1321,12 @@ msgstr "关闭 MCP 服务器"
 msgid "Close memory settings"
 msgstr "关闭记忆设置"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Close messaging settings"
-msgstr "关闭消息设置"
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Close model settings"
 msgstr "关闭模型设置"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Close navigation"
 msgstr "关闭导航"
 
@@ -1330,7 +1335,7 @@ msgid "Close page"
 msgstr "关闭页面"
 
 #: src/pages/GroupPanel.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Close panel"
 msgstr "关闭面板"
 
@@ -1429,8 +1434,8 @@ msgstr "已完成"
 msgid "Computer"
 msgstr "电脑"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "电脑启动失败"
 
@@ -1485,6 +1490,7 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
@@ -1494,13 +1500,19 @@ msgstr "连接"
 msgid "Connect {selectedProviderName}"
 msgstr "连接 {selectedProviderName}"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr ""
 
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Connect a model"
 msgstr "连接模型"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect a model in Settings before running bots."
+msgstr "运行机器人前，请先在设置中连接模型。"
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -1537,6 +1549,11 @@ msgstr "请先连接此模型的提供方。"
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "连接 Treg"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
+msgstr "请在“模型”中连接你自己的 API 密钥，或在“账单”中选择 Rakazo 额度。"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpOAuthCallback.tsx
@@ -1612,7 +1629,7 @@ msgstr ""
 msgid "continuing"
 msgstr "继续中"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr ""
 
@@ -1724,7 +1741,7 @@ msgstr "无法连接此提供方"
 msgid "Could not connect this voice provider"
 msgstr "无法连接此语音提供方"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not connect to the computer screen"
 msgstr ""
 
@@ -1735,7 +1752,7 @@ msgstr ""
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
 #: src/pages/Auth.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not continue"
 msgstr "无法继续"
 
@@ -1998,8 +2015,8 @@ msgstr "无法运行例行任务"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "无法保存"
 
@@ -2084,7 +2101,7 @@ msgstr "无法提交此回答"
 msgid "Could not switch {failedNames}. Try again."
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not take control"
 msgstr "无法接管"
 
@@ -2116,7 +2133,7 @@ msgstr "无法更新电脑"
 msgid "Could not update name"
 msgstr "无法更新姓名"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Could not update reaction"
 msgstr "无法更新反应"
 
@@ -2128,11 +2145,11 @@ msgstr "无法更新默认记忆范围"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "无法加载消息设置"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "无法更新消息设置"
 
@@ -2260,7 +2277,7 @@ msgid "days"
 msgstr "天"
 
 #: src/components/call/IncomingCall.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "拒绝"
 
@@ -2338,7 +2355,7 @@ msgstr "同时删除记忆"
 msgid "Delete section"
 msgstr "删除分组"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr ""
@@ -2398,7 +2415,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
@@ -2523,7 +2540,6 @@ msgstr "每个名称只能使用一次。"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "编辑"
 
@@ -2713,7 +2729,7 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "从 CRM 导出本周名单并放到共享文件夹"
 
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr ""
 
@@ -2737,11 +2753,11 @@ msgstr "失败"
 msgid "Failed"
 msgstr "失败"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to send message"
 msgstr "发送消息失败"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to stop"
 msgstr "停止失败"
 
@@ -2783,7 +2799,7 @@ msgid "Filter by date"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "筛选器"
 
@@ -2862,8 +2878,9 @@ msgid "Git event"
 msgstr "Git 事件"
 
 #: src/lib/identity-display.ts
-#: src/pages/MessagingSettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/MessagingSettingsPanel.tsx
+#: src/pages/shell/chat-header.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Group"
 msgstr "群组"
 
@@ -3123,7 +3140,7 @@ msgstr "隔离"
 msgid "Isolated preview — no access to your account"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Its bots and groups are kept and leave the section."
 msgstr "其中的 Bot 和群组会保留，并移出该分组。"
 
@@ -3197,7 +3214,7 @@ msgstr "上次检查 {0}：无变化"
 msgid "Later"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "退出"
 
@@ -3216,6 +3233,10 @@ msgstr "Linear 工单"
 #: src/components/pages/PageReader.tsx
 msgid "Link copied"
 msgstr "链接已复制"
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Link DMs"
+msgstr "关联私信"
 
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
@@ -3332,13 +3353,15 @@ msgstr ""
 msgid "Main model"
 msgstr "主模型"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage"
 msgstr "管理"
 
+#. placeholder {0}: option.name
 #. placeholder {0}: providerName(choice)
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage {0}"
 msgstr "管理 {0}"
 
@@ -3514,8 +3537,7 @@ msgstr "消息…"
 msgid "Messaged {peer}"
 msgstr "已发给 {peer}"
 
-#: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "消息"
 
@@ -4033,7 +4055,7 @@ msgstr "打开 {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open call"
 msgstr ""
 
@@ -4054,7 +4076,7 @@ msgstr "打开外部链接？"
 msgid "Open in full window"
 msgstr "在完整窗口中打开"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open navigation"
 msgstr "打开导航"
 
@@ -4200,7 +4222,7 @@ msgstr "请粘贴你的 API 密钥，然后重新测试。"
 msgid "Paused"
 msgstr "已暂停"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr ""
 
@@ -4557,10 +4579,6 @@ msgstr "重命名"
 msgid "Rename section"
 msgstr "重命名分组"
 
-#: src/pages/SpaceSettingsPanel.tsx
-msgid "Rename space"
-msgstr "重命名工作区"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Renews {day}"
 msgstr ""
@@ -4577,6 +4595,7 @@ msgstr "替换 API 密钥"
 msgid "Replace its instructions"
 msgstr "替换其指令"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
 msgstr "替换密钥"
@@ -4603,7 +4622,7 @@ msgstr ""
 msgid "Request a new code"
 msgstr "请重新获取验证码"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr ""
 
@@ -4682,7 +4701,6 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Retry"
 msgstr "重试"
@@ -4692,7 +4710,7 @@ msgstr "重试"
 msgid "Retry now"
 msgstr "立即重试"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Retry screen"
 msgstr ""
 
@@ -4709,7 +4727,7 @@ msgstr ""
 msgid "Review provider settings and test again."
 msgstr "请检查提供方设置并重新测试。"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "撤销"
 
@@ -4796,7 +4814,6 @@ msgstr "周六"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "保存"
 
@@ -4876,10 +4893,10 @@ msgstr "范围（可选）"
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Search"
 msgstr "搜索"
@@ -4911,7 +4928,7 @@ msgstr ""
 msgid "Search models"
 msgstr "搜索模型"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Search runs"
 msgstr "搜索运行记录"
 
@@ -4929,7 +4946,7 @@ msgstr "正在搜索…"
 msgid "Security"
 msgstr "安全"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Select a bot"
 msgstr "选择 Bot"
 
@@ -4941,11 +4958,11 @@ msgstr "自托管"
 msgid "Send"
 msgstr "发送"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr ""
 
@@ -4999,9 +5016,9 @@ msgstr "服务器 URL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "设置"
 
@@ -5047,7 +5064,7 @@ msgstr ""
 msgid "Show bots"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show computer"
 msgstr ""
 
@@ -5069,7 +5086,7 @@ msgstr "显示密码"
 msgid "Show selected"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show settings"
 msgstr "显示设置"
 
@@ -5158,7 +5175,7 @@ msgid "Skip or deploy key"
 msgstr "跳过或使用部署密钥"
 
 #. placeholder {0}: skipped.join(", ")
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Skipped {0}"
 msgstr "已跳过 {0}"
 
@@ -5168,10 +5185,6 @@ msgstr "Slack 消息"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
-msgstr ""
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Slack workspace"
 msgstr ""
 
 #: src/components/composer/HoldToTalk.tsx
@@ -5219,6 +5232,10 @@ msgstr "工作区"
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "工作区默认"
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Spaces"
+msgstr "工作区"
 
 #: src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -5749,7 +5766,7 @@ msgstr "撤销导入？"
 msgid "Uninstall"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "取消关联"
 
@@ -5762,7 +5779,7 @@ msgid "Unpin"
 msgstr "取消置顶"
 
 #. placeholder {0}: pending.file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
 msgstr "不支持的文件类型：{0}"
 
@@ -6094,6 +6111,7 @@ msgstr "昨天"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "You"
 msgstr "你"
 

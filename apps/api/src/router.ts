@@ -23,6 +23,7 @@ import type {
   PushTokenStore,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
+  verifyModelServesAgents,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -41,6 +42,7 @@ import { modelsRoutes } from "./routes/models.js";
 import { routinesRoutes } from "./routes/routines.js";
 import { spacesRoutes } from "./routes/spaces.js";
 import { threadsRoutes } from "./routes/threads.js";
+import type { VoiceDeps } from "./voice.js";
 
 export { nextConnectionLabel } from "./model-credentials.js";
 export { botIntroPrompt, enqueueBotIntroRun } from "./routes/bots.js";
@@ -68,6 +70,8 @@ export interface RouterDeps {
   providerCatalog?: ProviderCatalogCache;
   /** HTTP transport for model connection checks and catalog probes. */
   modelConnectionFetch?: typeof fetch;
+  /** One real request proving a newly keyed model can serve agents; absent skips it. */
+  modelConnectionCheck?: typeof verifyModelServesAgents;
   /** Site icons for links; defaults to the per-process cache that fetches them. */
   favicons?: FaviconResolver;
   /**
@@ -104,6 +108,7 @@ export interface RouterDeps {
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
   billing?: BillingService;
+  speechSummary?: VoiceDeps["speechSummary"];
   env: {
     ticketBoardEnabled?: boolean;
     phoneCallsEnabled?: boolean;

@@ -5,7 +5,6 @@ import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeSwitch } from "../../components/native-switch";
 import { SettingsFooter, SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { rpc as accountRpc, type MobileMe } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
@@ -36,12 +35,12 @@ export default function SpaceSettings() {
     useCallback(() => {
       if (target.scope !== "space") return;
       let current = true;
-      void accountRpc<MobileMe>("me")
+      void rpc("me")
         .then((me) => {
           if (current) setMembersLocked(me.memberSettingsLocked === true);
         })
         .catch(() => undefined);
-      void rpc<SpaceSetting[]>("spaceSettings/overrides")
+      void rpc("spaceSettings/overrides")
         .then((next) => {
           if (current) setOverrides(next);
         })
@@ -67,7 +66,7 @@ export default function SpaceSettings() {
     setPending(true);
     setError(null);
     try {
-      setOverrides(await rpc<SpaceSetting[]>("spaceSettings/setOverride", { setting, enabled }));
+      setOverrides(await rpc("spaceSettings/setOverride", { setting, enabled }));
       if (enabled) open(setting);
     } catch (err) {
       setError(errorText(err, t("Could not save that preference")));

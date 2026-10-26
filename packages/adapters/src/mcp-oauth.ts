@@ -21,7 +21,7 @@ import type {
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
-  isLocalMcpHost,
+  isLocalhostOrLoopbackIp,
   mcpOAuthEnvReferences,
   PRODUCT_NAME,
   parseMcpOAuthAuthorizationParams,
@@ -617,7 +617,7 @@ function oauthFetch(
   publicError: (error: unknown, message: string) => Error;
 } {
   const url = new URL(endpoint);
-  const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
+  const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
   const headers = {
     ...material.headers,
     ...(material.secret

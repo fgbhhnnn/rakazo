@@ -7,7 +7,6 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { SettingsFooter, SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { rpc as accountRpc, type MobileMe } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
@@ -45,15 +44,12 @@ export default function Approvals() {
       let current = true;
       const savesAtRead = saves.current;
       // The server refuses a locked member's change either way; this only keeps it read-only.
-      void accountRpc<MobileMe>("me")
+      void rpc("me")
         .then((me) => {
           if (current) setLocked(me.memberSettingsLocked === true);
         })
         .catch(() => undefined);
-      void Promise.all([
-        rpc<ActionAutoReviewSettings>("autoReview/get", { scope }),
-        rpc<ActionApprovalRule[]>("approvalRules/list", { scope }),
-      ])
+      void Promise.all([rpc("autoReview/get", { scope }), rpc("approvalRules/list", { scope })])
         .then(([nextSettings, nextRules]) => {
           if (!current || saves.current !== savesAtRead) return;
           setSettings(nextSettings);
@@ -83,9 +79,7 @@ export default function Approvals() {
   }
 
   const setMode = (mode: ApprovalMode) =>
-    save(async () =>
-      setSettings(await rpc<ActionAutoReviewSettings>("autoReview/set", { scope, mode })),
-    );
+    save(async () => setSettings(await rpc("autoReview/set", { scope, mode })));
 
   const applyRuleAction = (rule: ActionApprovalRule, action: RuleAction) =>
     save(async () => {
@@ -95,7 +89,7 @@ export default function Approvals() {
         return;
       }
       if (action === rule.effect || rule.matchKind === "category") return;
-      const saved = await rpc<ActionApprovalRule>("approvalRules/set", {
+      const saved = await rpc("approvalRules/set", {
         scope,
         effect: action,
         matchKind: rule.matchKind,

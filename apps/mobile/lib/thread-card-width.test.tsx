@@ -1,17 +1,13 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
 import type { MessageBlock } from "@rakazo/contracts";
-import { fontWeight, typeScale } from "@rakazo/ui-tokens";
-import type { ReactNode } from "react";
-import React, { act, useEffect, useRef, useState } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
+import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { Pressable, Text, View } from "react-native";
-import ts from "typescript";
+import { Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MobileMessage } from "./api";
-import { messagePresentationSegments } from "./message-presentation";
 
 vi.mock("react-native", async () => {
   const { createElement, useImperativeHandle } = await import("react");
@@ -30,6 +26,7 @@ vi.mock("react-native", async () => {
       accessibilityState,
       accessibilityRole,
       accessibilityLabel,
+      testID,
       ref,
     }: {
       children?: ReactNode;
@@ -40,7 +37,8 @@ vi.mock("react-native", async () => {
       accessibilityState?: { expanded?: boolean };
       accessibilityRole?: string;
       accessibilityLabel?: string;
-      ref?: React.Ref<unknown>;
+      testID?: string;
+      ref?: Ref<unknown>;
     }) => {
       useImperativeHandle(ref, () => ({
         measureInWindow: (done: (...values: number[]) => void) => done(0, 100, 300, 200),
@@ -53,6 +51,7 @@ vi.mock("react-native", async () => {
           "aria-expanded": accessibilityState?.expanded,
           role: accessibilityRole,
           "aria-label": accessibilityLabel,
+          "data-testid": testID,
           onClick: onPress,
           onContextMenu: onLongPress,
         },
@@ -61,88 +60,105 @@ vi.mock("react-native", async () => {
     };
   return {
     Alert: { alert: vi.fn() },
+    Appearance: { getColorScheme: () => "light", addChangeListener: () => ({ remove() {} }) },
+    Linking: { openURL: vi.fn().mockResolvedValue(undefined) },
+    Platform: { OS: "ios", select: (options: { ios?: unknown }) => options.ios },
     Pressable: element("button"),
     StyleSheet: { create: <T,>(styles: T) => styles },
     Text: element("span"),
+    TextInput: element("input"),
     View: element("div"),
+    useWindowDimensions: () => ({ width: 393, height: 852, scale: 1, fontScale: 1 }),
   };
 });
 
-vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("react-native-reanimated", async () => {
+  const { View } = await import("react-native");
+  return {
+    default: { View },
+    useAnimatedStyle: (style: () => unknown) => style(),
+    useReducedMotion: () => true,
+    useSharedValue: (value: number) => ({ value }),
+    withTiming: (value: number) => value,
+  };
+});
 
+vi.mock("expo-secure-store", () => ({}));
+vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
+vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn().mockResolvedValue(undefined) }));
+
+// Native file and router modules: the bubble only needs which files open in the viewer.
+vi.mock("../components/file-viewer", async () => {
+  const { fileKindOf, hasInAppFileViewer } = await import("@rakazo/chat-ui/file-kinds");
+  return {
+    hasMobileFileViewer: (file: { name?: string | null; mimeType?: string | null }) =>
+      hasInAppFileViewer(file) || fileKindOf(file).viewer === "html",
+  };
+});
+vi.mock("../components/page-card", () => ({
+  PageCard: ({ title }: { title: string }) => <span data-page-card>{title}</span>,
+}));
+vi.mock("../components/task-progress-card", () => ({
+  TaskProgressCard: ({ block }: { block: { tasks: { name: string }[] } }) => (
+    <span data-task-progress>{block.tasks.map((task) => task.name).join(",")}</span>
+  ),
+}));
 vi.mock("./native", () => ({
   native: { fill: "fill", fillPressed: "fill-pressed" },
   useMobileTokens: () => ({}),
+  useResolvedAppearance: () => "light",
 }));
 
-vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <i /> }));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => <i /> }));
+vi.mock("@rakazo/chat-ui/native", () => ({
+  ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
+  withBlockMentions: <T,>(blocks: T) => blocks,
+}));
 
+vi.mock("../components/message-caption", () => ({
+  MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
+}));
+vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <i /> }));
+vi.mock("../components/native-symbol", () => ({
+  NativeSymbol: ({ ios }: { ios: string }) => <i data-symbol={ios} />,
+}));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label }: { label: string }) => <button type="button">{label}</button>,
 }));
+// Cards this file doesn't exercise; each has its own tests.
+vi.mock("../components/thread/ask-block", () => ({ AskBlock: () => null }));
+vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
+vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
+vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
+vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
 
-import { BotMention, MessageMentions } from "../components/bot-mention";
 import { McpApprovalCard } from "../components/McpApprovalCard";
-import { inactiveAskText, WorkerApprovalLabel } from "../components/worker-approval-label";
-import { withUserBubble } from "./user-bubble";
+import { MessageBubble } from "../components/thread/message-bubble";
 
-// Render the screen's actual message bubble without importing its native dependencies.
-const testFileUrl = import.meta.url;
-const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
-const bubbleSource = source.slice(
-  source.indexOf("const MessageBubble = memo(function MessageBubble("),
-  source.indexOf("function AgentEventLabel({"),
-);
-const scope = {
-  messagePresentationSegments,
-  memberName: () => undefined,
-  speakerColorFor: () => undefined,
-  cloudAgentHttpsUrl: (url?: string) => url,
-  Linking: { openURL: vi.fn().mockResolvedValue(undefined) },
-  blockText: (message: MobileMessage) =>
-    message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n"),
-  MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
-  typeScale,
-  fontWeight,
-  React,
-  memo: <T,>(component: T) => component,
-  useState,
-  useRef,
-  useEffect,
-  useReducedMotion: () => true,
-  useSharedValue: (value: number) => ({ value }),
-  useAnimatedStyle: (style: () => unknown) => style(),
-  withTiming: (value: number) => value,
-  Animated: { View },
-  NativeSymbol: () => <i data-chevron="down" />,
-  BotAvatar: () => <i />,
-  BotMention,
-  MessageMentions,
-  useResolvedAppearance: () => "light",
-  mobileTokens: () => ({}),
-  withUserBubble,
-  useI18n: () => ({ t: (text: string) => text }),
-  isApprovalAskBlock: (block: { actions?: { id: string }[] }) =>
-    Boolean(block.actions?.some((action) => action.id === "allow")),
-  plainAskTitle: (text: string) => text,
-  formatApprovalAnswer: () => "Answered",
-  View,
-  Text,
-  Pressable,
-  AskActions: () => <button type="button">Answer</button>,
-  WorkerApprovalLabel,
-  inactiveAskText,
-  safeDisplayName: (name: string) => name,
-  ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
-  openHelpers: new Set<string>(),
-};
-const MessageBubble = new Function(
-  ...Object.keys(scope),
-  ts.transpileModule(`${bubbleSource}\nreturn MessageBubble;`, {
-    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
-  }).outputText,
-)(...Object.values(scope));
+type BubbleProps = ComponentProps<typeof MessageBubble>;
+
+function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
+  return (
+    <MessageBubble
+      botId="bot-1"
+      bots={[]}
+      showBotSenderName={false}
+      canAnswer={false}
+      canDismiss={false}
+      onAnswer={async () => undefined}
+      onOpenBot={() => undefined}
+      onOpenComputer={() => undefined}
+      onPreviewFile={() => undefined}
+      onPreviewImage={() => undefined}
+      onTogglePeerReplies={() => undefined}
+      onOpenPeerChat={() => undefined}
+      actionProps={{}}
+      {...props}
+    />
+  );
+}
 
 const longQuestion =
   "Should I move the weekly planning notes into the shared folder and tell everyone on the project where to find them from now on?";
@@ -159,7 +175,6 @@ describe("thread cards", () => {
   let root: Root;
 
   beforeEach(() => {
-    scope.openHelpers.clear();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
     root = createRoot(container);
@@ -195,7 +210,7 @@ describe("thread cards", () => {
   function renderBlocks(blocks: MessageBlock[], overrides = {}) {
     act(() =>
       root.render(
-        <MessageBubble
+        <Bubble
           botId="bot-1"
           bots={[]}
           message={{ id: "message-1", role: "bot", blocks }}
@@ -242,7 +257,7 @@ describe("thread cards", () => {
         paddingBottom: 14,
         minHeight: 44,
       });
-      expect(container.querySelector("[data-chevron=down]")).not.toBeNull();
+      expect(container.querySelector("[data-symbol='chevron.down']")).not.toBeNull();
       expect(container.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
         "false",
       );
@@ -291,6 +306,79 @@ describe("thread cards", () => {
     expect(onOpenBot).not.toHaveBeenCalled();
   });
 
+  it("shows the background task progress block as its own card", () => {
+    renderBlocks([
+      {
+        kind: "task_progress",
+        botId: "bot-1",
+        updatedAt: "2026-10-25T15:20:00Z",
+        tasks: [
+          { ref: "TAB12CD3", name: "竞品调研", state: "queued", queuedAt: "2026-10-25T15:19:00Z" },
+        ],
+      } as MessageBlock,
+    ]);
+    expect(container.querySelector("[data-task-progress]")?.textContent).toBe("竞品调研");
+  });
+
+  it("shows a Page a bot wrote as a Page card, not a file row", () => {
+    renderBlocks([
+      {
+        kind: "file",
+        artifactId: "artifact-1",
+        name: "Weekly report",
+        mimeType: "text/markdown",
+        page: { pageId: "page-1", snippet: "Highlights" },
+      } as MessageBlock,
+    ]);
+    expect(container.querySelector("[data-page-card]")?.textContent).toBe("Weekly report");
+    expect(container.querySelector("[data-symbol]")).toBeNull();
+  });
+
+  it("opens viewable files in the in-app viewer and shows each file's kind", () => {
+    const onPreviewFile = vi.fn();
+    renderBlocks(
+      [
+        { kind: "file", artifactId: "pdf-1", name: "plan.pdf", mimeType: "application/pdf" },
+        { kind: "file", artifactId: "zip-1", name: "bundle.zip", mimeType: "application/zip" },
+      ] as MessageBlock[],
+      { onPreviewFile },
+    );
+    const rows = [...container.querySelectorAll("button")].filter((row) =>
+      /plan\.pdf|bundle\.zip/.test(row.textContent ?? ""),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).not.toContain("📎");
+    act(() => rows[0]!.click());
+    expect(onPreviewFile).toHaveBeenCalledExactlyOnceWith({
+      artifactId: "pdf-1",
+      name: "plan.pdf",
+      mimeType: "application/pdf",
+    });
+    act(() => rows[1]!.click());
+    expect(onPreviewFile).toHaveBeenCalledOnce();
+  });
+
+  it("names the background task on a mirrored approval and says when its worker was cancelled", () => {
+    renderBlocks([
+      {
+        kind: "ask",
+        text: "Allow shell?",
+        actions: [{ id: "allow", label: "Allow" }],
+        workerApproval: {
+          runId: "worker-run",
+          messageId: "worker-message",
+          label: "任务 #AB12CD34（报表）",
+          closed: "cancelled",
+        },
+      } as MessageBlock,
+    ]);
+    expect(container.querySelector('[data-testid="worker-approval-label"]')?.textContent).toBe(
+      "任务 #AB12CD34（报表）",
+    );
+    expect(container.textContent).toContain("Cancelled");
+    expect(container.textContent).not.toContain("No longer active");
+  });
+
   it("keeps child navigation and long-press actions on each card and text piece", () => {
     const onOpenBot = vi.fn();
     const onLongPress = vi.fn();
@@ -330,7 +418,7 @@ describe("thread cards", () => {
     const link = container.querySelector('[role="link"]');
     expect(link?.getAttribute("aria-label")).toBe("Remote task: finished");
     act(() => (link as HTMLElement).click());
-    expect(scope.Linking.openURL).toHaveBeenCalledWith("https://example.test/task");
+    expect(Linking.openURL).toHaveBeenCalledWith("https://example.test/task");
     act(() => link!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
     expect(onLongPress).toHaveBeenCalledTimes(1);
   });
@@ -351,7 +439,7 @@ describe("thread cards", () => {
     renderBlocks(blocks, { onHelperToggle, actionProps: { onLongPress } });
     const headers = () => [...container.querySelectorAll<HTMLElement>("button[aria-expanded]")];
     expect(headers()).toHaveLength(2);
-    expect(container.querySelectorAll("[data-chevron=down]")).toHaveLength(2);
+    expect(container.querySelectorAll("[data-symbol='chevron.down']")).toHaveLength(2);
     act(() => headers()[0]!.click());
     expect(headers().map((header) => header.getAttribute("aria-expanded"))).toEqual([
       "true",
@@ -369,7 +457,6 @@ describe("thread cards", () => {
       "true",
     ]);
     expect(onHelperToggle.mock.calls[2]![2]).toBe(false);
-    expect(scope.openHelpers).toEqual(new Set(["second"]));
     act(() => container.querySelector("p")!.click());
     expect(headers()[1]!.getAttribute("aria-expanded")).toBe("true");
     act(() =>
@@ -404,7 +491,7 @@ describe("thread cards", () => {
     } as MobileMessage;
     act(() =>
       root.render(
-        <MessageBubble
+        <Bubble
           botId="bot-1"
           bots={[]}
           message={message}
@@ -425,7 +512,7 @@ describe("thread cards", () => {
     (doubleTapSurface) => {
       act(() =>
         root.render(
-          <MessageBubble
+          <Bubble
             botId="bot-1"
             bots={[]}
             message={{ id: "text-1", role: "bot", blocks: [{ kind: "text", text: "Hello" }] }}
@@ -523,9 +610,7 @@ describe("thread cards", () => {
         },
       ],
     } as MobileMessage;
-    act(() =>
-      root.render(<MessageBubble botId="bot-1" bots={[]} message={message} actionProps={{}} />),
-    );
+    act(() => root.render(<Bubble botId="bot-1" bots={[]} message={message} actionProps={{}} />));
     expect(container.textContent).toContain("Running");
   });
 
@@ -547,11 +632,11 @@ describe("thread cards", () => {
     const onLongPress = vi.fn();
     act(() =>
       root.render(
-        <MessageBubble botId="bot-1" bots={[]} message={message} actionProps={{ onLongPress }} />,
+        <Bubble botId="bot-1" bots={[]} message={message} actionProps={{ onLongPress }} />,
       ),
     );
     const card = () => container.querySelector("button[aria-expanded]");
-    expect(container.querySelector("[data-chevron=down]")).not.toBeNull();
+    expect(container.querySelector("[data-symbol='chevron.down']")).not.toBeNull();
     expect(container.textContent).toContain("Completed");
     act(() => card()?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
     expect(onLongPress).toHaveBeenCalled();
@@ -577,9 +662,7 @@ describe("thread cards", () => {
     // The saved message replaces the live card under a new id; the card stays open.
     const saved = { ...message, id: "message-2" };
     act(() =>
-      root.render(
-        <MessageBubble key="saved" botId="bot-1" bots={[]} message={saved} actionProps={{}} />,
-      ),
+      root.render(<Bubble key="saved" botId="bot-1" bots={[]} message={saved} actionProps={{}} />),
     );
     expect(card()?.getAttribute("aria-expanded")).toBe("true");
 

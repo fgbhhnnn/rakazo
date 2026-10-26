@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
-import { askAnswerRunId } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import ts from "typescript";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { answerThreadMessage } from "./thread-answer";
 
 vi.mock("react-native", () => ({
   Text: (props: { children?: ReactNode; testID?: string }) =>
@@ -15,9 +13,6 @@ vi.mock("react-native", () => ({
 vi.mock("./native", () => ({ useMobileTokens: () => ({ mutedForeground: "muted" }) }));
 
 import { inactiveAskText, WorkerApprovalLabel } from "../components/worker-approval-label";
-
-// Keep Vitest's jsdom URL transform from replacing the file URL with self.location.
-const testFileUrl = import.meta.url;
 
 const mirror = {
   kind: "ask" as const,
@@ -71,31 +66,21 @@ it("says a cancelled worker's copy was cancelled and any other closed card is no
 });
 
 it("answers the copy through the screen's handler with the worker's run", async () => {
-  const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
-  const handler = source.slice(
-    source.indexOf("  const answerMessage = useCallback("),
-    source.indexOf("  const openBot = useCallback("),
-  );
   const rpc = vi.fn().mockResolvedValue(undefined);
   const refresh = vi.fn().mockResolvedValue(undefined);
-  const scope = {
-    useCallback: <T,>(callback: T) => callback,
+  const context = {
     botId: "main-bot",
-    groupId: undefined,
+    groupId: undefined as string | undefined,
     readOnly: false,
     rpc,
     isCurrentTarget: () => true,
     refresh,
-    askAnswerRunId,
-    setReadBoundary: vi.fn(),
-    readVisit: { current: { visit: 1 } },
+    markRead: vi.fn(),
   };
-  const answerMessage = new Function(
-    ...Object.keys(scope),
-    ts.transpileModule(`${handler}\nreturn answerMessage;`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
-  )(...Object.values(scope));
+  const answerMessage = (
+    message: { id: string; runId: string | null; blocks: unknown[] },
+    answer: string,
+  ) => answerThreadMessage(context, message as never, answer);
 
   await answerMessage({ id: "mirror-message", runId: null, blocks: [mirror] }, "allow");
   expect(rpc).toHaveBeenCalledWith("threads/answer", {
