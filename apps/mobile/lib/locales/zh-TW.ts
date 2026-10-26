@@ -78,8 +78,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Your Anthropic": "你的 Anthropic",
   "Your model provider": "你的模型供應商",
   "Connect a model in Settings before running bots.": "執行機器人前，請先在設定中連接模型。",
-  "Connect your own API key in Models or choose Rakazo credits in Billing.":
-    "請在「模型」中連接你自己的 API 金鑰，或在「帳務」中選擇 Rakazo 點數。",
+  "Connect your own API key in Models or choose {PRODUCT_NAME} credits in Billing.":
+    "請在「模型」中連接你自己的 API 金鑰，或在「帳務」中選擇 {PRODUCT_NAME} 點數。",
   "The model provider returned an error.": "模型供應商回傳了錯誤。",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} 正在限制請求頻率。請稍後重試。",
@@ -1098,4 +1098,5 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "no progress": "沒有進展",
   done: "完成",
   "Slack workspace": "Slack 工作區",
+  "Connect your own API key in Models or choose {PRODUCT_NAME} credits in Billing.": "請在「模型」中連線你自己的 API 金鑰，或在「帳單」中選擇 {PRODUCT_NAME} 額度。",
 };
