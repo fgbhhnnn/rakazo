@@ -105,6 +105,54 @@ container_healthy() {
   return 1
 }
 
+
+# Wait until no background task is mid-flight and no worker run is still active, so a deploy
+# never switches the API mid-task. Logs each finish reason and time.
+psql_deploy() {
+  # One SQL statement as the DB owner inside the postgres container.
+  compose 30s exec -T postgres \
+    psql -X -At -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-rakazo}" -d "${POSTGRES_DB:-rakazo}" \
+    -c "$1" 2>/dev/null
+}
+
+wait_for_quiet_background_work() {
+  local deadline=$((SECONDS + ${RAKAZO_DEPLOY_ACTIVE_WAIT_SEC:-1800}))
+  local count runs line finished
+  # Host .env may set these; pass them through for -U/-d above when unset in the container.
+  local POSTGRES_USER POSTGRES_DB
+  POSTGRES_USER="$(sed -n 's/^POSTGRES_USER=//p' .env | tail -n 1)"
+  POSTGRES_DB="$(sed -n 's/^POSTGRES_DB=//p' .env | tail -n 1)"
+  POSTGRES_USER="${POSTGRES_USER:-rakazo}"
+  POSTGRES_DB="${POSTGRES_DB:-rakazo}"
+  export POSTGRES_USER POSTGRES_DB
+  echo "Waiting for background tasks and active worker runs to finish before rollout…"
+  while ((SECONDS < deadline)); do
+    count="$(psql_deploy "SELECT count(*)::text FROM \"background_task_queue\" WHERE status IN ('queued','claiming','started');" | tr -d '[:space:]' || echo fail)"
+    if [[ "${count}" == "fail" || -z "${count}" ]]; then
+      echo "Could not query background_task_queue; not blocking deploy on DB reachability." >&2
+      return 0
+    fi
+    runs="$(psql_deploy "SELECT count(*)::text FROM \"runs\" WHERE status IN ('queued','leased','running','waiting_input','waiting_takeover');" | tr -d '[:space:]' || echo fail)"
+    if [[ "${count}" == "0" && "${runs}" == "0" ]]; then
+      echo "No active background tasks or worker runs; continuing deploy."
+      return 0
+    fi
+    if [[ "${count}" != "0" ]]; then
+      line="$(psql_deploy "SELECT coalesce(ref,id) || ' status=' || status || ' started=' || coalesce(\"startedAt\"::text,'-') FROM \"background_task_queue\" WHERE status IN ('queued','claiming','started') ORDER BY \"createdAt\" LIMIT 1;" || true)"
+      echo "Active background work (${count}): ${line}"
+    else
+      echo "background_task_queue quiet; ${runs} active run(s) still in flight…"
+    fi
+    while IFS= read -r finished; do
+      [[ -n "${finished}" ]] || continue
+      echo "Finished: ${finished}"
+    done < <(psql_deploy "SELECT coalesce(ref,id) || ' status=' || status || ' finishedAt=' || coalesce(\"finishedAt\"::text,'-') || ' error=' || coalesce(left(error,120),'-') FROM \"background_task_queue\" WHERE \"finishedAt\" > now() - interval '2 minutes' ORDER BY \"finishedAt\" DESC LIMIT 5;" || true)
+    sleep "${RAKAZO_DEPLOY_ACTIVE_POLL_SEC:-10}"
+  done
+  echo "Timed out waiting for background tasks / active runs after ${RAKAZO_DEPLOY_ACTIVE_WAIT_SEC:-1800}s; refusing to deploy mid-task." >&2
+  return 1
+}
+
 # Replaces the API and web without a gap: one new container starts beside the running ones, and
 # the old ones stop only once it passes its health check. Caddy dials whichever container
 # answers, so requests keep flowing through a deploy. Every other service is then reconciled
@@ -250,6 +298,7 @@ fi
 app_image="$(compose_app_image)"
 [[ -n "${app_image}" ]] || { echo "Could not find the api image in ${COMPOSE_FILE}." >&2; false; }
 use_revision_image "${target_revision}" "${BUILD_TIMEOUT}"
+wait_for_quiet_background_work
 roll_out
 apply_caddyfile "${previous_revision}" "${target_revision}"
 

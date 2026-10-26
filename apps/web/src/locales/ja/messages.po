@@ -4753,6 +4753,9 @@ msgstr "実行日時は未来の日時を指定してください。"
 msgid "running"
 msgstr "実行中"
 
+msgid "continuing"
+msgstr "続行中"
+
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx

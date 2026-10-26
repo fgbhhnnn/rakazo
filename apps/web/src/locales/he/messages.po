@@ -4753,6 +4753,9 @@ msgstr "זמן ההרצה חייב להיות בעתיד."
 msgid "running"
 msgstr "פועל"
 
+msgid "continuing"
+msgstr "ממשיך"
+
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx

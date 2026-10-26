@@ -359,6 +359,7 @@ export const NL_MESSAGES: Record<string, string> = {
   failed: "mislukt",
   finished: "voltooid",
   running: "draait",
+  continuing: "bezig door te gaan",
   subagent: "subagent",
   "{count} agents working": "{count} agents aan het werk",
   "{from} messaged {to}": "{from} stuurde een bericht naar {to}",

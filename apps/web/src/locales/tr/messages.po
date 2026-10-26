@@ -4753,6 +4753,9 @@ msgstr ""
 msgid "running"
 msgstr "çalışıyor"
 
+msgid "continuing"
+msgstr "devam ediyor"
+
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx

@@ -4754,6 +4754,9 @@ msgstr "執行時間必須是將來的時間。"
 msgid "running"
 msgstr "執行中"
 
+msgid "continuing"
+msgstr "繼續中"
+
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx

@@ -4753,6 +4753,9 @@ msgstr "Run time must be in the future."
 msgid "running"
 msgstr "running"
 
+msgid "continuing"
+msgstr "continuing"
+
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx

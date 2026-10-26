@@ -369,6 +369,7 @@ export const DE_MESSAGES: Record<string, string> = {
   failed: "fehlgeschlagen",
   finished: "abgeschlossen",
   running: "läuft",
+  continuing: "wird fortgesetzt",
   subagent: "Subagent",
   "{count} agents working": "{count} Agents arbeiten",
   "{from} messaged {to}": "{from} hat {to} geschrieben",

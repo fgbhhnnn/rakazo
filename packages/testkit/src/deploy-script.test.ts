@@ -117,6 +117,28 @@ if [[ "$*" == *" --scale "* ]]; then touch "$COMMAND_LOG.$service"; fi
 if [[ "$1" == rm && "$2" == *-old ]]; then rm -f "$COMMAND_LOG.\${2%-old}"; fi
 if [[ "$1" == inspect ]]; then echo "\${CONTAINER_HEALTH:-running healthy}"; fi
 if [[ "$*" == "image ls "* ]]; then echo rakazo-rollback:old; fi
+# Deploy wait queries background_task_queue and runs via psql inside postgres.
+if [[ "$*" == *" exec -T postgres "* && "$*" == *" psql "* ]]; then
+  sql="$*"
+  if [[ "$sql" == *"background_task_queue"* && "$sql" == *"count(*)"* && "$sql" == *"queued"* ]]; then
+    echo "\${ACTIVE_BG_COUNT:-0}"
+    exit 0
+  fi
+  if [[ "$sql" == *"runs"* && "$sql" == *"count(*)"* && "$sql" == *"waiting_takeover"* ]]; then
+    echo "\${ACTIVE_RUN_COUNT:-0}"
+    exit 0
+  fi
+  if [[ "$sql" == *"finishedAt"* ]]; then
+    [[ -n "\${FINISHED_BG_LINE:-}" ]] && echo "\${FINISHED_BG_LINE}"
+    exit 0
+  fi
+  if [[ "$sql" == *"background_task_queue"* ]]; then
+    [[ -n "\${ACTIVE_BG_LINE:-}" ]] && echo "\${ACTIVE_BG_LINE}"
+    exit 0
+  fi
+  echo 0
+  exit 0
+fi
 exit 0
 `,
     0o755,
@@ -493,6 +515,37 @@ describe("production deploy script", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("did not recover");
     expect(deploy.head()).toBe(deploy.first);
+  });
+
+  it("waits for background tasks and active worker runs before rollout", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    const result = deploy.run({
+      ACTIVE_BG_COUNT: "1",
+      ACTIVE_RUN_COUNT: "0",
+      ACTIVE_BG_LINE: "TIZS60WO status=started started=2026-10-26",
+      RAKAZO_DEPLOY_ACTIVE_WAIT_SEC: "1",
+      RAKAZO_DEPLOY_ACTIVE_POLL_SEC: "1",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("refusing to deploy mid-task");
+    expect(result.stdout).toContain("Waiting for background tasks");
+    expect(result.stdout).toContain("Active background work");
+  });
+
+  it("continues deploy when background queue and runs are quiet", () => {
+    const deploy = fixture();
+    const next = commit(deploy.upstream, "next");
+    const result = deploy.run({
+      ACTIVE_BG_COUNT: "0",
+      ACTIVE_RUN_COUNT: "0",
+      FINISHED_BG_LINE: "TIZS60WO status=completed finishedAt=2026-10-26 error=-",
+      RAKAZO_DEPLOY_ACTIVE_WAIT_SEC: "5",
+      RAKAZO_DEPLOY_ACTIVE_POLL_SEC: "1",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("No active background tasks or worker runs");
+    expect(result.stdout).toContain(`Deployed ${next} successfully`);
   });
 });
 

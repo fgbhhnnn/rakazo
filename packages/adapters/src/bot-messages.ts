@@ -23,6 +23,8 @@ import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./backgr
 import type { ExecutorDeps } from "./executor.js";
 import { runPageBlocks } from "./pages.js";
 import { attachmentBlocks } from "./task-attachments.js";
+import { handleIncompleteWorkerResult } from "./worker-incomplete-continue.js";
+import { incompleteResultReason } from "./worker-incomplete-result.js";
 import { workerOutcomeRelay } from "./worker-outcome-relay.js";
 import { slotFree } from "./worker-slot-mentions.js";
 
@@ -392,8 +394,31 @@ export async function returnBotMessageOutcome(
     await markBotOutcomeReturned(deps, run.id);
     return true;
   }
+  // A hidden worker's final text that is truncated or clearly unfinished must not close the
+  // task as completed: auto-continue the same worker (capped) or fail honestly.
+  let outcomeText = text;
+  if (workerTitle !== undefined && intent === "result") {
+    const reason = incompleteResultReason(text);
+    if (reason) {
+      const decision = await handleIncompleteWorkerResult(deps, {
+        run,
+        dispatcher: { id: source.fromBotId, name: source.fromBotName },
+        text,
+        reason,
+      });
+      if (decision.action === "continue") {
+        await markBotOutcomeReturned(deps, run.id);
+        // Task.workerRunId already points at the new run; refresh that so the card shows continuing.
+        await refreshTaskProgressForWorkerRun(deps, decision.runId);
+        return true;
+      }
+      if (decision.action === "fail") {
+        outcomeText = decision.note;
+      }
+    }
+  }
   // The dispatcher names the task by its title and #ref; an over-long result travels as a file.
-  const relay = await workerOutcomeRelay(deps, run, workerTitle, text, source.fromBotId);
+  const relay = await workerOutcomeRelay(deps, run, workerTitle, outcomeText, source.fromBotId);
   // Pages the worker wrote or edited go back with its result, so they show in the main chat.
   const pages =
     workerTitle === undefined || intent !== "result"

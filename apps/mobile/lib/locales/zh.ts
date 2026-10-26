@@ -182,6 +182,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Command variable": "命令变量",
   "Pull request": "拉取请求",
   running: "运行中",
+  continuing: "继续中",
   finished: "已完成",
   failed: "失败",
   cancelled: "已取消",

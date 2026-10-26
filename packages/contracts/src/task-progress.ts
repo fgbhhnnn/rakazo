@@ -13,6 +13,7 @@ export const TaskProgressState = z.enum([
   "queued",
   "starting",
   "running",
+  "continuing",
   "needs_user",
   "stuck",
   "done",
@@ -58,6 +59,7 @@ export const TASK_PROGRESS_ACTIVE_STATES: readonly TaskProgressState[] = [
   "queued",
   "starting",
   "running",
+  "continuing",
   "needs_user",
   "stuck",
 ];
