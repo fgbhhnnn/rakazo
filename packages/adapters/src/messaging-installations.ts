@@ -23,6 +23,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
 
   /** Connect a chat app for an explicit bot — never fall back to the first/default bot. */
   async start(actor: Actor, botId: string): Promise<string> {
+    if (!botId) throw new Error("Bot not found");
     const bot = await this.prisma.bot.findFirst({
       where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
       select: { id: true, spaceId: true },
