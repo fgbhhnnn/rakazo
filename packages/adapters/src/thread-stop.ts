@@ -3,8 +3,7 @@ import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
-  clearRunTurnCheckpoints,
-  deleteRunSecretsInTransaction,
+  clearEndedRunState,
   expireComputerExecutionLeases,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -38,8 +37,8 @@ export async function stopThreadRunsForBots(
       select: { id: true, botId: true, userId: true, spaceId: true },
     });
     const ids = cancelled.map((run) => run.id);
-    await clearRunTurnCheckpoints(tx, ids);
-    await deleteRunSecretsInTransaction(tx, cancelled);
+    // Also denies an open approval behind an unanswered card, like a stopped main thread.
+    await clearEndedRunState(tx, ids);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: [...target.botIds] },

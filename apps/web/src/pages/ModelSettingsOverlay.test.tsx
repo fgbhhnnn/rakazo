@@ -287,14 +287,18 @@ function testQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-async function renderSettings(embedded = true, queryClient = testQueryClient()) {
+async function renderSettings(
+  embedded = true,
+  queryClient = testQueryClient(),
+  scope: "account" | "space" = "account",
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <ModelSettingsOverlay embedded={embedded} onClose={() => undefined} />
+        <ModelSettingsOverlay embedded={embedded} scope={scope} onClose={() => undefined} />
       </QueryClientProvider>,
     );
   });
@@ -570,12 +574,39 @@ it("connects the main model from the empty default row as the space default", as
         provider: "deepseek",
         apiKey: "sk-fixture-deepseek",
         makeDefault: true,
+        scope: "account",
       }),
     );
     // The connection already made it the main model, so the list reloads instead of writing.
     expect(models.setRole).not.toHaveBeenCalled();
     expect(models.role.mock.calls.length).toBeGreaterThan(loads);
     expect(titles(view.container)).toEqual([]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows a Space only its own role lists and makes a new connection its main model there", async () => {
+  vi.mocked(rpc.me).mockResolvedValue({
+    ...account("deepseek", "deepseek-chat"),
+    needsModel: true,
+  });
+  const view = await renderSettings(true, testQueryClient(), "space");
+  try {
+    expect(view.container.querySelector('[data-testid="model-role-main"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="model-role-approval"]')).not.toBeNull();
+    // Connections are the account's, so a Space does not list or add them.
+    expect(view.container.querySelector('[data-testid="model-providers"]')).toBeNull();
+    expect(models.role).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "main", scope: "space" }),
+      expect.anything(),
+    );
+    await pick("Change Main model", "DeepSeek");
+    await typeInto(keyField(view.container), "sk-fixture-deepseek");
+    await click(buttons(view.container, "Connect API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "deepseek", makeDefault: true, scope: "space" }),
+    );
   } finally {
     await view.unmount();
   }

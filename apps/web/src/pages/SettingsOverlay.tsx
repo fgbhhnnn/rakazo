@@ -46,14 +46,11 @@ import type { SettingsSpace } from "./shell/dialogs";
 import type { SettingsSection } from "./shell-overlay";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
-/** Sections whose settings belong to a space; only these show the space picker. */
-const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set([
-  "space",
-  "models",
-  "memory",
-  "voice",
-  "confirmations",
-]);
+/**
+ * Sections whose settings belong to a space; only these show the space picker. Models, voice,
+ * and confirmations are the account's, and a space customizes them from its Space section.
+ */
+const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set(["space", "memory"]);
 
 type NavItem = {
   id: SettingsSection;
@@ -185,11 +182,11 @@ export function SettingsOverlay({
 
   const navItems: NavItem[] = [
     { id: "general", label: t`General`, icon: Settings },
-    { id: "space", label: t`Space`, icon: Lock },
     ...(memberSettingsLocked ? [] : [{ id: "models" as const, label: t`Models`, icon: Cpu }]),
-    { id: "memory", label: t`Memory`, icon: Brain },
     ...(memberSettingsLocked ? [] : [{ id: "voice" as const, label: t`Voice`, icon: Volume2 }]),
     { id: "confirmations", label: t`Confirmations`, icon: ShieldCheck },
+    { id: "space", label: t`Space`, icon: Lock },
+    { id: "memory", label: t`Memory`, icon: Brain },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(showComputer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
     ...(billingEnabled ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
@@ -374,7 +371,7 @@ export function SettingsOverlay({
                 key={spaceId ?? "selected"}
                 data-testid="settings-scroll"
                 className={`min-h-0 flex-1 ${
-                  section === "models" || section === "voice" || section === "memory"
+                  section === "memory"
                     ? "flex flex-col overflow-hidden"
                     : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
                 }`}
@@ -399,9 +396,12 @@ export function SettingsOverlay({
                     space={space}
                     onRename={(name) => onRenameSpace?.(space.id, name) ?? Promise.resolve()}
                     onDelete={() => onDeleteSpace?.(space.id) ?? Promise.resolve()}
+                    onClose={requestClose}
+                    onBusyChange={setVoiceBusy}
+                    memberSettingsLocked={memberSettingsLocked}
                   />
                 ) : null}
-                {section === "confirmations" ? <ApprovalRulesSettings /> : null}
+                {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
                 {section === "usage" ? (
                   <UsageSettingsPanel usage={usage} panelRef={usageRef} />
                 ) : null}
@@ -418,7 +418,7 @@ export function SettingsOverlay({
                 {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
                 {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
                 {section === "models" && !memberSettingsLocked ? (
-                  <ModelSettingsOverlay embedded onClose={requestClose} />
+                  <ModelSettingsOverlay embedded scope="account" onClose={requestClose} />
                 ) : null}
                 {section === "memory" && otherSpace && otherMemoryError ? (
                   <div className="px-6 py-6 sm:px-8">
@@ -439,6 +439,7 @@ export function SettingsOverlay({
                 {section === "voice" && !memberSettingsLocked ? (
                   <VoiceSettingsOverlay
                     embedded
+                    scope="account"
                     onClose={requestClose}
                     onBusyChange={setVoiceBusy}
                   />

@@ -2,15 +2,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { sharedModelScope } from "./member-settings.js";
-import { getModelRole } from "./model-roles.js";
+import { appliedModelRole } from "./model-roles.js";
 import { asSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
 
-// Role writes no longer mirror into the default preference, so a member borrowing the
-// deployment owner's models must find the owner's main role under row-level security.
+// Models are account-wide with per-Space overrides, so a member borrowing the deployment
+// owner's models must find the owner's account copy, or an override, under row-level security.
 describePostgres("members on the owner's main model role (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
   const owner = `shared-model-owner-${suffix}`;
@@ -26,6 +26,19 @@ describePostgres("members on the owner's main model role (PostgreSQL)", () => {
 
   const asMember = <T>(fn: () => Promise<T>) =>
     runAsTenant({ userId: member, spaceId: memberSpace }, fn);
+  const accountMainRole = (modelId: string) =>
+    fixtures.userModelRoleChoice.create({
+      data: {
+        userId: owner,
+        role: "main",
+        position: 0,
+        provider: "openai-compatible",
+        modelId,
+        credentialId,
+      },
+    });
+  const overrideModels = (spaceId: string) =>
+    fixtures.spaceSettingOverride.create({ data: { spaceId, userId: owner, setting: "models" } });
   const mainRole = (spaceId: string, modelId: string) =>
     fixtures.spaceModelRoleChoice.create({
       data: {
@@ -59,16 +72,24 @@ describePostgres("members on the owner's main model role (PostgreSQL)", () => {
         data: { id: `${userId}-member`, organizationId, userId, role, createdAt },
       });
     }
-    for (const [spaceId, userId] of [
+    // The owner joined ownerSpace first, so it is the owner's first Space.
+    const spaces: ReadonlyArray<readonly [string, string]> = [
       [ownerSpace, owner],
       [ownerOtherSpace, owner],
       [memberSpace, member],
-    ] as const) {
+    ];
+    for (const [index, [spaceId, userId]] of spaces.entries()) {
       await fixtures.space.create({
         data: { id: spaceId, organizationId, name: spaceId, createdByUserId: userId },
       });
       await fixtures.spaceMember.create({
-        data: { id: `${spaceId}-m`, spaceId, organizationId, userId, createdAt },
+        data: {
+          id: `${spaceId}-m`,
+          spaceId,
+          organizationId,
+          userId,
+          createdAt: new Date(createdAt.getTime() + index * 1000),
+        },
       });
     }
     await fixtures.secret.create({
@@ -97,8 +118,9 @@ describePostgres("members on the owner's main model role (PostgreSQL)", () => {
   });
 
   beforeEach(async () => {
+    await fixtures.spaceSettingOverride.deleteMany({ where: { userId: owner } });
     await fixtures.spaceModelRoleChoice.deleteMany({ where: { userId: owner } });
-    await fixtures.spaceModelPreference.deleteMany({ where: { userId: owner } });
+    await fixtures.userModelRoleChoice.deleteMany({ where: { userId: owner } });
   });
 
   afterAll(async () => {
@@ -115,11 +137,11 @@ describePostgres("members on the owner's main model role (PostgreSQL)", () => {
     await db.pool.end();
   });
 
-  it("runs a member on the owner's main role when no legacy default exists", async () => {
-    await mainRole(ownerSpace, "grok-4.7");
+  it("runs a member on the owner's account main role", async () => {
+    await accountMainRole("grok-4.7");
     const resolved = await asMember(async () => {
       const scope = await sharedModelScope(db.prisma, { userId: member, spaceId: memberSpace });
-      return { scope, main: await getModelRole(db.prisma, scope, "main") };
+      return { scope, main: await appliedModelRole(db.prisma, scope, "main") };
     });
     expect(resolved.scope).toEqual({ userId: owner, spaceId: ownerSpace });
     expect(resolved.main.primary).toMatchObject({
@@ -129,33 +151,34 @@ describePostgres("members on the owner's main model role (PostgreSQL)", () => {
     });
   });
 
-  it("keeps the Space of the owner's frozen default when it still has a main role", async () => {
-    await mainRole(ownerSpace, "grok-4.7");
-    await mainRole(ownerOtherSpace, "other-model");
-    // Sorts after ownerSpace, so only the legacy default can pick it.
-    await fixtures.spaceModelPreference.create({
-      data: {
-        spaceId: ownerOtherSpace,
-        userId: owner,
-        credentialId,
-        modelId: "other-model",
-        isDefault: true,
-      },
+  it("skips a Space whose override would hide the owner's account models", async () => {
+    await accountMainRole("grok-4.7");
+    await overrideModels(ownerSpace);
+    await mainRole(ownerSpace, "space-only-model");
+    const resolved = await asMember(async () => {
+      const scope = await sharedModelScope(db.prisma, { userId: member, spaceId: memberSpace });
+      return { scope, main: await appliedModelRole(db.prisma, scope, "main") };
     });
-    const scope = await asMember(() =>
-      sharedModelScope(db.prisma, { userId: member, spaceId: memberSpace }),
-    );
-    expect(scope).toEqual({ userId: owner, spaceId: ownerOtherSpace });
+    expect(resolved.scope).toEqual({ userId: owner, spaceId: ownerOtherSpace });
+    expect(resolved.main.primary).toMatchObject({ modelId: "grok-4.7" });
   });
 
-  it("prefers a Space with a main role over a frozen default without one", async () => {
-    await mainRole(ownerOtherSpace, "grok-4.7");
-    await fixtures.spaceModelPreference.create({
-      data: { spaceId: ownerSpace, userId: owner, credentialId, modelId: "old", isDefault: true },
+  it("falls back to an overriding Space with its own main role when the account has none", async () => {
+    await overrideModels(ownerOtherSpace);
+    await mainRole(ownerOtherSpace, "other-model");
+    const resolved = await asMember(async () => {
+      const scope = await sharedModelScope(db.prisma, { userId: member, spaceId: memberSpace });
+      // The override row is the owner's; it must be read as the owner, not the member.
+      return { scope, main: await appliedModelRole(db.prisma, scope, "main") };
     });
+    expect(resolved.scope).toEqual({ userId: owner, spaceId: ownerOtherSpace });
+    expect(resolved.main.primary).toMatchObject({ modelId: "other-model", credentialId });
+  });
+
+  it("keeps the owner's first Space when nothing is set, so deployment defaults apply", async () => {
     const scope = await asMember(() =>
       sharedModelScope(db.prisma, { userId: member, spaceId: memberSpace }),
     );
-    expect(scope).toEqual({ userId: owner, spaceId: ownerOtherSpace });
+    expect(scope).toEqual({ userId: owner, spaceId: ownerSpace });
   });
 });

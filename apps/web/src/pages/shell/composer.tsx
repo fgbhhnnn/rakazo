@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import type { ComposerMention, SlashActionId } from "@rakazo/core";
+import type { AgentImportReader, ComposerMention, SlashActionId } from "@rakazo/core";
 import {
   clampMentionHighlightIndex,
   mentionChipKey,
@@ -20,6 +20,7 @@ import {
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
 import { FileKindIcon } from "../../components/FileKindIcon";
+import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
 import { newClientId } from "../../lib/client-id";
@@ -74,6 +75,7 @@ export const Composer = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
+  onImportAgent,
 }: {
   activeName?: string;
   /** The bot is working. Marks the bar for tests; nothing is locked: sending interrupts. */
@@ -89,7 +91,7 @@ export const Composer = memo(function Composer({
   onDismissError: () => void;
   sending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onAttachmentPick: (files: FileList | null) => boolean;
+  onAttachmentPick: (files: FileList | readonly File[] | null) => boolean;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
   phoneCallsEnabled?: boolean;
@@ -106,6 +108,8 @@ export const Composer = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
+  /** When set, a dropped OpenClaw or Hermes folder or backup offers Import or Attach. */
+  onImportAgent?: (agent: AgentImportReader) => void;
 }) {
   const { t } = useLingui();
   const [draft, setDraft] = useState(() => readComposerDraft(draftKey));
@@ -134,6 +138,10 @@ export const Composer = memo(function Composer({
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
+  const [agentDrop, setAgentDrop] = useState<{
+    agent: AgentImportReader;
+    files: readonly File[];
+  } | null>(null);
   useEffect(
     () =>
       subscribeComposerDraftAccepted(draftKey, (text) => {
@@ -211,7 +219,18 @@ export const Composer = memo(function Composer({
     retryNonce.current = null;
   }
 
-  function pickAttachments(files: FileList | null) {
+  const draftKeyRef = useRef(draftKey);
+  draftKeyRef.current = draftKey;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  useEffect(() => setAgentDrop(null), [draftKey]);
+
+  function pickAttachments(files: FileList | readonly File[] | null) {
     if (!files?.length) return;
     if (onAttachmentPick(files)) markEdited();
   }
@@ -394,7 +413,27 @@ export const Composer = memo(function Composer({
     event.preventDefault();
     dragDepth.current = 0;
     setDraggingFiles(false);
-    if (!disabled) pickAttachments(dataTransfer.files);
+    if (disabled) return;
+    const drop = onImportAgent ? captureDrop(dataTransfer) : null;
+    if (!drop || !mightBeAgent(drop)) {
+      pickAttachments(dataTransfer.files);
+      return;
+    }
+    // The event's file list is emptied once this handler returns.
+    const files = drop.files;
+    // Reading a large archive takes a while; drop nothing into a chat the user has left.
+    const target = draftKey;
+    const stillHere = () => mountedRef.current && draftKeyRef.current === target;
+    void droppedAgent(drop).then(
+      (agent) => {
+        if (!stillHere()) return;
+        if (agent) setAgentDrop({ agent, files });
+        else pickAttachments(files);
+      },
+      () => {
+        if (stillHere()) pickAttachments(files);
+      },
+    );
   }
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -497,6 +536,37 @@ export const Composer = memo(function Composer({
             textareaRef.current?.focus();
           }}
         />
+      ) : null}
+      {agentDrop ? (
+        <div
+          data-testid="agent-drop-choice"
+          className="mb-3 flex items-center gap-3 rounded-[14px] border border-border bg-card px-4 py-2"
+        >
+          <span className="min-w-0 flex-1 text-[13.5px] text-foreground">
+            {t`Import this agent as a bot?`}
+          </span>
+          <Button
+            size="sm"
+            onClick={() => {
+              const { agent } = agentDrop;
+              setAgentDrop(null);
+              onImportAgent?.(agent);
+            }}
+          >
+            {t`Import`}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const { files } = agentDrop;
+              setAgentDrop(null);
+              pickAttachments(files);
+            }}
+          >
+            {t`Attach`}
+          </Button>
+        </div>
       ) : null}
       {attachmentNotice ? (
         <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-[13px] text-warning">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { findDefaultModelCredential, findModelCredential } from "./model-credentials.js";
+import { findModelCredential, findModelCredentialById } from "./model-credentials.js";
 import { currentDbContext, runAsSystem, runAsTenant, withinScope } from "./row-security.js";
 import { findDefaultVoiceCredential } from "./voice-credentials.js";
 
@@ -26,15 +26,25 @@ function rlsPrisma() {
       ? { ...credential, updatedAt: new Date(0), createdAt: new Date(0) }
       : null,
   });
+  const credentialRow = () =>
+    visible() ? { ...credential, updatedAt: new Date(0), createdAt: new Date(0) } : null;
   return {
-    spaceModelPreference: {
+    userModelPreference: {
       findFirst: async () => preference(),
       findMany: async () => [preference()],
     },
     userModelCredential: {
-      findMany: async () =>
-        visible() ? [{ ...credential, updatedAt: new Date(0), createdAt: new Date(0) }] : [],
+      findMany: async () => {
+        const row = credentialRow();
+        return row ? [row] : [];
+      },
+      findFirst: async () => {
+        const row = credentialRow();
+        return row ? { ...row, userPreferences: [{ modelId: "gpt", thinkingLevel: null }] } : null;
+      },
     },
+    spaceSettingOverride: { findUnique: async () => null },
+    userVoicePreference: { findFirst: async () => preference() },
     spaceVoicePreference: { findFirst: async () => preference() },
   } as unknown as PrismaClient;
 }
@@ -60,7 +70,9 @@ describe("withinScope", () => {
   it("lets a member read the owner's shared model and voice credentials", async () => {
     const prisma = rlsPrisma();
     await runAsTenant(member, async () => {
-      expect(await findDefaultModelCredential(prisma, owner)).toMatchObject({ provider: "openai" });
+      expect(await findModelCredentialById(prisma, owner, "cred")).toMatchObject({
+        provider: "openai",
+      });
       expect(await findModelCredential(prisma, owner, "openai", "gpt")).toMatchObject({
         id: "cred",
       });
@@ -72,7 +84,7 @@ describe("withinScope", () => {
     const prisma = rlsPrisma();
     // The member's own tenant cannot see the owner's credential row.
     await runAsTenant(member, async () => {
-      expect(await findDefaultModelCredential(prisma, member)).toBeNull();
+      expect(await findModelCredentialById(prisma, member, "cred")).toBeNull();
       expect(await findDefaultVoiceCredential(prisma, member)).toBeNull();
     });
   });
