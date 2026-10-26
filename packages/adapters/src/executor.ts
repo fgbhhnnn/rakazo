@@ -23,9 +23,11 @@ import {
   renderBotDirectory,
   userRunError,
   userTurnMessageForRun,
+  withoutWorkerSlot,
 } from "@rakazo/core";
 import {
   effectiveMemoryScope,
+  isHiddenBot,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
@@ -34,6 +36,8 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
+  sharedModelScope,
+  VISIBLE_BOT_WHERE,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
@@ -70,7 +74,7 @@ import {
   persistLivePluginConnections,
   selectRunConnections,
 } from "./connection-context.js";
-import { formatCurrentTimeInstruction } from "./current-time.js";
+import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 
@@ -89,7 +93,11 @@ import {
   SkipComputerLease,
   startDispatcherWatchdog,
 } from "./dispatcher-mode.js";
-import { relayWorkerReportAttachments, workerFilesAttachedNote } from "./dispatcher-relay.js";
+import {
+  relayWorkerReportAttachments,
+  withoutMessagesOwnedByOtherLiveRuns,
+  workerFilesAttachedNote,
+} from "./dispatcher-relay.js";
 import { createDispatcherTurnLedger } from "./dispatcher-reply-guard.js";
 import {
   isDispatcherTimeoutRetry,
@@ -125,6 +133,7 @@ import { isRetiredModelCredentialError } from "./pi-oauth.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.js";
+import { watchRunCancellation } from "./run-cancel-watch.js";
 import { lazyRunComputer } from "./run-computer.js";
 import type {
   RunComputerUseState,
@@ -210,7 +219,8 @@ import {
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { createWebProvider } from "./web-provider-factory.js";
-import { dataBotId, loadWorkerOwner } from "./worker-owner-scope.js";
+import { botModelChoice } from "./worker-model.js";
+import { dataBotId, loadWorkerOwner, recallForRun } from "./worker-owner-scope.js";
 
 export { userTurnInstructions } from "./run-instructions.js";
 export { DISPATCHER_PLUGIN_LISTING_MAX_MS, loadLivePluginSlugs };
@@ -317,7 +327,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       });
       // A hidden worker uses its main bot's data (see worker-owner-scope.ts).
       const dataScope = { id: run.botId, ...leaseTarget };
-      const _secretScope = {
+      const secretScope = {
         userId: run.userId,
         spaceId: run.spaceId,
         botId: dataBotId(dataScope),
@@ -448,9 +458,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
       }, 60_000);
       heartbeat.unref?.();
+      // A cancel from the UI stops the turn within seconds, not at the next heartbeat.
+      const stopCancelWatch = watchRunCancellation(deps.prisma, runId, {
+        done: () => lease.completed,
+        onCancelled: () => {
+          lease.valid = false;
+          runAbortController?.abort();
+        },
+      });
       const stopHeartbeatAfterCompletion = () => {
         lease.completed = true;
+        dispatcherWatchdogClear?.();
         clearInterval(heartbeat);
+        stopCancelWatch();
       };
 
       const runSecrets = [...deps.secrets];
@@ -471,10 +491,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : undefined;
         const channelId = messagingChannelId(sourceBlocks);
         const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
+        // A member on the deployment owner's shared models reads the owner's connections.
+        const modelScope = await sharedModelScope(deps.prisma, run);
         const [
           bot,
           thread,
-          messages,
+          loadedMessages,
           peerMessage,
           task,
           storedConnections,
@@ -508,13 +530,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               status: true,
             },
           }),
-          resolveMemberMainModel(deps, run),
+          resolveMemberMainModel(deps, modelScope),
           deps.prisma.deploymentSettings.findUnique({
             where: { id: "default" },
           }),
           deps.memoryProviders.resolve(run.spaceId),
           deps.prisma.taughtSkill.findMany({
-            where: { botId: run.botId, spaceId: run.spaceId, status: "saved" },
+            where: { botId: secretScope.botId, spaceId: run.spaceId, status: "saved" },
           }),
           listAgentSkillRecords(deps.prisma, {
             spaceId: run.spaceId,
@@ -527,9 +549,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
               secret: { select: { id: true, ciphertext: true } },
             },
           }),
-          loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
-          loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
+          loadBotCommandEnvironment(deps.prisma, deps.secretStore, secretScope),
+          // Workers fill the owner's saved logins (secretScope), so they hide the same passwords.
+          loadLoginPasswordRedactions(deps.prisma, deps.secretStore, secretScope),
         ]);
+        // Messages another live turn of this bot already owns are its to answer, not this one's.
+        const messages = await withoutMessagesOwnedByOtherLiveRuns(
+          deps.prisma,
+          run,
+          runId,
+          loadedMessages,
+        );
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -553,14 +583,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ...initialBotCommandEnvironment,
         });
         // modelPinned distinguishes the captured choice from an attempt's recorded model.
-        const modelChoice = runModelChoice(run, bot);
+        // A hidden worker runs on its main bot's current model (see worker-model.ts).
+        const modelChoice = runModelChoice(run, await botModelChoice(deps.prisma as never, bot));
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
           hasModelOverride && modelChoice.modelProvider
             ? await findConnectedModelCredential(
                 deps.prisma,
                 deps.secretStore,
-                run,
+                modelScope,
                 modelChoice.modelProvider,
                 modelChoice.modelId,
               )
@@ -614,6 +645,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const memoryScope = configuredMemory
           ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
           : null;
+        const workerOwner = await workerOwnerPromise;
+        // A worker reads and records the main bot's memory and scratchpad.
+        const ownerMemory =
+          workerOwner && configuredMemory
+            ? {
+                id: workerOwner.id,
+                scope: effectiveMemoryScope(workerOwner.memoryScope, configuredMemory.defaultScope),
+              }
+            : null;
+        const durableMemoryScope = ownerMemory?.scope ?? memoryScope;
         const semanticMemory: SemanticMemoryProvider | null = configuredMemory?.provider ?? null;
 
         await deps.events.append({
@@ -687,7 +728,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             peerMessage.intent === "status" ||
             peerMessage.intent === "question" ||
             peerMessage.repliesToRequest
-            ? `Update from ${peerMessage.fromBotName}: ${peerMessage.text}`
+            ? `Update from ${withoutWorkerSlot(peerMessage.fromBotName)}: ${peerMessage.text}`
             : DELEGATED_EMPTY_NOTICE
           : undefined;
         const recallPromise =
@@ -695,7 +736,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           semanticMemory &&
           memoryScope &&
           thread.historyCompactedUpToSeq != null
-            ? semanticMemory.recall(
+            ? recallForRun(
+                semanticMemory,
                 {
                   query: task.prompt,
                   scope: memoryScope,
@@ -703,10 +745,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   historyGeneration: thread.historyCompactionGeneration,
                   limit: MAX_RECALLED_MEMORIES,
                 },
+                ownerMemory,
                 context,
               )
             : Promise.resolve(null);
-        const memoryBotId = (await workerOwnerPromise)?.id ?? dataBotId(dataScope);
+        const memoryBotId = workerOwner?.id ?? bot.id;
         const [
           discovered,
           currentTurnImages,
@@ -812,8 +855,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         try {
           resolved = await resolveModelKey(
             deps,
-            run.userId,
-            run.spaceId,
+            modelScope.userId,
+            modelScope.spaceId,
             credential,
             runModelProvider,
             runModelId,
@@ -881,6 +924,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
         }, context.signal);
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
+        // Every attachment message of this turn, steering included; unlike pendingTurnFiles it is
+        // never drained, so a background_task launched later still forwards them.
+        const turnAttachmentBlocks: MessageBlock[][] = [turnBlocks ?? []];
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
         const getRunComputer = async (reason: "tool" | "takeover" | "script", tool?: string) => {
@@ -1033,7 +1079,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           deps.dispatcherMode,
           bot,
           disabledBuiltinTools,
-          [...builtins],
+          // The whole catalog, not only this run's offer: a dispatcher's prompt clauses and
+          // refusals cover every work tool, including ones not selected for this trigger.
+          [...builtinAgentTools, ...agentConnectionTools],
         );
         const exposedConnectorTools = dispatcherRun
           ? []
@@ -1045,6 +1093,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         const trustLoaders = createRunTrustLoaders(deps, {
           run,
+          modelScope,
           runId,
           botId: bot.id,
           taskPrompt: task.prompt,
@@ -1170,6 +1219,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
 
         runState = state;
+        // Paths this run already attached, so worker report files are never attached twice.
         const attachedFilePaths = new Set<string>();
         const ctx: RunContext = {
           deps,
@@ -1181,8 +1231,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           attempt,
           bot,
           memoryBotId,
+          secretScope,
+          modelScope,
           turnAttachmentSources: {
-            turn: pendingTurnFiles,
+            turn: turnAttachmentBlocks,
             recent: recentAttachmentBlocks(history, historyMessages, recentFilesInput),
           },
           attachedFilePaths,
@@ -1226,7 +1278,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             approvedReplays: approvedEffectReplays,
           },
           trust: { ...trustLoaders, searchResultUrls },
-          memory: { semantic: semanticMemory, scope: memoryScope },
+          memory: {
+            semantic: semanticMemory,
+            scope: memoryScope,
+            owner: ownerMemory,
+            durableScope: durableMemoryScope,
+          },
           scripted,
           script,
           allowSilentEmptyRun,
@@ -1288,17 +1345,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
             );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
-        let userTimeZone: string | null | undefined;
-        try {
-          userTimeZone = (
-            await deps.prisma.user.findUnique({
-              where: { id: run.userId },
-              select: { timezone: true },
-            })
-          )?.timezone;
-        } catch {
-          // Timezone is optional context; a lookup failure must not prevent a run.
-        }
+        // The user's zone, else the Space owner's, else the deployment default; never fails a run.
+        const userTimeZone = await resolveRunTimeZone(deps.prisma as never, run);
         let lateRoutineNote: string | undefined;
         if (run.trigger === "routine" && run.routineId && run.clientNonce) {
           try {
@@ -1391,6 +1439,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   archivedAt: null,
                   id: { not: bot.id },
                   thread: { isNot: null },
+                  AND: [VISIBLE_BOT_WHERE],
                 },
                 select: { id: true, name: true, title: true, description: true },
                 orderBy: { createdAt: "asc" },
@@ -1449,7 +1498,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (!scripted) {
           try {
             fallbackModels = (
-              await effectiveModelRole(deps.prisma, run, "main", {
+              await effectiveModelRole(deps.prisma, modelScope, "main", {
                 settings,
                 deployment: runDeployment,
               })
@@ -1502,6 +1551,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // Keep an explicit executor override, but let the runtime select
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
+              // Background workers run long tool loops: summarize old steps, do not drop them.
+              ...(isHiddenBot(bot) ? { inRunCompaction: true } : {}),
               instructions: userTurnInstructions({
                 botInstructions: runIdentityInstruction(bot, run.trigger),
                 groupContext,
@@ -1563,6 +1614,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     }
                   : undefined,
               },
+              lane: isHiddenBot(bot) ? "background" : "main",
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
                 provider,
                 id: modelId,
@@ -1662,7 +1714,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   seenIds,
                   context,
                   pendingTurnFiles,
-                  { withholdImages: dispatcherWithholdsImages(dispatcherTurn) },
+                  {
+                    withholdImages: dispatcherWithholdsImages(dispatcherTurn),
+                    turnAttachmentBlocks,
+                  },
                 ),
             },
             context,
@@ -1750,6 +1805,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         dispatcherWatchdogClear?.();
         detachShutdown?.();
         clearInterval(heartbeat);
+        stopCancelWatch();
         if (!lease.retainComputer) {
           if (computerUse.screenRelease) {
             const releaseContext = computerUse.screenRelease.keepWarm

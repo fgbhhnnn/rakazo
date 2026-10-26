@@ -7,6 +7,7 @@ import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { appendMemoryFact } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { recallForRun } from "./worker-owner-scope.js";
 
 async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const { deps, run } = ctx;
@@ -38,13 +39,13 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
 /** Memory documents, semantic memory and thread history. */
 export const memoryTools: ToolHandlers = {
   async remember(ctx, call) {
-    const { deps, runId, bot, thread, context } = ctx;
+    const { deps, runId, thread, context, memoryBotId } = ctx;
     const { args } = call;
     const path = String(args.path ?? "").trim() || "MEMORY.md";
     // A fact is added to the document, never replaces it. A concurrent save
     // changes the revision, so re-read and append again.
     for (let attempt = 1; ; attempt += 1) {
-      const snapshot = await deps.memory.read({ scope: "bot", botId: bot.id, path }, context);
+      const snapshot = await deps.memory.read({ scope: "bot", botId: memoryBotId, path }, context);
       const existing = snapshot.documents[0];
       const content = appendMemoryFact(existing?.content ?? "", String(args.content ?? ""));
       if (content === (existing?.content ?? "")) return call.finish({ ok: true });
@@ -52,7 +53,7 @@ export const memoryTools: ToolHandlers = {
         await deps.memory.commit(
           {
             scope: "bot",
-            botId: bot.id,
+            botId: memoryBotId,
             path,
             content,
             expectedRevision: existing?.revision ?? 0,
@@ -100,7 +101,9 @@ export const memoryTools: ToolHandlers = {
   async recall_memory(ctx, call) {
     const { bot, thread, context } = ctx;
     const { args } = call;
-    return ctx.memory.semantic!.recall(
+    // A hidden worker also reads its main bot's memories (see recallForRun).
+    return recallForRun(
+      ctx.memory.semantic!,
       {
         query: String(args.query ?? ""),
         scope: ctx.memory.scope!,
@@ -110,20 +113,22 @@ export const memoryTools: ToolHandlers = {
           : { historyGeneration: thread.historyCompactionGeneration }),
         limit: MAX_RECALLED_MEMORIES,
       },
+      ctx.memory.owner,
       context,
     );
   },
   search_history: readHistoryTool,
   read_history: readHistoryTool,
   async save_memory(ctx, call) {
-    const { bot, context } = ctx;
+    const { context } = ctx;
     const { args } = call;
     return call.finish(
       await ctx.memory.semantic!.save(
         {
           content: String(args.content ?? ""),
-          scope: ctx.memory.scope!,
-          botId: bot.id,
+          // A hidden worker records durable facts in its main bot's memory.
+          scope: ctx.memory.durableScope!,
+          botId: ctx.memoryBotId,
           source: { kind: "durable" },
         },
         context,
@@ -131,7 +136,7 @@ export const memoryTools: ToolHandlers = {
     );
   },
   async forget_memory(ctx, call) {
-    const { bot, context } = ctx;
+    const { context } = ctx;
     const { args } = call;
     if (!ctx.memory.semantic?.forget) {
       return call.finish({
@@ -142,8 +147,8 @@ export const memoryTools: ToolHandlers = {
       await ctx.memory.semantic.forget(
         {
           id: String(args.id ?? ""),
-          scope: ctx.memory.scope!,
-          botId: bot.id,
+          scope: ctx.memory.durableScope!,
+          botId: ctx.memoryBotId,
           ...(typeof args.entity === "string" && args.entity.trim()
             ? { entity: args.entity.trim() }
             : {}),

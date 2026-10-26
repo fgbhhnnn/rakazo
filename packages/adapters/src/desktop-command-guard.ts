@@ -34,6 +34,8 @@ import {
   unresolvedVariableReason,
 } from "./desktop-guard-words.js";
 
+const NUMERIC_SHELL_PARAMETERS = new Set(["?", "#", "$", "!"]);
+
 type ShellSeparator = "pipe" | "and" | "or" | "seq" | "background";
 
 type PreparedDesktopCommand =
@@ -496,7 +498,11 @@ function tokenizeProtectedShellCommand(
     const separated = preserveShellCommandBoundaries(command);
     const parsed = parseShellCommand<{ expansion: string }>(
       separated,
-      (name) => literals[name] ?? STATIC_SHELL_EXPANSIONS[name] ?? { expansion: name },
+      (name) =>
+        literals[name] ??
+        STATIC_SHELL_EXPANSIONS[name] ??
+        // $? $# $$ $! always expand to digits: never a command, path or protected word.
+        (NUMERIC_SHELL_PARAMETERS.has(name) ? "0" : { expansion: name }),
       { splitUnquoted: true },
     );
     const words: string[] = [];
@@ -618,8 +624,10 @@ export function desktopProtectionGuardMessage(reason: string): string {
   const recovery =
     reason === "heredoc"
       ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
-      : reason === "command substitution" || reason === "backtick"
-        ? " For HTTP authentication, use the client's auth support or python3 -c reading the saved command credential from os.environ. Never print credentials. No request ran, so this refusal does not indicate invalid credentials."
-        : "";
+      : reason.startsWith("unresolved variable")
+        ? " Write the value literally in the command, or put the logic in a script file (for example with the file tools) and run it with bash script.sh. $? $# $$ and $! are allowed."
+        : reason === "command substitution" || reason === "backtick"
+          ? " For HTTP authentication, use the client's auth support or python3 -c reading the saved command credential from os.environ. Never print credentials. No request ran, so this refusal does not indicate invalid credentials."
+          : "";
   return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
 }

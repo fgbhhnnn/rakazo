@@ -59,6 +59,8 @@ export function createRunTrustLoaders(
   deps: ExecutorDeps,
   input: {
     run: { userId: string; spaceId: string; trigger: string };
+    /** Whose model roles apply (the deployment owner's for a member on shared models). */
+    modelScope?: { userId: string; spaceId: string };
     runId: string;
     botId: string;
     taskPrompt: string;
@@ -90,7 +92,7 @@ export function createRunTrustLoaders(
   const loadApprovalModel = () =>
     (approvalModelPromise ??= effectiveModelRole(
       deps.prisma,
-      { userId: run.userId, spaceId: run.spaceId },
+      input.modelScope ?? { userId: run.userId, spaceId: run.spaceId },
       "approval",
       {},
     ));

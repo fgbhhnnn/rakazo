@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
 import { TurnstileWidget } from "../components/turnstile-widget";
-import type { MobileMe, PasswordResetCapabilities } from "../lib/api";
+import type { PasswordResetCapabilities } from "../lib/api";
 import {
   currentApiBase,
   displayApiHost,

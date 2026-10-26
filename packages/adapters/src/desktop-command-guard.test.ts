@@ -112,8 +112,21 @@ describe("computer lifecycle command guard", () => {
     expect(protectedComputerLifecycleRefusal("source /tmp/kill-chrome.sh")).toBe("source");
     expect(protectedComputerLifecycleRefusal("eval 'ls'")).toBe("eval");
     expect(protectedComputerLifecycleRefusal('bash <<< "pkill chromium"')).toBe("herestring");
-    expect(desktopProtectionGuardMessage("unresolved variable $f")).toBe(
-      "This command was not run: desktop-protection guard: unresolved variable $f. Shell access is still available. Do not stop or restart browser or desktop processes.",
+    expect(desktopProtectionGuardMessage("unresolved variable $f")).toContain(
+      "put the logic in a script file",
+    );
+  });
+
+  it("allows exit-status and other numeric special parameters", () => {
+    for (const command of [
+      "ls /nope; echo $?",
+      'npm test; echo "exit=$?"',
+      "test -f a.txt && echo ok || echo $?",
+      "echo $# $$",
+    ])
+      expect(protectedComputerLifecycleRefusal(command)).toBeUndefined();
+    expect(protectedComputerLifecycleRefusal("echo $?; pkill chromium")).toBe(
+      "protected command pkill",
     );
   });
 

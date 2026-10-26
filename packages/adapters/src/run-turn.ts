@@ -86,6 +86,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   userProgressClientNonce,
 } from "./user-progress.js";
+import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { slotFree } from "./worker-slot-mentions.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
@@ -112,7 +113,8 @@ async function publishDispatcherPreAskReply(ctx: RunContext) {
   const { deps, run, runId } = ctx;
   const { reply } = ctx.state;
   const dispatcherVisible = slotFree(ctx.state.dispatcherTurn);
-  const pending = reply.assembled.trim();
+  const pending = reply.assembled.trim() ? reply.assembled.trim() : reply.preAskNarration;
+  reply.preAskNarration = "";
   const text = clampUserProgressMessage(dispatcherVisible(redactSecrets(pending, ctx.secrets)));
   if (text && !reply.midTurnUserTexts.includes(text)) {
     const guarded = guardDispatcherReply(true, [{ kind: "text", text }], ctx.state.turnLedger, {
@@ -420,7 +422,14 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   // Promote streamed narration into a durable, replyable chat message before
   // tools continue, so long turns do not look stalled and stay replyable.
   if (event.name !== "message_user") {
+    const discardedBefore = reply.discardedNarrationCount;
     await publishMidTurnNarration(ctx);
+    if (event.name === "ask_user") {
+      reply.preAskNarration =
+        reply.discardedNarrationCount !== discardedBefore
+          ? reply.lastDiscardedMidTurnNarration
+          : "";
+    }
   }
   reply.assistantTurnBreakPending = true;
   await deps.events.append({
@@ -628,7 +637,8 @@ export async function completeRun(ctx: RunContext) {
     }
   }
 
-  await ctx.computer.checkpoint.flush();
+  // A hidden worker's computer is checkpointed by idle sleep instead (see worker-checkpoint).
+  if (!defersTerminalCheckpoint(ctx.bot)) await ctx.computer.checkpoint.flush();
   ctx.state.terminalCheckpointComplete = true;
 
   // Preserve the last held-back preview as a normal final reply when the

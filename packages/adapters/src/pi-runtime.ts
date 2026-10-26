@@ -24,7 +24,7 @@ import { getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
-import { capToolResultImages, firstChangedIndex, toolImageLimit } from "./context-pruning.js";
+import { toolImageLimit } from "./context-pruning.js";
 import { createInRunCompactor, IN_RUN_SUMMARY_INSTRUCTIONS } from "./in-run-compaction.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
@@ -41,7 +41,11 @@ import {
   continuationOverlap,
   fallbackAwareModelStream,
   MAX_CONTINUATION_OVERLAP,
+  withCappedImages,
 } from "./pi-runtime-fallback.js";
+
+export { withCappedImages } from "./pi-runtime-fallback.js";
+
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
 import {
   cardOutputCeiling,
@@ -69,7 +73,6 @@ import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
-import { withoutThinkingFrom } from "./thinking-signatures.js";
 import {
   restoreTurnCheckpoint,
   serializeTurnCheckpoint,
@@ -1082,15 +1085,4 @@ function createQueue(): EventQueue {
       }
     },
   };
-}
-
-/** Swap the oldest tool-result images over `limit` for a note; drop signed thinking after the change. */
-export function withCappedImages<T extends { messages: Context["messages"] }>(
-  context: T,
-  limit: number,
-): T {
-  const capped = capToolResultImages(context.messages, limit);
-  if (capped === context.messages) return context;
-  const from = firstChangedIndex(context.messages, capped);
-  return { ...context, messages: withoutThinkingFrom(capped, Math.max(0, from)) };
 }

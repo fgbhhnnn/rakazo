@@ -59,6 +59,7 @@ export function SettingsOverlay({
   onNameSaved,
   timezone,
   onTimezoneChange,
+  isDeploymentOwner = false,
   billingEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
@@ -84,6 +85,8 @@ export function SettingsOverlay({
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
   onTimezoneChange: (timezone: string) => Promise<void>;
+  /** Shows the member access controls only the deployment owner manages. */
+  isDeploymentOwner?: boolean;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
@@ -368,6 +371,7 @@ export function SettingsOverlay({
                         onNameSaved={onNameSaved}
                         timezone={timezone}
                         onTimezoneChange={onTimezoneChange}
+                        isDeploymentOwner={isDeploymentOwner}
                       />
                       {/* One space is just the app, so there is nothing to tell apart or manage. */}
                       {spaces.length > 1 && onOpenSpace ? (

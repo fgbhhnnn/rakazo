@@ -792,7 +792,6 @@ msgstr "Approval model"
 msgid "Approvals"
 msgstr "Approvals"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -973,7 +972,6 @@ msgstr "bot"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1289,7 +1287,6 @@ msgstr "Clearing…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -1323,10 +1320,6 @@ msgstr "Close MCP servers"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "Close memory settings"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Close messaging settings"
-msgstr "Close messaging settings"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1507,7 +1500,6 @@ msgstr "Connect"
 msgid "Connect {selectedProviderName}"
 msgstr "Connect {selectedProviderName}"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr "Connect a chat app"
@@ -1637,7 +1629,6 @@ msgstr "Continue with credits"
 msgid "continuing"
 msgstr "continuing"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "Conversations"
@@ -2154,12 +2145,10 @@ msgstr "Could not update the default memory scope"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "Couldn't load messaging settings"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Couldn't update messaging settings"
@@ -2288,7 +2277,6 @@ msgid "days"
 msgstr "days"
 
 #: src/components/call/IncomingCall.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "Decline"
@@ -2427,7 +2415,6 @@ msgstr "Discard recording"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -2742,7 +2729,6 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "Export this week's list from the CRM and drop it in the shared folder"
 
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr "External conversation"
@@ -2892,7 +2878,6 @@ msgid "Git event"
 msgstr "Git event"
 
 #: src/lib/identity-display.ts
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
@@ -3229,7 +3214,6 @@ msgstr "Last check {0}: no changes"
 msgid "Later"
 msgstr "Later"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "Leave"
@@ -3553,7 +3537,6 @@ msgstr "Message…"
 msgid "Messaged {peer}"
 msgstr "Messaged {peer}"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "Messaging"
@@ -4239,7 +4222,6 @@ msgstr "Paste your API key, then test again."
 msgid "Paused"
 msgstr "Paused"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr "Pending"
@@ -4640,7 +4622,6 @@ msgstr "Replying to {0}"
 msgid "Request a new code"
 msgstr "Request a new code"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr "Requests"
@@ -4746,7 +4727,6 @@ msgstr "Return to call with {0}"
 msgid "Review provider settings and test again."
 msgstr "Review provider settings and test again."
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "Revoke"
@@ -4978,12 +4958,10 @@ msgstr "Self-hosted"
 msgid "Send"
 msgstr "Send"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
@@ -5038,7 +5016,6 @@ msgstr "Server URL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/shell-dialogs.tsx
@@ -5209,10 +5186,6 @@ msgstr "Slack message"
 #: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
 msgstr "Slack not enabled"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Slack workspace"
-msgstr "Slack workspace"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
@@ -5793,7 +5766,6 @@ msgstr "Undo import?"
 msgid "Uninstall"
 msgstr "Uninstall"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "Unlink"

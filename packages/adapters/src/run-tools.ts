@@ -14,12 +14,14 @@ import { fleetTools } from "./run-tools-fleet.js";
 import { cloudAgentTool, connectorTool, integrationTools } from "./run-tools-integrations.js";
 import { memoryTools } from "./run-tools-memory.js";
 import { messagingTools } from "./run-tools-messaging.js";
+import { pageTools } from "./run-tools-pages.js";
 import { secretTools } from "./run-tools-secrets.js";
 import { taskTools } from "./run-tools-tasks.js";
 import { workerNestingRefusal } from "./worker-nesting.js";
 import { workerUserFacingRefusal } from "./worker-user-facing-tools.js";
 
-const TOOL_HANDLERS = new Map<string, ToolHandler>([
+/** Every tool name with its own handler; any other name runs as a connector or cloud-agent tool. */
+export const TOOL_HANDLERS: ReadonlyMap<string, ToolHandler> = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
   ...Object.entries(fileTools),
   ...Object.entries(memoryTools),
@@ -28,6 +30,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(messagingTools),
   ...Object.entries(secretTools),
   ...Object.entries(fleetTools),
+  ...Object.entries(pageTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 

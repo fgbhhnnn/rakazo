@@ -13,7 +13,14 @@ import { isRetryableProviderUnavailable, isTransientModelError } from "@rakazo/a
 import type { ModelBackupOutcome } from "@rakazo/core";
 import { abortableDelay, MODEL_OUTPUT_LIMIT_ERROR } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { ModelImageLimitError, pruneForRebuild } from "./context-pruning.js";
+import {
+  capToolResultImages,
+  firstChangedIndex,
+  looksLikeContextOverflow,
+  ModelImageLimitError,
+  OVERFLOW_RETRY_MAX_IMAGES,
+  pruneForRebuild,
+} from "./context-pruning.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
@@ -38,12 +45,23 @@ import {
 } from "./pi-runtime-models.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE } from "./pi-runtime-stream.js";
 import {
+  acquireProviderLane,
+  isProviderConcurrencyLimit,
+  noteProviderConcurrencyLimit,
+  noteProviderOk,
+  waitForProviderLane,
+} from "./provider-lanes.js";
+import {
   isThinkingSignatureMismatch,
   withoutThinkingBlocks,
   withoutThinkingFrom,
 } from "./thinking-signatures.js";
 
 const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
+/** About 65 s in total before jitter; used only for gateway concurrency limits. */
+const CONCURRENCY_LIMIT_RETRY_DELAYS_MS = [
+  1_000, 2_000, 4_000, 8_000, 12_000, 12_000, 12_000, 14_000,
+] as const;
 
 export interface FallbackStreamState {
   request: AgentRunRequest;
@@ -69,6 +87,8 @@ export interface FallbackStreamState {
   isProviderFailure(message: AssistantMessage): boolean;
   /** Set once a provider rejected replayed thinking signatures; see thinking-signatures.ts. */
   dropThinkingBlocks?: boolean;
+  /** Set once a provider rejected an image-heavy request; later calls keep only a few images. */
+  shrinkImages?: boolean;
   /** Output reservations reduced by a rejected request, scoped to this run and model. */
   outputCaps?: Map<string, number>;
   /**
@@ -250,6 +270,10 @@ export function fallbackAwareModelStream(
   // must use that same context, or a usable backup can be skipped on discarded text.
   // A backup is judged on the context it would get after the switch, without earlier thinking.
   const requestContext = (switching = false) => {
+    if (state.shrinkImages) {
+      const base = state.dropThinkingBlocks ? withoutThinkingBlocks(context) : context;
+      return withCappedImages(base, OVERFLOW_RETRY_MAX_IMAGES);
+    }
     if (state.dropThinkingBlocks) return withoutThinkingBlocks(context);
     const before = switching ? context.messages.length : state.messagesBeforeSwitch;
     if (!before) return context;
@@ -395,6 +419,8 @@ export function fallbackAwareModelStream(
         output.end(failure.error);
         return;
       }
+      await waitForProviderLane(state.request.lane, signal);
+      if (signalAborted()) break;
       const target = state.getActive();
       const targetKey = JSON.stringify([target.config.provider, target.config.id]);
       const outputCap = state.outputCaps?.get(targetKey);
@@ -516,6 +542,27 @@ export function fallbackAwareModelStream(
               !hasTerminalVisibleOutput &&
               event.reason === "error" &&
               !signalAborted() &&
+              !state.shrinkImages &&
+              looksLikeContextOverflow(event.error.errorMessage, contextImageCount(context))
+            ) {
+              // Retry once with only the newest images; the run keeps the smaller budget after.
+              getLogger().warn(
+                "Model rejected an image-heavy request; retrying with fewer images",
+                {
+                  runId: state.request.runId,
+                  images: contextImageCount(context),
+                },
+              );
+              state.shrinkImages = true;
+              buffered = [];
+              restart = true;
+              break;
+            }
+            if (
+              !sawVisibleOutput &&
+              !hasTerminalVisibleOutput &&
+              event.reason === "error" &&
+              !signalAborted() &&
               state.isProviderFailure(event.error) &&
               isRetryableProviderUnavailable(event.error)
             ) {
@@ -538,14 +585,25 @@ export function fallbackAwareModelStream(
               }
               // An exhausted quota or usage window can move to a backup but will not clear
               // within the retry budget, so only transient failures retry the same model.
+              if (isProviderConcurrencyLimit(event.error)) noteProviderConcurrencyLimit();
               if (isTransientModelError(event.error)) {
                 firstRetryableError ??= event;
                 const idle = event.error.errorMessage === MODEL_STREAM_IDLE_TIMEOUT_MESSAGE;
+                // A gateway concurrency limit clears as other calls finish: retry it for about
+                // a minute with jittered backoff instead of failing the reply.
+                const concurrencyLimited = !idle && isProviderConcurrencyLimit(event.error);
+                const base = concurrencyLimited
+                  ? CONCURRENCY_LIMIT_RETRY_DELAYS_MS[retries]
+                  : MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
                 const delay = idle
                   ? recoveredIdle
                     ? undefined
                     : MODEL_PROVIDER_RETRY_DELAYS_MS[0]
-                  : MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
+                  : base === undefined
+                    ? undefined
+                    : concurrencyLimited
+                      ? Math.round(base * (0.75 + Math.random() * 0.5))
+                      : base;
                 if (idle && delay !== undefined) {
                   // The post-header idle bound can outlast the header retry window.
                   // Renew it once for this empty call, retaining completed tool results.
@@ -609,6 +667,7 @@ export function fallbackAwareModelStream(
             return;
           }
           if (event.type === "done") {
+            noteProviderOk();
             // A recovered call must not replace a later failure with its old error.
             state.primaryFailure = undefined;
             state.backupOutcomes.delete(targetKey);
@@ -693,6 +752,27 @@ export function fallbackAwareModelStream(
     const target = state.getActive();
     finishWithThrownError(target, new Error("Model request was aborted"));
   };
-  void run().catch((error: unknown) => finishWithThrownError(state.getActive(), error));
+  void (async () => {
+    const release = await acquireProviderLane(state.request.lane, signal);
+    try {
+      await run();
+    } finally {
+      release();
+    }
+  })().catch((error: unknown) => finishWithThrownError(state.getActive(), error));
   return output;
+}
+
+/**
+ * Swap the oldest tool-result images over `limit` for a note. The rewritten messages no longer
+ * match the transcript earlier thinking was signed against, so thinking from there on is dropped.
+ */
+export function withCappedImages<T extends { messages: Context["messages"] }>(
+  context: T,
+  limit: number,
+): T {
+  const capped = capToolResultImages(context.messages, limit);
+  if (capped === context.messages) return context;
+  const from = firstChangedIndex(context.messages, capped);
+  return { ...context, messages: withoutThinkingFrom(capped, Math.max(0, from)) };
 }

@@ -38,8 +38,7 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
   async list_secrets(ctx) {
-    const { deps, run } = ctx;
-    return listBotSecrets(deps.prisma, run);
+    return listBotSecrets(ctx.deps.prisma, ctx.secretScope);
   },
   async forget_secret(ctx, call) {
     const { deps, run } = ctx;
@@ -49,13 +48,13 @@ export const secretTools: ToolHandlers = {
     return call.finish(await forgetBotSecret(deps.prisma, run, parsed.data));
   },
   async secret_request(ctx, call) {
-    const { deps, run, context } = ctx;
+    const { deps, context } = ctx;
     const { args } = call;
     try {
       const result = await requestWithBotSecret({
         prisma: deps.prisma,
         secretStore: deps.secretStore,
-        scope: run,
+        scope: ctx.secretScope,
         request: args,
         signal: context.signal,
         remote: deps.secretHttp,

@@ -6,7 +6,7 @@ import type {
   MessagingInstallationsStatus,
   MessagingStatus,
 } from "@rakazo/contracts";
-import { messagingConnectOptions, messagingProviderName } from "@rakazo/core";
+import { messagingProviderName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -131,14 +131,14 @@ export default function MessagingSettings() {
     (connection) =>
       connection.status === "approved" || (connection.status === "pending" && !connection.incoming),
   );
-  const connectOptions = messagingConnectOptions(
-    status?.enabled ? status.providers : [],
-    installations.available,
-  );
-  const slackInstall = connectOptions.some(({ method }) => method === "install");
-  const connectChoices = connectOptions
-    .filter(({ method }) => method === "link")
-    .map(({ provider }) => ({ key: provider, label: messagingProviderName(provider) }));
+  // Fork: every app, Slack included, links personal DMs with a code sent from
+  // the chat app. A Slack workspace install is a separate, explicit choice for
+  // the picked bot (upstream's Slack one-click, #2199/#2245, is left out).
+  const slackInstall = installations.available;
+  const connectChoices = (status?.enabled ? status.providers : []).map((provider) => ({
+    key: provider,
+    label: messagingProviderName(provider),
+  }));
   const slackInstallations = installations.installations.filter(
     (installation) => installation.provider === "slack",
   );

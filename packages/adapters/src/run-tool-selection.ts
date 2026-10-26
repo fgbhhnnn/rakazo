@@ -31,6 +31,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "browser_snapshot",
   "list_secrets",
   "cloud_agent_status",
+  "background_task_status",
 ]);
 
 export const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));

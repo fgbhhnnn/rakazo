@@ -22,8 +22,8 @@ import { selectableTextFromMarkdown } from "../../lib/selectable-text";
 import { ThreadReadOnlyContext } from "../../lib/thread-read-only";
 import type { UserBubble } from "../../lib/user-bubble";
 import { BotAvatar } from "../bot-avatar";
+import type { FileArtifactViewerTarget } from "../file-artifact-viewer";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { presentMessageMenu } from "../message-action-menu";
 import { MessageContextMenu } from "../message-context-menu";
 import { ReplyLine } from "../reply-line";
@@ -52,7 +52,7 @@ export type MessageRowActions = {
   ) => Promise<void>;
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;
-  previewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  previewFile: (target: FileArtifactViewerTarget) => void;
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
@@ -441,7 +441,7 @@ export const MessageRow = memo(function MessageRow({
                 onOpenBot={actions.openBot}
                 onOpenComputer={actions.openComputer}
                 onChoiceDismissed={onChoiceDismissed}
-                onPreviewMarkdown={actions.previewMarkdown}
+                onPreviewFile={actions.previewFile}
                 onPreviewImage={actions.previewImage}
                 peerReplies={peerReplies}
                 onTogglePeerReplies={actions.togglePeerReplies}

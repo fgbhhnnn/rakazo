@@ -238,6 +238,11 @@ describe("toUtterances", () => {
 });
 
 describe("narrateTool", () => {
+  it("says a bot is writing a page instead of reading out the tool name", () => {
+    expect(narrateTool("write_page")).toBe("writing a page");
+    expect(narrateTool("edit_page")).toBe("writing a page");
+  });
+
   it("turns tool names into something worth hearing", () => {
     expect(narrateTool("Bash")).toBe("running a command");
     expect(narrateTool("Read")).toBe("reading a file");

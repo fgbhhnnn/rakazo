@@ -36,7 +36,8 @@ vi.mock("@rakazo/ui-web", () => ({
 
 vi.mock("./AccountSettingsOverlay", () => ({
   ComputerSettingsPanel: () => null,
-  GeneralSettingsPanels: () => null,
+  GeneralSettingsPanels: ({ isDeploymentOwner }: { isDeploymentOwner?: boolean }) =>
+    isDeploymentOwner ? <div data-testid="deployment-owner-general" /> : null,
   UpdatesSettingsPanel: () => null,
   UsageSettingsPanel: () => null,
 }));
@@ -87,8 +88,8 @@ const { scopes, recordScope } = vi.hoisted(() => {
     scopes,
     recordScope:
       (name: string) =>
-      ({ scope }: { scope: string }) => {
-        scopes.push(`${name}:${scope}`);
+      ({ scope, readOnly }: { scope: string; readOnly?: boolean }) => {
+        scopes.push(`${name}:${scope}${readOnly ? ":read-only" : ""}`);
         return null;
       },
   };
@@ -245,6 +246,35 @@ it("edits the account's models, voice, and confirmations", async () => {
     );
   } finally {
     await cleanup();
+  }
+});
+
+it("shows a locked member the account's approvals read-only", async () => {
+  scopes.length = 0;
+  const props = { space: acme, spaces, memberSettingsLocked: true };
+  const { cleanup } = await render({ ...props, section: "confirmations" });
+  try {
+    expect(scopes).toContain("confirmations:account:read-only");
+    expect(scopes).not.toContain("confirmations:account");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("gives only the deployment owner the member access controls in General", async () => {
+  const owner = await render({ space: acme, spaces, section: "general", isDeploymentOwner: true });
+  try {
+    expect(
+      owner.container.querySelector('[data-testid="deployment-owner-general"]'),
+    ).not.toBeNull();
+  } finally {
+    await owner.cleanup();
+  }
+  const member = await render({ space: acme, spaces, section: "general" });
+  try {
+    expect(member.container.querySelector('[data-testid="deployment-owner-general"]')).toBeNull();
+  } finally {
+    await member.cleanup();
   }
 });
 

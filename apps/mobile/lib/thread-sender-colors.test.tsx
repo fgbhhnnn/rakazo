@@ -29,6 +29,17 @@ vi.mock("expo-secure-store", () => ({}));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
+// Native file and router modules: the bubble only needs which files open in the viewer.
+vi.mock("../components/file-viewer", async () => {
+  const { fileKindOf, hasInAppFileViewer } = await import("@rakazo/chat-ui/file-kinds");
+  return {
+    hasMobileFileViewer: (file: { name?: string | null; mimeType?: string | null }) =>
+      hasInAppFileViewer(file) || fileKindOf(file).viewer === "html",
+  };
+});
+vi.mock("../components/page-card", () => ({
+  PageCard: ({ title }: { title: string }) => <span data-page-card>{title}</span>,
+}));
 vi.mock("./native", () => ({ native: {}, useResolvedAppearance: () => "dark" }));
 
 vi.mock("@rakazo/chat-ui/native", () => ({
@@ -72,7 +83,7 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onAnswer={async () => undefined}
       onOpenBot={() => undefined}
       onOpenComputer={() => undefined}
-      onPreviewMarkdown={() => undefined}
+      onPreviewFile={() => undefined}
       onPreviewImage={() => undefined}
       onTogglePeerReplies={() => undefined}
       onOpenPeerChat={() => undefined}

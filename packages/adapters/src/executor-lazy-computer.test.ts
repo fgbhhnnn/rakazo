@@ -41,6 +41,8 @@ async function runRoutine(
     exportError?: Error;
     setupError?: Error;
     onRunStarted?: () => void;
+    /** A `bg-worker:` key makes the bot a hidden background worker. */
+    spawnKey?: string;
   } = {},
 ) {
   const attachment: Extract<MessageBlock, { kind: "file" | "image" }> = {
@@ -117,6 +119,7 @@ async function runRoutine(
         computerId: "computer-1",
         computerSwitching: false,
         memoryScope: null,
+        spawnKey: options.spawnKey ?? null,
         computer: {
           id: "computer-1",
           scope: "dedicated",
@@ -489,6 +492,23 @@ describe("run computer provisioning", () => {
     expect(sink.events).toContainEqual(
       expect.objectContaining({ level: "warn", message: "computer.checkpoint_deferred" }),
     );
+  });
+
+  it("leaves a hidden worker's closing checkpoint to idle sleep", async () => {
+    const regular = await runRoutine([{ name: "list_files", args: { path: "" } }], {
+      attachments: "file",
+    });
+    expect(regular.sandbox.exportWorkspace).toHaveBeenCalled();
+
+    const worker = await runRoutine([{ name: "list_files", args: { path: "" } }], {
+      attachments: "file",
+      spawnKey: "bg-worker:bot-main:1",
+    });
+    expect(worker.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "completed" }),
+    );
+    expect(worker.sandbox.exportWorkspace).not.toHaveBeenCalled();
+    expect(worker.sleepJobs).toHaveLength(1);
   });
 
   it("starts the computer before handing its screen to the user", async () => {

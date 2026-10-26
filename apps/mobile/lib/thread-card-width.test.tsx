@@ -26,6 +26,7 @@ vi.mock("react-native", async () => {
       accessibilityState,
       accessibilityRole,
       accessibilityLabel,
+      testID,
       ref,
     }: {
       children?: ReactNode;
@@ -36,6 +37,7 @@ vi.mock("react-native", async () => {
       accessibilityState?: { expanded?: boolean };
       accessibilityRole?: string;
       accessibilityLabel?: string;
+      testID?: string;
       ref?: Ref<unknown>;
     }) => {
       useImperativeHandle(ref, () => ({
@@ -49,6 +51,7 @@ vi.mock("react-native", async () => {
           "aria-expanded": accessibilityState?.expanded,
           role: accessibilityRole,
           "aria-label": accessibilityLabel,
+          "data-testid": testID,
           onClick: onPress,
           onContextMenu: onLongPress,
         },
@@ -83,8 +86,24 @@ vi.mock("react-native-reanimated", async () => {
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
-vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
+vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn().mockResolvedValue(undefined) }));
 
+// Native file and router modules: the bubble only needs which files open in the viewer.
+vi.mock("../components/file-viewer", async () => {
+  const { fileKindOf, hasInAppFileViewer } = await import("@rakazo/chat-ui/file-kinds");
+  return {
+    hasMobileFileViewer: (file: { name?: string | null; mimeType?: string | null }) =>
+      hasInAppFileViewer(file) || fileKindOf(file).viewer === "html",
+  };
+});
+vi.mock("../components/page-card", () => ({
+  PageCard: ({ title }: { title: string }) => <span data-page-card>{title}</span>,
+}));
+vi.mock("../components/task-progress-card", () => ({
+  TaskProgressCard: ({ block }: { block: { tasks: { name: string }[] } }) => (
+    <span data-task-progress>{block.tasks.map((task) => task.name).join(",")}</span>
+  ),
+}));
 vi.mock("./native", () => ({
   native: { fill: "fill", fillPressed: "fill-pressed" },
   useMobileTokens: () => ({}),
@@ -131,7 +150,7 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onAnswer={async () => undefined}
       onOpenBot={() => undefined}
       onOpenComputer={() => undefined}
-      onPreviewMarkdown={() => undefined}
+      onPreviewFile={() => undefined}
       onPreviewImage={() => undefined}
       onTogglePeerReplies={() => undefined}
       onOpenPeerChat={() => undefined}
@@ -263,6 +282,101 @@ describe("thread cards", () => {
       for (const span of row.querySelectorAll("span")) span.click();
     });
     expect(onOpenBot).not.toHaveBeenCalled();
+  });
+
+  it("never opens a background task's hidden worker from its card", () => {
+    const onOpenBot = vi.fn();
+    const taskCard = {
+      kind: "child_bot",
+      botId: "hidden-worker",
+      name: "后台任务：整理报表 #TAB12CD3",
+      title: "任务 #TAB12CD3",
+      status: "created",
+    } as MessageBlock;
+    renderBlocks([taskCard], {
+      bots: [{ id: "hidden-worker", name: "Assistant · 后台1", color: "orange" }],
+      onOpenBot,
+    });
+    const row = container.firstElementChild as HTMLElement;
+    expect(row.textContent).toContain("后台任务：整理报表 #TAB12CD3");
+    expect(row.querySelector('[role="link"]')).toBeNull();
+    act(() => {
+      for (const span of row.querySelectorAll("span")) span.click();
+    });
+    expect(onOpenBot).not.toHaveBeenCalled();
+  });
+
+  it("shows the background task progress block as its own card", () => {
+    renderBlocks([
+      {
+        kind: "task_progress",
+        botId: "bot-1",
+        updatedAt: "2026-10-25T15:20:00Z",
+        tasks: [
+          { ref: "TAB12CD3", name: "竞品调研", state: "queued", queuedAt: "2026-10-25T15:19:00Z" },
+        ],
+      } as MessageBlock,
+    ]);
+    expect(container.querySelector("[data-task-progress]")?.textContent).toBe("竞品调研");
+  });
+
+  it("shows a Page a bot wrote as a Page card, not a file row", () => {
+    renderBlocks([
+      {
+        kind: "file",
+        artifactId: "artifact-1",
+        name: "Weekly report",
+        mimeType: "text/markdown",
+        page: { pageId: "page-1", snippet: "Highlights" },
+      } as MessageBlock,
+    ]);
+    expect(container.querySelector("[data-page-card]")?.textContent).toBe("Weekly report");
+    expect(container.querySelector("[data-symbol]")).toBeNull();
+  });
+
+  it("opens viewable files in the in-app viewer and shows each file's kind", () => {
+    const onPreviewFile = vi.fn();
+    renderBlocks(
+      [
+        { kind: "file", artifactId: "pdf-1", name: "plan.pdf", mimeType: "application/pdf" },
+        { kind: "file", artifactId: "zip-1", name: "bundle.zip", mimeType: "application/zip" },
+      ] as MessageBlock[],
+      { onPreviewFile },
+    );
+    const rows = [...container.querySelectorAll("button")].filter((row) =>
+      /plan\.pdf|bundle\.zip/.test(row.textContent ?? ""),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).not.toContain("📎");
+    act(() => rows[0]!.click());
+    expect(onPreviewFile).toHaveBeenCalledExactlyOnceWith({
+      artifactId: "pdf-1",
+      name: "plan.pdf",
+      mimeType: "application/pdf",
+    });
+    act(() => rows[1]!.click());
+    expect(onPreviewFile).toHaveBeenCalledOnce();
+  });
+
+  it("names the background task on a mirrored approval and says when its worker was cancelled", () => {
+    renderBlocks([
+      {
+        kind: "ask",
+        text: "Allow shell?",
+        actions: [{ id: "allow", label: "Allow" }],
+        workerApproval: {
+          runId: "worker-run",
+          messageId: "worker-message",
+          label: "任务 #AB12CD34（报表）",
+          closed: "cancelled",
+        },
+      } as MessageBlock,
+    ]);
+    expect(container.querySelector('[data-testid="worker-approval-label"]')?.textContent).toBe(
+      "任务 #AB12CD34（报表）",
+    );
+    expect(container.textContent).toContain("Cancelled");
+    expect(container.textContent).not.toContain("No longer active");
   });
 
   it("keeps child navigation and long-press actions on each card and text piece", () => {

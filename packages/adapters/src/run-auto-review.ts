@@ -12,7 +12,15 @@ import { resolveModelKey } from "./run-model.js";
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
-  scope: { runId: string; spaceId: string; userId: string; botId: string; threadId: string },
+  scope: {
+    runId: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    /** Whose model connections the checker reads (the owner's on shared models). */
+    modelScope?: { userId: string; spaceId: string };
+  },
   options: {
     injectedReview?: AutoReviewProvider;
     memberChecker: boolean;
@@ -22,6 +30,7 @@ export async function autoReviewCheckerProvider(
   checker: AutoReviewChecker,
 ): Promise<AutoReviewProvider> {
   const { runId, spaceId, userId, botId, threadId } = scope;
+  const modelScope = scope.modelScope ?? { userId, spaceId };
   const { injectedReview, memberChecker, backups, registerSecrets } = options;
   if (injectedReview) return injectedReview;
   const kind =
@@ -34,7 +43,7 @@ export async function autoReviewCheckerProvider(
   const reviewCredential = await findConnectedModelCredential(
     deps.prisma,
     deps.secretStore,
-    { userId, spaceId },
+    modelScope,
     checker.provider,
     checker.model,
     { credentialId: checker.credentialId },
@@ -52,8 +61,8 @@ export async function autoReviewCheckerProvider(
   }
   const judgeKey = await resolveModelKey(
     deps,
-    userId,
-    spaceId,
+    modelScope.userId,
+    modelScope.spaceId,
     reviewCredential,
     checker.provider,
     checker.model,

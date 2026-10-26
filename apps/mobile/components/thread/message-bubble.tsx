@@ -35,13 +35,17 @@ import { BotAvatar } from "../bot-avatar";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
 import { ComputerCard } from "../ComputerCard";
+import type { FileArtifactViewerTarget } from "../file-artifact-viewer";
+import { FileKindIcon } from "../file-kind-icon";
+import { hasMobileFileViewer } from "../file-viewer";
 import type { ImageArtifactPreviewTarget } from "../image-artifact-viewer";
 import { InlineImageAttachment } from "../inline-image-attachment";
 import { InstructionUndo } from "../instruction-undo";
 import { McpApprovalCard } from "../McpApprovalCard";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
+import { PageCard } from "../page-card";
+import { inactiveAskText, WorkerApprovalLabel } from "../worker-approval-label";
 import { AskBlock } from "./ask-block";
 import type { MessageRowActions } from "./message-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
@@ -153,7 +157,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onAnswer,
   onOpenComputer,
   onChoiceDismissed,
-  onPreviewMarkdown,
+  onPreviewFile,
   onPreviewImage,
   peerReplies,
   onTogglePeerReplies,
@@ -181,7 +185,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onOpenBot: (botId: string, name: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
   onChoiceDismissed?: (question: string) => void;
-  onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  onPreviewFile: (target: FileArtifactViewerTarget) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   peerReplies?: "collapsed" | "expanded";
   onTogglePeerReplies: (markerId: string) => void;
@@ -415,6 +419,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             />
           ) : (
             <>
+              <WorkerApprovalLabel block={askBlock} />
               {askBlock.text ? (
                 <Text {...actionProps} style={{ color: tokens.foreground, ...typeScale.cardTitle }}>
                   {askBlock.instructionUpdate
@@ -473,7 +478,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   {...actionProps}
                   style={{ color: tokens.mutedForeground, marginTop: 12, ...typeScale.caption }}
                 >
-                  {t("No longer active")}
+                  {t(inactiveAskText(askBlock))}
                 </Text>
               )}
             </>
@@ -592,6 +597,15 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 </Text>
               </Pressable>
             )
+          ) : attachment.page ? (
+            <PageCard
+              key={`${attachment.page.pageId}-${index}`}
+              pageId={attachment.page.pageId}
+              title={attachment.name ?? t("Page")}
+              snippet={attachment.page.snippet}
+              pressableProps={actionProps}
+              inBubble
+            />
           ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
             <AudioAttachment
               pressableProps={actionProps}
@@ -608,11 +622,11 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               key={`${attachment.artifactId ?? attachment.name ?? "file"}-${index}`}
               onPress={() =>
                 attachment.artifactId
-                  ? attachment.mimeType === "text/markdown"
-                    ? onPreviewMarkdown({
+                  ? hasMobileFileViewer(attachment)
+                    ? onPreviewFile({
                         artifactId: attachment.artifactId,
-                        name: attachment.name ?? t("Markdown file"),
-                        mimeType: attachment.mimeType,
+                        name: attachment.name ?? t("File"),
+                        mimeType: attachment.mimeType ?? "application/octet-stream",
                       })
                     : void openMobileArtifact(
                         artifactTarget,
@@ -625,26 +639,34 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   : undefined
               }
             >
-              <Text
-                style={{
-                  color: message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
-                  fontSize: 15,
-                }}
-              >
-                📎 {attachment.name ?? t("File")}
-              </Text>
-              {formatFileSize(attachment.size) ? (
-                <Text
-                  style={{
-                    color:
-                      message.role === "user" ? tokens.chatUserForeground : tokens.mutedForeground,
-                    marginTop: 4,
-                    fontSize: 13,
-                  }}
-                >
-                  {formatFileSize(attachment.size)}
-                </Text>
-              ) : null}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <FileKindIcon name={attachment.name} mimeType={attachment.mimeType} />
+                <View style={{ flexShrink: 1 }}>
+                  <Text
+                    style={{
+                      color:
+                        message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
+                      fontSize: 15,
+                    }}
+                  >
+                    {attachment.name ?? t("File")}
+                  </Text>
+                  {formatFileSize(attachment.size) ? (
+                    <Text
+                      style={{
+                        color:
+                          message.role === "user"
+                            ? tokens.chatUserForeground
+                            : tokens.mutedForeground,
+                        marginTop: 4,
+                        fontSize: 13,
+                      }}
+                    >
+                      {formatFileSize(attachment.size)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
             </Pressable>
           ),
         )}

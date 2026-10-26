@@ -41,12 +41,15 @@ export function AppOverlays({
   setOverlay,
   activeBotId,
   stdioEnabled,
+  memberSettingsLocked = false,
   onConnectedAppsChange,
 }: {
   overlay: ShellOverlay;
   setOverlay: (next: ShellOverlay) => void;
   activeBotId: string | undefined;
   stdioEnabled: boolean;
+  /** The deployment owner manages this member's MCP servers. */
+  memberSettingsLocked?: boolean;
   onConnectedAppsChange: (apps: ReturnType<typeof connectedAppMarks>) => void;
 }) {
   return (
@@ -56,10 +59,10 @@ export function AppOverlays({
           onConnectedAppsChange={onConnectedAppsChange}
           activeBotId={activeBotId}
           onClose={() => setOverlay(null)}
-          onOpenMcp={() => setOverlay({ kind: "mcp" })}
+          onOpenMcp={memberSettingsLocked ? undefined : () => setOverlay({ kind: "mcp" })}
         />
       ) : null}
-      {overlay?.kind === "mcp" ? (
+      {overlay?.kind === "mcp" && !memberSettingsLocked ? (
         <McpServersOverlay
           editServerId={overlay.serverId}
           stdioEnabled={stdioEnabled}
@@ -141,6 +144,8 @@ export function SettingsOverlays({
           onUsageOpen={refreshUsage}
           section={overlay.section}
           onSectionChange={(section) => setOverlay({ ...overlay, section })}
+          isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
+          memberSettingsLocked={bootstrapMe?.memberSettingsLocked === true}
           billingEnabled={bootstrapMe?.billingEnabled === true}
           sandboxProvider={bootstrapMe?.sandboxProvider}
           onSandboxProviderChange={(sandboxProvider) =>

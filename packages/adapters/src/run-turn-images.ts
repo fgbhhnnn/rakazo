@@ -385,7 +385,11 @@ export async function claimRunSteering(
   seenIds: string[],
   context: Parameters<typeof loadCurrentTurnImages>[2],
   pendingTurnFiles: MessageBlock[][],
-  options?: { withholdImages?: boolean },
+  options?: {
+    withholdImages?: boolean;
+    /** Every attachment message of this turn; never drained, so a later background_task still sees them. */
+    turnAttachmentBlocks?: MessageBlock[][];
+  },
 ): Promise<AgentSteeringMessage[]> {
   const withholdImages = Boolean(options?.withholdImages);
   const steering = await deps.events.claimSteering({ ...lease, seenIds });
@@ -399,7 +403,11 @@ export async function claimRunSteering(
         withholdImages ? undefined : item.blocks,
         context.signal,
       );
-      if (files.length) pendingTurnFiles.push(item.blocks);
+      if (files.length) {
+        pendingTurnFiles.push(item.blocks);
+        // Attachments that arrive as steering mid-run, so a worker launched later still gets them.
+        options?.turnAttachmentBlocks?.push(item.blocks);
+      }
       const filesInstruction = currentTurnFilesInstruction(files);
       return {
         id: item.id,

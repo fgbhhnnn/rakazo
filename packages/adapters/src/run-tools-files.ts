@@ -191,6 +191,7 @@ export const fileTools: ToolHandlers = {
     const contentKey = attachedContentKey(bytes);
     if (
       attachedFilePaths.has(contentKey) ||
+      // A retried or resumed turn starts with an empty set: ask the thread too.
       alreadyPostedFile(
         await postedAttachmentHashes(deps.prisma, {
           spaceId: run.spaceId,
@@ -202,6 +203,9 @@ export const fileTools: ToolHandlers = {
         filePath,
       )
     ) {
+      // The same bytes are already in the chat since the user's last message (e.g. a
+      // worker report's file or Page, or this turn's attempt that timed out and was
+      // retried), or the file is the source of a Page shown there.
       await recordComputerAction(ctx, call, "attach_file", filePath);
       return call.finish({
         ok: true,
@@ -232,6 +236,8 @@ export const fileTools: ToolHandlers = {
       );
       await publishMessage(deps, run, "bot", [attached.block]);
       attachedFilePaths.add(filePath);
+      // Also by resolved location, so a worker report naming the same file another way
+      // (absolute vs relative) is not attached a second time.
       attachedFilePaths.add(attachedPathKey(storedPath));
       attachedFilePaths.add(contentKey);
       await recordComputerAction(ctx, call, "attach_file", filePath);

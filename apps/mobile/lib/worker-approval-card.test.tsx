@@ -14,9 +14,6 @@ vi.mock("./native", () => ({ useMobileTokens: () => ({ mutedForeground: "muted" 
 
 import { inactiveAskText, WorkerApprovalLabel } from "../components/worker-approval-label";
 
-// Keep Vitest's jsdom URL transform from replacing the file URL with self.location.
-const testFileUrl = import.meta.url;
-
 const mirror = {
   kind: "ask" as const,
   approvalEffectId: "effect1",

@@ -792,7 +792,6 @@ msgstr "अनुमोदन मॉडल"
 msgid "Approvals"
 msgstr "स्वीकृतियाँ"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -973,7 +972,6 @@ msgstr "बॉट"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1289,7 +1287,6 @@ msgstr "साफ़ किया जा रहा है…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -1323,10 +1320,6 @@ msgstr "MCP सर्वर बंद करें"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "मेमोरी सेटिंग्स बंद करें"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Close messaging settings"
-msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1507,7 +1500,6 @@ msgstr "कनेक्ट करें"
 msgid "Connect {selectedProviderName}"
 msgstr "{selectedProviderName} कनेक्ट करें"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr ""
@@ -1637,7 +1629,6 @@ msgstr ""
 msgid "continuing"
 msgstr "जारी"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr ""
@@ -2154,12 +2145,10 @@ msgstr "डिफ़ॉल्ट मेमोरी स्कोप अपडे
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr ""
@@ -2288,7 +2277,6 @@ msgid "days"
 msgstr "दिन"
 
 #: src/components/call/IncomingCall.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "अस्वीकार करें"
@@ -2427,7 +2415,6 @@ msgstr "रिकॉर्डिंग हटाएँ"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -2742,7 +2729,6 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "CRM से इस सप्ताह की सूची एक्सपोर्ट करें और उसे साझा फ़ोल्डर में डालें"
 
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr ""
@@ -2892,7 +2878,6 @@ msgid "Git event"
 msgstr ""
 
 #: src/lib/identity-display.ts
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
@@ -3229,7 +3214,6 @@ msgstr "पिछली जाँच {0}: कोई बदलाव नहीं
 msgid "Later"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr ""
@@ -3553,7 +3537,6 @@ msgstr "संदेश…"
 msgid "Messaged {peer}"
 msgstr "{peer} को संदेश भेजा"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr ""
@@ -4239,7 +4222,6 @@ msgstr "अपनी API कुंजी पेस्ट करें, फिर
 msgid "Paused"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr ""
@@ -4640,7 +4622,6 @@ msgstr ""
 msgid "Request a new code"
 msgstr "नया कोड मँगाएँ"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr ""
@@ -4746,7 +4727,6 @@ msgstr "{0} के साथ कॉल पर लौटें"
 msgid "Review provider settings and test again."
 msgstr "प्रोवाइडर सेटिंग्स की समीक्षा करें और फिर से परीक्षण करें।"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr ""
@@ -4978,12 +4958,10 @@ msgstr "सेल्फ़-होस्टेड"
 msgid "Send"
 msgstr "भेजें"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr ""
@@ -5038,7 +5016,6 @@ msgstr "सर्वर URL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/shell-dialogs.tsx
@@ -5208,10 +5185,6 @@ msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
-msgstr ""
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Slack workspace"
 msgstr ""
 
 #: src/components/composer/HoldToTalk.tsx
@@ -5793,7 +5766,6 @@ msgstr "इंपोर्ट पूर्ववत करें?"
 msgid "Uninstall"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr ""

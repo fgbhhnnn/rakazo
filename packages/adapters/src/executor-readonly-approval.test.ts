@@ -10,8 +10,8 @@ import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
-import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPendingSteeringRun, sendUserMessage, VISIBLE_BOT_WHERE } from "@rakazo/db";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isApprovalPausedResult } from "./approval-effect.js";
 import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
@@ -19,7 +19,13 @@ import { createRunExecutor } from "./executor.js";
 import { FakeWebProvider } from "./fake-web.js";
 import type * as FleetToolsModule from "./fleet-tools.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
+import { mirrorWorkerApproval } from "./worker-needs-user.js";
 import { WORKER_NESTING_REFUSAL } from "./worker-nesting.js";
+
+vi.mock("./worker-needs-user.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./worker-needs-user.js")>()),
+  mirrorWorkerApproval: vi.fn(async () => null),
+}));
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -93,10 +99,13 @@ function fixture({
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
   spawnKey = null as string | null,
+  parentBotId = null as string | null,
   connectedApps = [] as string[],
 }: {
   /** The bot's spawn key; a `bg-worker:` key makes it a hidden background worker. */
   spawnKey?: string | null;
+  /** The main bot a hidden worker works for. */
+  parentBotId?: string | null;
   /** Apps connected through Composio. */
   connectedApps?: string[];
   /** The bot's routines, as the owner wrote them. */
@@ -251,6 +260,7 @@ function fixture({
         title: bot.title,
         description: bot.description,
         spawnKey,
+        parentBotId,
         disabledBuiltinTools,
         fleetManagement,
         computerId: "computer-1",
@@ -274,7 +284,11 @@ function fixture({
           (row) => matches(row.id, where.id) && matches(row.name, where.name),
         );
       }),
-      findUnique: vi.fn(async () => ({ ...liveBot })),
+      findUnique: vi.fn(async ({ where }: { where?: { id?: string } } = {}) =>
+        parentBotId && where?.id === parentBotId
+          ? { id: parentBotId, memoryScope: null }
+          : { ...liveBot },
+      ),
     },
     attempt: {
       create: vi.fn(async () => ({ id: "attempt-1" })),
@@ -520,6 +534,7 @@ function fixture({
       outsideSteering = value;
     },
     offeredTools: () => offeredTools,
+    runtimeRun,
     cancelAtInstructionCommit() {
       transactionalPrisma.$queryRaw.mockImplementation(async (...values: unknown[]) => {
         if (String(values[0]).includes("FROM threads")) run.status = "cancelled";
@@ -614,6 +629,125 @@ it("enqueues pending work when an approval pauses its current run", async () => 
   expect(f.enqueue).toHaveBeenCalledWith(
     expect.objectContaining({ payload: { runId: "pending-run" } }),
   );
+});
+
+describe("a hidden worker's approval card", () => {
+  beforeEach(() => vi.mocked(mirrorWorkerApproval).mockClear());
+
+  it("is mirrored into the main chat, where the owner answers it", async () => {
+    const f = fixture({ name: "shell", trigger: "webhook", spawnKey: "bg-worker:main-bot:1" });
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(mirrorWorkerApproval).toHaveBeenCalledOnce();
+    const [, input] = vi.mocked(mirrorWorkerApproval).mock.calls[0]!;
+    const [paused] = f.pauseRunForInput.mock.calls[0] as unknown as [{ blocks: unknown[] }];
+    expect(input).toEqual(
+      expect.objectContaining({ workerRunId: expect.any(String), block: paused.blocks[0] }),
+    );
+  });
+
+  it("stays in a regular bot's own chat", async () => {
+    const f = fixture({ name: "shell", trigger: "webhook" });
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(mirrorWorkerApproval).not.toHaveBeenCalled();
+  });
+});
+
+describe("a hidden worker's notes", () => {
+  it("are saved in its main bot's memory", async () => {
+    const f = fixture({
+      name: "remember",
+      builtin: true,
+      spawnKey: "bg-worker:main-bot:1",
+      parentBotId: "main-bot",
+    });
+    f.setCalls([{ args: { content: "Prefers tea" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([expect.objectContaining({ ok: true })]);
+    expect(f.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "bot", botId: "main-bot" }),
+      expect.anything(),
+    );
+  });
+
+  it("stay with a regular bot", async () => {
+    const f = fixture({ name: "remember", builtin: true });
+    f.setCalls([{ args: { content: "Prefers tea" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "bot", botId: expect.not.stringMatching(/^main-bot$/) }),
+      expect.anything(),
+    );
+  });
+});
+
+describe("the model request a run sends", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("runs a hidden worker in the background lane with in-run compaction", async () => {
+    const f = fixture({ name: "shell", builtin: true, spawnKey: "bg-worker:main-bot:1" });
+    f.setCalls([]);
+    await f.run();
+    const [request] = f.runtimeRun.mock.calls[0]!;
+    expect(request).toEqual(expect.objectContaining({ lane: "background", inRunCompaction: true }));
+  });
+
+  it("keeps a regular bot on the main lane", async () => {
+    const f = fixture({ name: "shell", builtin: true });
+    f.setCalls([]);
+    await f.run();
+    const [request] = f.runtimeRun.mock.calls[0]!;
+    expect(request.lane).toBe("main");
+    expect(request).not.toHaveProperty("inRunCompaction");
+  });
+
+  it("never lists hidden workers among a bot's teammates", async () => {
+    const f = fixture({ name: "shell", builtin: true });
+    f.setCalls([]);
+    await f.run();
+    const directory = vi
+      .mocked(f.prisma.bot.findMany)
+      .mock.calls.map(([query]) => query as { where?: { AND?: unknown[] } })
+      .find((query) => query?.where && "thread" in query.where);
+    expect(directory?.where?.AND).toEqual([VISIBLE_BOT_WHERE]);
+  });
+
+  it("aborts the model call within seconds when the run is cancelled from the UI", async () => {
+    vi.stubEnv("RAKAZO_RUN_CANCEL_POLL_MS", "200");
+    const f = fixture({ name: "shell", builtin: true });
+    f.setCalls([]);
+    let aborted = false;
+    f.runtimeRun.mockImplementationOnce(async function* (
+      _request: AgentRunRequest,
+      context?: { signal?: AbortSignal },
+    ) {
+      const signal = context?.signal;
+      const run = await f.prisma.run.findUnique();
+      Object.assign(run, { status: "cancelled" });
+      aborted = await new Promise<boolean>((resolve) => {
+        if (!signal) return resolve(false);
+        if (signal.aborted) return resolve(true);
+        const timer = setTimeout(() => resolve(false), 3_000);
+        signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          resolve(true);
+        });
+      });
+      yield { type: "done" as const, text: "Stopped" };
+    });
+    await f.run(true);
+    expect(aborted).toBe(true);
+  });
+
+  it("tells the model the time in the deployment's zone when no user zone is saved", async () => {
+    vi.stubEnv("RAKAZO_DEFAULT_TIMEZONE", "Asia/Shanghai");
+    const f = fixture({ name: "shell", builtin: true });
+    f.setCalls([]);
+    await f.run();
+    const [request] = f.runtimeRun.mock.calls[0]!;
+    expect(JSON.stringify(request)).toContain("(UTC+08:00)");
+  });
 });
 
 describe("disabled builtins", () => {

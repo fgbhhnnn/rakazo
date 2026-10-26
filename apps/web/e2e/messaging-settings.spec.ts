@@ -210,3 +210,84 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(page.getByTestId("messaging-link-code")).toContainText("+15550001111");
   await captureScreenshot(page, testInfo, "messaging-settings-ko");
 });
+
+// Fork: upstream's Slack one-click (#2199/#2245) is left out. The workspace install
+// is its own Connect action for the picked bot, and Slack keeps its code link.
+test("Slack workspace Connect opens authorization for the picked bot and Slack keeps its code link", async ({
+  page,
+}, testInfo) => {
+  const fixture = (json: unknown) => ({
+    contentType: "application/json",
+    body: JSON.stringify({ json }),
+  });
+  await page.route("**/rpc/messaging/status", (route) =>
+    route.fulfill(
+      fixture({
+        enabled: true,
+        providers: ["slack"],
+        identities: [],
+        openSignup: false,
+      }),
+    ),
+  );
+  let personalLinkAvailable = false;
+  await page.route("**/rpc/messaging/installations/list", (route) =>
+    route.fulfill(fixture({ available: true, installations: [], personalLinkAvailable })),
+  );
+  await page.route("**/rpc/messaging/channels/list", (route) => route.fulfill(fixture([])));
+  await page.route("**/rpc/messaging/connections/list", (route) => route.fulfill(fixture([])));
+  await page
+    .context()
+    .route("**/slack-test-authorize", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Slack authorization</h1>" }),
+    );
+  let installs = 0;
+  let codeRequests = 0;
+  let installBody = "";
+  await page.route("**/rpc/messaging/installations/start", (route) => {
+    installs++;
+    installBody = route.request().postData() ?? "";
+    return route.fulfill(fixture({ url: new URL("/slack-test-authorize", page.url()).href }));
+  });
+  await page.route("**/rpc/messaging/link/start", (route) => {
+    codeRequests++;
+    return route.fulfill(
+      fixture({ code: "ABCD-2345", expiresAt: new Date(Date.now() + 600_000).toISOString() }),
+    );
+  });
+  const stamp = Date.now();
+  const name = `Slack setup ${stamp}`;
+  await signup(page, `slack-setup-${stamp}@rakazo.test`, "password12", name);
+  await completeOnboarding(page);
+  await page.getByRole("button", { name: new RegExp(name) }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByTestId("settings-nav-messaging").click();
+  const settings = page.getByTestId("messaging-settings");
+  await expect(settings.getByText("Chat with your bot from Slack.")).toBeVisible();
+  const connect = settings.getByRole("button", { name: "Connect", exact: true });
+  await expect(connect).toBeEnabled();
+  await expect(
+    settings.getByRole("button", { name: "Connect a chat app", exact: true }),
+  ).toBeEnabled();
+  await expect(settings.getByRole("button", { name: "Link DMs", exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "messaging-connect-slack");
+  const popupPromise = page.waitForEvent("popup");
+  await connect.click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole("heading", { name: "Slack authorization" })).toBeVisible();
+  expect(installs).toBe(1);
+  expect(installBody).toContain('"botId":"');
+  expect(installBody).not.toContain('"botId":""');
+  expect(codeRequests).toBe(0);
+  await popup.close();
+
+  // A teammate installed the workspace: personal linking works without installation ownership.
+  personalLinkAvailable = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(settings.getByRole("button", { name: "Link DMs", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "messaging-slack-member-link");
+  await settings.getByRole("button", { name: "Link DMs", exact: true }).click();
+  await expect(settings.getByTestId("messaging-link-code")).toContainText("ABCD-2345");
+  expect(installs).toBe(1);
+  expect(codeRequests).toBe(1);
+});

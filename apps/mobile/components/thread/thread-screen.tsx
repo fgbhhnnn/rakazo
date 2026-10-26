@@ -52,8 +52,8 @@ import { useThreadTranscript } from "../../lib/thread-transcript";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
 import { liveEndRunError } from "../../lib/thread-window";
 import { FailedSendBubble } from "../failed-send-bubble";
-import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
-import { MarkdownArtifactPreview } from "../markdown-artifact-preview";
+import type { FileArtifactViewerTarget } from "../file-artifact-viewer";
+import { FileArtifactViewer } from "../file-artifact-viewer";
 import { RunErrorSheet } from "../run-error-sheet";
 import { SelectTextSheet } from "../select-text-sheet";
 import { ThreadComposer } from "../thread-composer";
@@ -189,9 +189,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const feedback = useThreadFeedback(threadKey, newClientId, echoed);
   const { error, setError } = feedback;
   const [selectableText, setSelectableText] = useState<string | null>(null);
-  const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
-    null,
-  );
+  const [filePreview, setFilePreview] = useState<FileArtifactViewerTarget | null>(null);
   const transcript = useThreadTranscript(snap?.messages, inGroup);
   const { reactionView, peerTranscript, setExpandedPeerMarkers } = transcript;
   const visibleMessages = reactionView.visibleMessages;
@@ -417,7 +415,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     answer: composer.answer,
     openBot,
     openComputer,
-    previewMarkdown: setMarkdownPreview,
+    previewFile: setFilePreview,
     previewImage: (target) =>
       router.push({
         pathname: "/image",
@@ -613,11 +611,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           onClose={() => setDetailsOpen(false)}
           action={runErrorAction}
         />
-        {markdownPreview && artifactTarget ? (
-          <MarkdownArtifactPreview
+        {filePreview && artifactTarget ? (
+          <FileArtifactViewer
             threadTarget={artifactTarget}
-            target={markdownPreview}
-            onClose={() => setMarkdownPreview(null)}
+            target={filePreview}
+            onClose={() => setFilePreview(null)}
           />
         ) : null}
         {quoteTarget ? (

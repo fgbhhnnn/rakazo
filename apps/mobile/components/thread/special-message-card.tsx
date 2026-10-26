@@ -18,6 +18,7 @@ import type { UserBubble } from "../../lib/user-bubble";
 import { withUserBubble } from "../../lib/user-bubble";
 import { BotMention } from "../bot-mention";
 import { NativeSymbol } from "../native-symbol";
+import { TaskProgressCard } from "../task-progress-card";
 import type { MessageActionProps } from "./message-bubble";
 import type { MessageRowActions } from "./message-row";
 
@@ -27,11 +28,16 @@ const openHelpers = new Set<string>();
 
 export type SpecialMessageBlock = Extract<
   MessageBlock,
-  { kind: "subagent" | "child_bot" | "cloud_agent" }
+  { kind: "subagent" | "child_bot" | "cloud_agent" | "task_progress" }
 >;
 
 export function isSpecialMessageBlock(block: MessageBlock): block is SpecialMessageBlock {
-  return block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent";
+  return (
+    block.kind === "subagent" ||
+    block.kind === "child_bot" ||
+    block.kind === "cloud_agent" ||
+    block.kind === "task_progress"
+  );
 }
 
 type SpecialMessageCardProps = {
@@ -176,6 +182,9 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
+  if (special.kind === "task_progress") {
+    return <TaskProgressCard block={special} pressableProps={actionProps} />;
+  }
   if (special.kind === "cloud_agent") {
     const title = special.title || t("Cloud agent");
     const statusLabel =

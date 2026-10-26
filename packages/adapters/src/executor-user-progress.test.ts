@@ -788,6 +788,21 @@ describe("dispatcher text before ask_user", () => {
     expect(posted).toBeLessThan(pauseRunForInput.mock.invocationCallOrder[0]!);
   });
 
+  it("is posted before the question on a routine run, where narration is held back", async () => {
+    const { messages, pauseRunForInput, prisma } = await runTurn("", false, "", [], "fyi", {
+      trigger: "routine",
+      runtimeEvents: askEvents,
+      dispatcherMode: true,
+    });
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    const texts = messages.flatMap((message) =>
+      message.blocks.filter((block) => block.kind === "text").map((block) => block.text),
+    );
+    expect(texts).toEqual(["Task #A1 finished: 3 files changed, tests pass."]);
+    const posted = prisma.message.create.mock.invocationCallOrder.at(-1)!;
+    expect(posted).toBeLessThan(pauseRunForInput.mock.invocationCallOrder[0]!);
+  });
+
   it("is unchanged for bots outside dispatcher mode", async () => {
     const { messages, pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
       trigger: "user",

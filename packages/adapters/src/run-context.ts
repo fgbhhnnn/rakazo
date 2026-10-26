@@ -81,6 +81,13 @@ export interface ReplyState {
    */
   discardedMidTurnNarration: boolean;
   lastDiscardedMidTurnNarration: string;
+  /** How many narration segments were held back; tells whether one came right before a tool. */
+  discardedNarrationCount: number;
+  /**
+   * A dispatcher's text right before ask_user: held back like narration, but the ask ends
+   * the turn with no final reply, so it is posted above the card instead of being lost.
+   */
+  preAskNarration: string;
   explicitNoResponse: boolean;
   assistantTurnText: string;
   midTurnUserTexts: string[];
@@ -231,6 +238,16 @@ export interface RunContext {
   /** Bot whose memory/secrets this attempt uses (owner for hidden workers). */
   memoryBotId: string;
   /**
+   * Whose saved credentials, logins, command variables and taught skills this attempt uses:
+   * a hidden worker fills its main bot's (see worker-owner-scope.ts).
+   */
+  secretScope: { userId: string; spaceId: string; botId: string };
+  /**
+   * Whose model connections this attempt reads: a member on the deployment owner's shared
+   * models resolves the owner's (see sharedModelScope).
+   */
+  modelScope: { userId: string; spaceId: string };
+  /**
    * Message blocks whose file/image attachments a background_task may forward to its worker:
    * this turn (and later steering turns) plus recent history for name-matched earlier uploads.
    */
@@ -256,6 +273,10 @@ export interface RunContext {
   memory: {
     semantic: SemanticMemoryProvider | null;
     scope: ReturnType<typeof effectiveMemoryScope> | null;
+    /** A hidden worker's main bot: recall reads both, durable saves go to the owner. */
+    owner: { id: string; scope: ReturnType<typeof effectiveMemoryScope> } | null;
+    /** Scope durable saves and forgets use (the owner's for a hidden worker). */
+    durableScope: ReturnType<typeof effectiveMemoryScope> | null;
   };
   scripted: boolean;
   script: ReturnType<typeof inferScript> | undefined;

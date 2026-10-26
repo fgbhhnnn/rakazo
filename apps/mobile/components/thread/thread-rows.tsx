@@ -47,7 +47,7 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
         rowActionsRef.current.answer(message, answer, username, dismiss),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
-      previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
+      previewFile: (target) => rowActionsRef.current.previewFile(target),
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),

@@ -3,7 +3,7 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
 import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
-import { RunHistoryWriteError } from "@rakazo/db";
+import { isHiddenBot, RunHistoryWriteError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { redactShellStreams } from "./agent-environment.js";
 import { resolveLoginFill, shellCommandEnvironment } from "./bot-secrets.js";
@@ -43,6 +43,7 @@ import {
   isRunningShellCommand,
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
+  workerShellForegroundMaxMs,
 } from "./shell-command-stream.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
 import { getActiveTeachingSession } from "./teaching-session.js";
@@ -175,7 +176,8 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const resolved = await resolveLoginFill({
                 prisma: deps.prisma,
                 secretStore: deps.secretStore,
-                scope: run,
+                // A hidden worker fills its main bot's saved logins.
+                scope: ctx.secretScope,
                 name: step.secret,
                 field: step.field,
               });
@@ -252,7 +254,7 @@ export const computerTools: ToolHandlers = {
     }, call.finish);
   },
   async shell(ctx, call) {
-    const { deps, run, runId, bot, context } = ctx;
+    const { deps, runId, bot, context } = ctx;
     const { name, args, executionId, observer } = call;
     const command = String(args.command ?? args.cmd ?? "");
     const refusal = protectedComputerLifecycleRefusal(command);
@@ -269,7 +271,7 @@ export const computerTools: ToolHandlers = {
     const commandEnvironment = await shellCommandEnvironment({
       prisma: deps.prisma,
       secretStore: deps.secretStore,
-      scope: run,
+      scope: ctx.secretScope,
       spaceEnvironment: ctx.agentEnvironment,
       registerRedactions: (values) => addRunSecrets(ctx, values),
     });
@@ -353,6 +355,9 @@ export const computerTools: ToolHandlers = {
         ),
         {
           secrets: ctx.secrets,
+          // A background worker has no user waiting on its turn, so it holds a long
+          // command in the foreground instead of polling and re-running it.
+          ...(isHiddenBot(bot) ? { maxWaitMs: workerShellForegroundMaxMs() } : {}),
           onOutput: (snapshot) => {
             const output = commandOutput(snapshot, true);
             if (output) publishRunning(output);

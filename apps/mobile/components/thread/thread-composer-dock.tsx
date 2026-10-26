@@ -12,6 +12,7 @@ import { useI18n } from "../../lib/i18n";
 import type { PendingAttachment } from "../../lib/thread-attachments";
 import { previewMessageText } from "../../lib/thread-message-text";
 import { ComposerReplyPreview } from "../composer-reply-preview";
+import { FileKindIcon } from "../file-kind-icon";
 import { GlassSurface } from "../glass-surface";
 import { NativeSymbol } from "../native-symbol";
 import { ReplyDismissButton } from "../reply-dismiss-button";
@@ -149,12 +150,7 @@ export function ThreadComposerDock({
                   style={{ width: 28, height: 28, borderRadius: 6 }}
                 />
               ) : (
-                <NativeSymbol
-                  ios="paperclip"
-                  android="attach"
-                  size={16}
-                  color={tokens.mutedForeground}
-                />
+                <FileKindIcon name={attachment.name} mimeType={attachment.mimeType} size={28} />
               )}
               <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
                 {attachment.name}

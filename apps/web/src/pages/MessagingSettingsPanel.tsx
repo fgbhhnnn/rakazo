@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import { isRetryableError, messagingConnectOptions } from "@rakazo/core";
+import { isRetryableError } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -176,14 +176,11 @@ export function MessagingSettingsPanel() {
       .join(", ");
   }
 
-  const connectOptions = messagingConnectOptions(
-    (status?.providers ?? []).filter(
-      (provider) => provider !== "slack" || installationsQuery.isSuccess,
-    ),
-    installationsQuery.isSuccess && installationStatus.available,
-  );
-  const slackInstall = connectOptions.some(({ method }) => method === "install");
-  const linkOptions = connectOptions.filter(({ method }) => method === "link");
+  // Fork: every app, Slack included, links personal DMs with a code sent from
+  // the chat app. A Slack workspace install is a separate, explicit choice for
+  // the picked bot (upstream's Slack one-click, #2199/#2245, is left out).
+  const slackInstall = installationsQuery.isSuccess && installationStatus.available;
+  const linkOptions = (status?.providers ?? []).map((provider) => ({ provider }));
   const slackInstallations = installationStatus.installations.filter(
     (installation) => installation.provider === "slack",
   );

@@ -36,6 +36,8 @@ export async function createReplyState(
     publishedMidTurnUserMessage: false,
     discardedMidTurnNarration: false,
     lastDiscardedMidTurnNarration: "",
+    discardedNarrationCount: 0,
+    preAskNarration: "",
     explicitNoResponse: false,
     assistantTurnText: "",
     midTurnUserTexts: [],
@@ -157,6 +159,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
     reply.assembled = "";
     reply.discardedMidTurnNarration = true;
     reply.lastDiscardedMidTurnNarration = narration;
+    reply.discardedNarrationCount += 1;
     return;
   }
   reply.assembled = "";

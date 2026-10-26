@@ -792,7 +792,6 @@ msgstr "Goedkeuringsmodel"
 msgid "Approvals"
 msgstr "Goedkeuringen"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -973,7 +972,6 @@ msgstr "bot"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1289,7 +1287,6 @@ msgstr "Bezig met wissen…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -1323,10 +1320,6 @@ msgstr "MCP-servers sluiten"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "Geheugeninstellingen sluiten"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Close messaging settings"
-msgstr "Berichteninstellingen sluiten"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1507,7 +1500,6 @@ msgstr "Verbinden"
 msgid "Connect {selectedProviderName}"
 msgstr "{selectedProviderName} verbinden"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr ""
@@ -1637,7 +1629,6 @@ msgstr ""
 msgid "continuing"
 msgstr "bezig door te gaan"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr ""
@@ -2154,12 +2145,10 @@ msgstr "Het standaardgeheugenbereik bijwerken mislukt"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "De computerinstallatie kon niet worden geverifieerd ({failureMessage}). Herstel de verbinding en controleer het daarna opnieuw."
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "Berichtinstellingen laden mislukt"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Berichtinstellingen bijwerken mislukt"
@@ -2288,7 +2277,6 @@ msgid "days"
 msgstr "dagen"
 
 #: src/components/call/IncomingCall.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "Weigeren"
@@ -2427,7 +2415,6 @@ msgstr "Opname weggooien"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -2742,7 +2729,6 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "Exporteer de lijst van deze week uit het CRM en zet hem in de gedeelde map"
 
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr "Extern gesprek"
@@ -2892,7 +2878,6 @@ msgid "Git event"
 msgstr "Git-gebeurtenis"
 
 #: src/lib/identity-display.ts
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
@@ -3229,7 +3214,6 @@ msgstr "Laatste controle {0}: geen wijzigingen"
 msgid "Later"
 msgstr "Later"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "Verlaten"
@@ -3553,7 +3537,6 @@ msgstr "Bericht…"
 msgid "Messaged {peer}"
 msgstr "{peer} een bericht gestuurd"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "Berichten"
@@ -4239,7 +4222,6 @@ msgstr "Plak je API-sleutel en test daarna opnieuw."
 msgid "Paused"
 msgstr "Gepauzeerd"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr ""
@@ -4640,7 +4622,6 @@ msgstr "Antwoordt op {0}"
 msgid "Request a new code"
 msgstr "Vraag een nieuwe code aan"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr ""
@@ -4746,7 +4727,6 @@ msgstr "Terug naar het gesprek met {0}"
 msgid "Review provider settings and test again."
 msgstr "Controleer de aanbiedersinstellingen en test daarna opnieuw."
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "Intrekken"
@@ -4978,12 +4958,10 @@ msgstr "Zelf gehost"
 msgid "Send"
 msgstr "Verzenden"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr ""
@@ -5038,7 +5016,6 @@ msgstr "Server-URL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/shell-dialogs.tsx
@@ -5209,10 +5186,6 @@ msgstr "Slack-bericht"
 #: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
 msgstr "Slack is niet ingeschakeld"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Slack workspace"
-msgstr "Slack-werkruimte"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
@@ -5793,7 +5766,6 @@ msgstr "Import ongedaan maken?"
 msgid "Uninstall"
 msgstr "Verwijderen"
 
-#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "Koppeling verbreken"

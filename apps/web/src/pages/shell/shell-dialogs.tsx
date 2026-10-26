@@ -125,7 +125,8 @@ export function ShellDialogs({
   openSpaceSettings: (spaceId: string) => void;
   closeMobileSidebar: () => void;
   createBot: (input: CreateBotDialogInput) => Promise<void>;
-  onImportFromCreate: () => void;
+  /** Absent while agent import is turned off for this deployment. */
+  onImportFromCreate?: () => void;
   clearOpenThread: () => void;
   deleteRoutineDialogProps: ComponentProps<typeof DeleteItemDialog> | null;
 }) {

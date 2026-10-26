@@ -11,6 +11,7 @@ import { Button } from "@rakazo/ui-web";
 import { Monitor, Settings, X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
+import { AGENT_IMPORT_ENABLED } from "../../lib/agent-import-flag";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { computerPanelNeedsMaintenance } from "../../lib/thread-events";
@@ -191,7 +192,7 @@ export function ShellSidePanel({
               covered={computerOpen}
             />
           ) : null}
-          {panel === "import-agent" ? (
+          {AGENT_IMPORT_ENABLED && panel === "import-agent" ? (
             <AgentImportForm
               bots={bots.filter((bot) => !bot.archivedAt)}
               initialSource={droppedAgent ?? undefined}

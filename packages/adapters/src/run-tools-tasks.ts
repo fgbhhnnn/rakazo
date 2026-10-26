@@ -62,20 +62,20 @@ export const taskTools: ToolHandlers = {
     });
   },
   async scratchpad_list(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run } = ctx;
     const { args } = call;
     return listScratchpadItemsFromTool(deps, {
       spaceId: run.spaceId,
-      botId: bot.id,
+      botId: ctx.memoryBotId,
       includeDone: Boolean(args.includeDone),
     });
   },
   async scratchpad_add(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run } = ctx;
     const { args } = call;
     const created = await addScratchpadItemFromTool(deps, {
       spaceId: run.spaceId,
-      botId: bot.id,
+      botId: ctx.memoryBotId,
       userId: run.userId,
       title: String(args.title ?? ""),
       status: args.status ? String(args.status) : undefined,
@@ -84,11 +84,11 @@ export const taskTools: ToolHandlers = {
     return call.finish(created);
   },
   async scratchpad_update(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run } = ctx;
     const { args } = call;
     const updated = await updateScratchpadItemFromTool(deps, {
       spaceId: run.spaceId,
-      botId: bot.id,
+      botId: ctx.memoryBotId,
       userId: run.userId,
       itemId: String(args.itemId ?? ""),
       title: args.title !== undefined ? String(args.title) : undefined,
@@ -98,22 +98,22 @@ export const taskTools: ToolHandlers = {
     return call.finish(updated);
   },
   async scratchpad_complete(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run } = ctx;
     const { args } = call;
     const completed = await completeScratchpadItemFromTool(deps, {
       spaceId: run.spaceId,
-      botId: bot.id,
+      botId: ctx.memoryBotId,
       userId: run.userId,
       itemId: String(args.itemId ?? ""),
     });
     return call.finish(completed);
   },
   async scratchpad_remove(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run } = ctx;
     const { args } = call;
     const removed = await removeScratchpadItemFromTool(deps, {
       spaceId: run.spaceId,
-      botId: bot.id,
+      botId: ctx.memoryBotId,
       userId: run.userId,
       itemId: String(args.itemId ?? ""),
     });

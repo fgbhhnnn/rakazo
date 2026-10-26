@@ -130,7 +130,8 @@ export function useSpaceRoster({
           return;
         }
         const currentBotId = routeBotId.current;
-        if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
+        // An unlisted bot id may be a hidden worker; the shell's hidden-bot lookup opens or leaves it.
+        if (!currentBotId) {
           redirectKeepingOverlay(firstThreadRoute(list, groupList));
         }
       } finally {

@@ -12,7 +12,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
-import { retireModelCredential } from "@rakazo/db";
+import { retireModelCredential, sharedModelScope, withinScope } from "@rakazo/db";
 import { cloudflareProviderEnv } from "./cloudflare-ai-gateway.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -48,6 +48,7 @@ import {
   serializeModelSecret,
   withModelCredentialLock,
 } from "./pi-oauth.js";
+import { botModelChoice } from "./worker-model.js";
 
 export function runtimeFallbackModel(runtime: AgentRuntime) {
   return runtime.describe().capabilities.scripted ? { provider: "scripted", id: "scripted" } : null;
@@ -83,7 +84,7 @@ export function fleetPrepareDeps(
         ),
       defaultModel: async () => {
         const [main, settings] = await Promise.all([
-          resolveMemberMainModel(deps, scope),
+          resolveMemberMainModel(deps, await sharedModelScope(deps.prisma, scope)),
           deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
         ]);
         const selected = selectConfiguredModel({
@@ -159,7 +160,19 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     args[7] = { ...args[7], requireStoredSecret: false };
   }
   const credential = args[3];
-  const material = await resolveModelKeyMaterial(...args);
+  // A member on the owner's shared model reads (and refreshes) the owner's key as the owner.
+  const raw = await withinScope(scope, () => resolveModelKeyMaterial(...args));
+  const { persistOAuth, retireOAuth } = raw;
+  const material = {
+    ...raw,
+    persistOAuth: persistOAuth
+      ? (next: AgentModelOAuthCredential) => withinScope(scope, () => persistOAuth(next))
+      : undefined,
+    retireOAuth: retireOAuth
+      ? (...retire: Parameters<typeof retireOAuth>) =>
+          withinScope(scope, () => retireOAuth(...retire))
+      : undefined,
+  };
   const deployment = resolveDeploymentModel();
   // Local and compatible endpoints can intentionally be keyless. Host auth is
   // allowed only for the deployment provider that explicitly opted into it.
@@ -403,6 +416,7 @@ export async function resolveConnectedRunModel(
   /** The connection a role row is pinned to. */
   credentialId?: string,
 ): Promise<AgentRunRequest["model"]> {
+  scope = await sharedModelScope(deps.prisma, scope);
   const hostedProvider = (await modelCreditBillingEnabled(deps))
     ? resolveDeploymentModel().provider
     : undefined;
@@ -482,27 +496,36 @@ export async function resolveRunModel(
   },
 ): Promise<AgentRunRequest["model"]> {
   const override = scope.botId
-    ? await deps.prisma.bot.findFirst({
-        where: {
-          id: scope.botId,
-          userId: scope.userId,
-          spaceId: scope.spaceId,
-        },
-        select: { modelProvider: true, modelId: true, thinkingLevel: true },
-      })
+    ? await deps.prisma.bot
+        .findFirst({
+          where: {
+            id: scope.botId,
+            userId: scope.userId,
+            spaceId: scope.spaceId,
+          },
+          select: {
+            modelProvider: true,
+            modelId: true,
+            thinkingLevel: true,
+            spawnKey: true,
+            parentBotId: true,
+          },
+        })
+        .then((bot) => bot && botModelChoice(deps.prisma as never, bot))
     : null;
   const hasOverride = Boolean(override?.modelProvider && override.modelId);
+  const modelScope = await sharedModelScope(deps.prisma, scope);
   const [overrideCredential, main, settings] = await Promise.all([
     hasOverride
       ? findConnectedModelCredential(
           deps.prisma,
           deps.secretStore,
-          scope,
+          modelScope,
           override!.modelProvider!,
           override!.modelId,
         )
       : Promise.resolve(null),
-    resolveMemberMainModel(deps, scope),
+    resolveMemberMainModel(deps, modelScope),
     deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
     }),
@@ -530,8 +553,8 @@ export async function resolveRunModel(
   // The key is resolved for the provider that won above, not before it is known.
   const resolved = await resolveModelKey(
     deps,
-    scope.userId,
-    scope.spaceId,
+    modelScope.userId,
+    modelScope.spaceId,
     credential,
     provider,
     id,

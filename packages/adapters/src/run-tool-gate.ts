@@ -25,7 +25,7 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import { isHiddenBot, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
@@ -63,6 +63,7 @@ import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-sele
 import { callMediaTool } from "./run-tools-files.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
+import { mirrorWorkerApproval } from "./worker-needs-user.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -568,6 +569,13 @@ async function showApprovalCard(
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, executionId);
   await ctx.settleRunningHelpers();
+  const approvalAsk = buildApprovalAskBlock(
+    applied!.effect.id,
+    name,
+    name === "propose_instructions_update" ? { ...args, botId: bot.id } : args,
+    ctx.secrets,
+    card,
+  );
   const paused = await deps.events.pauseRunForInput({
     spaceId: run.spaceId,
     threadId: run.threadId,
@@ -576,15 +584,7 @@ async function showApprovalCard(
     attemptId: ctx.attempt.id,
     leaseOwner: ctx.workerId,
     leaseFence: ctx.fence,
-    blocks: [
-      buildApprovalAskBlock(
-        applied!.effect.id,
-        name,
-        name === "propose_instructions_update" ? { ...args, botId: bot.id } : args,
-        ctx.secrets,
-        card,
-      ),
-    ],
+    blocks: [approvalAsk],
   });
   // pauseRunForInput returning false after a successful renew means the run row no
   // longer matches this worker. Exiting via pauseForApproval() would leave the run
@@ -597,12 +597,20 @@ async function showApprovalCard(
       .enqueue(runContinueJob(paused.continuationRunId))
       .catch((error) => getLogger().error("steering continuation enqueue", error));
   }
-  await notifyRun(deps, run, {
+  // A hidden worker's chat is never shown: its card is answered in the main chat.
+  const mirrored = isHiddenBot(bot)
+    ? await mirrorWorkerApproval(deps, {
+        workerRunId: runId,
+        workerThreadId: thread.id,
+        block: approvalAsk,
+      })
+    : null;
+  await notifyRun(deps, mirrored ? { ...run, ...mirrored } : run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,
     body: `Review before ${name}`,
-    botId: bot.id,
-    threadId: thread.id,
+    botId: mirrored?.botId ?? bot.id,
+    threadId: mirrored?.threadId ?? thread.id,
   });
   return pauseForApproval(ctx);
 }
@@ -663,6 +671,7 @@ async function reviewToolCall(
           userId: run.userId,
           botId: bot.id,
           threadId: thread.id,
+          modelScope: ctx.modelScope,
         },
         {
           injectedReview,

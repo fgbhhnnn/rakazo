@@ -10,6 +10,7 @@ import type {
 import { ATTACHMENT_MAX_COUNT, attachmentMaxBytes, attachmentSizeLabel } from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
 import {
+  askAnswerRunId,
   attachmentsForThread,
   inferAttachmentMimeType,
   newClientId,
@@ -192,7 +193,8 @@ export function useComposerActions({
       clearReadBoundary();
       await rpc.threads.answer({
         ...(groupId ? { groupId } : { botId: botId! }),
-        runId: message.runId ?? "",
+        // A mirrored worker approval is answered on the worker's own run.
+        runId: askAnswerRunId(message) ?? "",
         messageId: message.id,
         answer: text,
         ...(username ? { username } : {}),

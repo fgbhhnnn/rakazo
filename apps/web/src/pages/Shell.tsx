@@ -39,6 +39,7 @@ import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
 import { PageLoading } from "../components/PageLoading";
+import { AGENT_IMPORT_ENABLED } from "../lib/agent-import-flag";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
@@ -90,7 +91,7 @@ import { useMobileSidebar } from "./shell/use-mobile-sidebar";
 import { useReadAloud } from "./shell/use-read-aloud";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
 import { useRoutineEditor } from "./shell/use-routine-editor";
-import { useShellNavigation } from "./shell/use-shell-navigation";
+import { firstThreadRoute, useShellNavigation } from "./shell/use-shell-navigation";
 import { useSidebarExpansion } from "./shell/use-sidebar-expansion";
 import { useSidebarSearch } from "./shell/use-sidebar-search";
 import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/use-space-roster";
@@ -248,10 +249,35 @@ function SpaceShell() {
   const inGroup = Boolean(groupId);
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
+  // A hidden background worker opened from its "后台任务" card: shown, never listed.
+  const [hiddenBot, setHiddenBot] = useState<Bot | null>(null);
   const active =
     inGroup || routeChat?.groupId
       ? undefined
-      : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ?? bots[0]);
+      : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ??
+        (botId ? (hiddenBot?.id === botId ? hiddenBot : undefined) : bots[0]));
+  const hiddenLookupMissing =
+    initialBotsLoaded &&
+    !inGroup &&
+    Boolean(botId) &&
+    !bots.some((bot) => bot.id === botId) &&
+    hiddenBot?.id !== botId;
+  useEffect(() => {
+    if (!hiddenLookupMissing || !botId) return;
+    let cancelled = false;
+    // Not in the list: a hidden worker (open it) or a removed bot (leave).
+    void rpc.bots
+      .get({ botId })
+      .then((found) => {
+        if (!cancelled) setHiddenBot(found);
+      })
+      .catch(() => {
+        if (!cancelled) navigate(firstThreadRoute(bots, groups), { replace: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hiddenLookupMissing, botId, bots, groups, navigate, rpc]);
   const userBubble = useMemo(
     () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),
     [active?.color, active?.id],
@@ -441,6 +467,13 @@ function SpaceShell() {
       status: run.status,
     };
   });
+  const coordinator = useMemo<GroupAvatarMember | undefined>(
+    () =>
+      active && !inGroup
+        ? { botId: active.id, color: active.color, name: active.name, status: "running" }
+        : undefined,
+    [active?.id, active?.color, active?.name, inGroup],
+  );
   const resolveTranscriptMemberName = useCallback(
     (botId: string | undefined) => memberName(transcriptMembers, botId),
     [transcriptMembers],
@@ -853,6 +886,8 @@ function SpaceShell() {
               dismissableAskIds={dismissableAskIds}
               running={transcriptRunning}
               workingBots={workingBots}
+              backgroundTasks={activeSnapshot?.backgroundTasks}
+              coordinator={coordinator}
               userBubble={userBubble}
               onCallBack={
                 bootstrapMe?.phoneCallsEnabled && !inGroup && active
@@ -890,7 +925,7 @@ function SpaceShell() {
               speakingMessageId={speakingMessageId}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
-              onOpenImport={() => openImport(null, false)}
+              onOpenImport={AGENT_IMPORT_ENABLED ? () => openImport(null, false) : undefined}
               onOpenImportSetup={(target) => {
                 importSetupOpen.current = true;
                 if (target.kind === "models") openSettings("models");
@@ -917,7 +952,7 @@ function SpaceShell() {
               key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               enterToSend={enterToSend}
-              onImportAgent={(agent) => openImport(agent, false)}
+              onImportAgent={AGENT_IMPORT_ENABLED ? (agent) => openImport(agent, false) : undefined}
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
               busy={composerRunning}
               disabled={Boolean(recordingSkill)}
@@ -1063,10 +1098,14 @@ function SpaceShell() {
           openSpaceSettings={openSpaceSettings}
           closeMobileSidebar={() => setMobileSidebarOpen(false)}
           createBot={createBot}
-          onImportFromCreate={() => {
-            dialogs.setCreateBotOpen(false);
-            openImport(null, true);
-          }}
+          onImportFromCreate={
+            AGENT_IMPORT_ENABLED
+              ? () => {
+                  dialogs.setCreateBotOpen(false);
+                  openImport(null, true);
+                }
+              : undefined
+          }
           clearOpenThread={() => {
             thread.resetHistory();
             thread.updateSnapshot((current) =>
@@ -1080,6 +1119,7 @@ function SpaceShell() {
           setOverlay={setOverlay}
           activeBotId={activeBotId.current}
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
+          memberSettingsLocked={bootstrapMe?.memberSettingsLocked === true}
           onConnectedAppsChange={setFooterLogos}
         />
       </Suspense>

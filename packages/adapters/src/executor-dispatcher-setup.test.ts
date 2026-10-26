@@ -319,6 +319,20 @@ describe("dispatcher turn setup", () => {
     );
   });
 
+  it("offers the main turn only its talk and delegate tools, and no guidance for work tools", async () => {
+    const result = await runDispatcherTurn({});
+    const request = result.runtimeRun.mock.calls[0]![0] as AgentRunRequest;
+    const offered = request.tools.map((tool) => tool.name);
+    // Clauses follow the whole catalog, not only this trigger's offer.
+    expect(request.instructions).not.toContain("run_subagent is a short helper");
+    expect(request.instructions).not.toContain("use the render_plot tool");
+    expect(request.instructions).not.toContain("call write_page");
+    expect(offered).toContain("background_task");
+    for (const work of ["shell", "web_search", "web_fetch", "write_file", "read_file"]) {
+      expect(offered).not.toContain(work);
+    }
+  });
+
   it("still discovers connector tools for runs outside dispatcher mode", async () => {
     const result = await runDispatcherTurn({ dispatcherMode: false });
     expect(result.discoverTools).toHaveBeenCalledOnce();
