@@ -158,7 +158,7 @@ export function taskProgressEntry(
     } else if (isIncompleteContinuing(row.args)) {
       // Auto-continued after an incomplete final; not done until a genuine result lands.
       state = "continuing";
-      step = snapshot.events?.length ? latestStep(snapshot.events, now) : "继续中";
+      step = snapshot.events?.length ? latestStep(snapshot.events, now) : undefined;
     } else if (!runActive && run) {
       // The worker ended; its result is on its way to the main bot.
       state = "running";

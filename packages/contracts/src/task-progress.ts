@@ -86,6 +86,35 @@ export function formatTaskRunTime(seconds: number): string {
   return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
 }
 
+/** Known status-label strings (en + zh) that must not repeat as a step. */
+const TASK_PROGRESS_STATUS_STEPS: Record<TaskProgressState, readonly string[]> = {
+  queued: ["queued", "排队中"],
+  starting: ["starting", "启动中"],
+  running: ["running", "运行中"],
+  continuing: ["continuing", "继续中"],
+  needs_user: ["needs you", "需要你", "等你处理"],
+  stuck: ["no progress", "没有进展"],
+  done: ["done", "已完成", "完成"],
+  failed: ["failed", "失败"],
+  cancelled: ["cancelled", "已取消"],
+};
+
+/**
+ * Step shown after the state label. Omit when empty, identical to the rendered
+ * label, or equal to a known status string for that state (avoids "继续中 · 继续中").
+ */
+export function taskProgressDetailStep(
+  state: TaskProgressState,
+  step: string | undefined,
+  stateLabel?: string,
+): string | undefined {
+  const detail = step?.trim();
+  if (!detail) return undefined;
+  if (stateLabel && detail === stateLabel.trim()) return undefined;
+  if (TASK_PROGRESS_STATUS_STEPS[state].includes(detail)) return undefined;
+  return detail;
+}
+
 /** Counts per state group, for the card header. */
 export function taskProgressCounts(block: Pick<TaskProgressBlock, "tasks">) {
   const counts = { active: 0, done: 0, failed: 0, attention: 0 };

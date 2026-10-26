@@ -129,6 +129,95 @@ describe("TaskProgressCard", () => {
     expect(card.textContent).toContain("Background tasks finished");
     expect(card.querySelector('[data-testid="task-progress-counts"]')?.textContent).toBe("1 done");
   });
+
+  it("shows the continuing status label exactly once when step repeats it", () => {
+    const card = mount({
+      block: {
+        ...block,
+        tasks: [
+          {
+            ref: "TIZS60WO",
+            name: "按原版截图改布局",
+            state: "continuing",
+            workerBotId: "worker-1",
+            queuedAt: ago(800),
+            startedAt: ago(750),
+            step: "continuing",
+          },
+        ],
+      },
+      now,
+    });
+    const row = card.querySelector("li")!;
+    expect(row.dataset.state).toBe("continuing");
+    expect(row.textContent).toContain("continuing");
+    expect(row.textContent).not.toMatch(/continuing\s*·\s*continuing/);
+    expect([...row.textContent!.matchAll(/continuing/g)]).toHaveLength(1);
+    expect(row.querySelector('[data-testid="task-progress-step"]')).toBeNull();
+  });
+
+  it("still shows a real step detail when it differs from the status label", () => {
+    const card = mount({
+      block: {
+        ...block,
+        tasks: [
+          {
+            ref: "TIZS60WO",
+            name: "按原版截图改布局",
+            state: "continuing",
+            workerBotId: "worker-1",
+            queuedAt: ago(800),
+            startedAt: ago(750),
+            step: "Reading layout screenshot",
+          },
+        ],
+      },
+      now,
+    });
+    const row = card.querySelector("li")!;
+    expect(row.textContent).toContain("continuing");
+    expect(row.textContent).toContain("Reading layout screenshot");
+    expect(row.querySelector('[data-testid="task-progress-step"]')?.textContent).toContain(
+      "Reading layout screenshot",
+    );
+    expect([...row.textContent!.matchAll(/continuing/g)]).toHaveLength(1);
+  });
+
+  it("does not duplicate status for other states when step matches the label", () => {
+    const card = mount({
+      block: {
+        ...block,
+        tasks: [
+          {
+            ref: "TRUN0001",
+            name: "跑脚本",
+            state: "running",
+            workerBotId: "worker-1",
+            queuedAt: ago(100),
+            startedAt: ago(90),
+            step: "running",
+          },
+          {
+            ref: "TSTUCK02",
+            name: "卡住",
+            state: "stuck",
+            workerBotId: "worker-2",
+            queuedAt: ago(1500),
+            startedAt: ago(1440),
+            step: "no progress",
+          },
+        ],
+      },
+      now,
+    });
+    const rows = [...card.querySelectorAll("li")];
+    expect(rows[0]!.textContent).toContain("running");
+    expect([...rows[0]!.textContent!.matchAll(/running/g)]).toHaveLength(1);
+    expect(rows[0]!.querySelector('[data-testid="task-progress-step"]')).toBeNull();
+    expect(rows[1]!.textContent).toContain("no progress");
+    expect([...rows[1]!.textContent!.matchAll(/no progress/g)]).toHaveLength(1);
+    expect(rows[1]!.querySelector('[data-testid="task-progress-step"]')).toBeNull();
+  });
 });
 
 it("uses the borderless chat-card shell (BuiCard), like every other card in the chat", () => {

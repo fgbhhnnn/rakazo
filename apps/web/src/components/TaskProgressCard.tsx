@@ -5,6 +5,7 @@ import {
   type TaskProgressBlock,
   type TaskProgressEntry,
   taskProgressCounts,
+  taskProgressDetailStep,
   taskProgressRunSeconds,
 } from "@rakazo/contracts";
 import {
@@ -126,6 +127,7 @@ export function TaskProgressCard({
         {block.tasks.map((entry) => {
           const seconds = taskProgressRunSeconds(entry, now);
           const Icon = STATE_ICON[entry.state];
+          const detail = taskProgressDetailStep(entry.state, entry.step);
           const row = (
             <>
               <Icon
@@ -152,10 +154,10 @@ export function TaskProgressCard({
                   <span className={STATE_TONE[entry.state]}>
                     <StateLabel entry={entry} />
                   </span>
-                  {entry.step ? (
+                  {detail ? (
                     <span className="text-muted-foreground" data-testid="task-progress-step">
                       {" · "}
-                      {entry.step}
+                      {detail}
                     </span>
                   ) : null}
                 </span>
