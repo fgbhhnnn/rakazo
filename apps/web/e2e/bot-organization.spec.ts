@@ -133,7 +133,9 @@ test("an empty section can be deleted after its last bot leaves", async ({ page 
   await expect(sidebar.locator(`[data-roster-bot-id="${botId}"]`)).toBeVisible();
 });
 
-test("bots can be reordered by drag or keyboard and keep that order", async ({ page }) => {
+test("unpinned bots list newest first; pinned bots reorder by drag or keyboard and keep that order", async ({
+  page,
+}) => {
   const stamp = Date.now();
   await signup(page, `bot-reorder-${stamp}@rakazo.test`, "password12", "Bot Order");
   await completeOnboarding(page);
@@ -163,6 +165,21 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   const rows = sidebar.locator("[data-roster-bot-id]");
   const order = () =>
     rows.evaluateAll((items) => items.map((item) => item.getAttribute("data-roster-bot-id")));
+  // Unpinned chats sort by their latest activity, so the newest bot leads and hand order is refused.
+  await expect.poll(order).toEqual([beta.id, alpha.id, chiefId]);
+  await expect(sidebar.locator(`[data-roster-bot-id="${alpha.id}"]`)).not.toHaveAttribute(
+    "aria-keyshortcuts",
+    /Alt/,
+  );
+
+  // The Pinned list is the hand-ordered one.
+  for (const botId of [chiefId, alpha.id, beta.id]) {
+    await rpc(page, "bots/update", { botId, pinned: true });
+  }
+  await page.reload();
+  await expect(sidebar.locator('[data-sidebar-group="pinned"] [data-roster-bot-id]')).toHaveCount(
+    3,
+  );
   await expect.poll(order).toEqual([chiefId, alpha.id, beta.id]);
 
   let releaseStaleList!: () => void;

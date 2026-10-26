@@ -13,7 +13,7 @@ import { isThinkWorker } from "./background-task-lanes.js";
 import { BACKGROUND_WORKER_SPAWN_PREFIX, parseWorkerReportFiles } from "./background-tasks.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 import type { ExecutorDeps } from "./executor.js";
-import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
+import { attachWorkspaceFileToThread, postedAttachmentHashes } from "./thread-artifacts.js";
 
 /* How a dispatcher's main turn reads its thread and relays a worker's report files. */
 
@@ -147,6 +147,14 @@ export async function attachWorkerReportFiles(input: {
   // The same bytes under another path or name (a copy in shared/, a file the model attached
   // itself, an earlier wake turn for this task) are already in the chat: never post them again.
   const postedHashes = await hashesPostedSinceTask(deps.prisma, run, input.bot.id, worker.id);
+  // A file posted for an earlier task, or attached by the bot itself before this task began.
+  for (const key of await postedAttachmentHashes(deps.prisma, {
+    spaceId: run.spaceId,
+    threadId: run.threadId,
+    botId: input.bot.id,
+  })) {
+    postedHashes.add(key);
+  }
   const computer = await input.readComputer();
   const attached: string[] = [];
   for (const [index, file] of files.entries()) {

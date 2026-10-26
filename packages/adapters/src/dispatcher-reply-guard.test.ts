@@ -135,6 +135,41 @@ describe("guardDispatcherReply: dispatch and answer in one turn (fix 2)", () => 
   });
 });
 
+describe("guardDispatcherReply: one acknowledgement per dispatch turn", () => {
+  const started = () =>
+    ledger(["background_task", { ok: true, status: "started", task_ref: "AB12CD34" }]);
+  const acked = { ...ctx, acknowledgedMidTurn: true };
+  const repeat =
+    "可以帮你重构。我已经在看 GitHub 上的 autoai-next，先只做代码分析，这一步不需要 Expo 或苹果开发者的 key。分析完成后我会告诉你能不能迁、卡在哪、建议怎么分阶段做。";
+  const steps = { kind: "steps", steps: [] } as unknown as MessageBlock;
+
+  it("drops a reworded second acknowledgement after the lead-in already went out", () => {
+    const out = guardDispatcherReply(true, [steps, ...text(repeat)], started(), acked);
+    expect(out.changed).toBe(true);
+    expect(out.recheckClaim).toBe(false);
+    expect(out.blocks).toEqual([]);
+  });
+  it("keeps the final reply's non-tool blocks", () => {
+    const image: MessageBlock = { kind: "image", artifactId: "art_1" } as MessageBlock;
+    const out = guardDispatcherReply(true, [...text(repeat), image], started(), acked);
+    expect(out.blocks).toEqual([image]);
+  });
+  it("still sends a question, another task's result, or a reply with no lead-in", () => {
+    const question = "我先看代码。你要保留 uniapp 的 H5 端吗？";
+    expect(guardDispatcherReply(true, text(question), started(), acked).changed).toBe(false);
+    const relay = "已开始 #AB12CD34。另外 #ZZ99YY88 已经完成了。";
+    expect(guardDispatcherReply(true, text(relay), started(), acked).changed).toBe(false);
+    expect(guardDispatcherReply(true, text(repeat), started(), ctx).changed).toBe(false);
+  });
+  it("leaves turns that launched nothing or were woken by a worker alone", () => {
+    expect(guardDispatcherReply(true, text(repeat), ledger(), acked).changed).toBe(false);
+    expect(
+      guardDispatcherReply(true, text(repeat), started(), { ...acked, wokenByWorker: true })
+        .changed,
+    ).toBe(false);
+  });
+});
+
 describe("queueClaimRecheck", () => {
   const run = {
     id: "run_1",

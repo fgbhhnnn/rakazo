@@ -330,7 +330,9 @@ export function SidebarRoster({
                         : undefined
                     }
                     aria-keyshortcuts={
-                      item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+                      item.kind === "bot" && item.chat.pinned
+                        ? "Alt+ArrowUp Alt+ArrowDown"
+                        : undefined
                     }
                     onDragStart={(event) => {
                       if (item.kind !== "bot") return;
@@ -359,7 +361,9 @@ export function SidebarRoster({
                     data-roster-drop={rosterDropKey === rowDropKey ? "true" : undefined}
                     onKeyDown={(event) => {
                       if (
+                        // Only the Pinned list is hand-ordered; the rest sort newest first.
                         item.kind !== "bot" ||
+                        !item.chat.pinned ||
                         !event.altKey ||
                         (event.key !== "ArrowUp" && event.key !== "ArrowDown")
                       )

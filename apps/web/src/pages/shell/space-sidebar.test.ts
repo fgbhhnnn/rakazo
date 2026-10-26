@@ -30,6 +30,27 @@ function space(
 }
 
 describe("sidebarGroupsForSpaces", () => {
+  it("lists the newest reply or working bot first, with pinned chats above in their own order", () => {
+    const at = (day: number) => `2026-10-${day}T08:00:00.000Z`;
+    const input = {
+      ...space("space-1", "Personal"),
+      bots: [
+        { ...chat("pin-a", "Pinned A"), pinned: true, updatedAt: at(1) },
+        { ...chat("pin-b", "Pinned B"), pinned: true, updatedAt: at(25) },
+        { ...chat("chief", "Chief"), updatedAt: at(10) },
+        { ...chat("worker", "Worker"), status: "running", updatedAt: at(2) },
+        { ...chat("replied", "Replied"), updatedAt: at(24) },
+      ],
+      groups: [{ ...chat("team", "Team"), updatedAt: at(20) }],
+    };
+    expect(
+      sidebarGroupsForSpaces([input], "").map((group) => group.bots.map((item) => item.id)),
+    ).toEqual([
+      ["pin-a", "pin-b"],
+      ["worker", "replied", "team", "chief"],
+    ]);
+  });
+
   it("keeps an empty space with saved sections openable", () => {
     const empty = {
       ...space("space-2", "Support", { canRename: true, bots: [] }),

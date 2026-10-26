@@ -526,6 +526,7 @@ import {
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeRecentThreadFiles,
+  postedAttachmentHashes,
   recentAttachmentBlocks,
   recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
@@ -6404,8 +6405,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const mimeType = inferAttachmentMimeType(filePath);
             if (!mimeType) return failAttach("unsupported attachment type");
             const contentKey = attachedContentKey(bytes);
-            if (attachedFilePaths.has(contentKey)) {
-              // The same bytes are already in the chat this turn (e.g. a worker report's file).
+            if (
+              attachedFilePaths.has(contentKey) ||
+              // A retried or resumed turn starts with an empty set: ask the thread too.
+              (
+                await postedAttachmentHashes(deps.prisma, {
+                  spaceId: run.spaceId,
+                  threadId: run.threadId,
+                  botId: bot.id,
+                  sinceUserTurn: true,
+                })
+              ).has(contentKey)
+            ) {
+              // The same bytes are already in the chat since the user's last message (e.g. a
+              // worker report's file, or this turn's attempt that timed out and was retried).
               await recordComputerAction("attach_file", filePath);
               return finish({
                 ok: true,
@@ -9107,6 +9120,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             {
               wokenByWorker: Boolean(peerMessage),
               runId,
+              acknowledgedMidTurn: publishedMidTurnUserMessage,
             },
           );
           const blocks = replyGuard.blocks;

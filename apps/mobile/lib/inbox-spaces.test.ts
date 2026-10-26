@@ -63,6 +63,22 @@ const bot: MobileBot = {
 };
 
 describe("spaceInboxItems", () => {
+  it("lists the newest reply or working bot first, with pinned chats above in their own order", () => {
+    const at = (day: number) => `2026-10-${day}T08:00:00.000Z`;
+    const input = space({
+      bots: [
+        { ...bot, id: "pin-a", pinned: true, updatedAt: at(1) },
+        { ...bot, id: "pin-b", pinned: true, updatedAt: at(25) },
+        { ...bot, id: "chief", updatedAt: at(10) },
+        { ...bot, id: "worker", status: "running", updatedAt: at(2) },
+        { ...bot, id: "replied", updatedAt: at(24) },
+      ],
+    });
+    expect(
+      spaceInboxItems([input]).flatMap((item) => (item.type === "bot" ? [item.bot.id] : [])),
+    ).toEqual(["pin-a", "pin-b", "worker", "replied", "chief"]);
+  });
+
   it("updates built-in headings with the locale without translating custom names", () => {
     const input = space({
       isDefault: true,

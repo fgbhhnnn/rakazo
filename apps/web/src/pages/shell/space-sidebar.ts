@@ -1,4 +1,4 @@
-import { groupBotsForSidebar } from "@rakazo/core";
+import { groupBotsForSidebar, sortByRosterRecency } from "@rakazo/core";
 
 type SidebarChat = {
   id: string;
@@ -7,6 +7,8 @@ type SidebarChat = {
   preview?: string | null;
   pinned: boolean;
   sectionId: string | null;
+  status?: string | null;
+  updatedAt?: string | null;
 };
 
 type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
@@ -63,7 +65,8 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         sectionId: item.chat.sectionId,
       })),
       space.botSections,
-      { labels },
+      // Newest reply or working bot first; pinned chats keep their place above.
+      { labels, order: (items) => sortByRosterRecency(items, (item) => item.chat) },
     );
     // Keep destinations visible after their last bot is dragged out. Search
     // still hides empty lists, and spaces without sections keep their old layout.

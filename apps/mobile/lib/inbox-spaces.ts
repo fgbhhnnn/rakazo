@@ -1,5 +1,5 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { groupBotsForSidebar } from "@rakazo/core";
+import { groupBotsForSidebar, sortByRosterRecency } from "@rakazo/core";
 import type { MobileBot, MobileGroup, MobileSpace } from "./api";
 import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
 import { t } from "./i18n";
@@ -81,6 +81,9 @@ export function spaceInboxItems(
     for (const group of groupBotsForSidebar(chats, space.botSections, {
       includeEmptySections: true,
       labels: { pinned: t("Pinned"), unassigned: t("Unassigned") },
+      // Newest reply or working bot first; pinned chats keep their place above.
+      order: (items) =>
+        sortByRosterRecency(items, (item) => (item.type === "bot" ? item.bot : item.group)),
     })) {
       if (group.title) {
         const key = `${space.id}:${group.key}`;

@@ -107,7 +107,8 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   await previewRow.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/app/${previewBot.id}$`));
   await expect(previewRow).toHaveAttribute("aria-current", "page");
-  await expect(previewRow).toHaveAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
+  // Only pinned rows are hand-ordered; unpinned ones sort newest first and offer no move keys.
+  await expect(previewRow).not.toHaveAttribute("aria-keyshortcuts");
 
   const composer = page.locator('textarea[name="chat-message"]');
   try {

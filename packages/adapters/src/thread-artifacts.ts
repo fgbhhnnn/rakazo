@@ -339,3 +339,64 @@ export function recentThreadFilesInstruction(files: readonly MaterializedThreadF
     ...files.map(fileLine),
   ].join("\n");
 }
+
+/** How far back a file's bytes count as "already in the chat" for duplicate checks. */
+export const POSTED_ATTACHMENT_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Content keys ("sha256:<hex>") of files this bot posted in the thread since `since`, whichever
+ * run posted them: a retried or resumed turn, an earlier wake turn, or a worker relay. With
+ * `sinceUserTurn`, the window also starts at the user's latest own message (a relayed worker
+ * message does not count), so a file the user asks for again can be sent again.
+ */
+export async function postedAttachmentHashes(
+  prisma: PrismaClient,
+  input: { spaceId: string; threadId: string; botId: string; sinceUserTurn?: boolean },
+  now = new Date(),
+): Promise<Set<string>> {
+  try {
+    let since = new Date(now.getTime() - POSTED_ATTACHMENT_WINDOW_MS);
+    if (input.sinceUserTurn) {
+      const userMessages = await prisma.message.findMany({
+        where: { threadId: input.threadId, role: "user", createdAt: { gte: since } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { createdAt: true, blocks: true },
+      });
+      const own = userMessages.find(
+        (message) =>
+          !(Array.isArray(message.blocks) ? message.blocks : []).some(
+            (block) =>
+              typeof block === "object" &&
+              block !== null &&
+              (block as { kind?: unknown }).kind === "bot_message_received",
+          ),
+      );
+      if (own && own.createdAt > since) since = own.createdAt;
+    }
+    const runs = await prisma.run.findMany({
+      where: {
+        threadId: input.threadId,
+        botId: input.botId,
+        OR: [{ completedAt: null }, { completedAt: { gte: since } }],
+      },
+      select: { id: true },
+    });
+    if (!runs.length) return new Set();
+    const rows = await prisma.artifact.findMany({
+      where: {
+        spaceId: input.spaceId,
+        botId: input.botId,
+        runId: { in: runs.map((run) => run.id) },
+        createdAt: { gte: since },
+      },
+      select: { hash: true },
+    });
+    return new Set(rows.map((row) => `sha256:${row.hash}`));
+  } catch (error) {
+    getLogger().warn(
+      `posted attachment lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return new Set();
+  }
+}

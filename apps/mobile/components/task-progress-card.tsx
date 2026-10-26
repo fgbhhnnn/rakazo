@@ -9,8 +9,9 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
+import { threadCardWidth } from "../lib/message-presentation";
 import { useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
@@ -89,6 +90,7 @@ type TaskProgressCardProps = {
 export function TaskProgressCard({ block, pressableProps, now }: TaskProgressCardProps) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
+  const { width: windowWidth } = useWindowDimensions();
   const live =
     !now && !block.closed && block.tasks.some((task) => isTaskProgressActive(task.state));
   const [ticking, setTicking] = useState(() => new Date());
@@ -110,7 +112,10 @@ export function TaskProgressCard({ block, pressableProps, now }: TaskProgressCar
     <View
       testID="task-progress-card"
       style={{
-        width: "90%",
+        // A fixed width like ChoiceCard and ComputerCard: in a content-sized bot row a
+        // percentage resolves to nothing on iOS and Android, and the flexible title then
+        // collapses the card to its icon column.
+        width: threadCardWidth(windowWidth),
         borderRadius: 16,
         borderWidth: 1,
         borderColor: tokens.border,

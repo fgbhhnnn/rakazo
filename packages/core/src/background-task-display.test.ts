@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   backgroundTasksActive,
   isBackgroundTaskStartCard,
+  isBackgroundWorkerReceipt,
   withoutBackgroundTaskCards,
 } from "./background-task-display.js";
 
@@ -52,6 +53,38 @@ describe("background task display", () => {
     expect(out[1]!.blocks).toEqual([text]);
     expect(JSON.stringify(out)).not.toContain("后台任务：");
     expect(JSON.stringify(out)).toContain("#THLFV7BZ");
+  });
+
+  it("hides hidden workers' receipts but keeps the relay's files, shown as the bot's", () => {
+    // Prod: "来自 UniApp → Expo 迁移 · 后台 1 的消息 >" above a relayed worker result.
+    const worker = "UniApp → Expo 迁移 · 后台1";
+    const sent = { kind: "bot_message_sent", toBotId: "w", toBotName: worker, text: "分析" };
+    const received = {
+      kind: "bot_message_received",
+      fromBotId: "w",
+      fromBotName: worker,
+      text: "分析完成",
+    };
+    const file = { kind: "file", artifactId: "page-1", name: "autoai-next 迁移分析" };
+    const peer = { ...received, fromBotId: "b2", fromBotName: "Researcher" };
+    expect(isBackgroundWorkerReceipt(sent)).toBe(true);
+    expect(isBackgroundWorkerReceipt(received)).toBe(true);
+    expect(isBackgroundWorkerReceipt(peer)).toBe(false);
+    expect(isBackgroundWorkerReceipt({ kind: "text", text: worker })).toBe(false);
+    const out = withoutBackgroundTaskCards([
+      message("launch", [sent]),
+      { ...message("relay", [received, file]), role: "user" },
+      { ...message("relay-only", [received]), role: "user" },
+      { ...message("peer", [peer]), role: "user" },
+      message("reply", [{ kind: "text", text: "分析完成了" }]),
+    ]);
+    expect(out.map((m) => [m.id, m.role])).toEqual([
+      ["relay", "bot"],
+      ["peer", "user"],
+      ["reply", message("reply", []).role],
+    ]);
+    expect(out[0]!.blocks).toEqual([file]);
+    expect(JSON.stringify(out)).not.toContain(worker);
   });
 
   it("returns the same transcript when there is nothing to hide", () => {

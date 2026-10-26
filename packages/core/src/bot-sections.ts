@@ -10,8 +10,14 @@ type SectionedBot = { pinned: boolean; sectionId: string | null };
 export function groupBotsForSidebar<T extends SectionedBot>(
   bots: readonly T[],
   sections: readonly Section[],
-  options: { includeEmptySections?: boolean; labels?: { pinned: string; unassigned: string } } = {},
+  options: {
+    includeEmptySections?: boolean;
+    labels?: { pinned: string; unassigned: string };
+    /** Orders chats inside each section and the unassigned list; pinned keeps its own order. */
+    order?: (bots: T[]) => T[];
+  } = {},
 ): BotListSection<T>[] {
+  const order = options.order ?? ((members: T[]) => members);
   const knownSectionIds = new Set(sections.map((section) => section.id));
   const pinned: T[] = [];
   const sectionMembers = new Map<string, T[]>();
@@ -34,7 +40,7 @@ export function groupBotsForSidebar<T extends SectionedBot>(
     grouped.push({ key: "pinned", title: options.labels?.pinned ?? "Pinned", bots: pinned });
   }
   for (const section of sections) {
-    const members = sectionMembers.get(section.id) ?? [];
+    const members = order(sectionMembers.get(section.id) ?? []);
     if (members.length > 0 || options.includeEmptySections) {
       grouped.push({ key: `section:${section.id}`, title: section.name, bots: members });
     }
@@ -46,7 +52,7 @@ export function groupBotsForSidebar<T extends SectionedBot>(
         pinned.length > 0 || sections.length > 0
           ? (options.labels?.unassigned ?? "Unassigned")
           : null,
-      bots: unassigned,
+      bots: order(unassigned),
     });
   }
 

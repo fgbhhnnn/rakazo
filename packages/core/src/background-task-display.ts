@@ -1,4 +1,5 @@
 import { isBackgroundTaskCardBlock } from "./background-task-card.js";
+import { isBackgroundWorkerName } from "./worker-names.js";
 
 /**
  * Client-side presentation of background tasks. The backend still posts each task's card
@@ -15,18 +16,46 @@ export function isBackgroundTaskStartCard(block: unknown): boolean {
 }
 
 /**
- * Drops task cards from a transcript. A message left with no blocks goes too, so no empty bubble
- * or gap stays behind; text beside a card (and its #REF mentions) is kept. Returns the input when
- * nothing changes so memoized views stay stable.
+ * A "Messaged <worker>" / "Message from <worker>" receipt for a hidden background worker. The
+ * main chat shows no such attribution line: workers are never opened from it, and the task's
+ * progress card already says what runs.
  */
-export function withoutBackgroundTaskCards<M extends { blocks: readonly unknown[] }>(
+export function isBackgroundWorkerReceipt(block: unknown): boolean {
+  if (!block || typeof block !== "object") return false;
+  const { kind, toBotName, fromBotName } = block as {
+    kind?: unknown;
+    toBotName?: unknown;
+    fromBotName?: unknown;
+  };
+  const peer =
+    kind === "bot_message_sent" ? toBotName : kind === "bot_message_received" ? fromBotName : null;
+  return typeof peer === "string" && isBackgroundWorkerName(peer);
+}
+
+function isHiddenTaskBlock(block: unknown): boolean {
+  return isBackgroundTaskStartCard(block) || isBackgroundWorkerReceipt(block);
+}
+
+/**
+ * Drops task cards and hidden workers' receipts from a transcript. A message left with no blocks
+ * goes too, so no empty bubble or gap stays behind; text beside a card (and its #REF mentions) is
+ * kept. A worker relay's files stay, shown as the bot's: the relay is the bot handing them over.
+ * Returns the input when nothing changes so memoized views stay stable.
+ */
+export function withoutBackgroundTaskCards<M extends { blocks: readonly unknown[]; role?: string }>(
   messages: readonly M[],
 ): readonly M[] {
-  if (!messages.some((message) => message.blocks.some(isBackgroundTaskStartCard))) return messages;
+  if (!messages.some((message) => message.blocks.some(isHiddenTaskBlock))) return messages;
   return messages.flatMap((message) => {
-    if (!message.blocks.some(isBackgroundTaskStartCard)) return [message];
-    const blocks = message.blocks.filter((block) => !isBackgroundTaskStartCard(block));
-    return blocks.length ? [{ ...message, blocks } as M] : [];
+    if (!message.blocks.some(isHiddenTaskBlock)) return [message];
+    const blocks = message.blocks.filter((block) => !isHiddenTaskBlock(block));
+    if (!blocks.length) return [];
+    const relayed = message.blocks.some(
+      (block) =>
+        isBackgroundWorkerReceipt(block) &&
+        (block as { kind: string }).kind === "bot_message_received",
+    );
+    return [(relayed ? { ...message, role: "bot", blocks } : { ...message, blocks }) as M];
   });
 }
 

@@ -349,6 +349,26 @@ describe("a worker's image relayed to the main chat", () => {
   });
 });
 
+describe("attach_file in a retried turn", () => {
+  it("does not post the file again when the timed-out attempt already posted it", async () => {
+    // Prod 2026-10-26: the user asked for the report, the turn attached it, ran past 90 s and was
+    // retried; the retry's attach_file posted the same 13.1 KB file a second time.
+    const report = "/home/user/rakazo-home/bots/bot-1/autoai-next 迁移分析.md";
+    const bytes = new TextEncoder().encode("# autoai-next 迁移分析\n");
+    const { images, toolResults } = await runMainTurn({
+      trigger: "user",
+      toolCalls: [{ name: "attach_file", args: { path: report } }],
+      files: { "bots/bot-1/autoai-next 迁移分析.md": bytes },
+      postedHashes: [sha256(bytes)],
+    });
+    expect(images).toHaveLength(0);
+    expect(attachWorkspaceFileToThread).not.toHaveBeenCalled();
+    expect(toolResults[0]).toEqual(
+      expect.objectContaining({ ok: true, alreadyAttached: true, path: report }),
+    );
+  });
+});
+
 describe("attach_file paths in team mode", () => {
   it("maps the computer's real workspace path onto the workspace root", async () => {
     const real = "/home/user/rakazo-home/bots/worker-1/jobs/p/out/a.jpg";

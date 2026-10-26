@@ -107,6 +107,18 @@ describe("worker report content dedup", () => {
     });
   });
 
+  it("skips bytes the bot posted in the thread before this task began", async () => {
+    // A report the main bot attached itself, then a new task's worker lists the same file.
+    const { attached, prisma, published } = relay({ text: "文件：\n- /out/report.md" });
+    prisma.artifact.findMany.mockImplementation(
+      async (args: { select: Record<string, boolean>; where?: { createdAt?: unknown } }) =>
+        args.where?.createdAt ? [{ hash: sha256(BYTES) }] : [],
+    );
+    expect(await attached).toEqual([]);
+    expect(published).toEqual([]);
+    expect(attachWorkspaceFileToThread).not.toHaveBeenCalled();
+  });
+
   it("still attaches a file whose bytes differ from what was posted", async () => {
     const { attached, published } = relay({
       text: "文件：\n- /out/puppy.jpg",
