@@ -49,6 +49,8 @@ async function runMainTurn(options: {
   files?: Record<string, Uint8Array>;
   /** Hashes of artifacts this bot already posted in the thread for the task. */
   postedHashes?: string[];
+  /** A Page a relayed worker report carried into this thread. */
+  relayedPage?: { id: string; hash: string; name: string };
 }) {
   vi.mocked(loadBotMessageContext).mockResolvedValue(
     options.reportText
@@ -149,8 +151,20 @@ async function runMainTurn(options: {
       findMany: vi.fn(async () => []),
     },
     artifact: {
-      findMany: vi.fn(async ({ select }: { select: Record<string, boolean> }) =>
-        select.hash ? (options.postedHashes ?? []).map((hash) => ({ hash })) : [],
+      findMany: vi.fn(
+        async ({
+          select,
+          where,
+        }: {
+          select: Record<string, boolean>;
+          where?: { id?: unknown };
+        }) => {
+          if (where?.id) {
+            const page = options.relayedPage;
+            return page ? [{ hash: page.hash, kind: "page", name: page.name }] : [];
+          }
+          return select.hash ? (options.postedHashes ?? []).map((hash) => ({ hash })) : [];
+        },
       ),
     },
     attempt: {
@@ -184,7 +198,19 @@ async function runMainTurn(options: {
         messages.push(data);
         return { ...data, id: `message-${messages.length}`, createdAt: new Date() };
       }),
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ select }: { select?: Record<string, boolean> } = {}) =>
+        select?.role && options.relayedPage
+          ? [
+              {
+                role: "user",
+                blocks: [
+                  { kind: "bot_message_received", fromBotName: "Assistant · 后台1", text: "done" },
+                  { kind: "file", artifactId: options.relayedPage.id },
+                ],
+              },
+            ]
+          : [],
+      ),
       findUnique: vi.fn(async () => null),
       findFirst: vi.fn(async () => null),
       count: vi.fn(async () => 0),
@@ -366,6 +392,55 @@ describe("attach_file in a retried turn", () => {
     expect(toolResults[0]).toEqual(
       expect.objectContaining({ ok: true, alreadyAttached: true, path: report }),
     );
+  });
+});
+
+describe("attach_file after a relayed Page", () => {
+  // Prod 2026-10-26 09:21 (UTC+8): a worker published the Page "大道出海 Expo 迁移进度", the
+  // relay showed it in the main chat, then the main bot's wake turn attach_file'd the .md the
+  // Page was written from (same bytes), so the chat had the Page card and the .md under it.
+  const source = "/home/user/rakazo-home/bots/worker-1/大道出海 Expo 迁移进度.md";
+  const files = { "bots/worker-1/大道出海 Expo 迁移进度.md": new TextEncoder().encode("# 进度\n") };
+
+  it("does not attach the Page's source file", async () => {
+    const bytes = files["bots/worker-1/大道出海 Expo 迁移进度.md"];
+    const { images, toolResults } = await runMainTurn({
+      trigger: "bot_message",
+      reportText: "进度已发布为页面",
+      toolCalls: [{ name: "attach_file", args: { path: source } }],
+      files,
+      relayedPage: { id: "page-1", hash: sha256(bytes), name: "大道出海 Expo 迁移进度" },
+    });
+    expect(images).toHaveLength(0);
+    expect(attachWorkspaceFileToThread).not.toHaveBeenCalled();
+    expect(toolResults[0]).toEqual(
+      expect.objectContaining({ ok: true, alreadyAttached: true, path: source }),
+    );
+  });
+
+  it("does not attach a .md named after the Page even when its bytes differ", async () => {
+    const { toolResults } = await runMainTurn({
+      trigger: "bot_message",
+      reportText: "进度已发布为页面",
+      toolCalls: [{ name: "attach_file", args: { path: source } }],
+      files,
+      relayedPage: { id: "page-1", hash: "other", name: "大道出海 Expo 迁移进度" },
+    });
+    expect(attachWorkspaceFileToThread).not.toHaveBeenCalled();
+    expect(toolResults[0]).toEqual(expect.objectContaining({ alreadyAttached: true }));
+  });
+
+  it("still attaches other files next to the Page", async () => {
+    const { toolResults } = await runMainTurn({
+      trigger: "bot_message",
+      reportText: "进度已发布为页面",
+      toolCalls: [{ name: "attach_file", args: { path: "out/puppy.jpg" } }],
+      files: { "bots/bot-1/out/puppy.jpg": PUPPY },
+      relayedPage: { id: "page-1", hash: "other", name: "大道出海 Expo 迁移进度" },
+    });
+    expect(attachWorkspaceFileToThread).toHaveBeenCalledTimes(1);
+    expect(toolResults[0]).toEqual(expect.objectContaining({ ok: true }));
+    expect(toolResults[0]).not.toHaveProperty("alreadyAttached");
   });
 });
 
