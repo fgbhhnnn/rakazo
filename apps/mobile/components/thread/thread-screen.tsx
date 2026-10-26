@@ -265,7 +265,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
   // card is the state: no typing dots under it.
   const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
-  const working = inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus);
 
   const speakFinishedReplyRef = useAutoSpeakReply({
     botId,

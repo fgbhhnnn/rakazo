@@ -792,6 +792,7 @@ msgstr "审批模型"
 msgid "Approvals"
 msgstr "审批"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -972,6 +973,7 @@ msgstr "Bot"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1287,6 +1289,7 @@ msgstr "正在清空…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -1320,6 +1323,10 @@ msgstr "关闭 MCP 服务器"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "关闭记忆设置"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Close messaging settings"
+msgstr "关闭消息设置"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1500,6 +1507,7 @@ msgstr "连接"
 msgid "Connect {selectedProviderName}"
 msgstr "连接 {selectedProviderName}"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr ""
@@ -2146,10 +2154,12 @@ msgstr "无法更新默认记忆范围"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "无法加载消息设置"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "无法更新消息设置"
@@ -2278,6 +2288,7 @@ msgid "days"
 msgstr "天"
 
 #: src/components/call/IncomingCall.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "拒绝"
@@ -2416,6 +2427,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -2730,6 +2742,7 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "从 CRM 导出本周名单并放到共享文件夹"
 
 #: src/pages/ExternalConversationSettings.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr ""
@@ -2879,6 +2892,7 @@ msgid "Git event"
 msgstr "Git 事件"
 
 #: src/lib/identity-display.ts
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
@@ -3215,6 +3229,7 @@ msgstr "上次检查 {0}：无变化"
 msgid "Later"
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "退出"
@@ -3234,6 +3249,7 @@ msgstr "Linear 工单"
 #: src/components/pages/PageReader.tsx
 msgid "Link copied"
 msgstr "链接已复制"
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "关联私信"
@@ -3537,6 +3553,7 @@ msgstr "消息…"
 msgid "Messaged {peer}"
 msgstr "已发给 {peer}"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "消息"
@@ -4222,6 +4239,7 @@ msgstr "请粘贴你的 API 密钥，然后重新测试。"
 msgid "Paused"
 msgstr "已暂停"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr ""
@@ -4622,6 +4640,7 @@ msgstr ""
 msgid "Request a new code"
 msgstr "请重新获取验证码"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr ""
@@ -4727,6 +4746,7 @@ msgstr ""
 msgid "Review provider settings and test again."
 msgstr "请检查提供方设置并重新测试。"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "撤销"
@@ -4958,10 +4978,12 @@ msgstr "自托管"
 msgid "Send"
 msgstr "发送"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr ""
@@ -5016,6 +5038,7 @@ msgstr "服务器 URL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/shell-dialogs.tsx
@@ -5189,7 +5212,7 @@ msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Slack workspace"
-msgstr ""
+msgstr "Slack 工作区"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
@@ -5770,6 +5793,7 @@ msgstr "撤销导入？"
 msgid "Uninstall"
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "取消关联"

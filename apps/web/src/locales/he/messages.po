@@ -792,6 +792,7 @@ msgstr "מודל אישור"
 msgid "Approvals"
 msgstr "אישורים"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -972,6 +973,7 @@ msgstr "בוט"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1287,6 +1289,7 @@ msgstr "מנקה…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -1320,6 +1323,10 @@ msgstr "סגירת שרתי MCP"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "סגירת הגדרות הזיכרון"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Close messaging settings"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1500,6 +1507,7 @@ msgstr "חיבור"
 msgid "Connect {selectedProviderName}"
 msgstr "חיבור {selectedProviderName}"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr ""
@@ -2146,10 +2154,12 @@ msgstr "לא ניתן לעדכן את היקף הזיכרון המוגדר כב�
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "לא ניתן לאמת את הגדרת המחשב ({failureMessage}). יש לתקן את החיבור ולבדוק שוב."
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "לא ניתן לטעון את הגדרות ההודעות"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "לא ניתן לעדכן את הגדרות ההודעות"
@@ -2278,6 +2288,7 @@ msgid "days"
 msgstr "ימים"
 
 #: src/components/call/IncomingCall.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "דחייה"
@@ -2416,6 +2427,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -2730,6 +2742,7 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "לייצא את הרשימה של השבוע מה-CRM ולשים אותה בתיקייה המשותפת"
 
 #: src/pages/ExternalConversationSettings.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr "שיחה חיצונית"
@@ -2879,6 +2892,7 @@ msgid "Git event"
 msgstr "אירוע Git"
 
 #: src/lib/identity-display.ts
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
@@ -3215,6 +3229,7 @@ msgstr ""
 msgid "Later"
 msgstr "מאוחר יותר"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "יציאה"
@@ -3234,6 +3249,7 @@ msgstr "Issue ב-Linear"
 #: src/components/pages/PageReader.tsx
 msgid "Link copied"
 msgstr ""
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "קישור הודעות פרטיות"
@@ -3537,6 +3553,7 @@ msgstr "הודעה…"
 msgid "Messaged {peer}"
 msgstr "נשלחה הודעה אל {peer}"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "הודעות"
@@ -4222,6 +4239,7 @@ msgstr "יש להדביק את מפתח ה-API ולבדוק שוב."
 msgid "Paused"
 msgstr "מושהה"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr ""
@@ -4622,6 +4640,7 @@ msgstr "תשובה ל-{0}"
 msgid "Request a new code"
 msgstr "יש לבקש קוד חדש"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr ""
@@ -4727,6 +4746,7 @@ msgstr ""
 msgid "Review provider settings and test again."
 msgstr "יש לבדוק את הגדרות הספק ולבדוק שוב."
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "ביטול הרשאה"
@@ -4958,10 +4978,12 @@ msgstr "באירוח עצמי"
 msgid "Send"
 msgstr "שליחה"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr ""
@@ -5016,6 +5038,7 @@ msgstr "URL של השרת"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/shell-dialogs.tsx
@@ -5770,6 +5793,7 @@ msgstr "לבטל את הייבוא?"
 msgid "Uninstall"
 msgstr "הסרת התקנה"
 
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "ביטול קישור"
