@@ -23,6 +23,12 @@ export function messagingRoutes(ctx: RouterContext) {
         })),
         start: authed.messaging.installations.start.handler(async ({ context, input }) => {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
+          // Require an explicit bot — never fall back to the user's first/default bot.
+          if (!input.botId) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Pick a bot before connecting a chat app.",
+            });
+          }
           return { url: await deps.messagingInstallations.start(context.actor, input.botId) };
         }),
         remove: authed.messaging.installations.remove.handler(async ({ context, input }) => {

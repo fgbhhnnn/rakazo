@@ -156,22 +156,11 @@ it("requires an owned, active bot before creating an install URL", async () => {
   await expect(f.manager.start(actor, "bot-b")).rejects.toThrow("Bot not found");
   expect(f.prisma.messagingInstallSession.create).not.toHaveBeenCalled();
 });
-it("connects the first bot in the user's default space when no bot is chosen", async () => {
+it("refuses to start without an explicit bot (no default/first-bot fallback)", async () => {
   const f = fixture();
-  f.prisma.spaceMember.findFirst.mockResolvedValueOnce({
-    userId: "user-a",
-    spaceId: "space-home",
-    member: { user: { email: "fake@example.test" } },
-  } as never);
-  f.prisma.bot.findFirst.mockResolvedValueOnce({ id: "bot-home", spaceId: "space-home" } as never);
-  await f.manager.start({ ...actor, spaceId: "space-work" });
-  expect(f.prisma.bot.findFirst).toHaveBeenCalledWith(
-    expect.objectContaining({
-      where: { spaceId: "space-home", userId: "user-a", archivedAt: null },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    }),
-  );
-  expect(f.getSession()).toMatchObject({ botId: "bot-home", spaceId: "space-home" });
+  // @ts-expect-error — botId is required; callers must not omit it.
+  await expect(f.manager.start(actor)).rejects.toThrow();
+  expect(f.prisma.messagingInstallSession.create).not.toHaveBeenCalled();
 });
 it("disconnects only the user's own installation, from any of their spaces", async () => {
   const f = fixture();

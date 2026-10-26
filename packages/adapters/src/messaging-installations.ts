@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { requireMembership, runAsSystem } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 
@@ -21,14 +21,12 @@ export class MessagingInstallations implements MessagingInstallationStore {
     private readonly cleanupJobs?: Pick<JobPublisher, "enqueue">,
   ) {}
 
-  /** Without a chosen bot, the workspace answers as the first bot in the user's default space. */
-  async start(actor: Actor, botId?: string): Promise<string> {
-    const bot = botId
-      ? await this.prisma.bot.findFirst({
-          where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
-          select: { id: true, spaceId: true },
-        })
-      : await this.defaultBot(actor.userId);
+  /** Connect a chat app for an explicit bot — never fall back to the first/default bot. */
+  async start(actor: Actor, botId: string): Promise<string> {
+    const bot = await this.prisma.bot.findFirst({
+      where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+      select: { id: true, spaceId: true },
+    });
     if (!bot) throw new Error("Bot not found");
     const state = randomBytes(32).toString("base64url");
     await runAsSystem("start messaging workspace installation", async () => {
@@ -49,16 +47,6 @@ export class MessagingInstallations implements MessagingInstallationStore {
     return this.provider.authorizeUrl(state);
   }
 
-  private defaultBot(userId: string) {
-    return runAsSystem("resolve default messaging bot", async () => {
-      const { spaceId } = await requireMembership(this.prisma, userId);
-      return this.prisma.bot.findFirst({
-        where: { spaceId, userId, archivedAt: null },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        select: { id: true, spaceId: true },
-      });
-    });
-  }
 
   async complete(state: string, code: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !code || code.length > 4096)

@@ -974,8 +974,8 @@ export const appContract = {
   messaging: {
     installations: {
       list: oc.output(MessagingInstallationsStatusSchema),
-      /** Without a bot, the workspace answers as the first bot in the user's default space. */
-      start: oc.input(z.object({ botId: Id.optional() })).output(z.object({ url: z.string() })),
+      /** Connect a chat app for a specific bot — never the workspace default/first bot. */
+      start: oc.input(z.object({ botId: Id })).output(z.object({ url: z.string() })),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     },
     status: oc.output(MessagingStatusSchema),
