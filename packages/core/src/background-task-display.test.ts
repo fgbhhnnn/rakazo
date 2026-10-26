@@ -87,6 +87,60 @@ describe("background task display", () => {
     expect(JSON.stringify(out)).not.toContain(worker);
   });
 
+  it("drops quotes of hidden handoffs and worker messages, keeping user reply quotes", () => {
+    // Prod 2026-10-26 (web): "↩ 调度测试: 【后台任务】验证页 …" above the relayed Page card.
+    const worker = "调度测试 · 后台1";
+    const handoff = {
+      ...message("handoff", [
+        { kind: "bot_message_sent", toBotId: "w", toBotName: worker, text: "【后台任务】验证页" },
+      ]),
+      role: "bot",
+    };
+    const relay = {
+      ...message("relay", [
+        { kind: "bot_message_received", fromBotId: "w", fromBotName: worker, text: "完成" },
+        { kind: "file", artifactId: "page-1", name: "验证页" },
+      ]),
+      role: "user",
+      replyToMessageId: "handoff",
+      replyPreview: { role: "bot", text: "【后台任务】验证页" },
+    };
+    // A reply whose target is out of the loaded page still carries the handoff preview.
+    const olderQuote = {
+      ...message("older", [{ kind: "text", text: "继续" }]),
+      role: "bot",
+      replyToMessageId: "not-loaded",
+      replyQuote: "【后台任务】验证页",
+    };
+    const toHandoff = {
+      ...message("to-handoff", [{ kind: "text", text: "这个呢" }]),
+      role: "user",
+      replyToMessageId: "handoff",
+    };
+    const userReply = {
+      ...message("user-reply", [{ kind: "text", text: "就这个" }]),
+      role: "user",
+      replyToMessageId: "relay",
+      replyPreview: { role: "bot", text: "验证页" },
+    };
+    const out = withoutBackgroundTaskCards([handoff, relay, olderQuote, toHandoff, userReply]);
+    const reply = (id: string) => {
+      const found = out.find((m) => m.id === id) as
+        | { replyToMessageId?: string; replyQuote?: string; replyPreview?: unknown }
+        | undefined;
+      return [found?.replyToMessageId, found?.replyQuote, found?.replyPreview];
+    };
+    expect(out.map((m) => m.id)).toEqual(["relay", "older", "to-handoff", "user-reply"]);
+    expect(reply("relay")).toEqual([undefined, undefined, undefined]);
+    expect(reply("older")).toEqual([undefined, undefined, undefined]);
+    expect(reply("to-handoff")).toEqual([undefined, undefined, undefined]);
+    expect(reply("user-reply")).toEqual(["relay", undefined, { role: "bot", text: "验证页" }]);
+    expect(out.find((m) => m.id === "user-reply")).toBe(userReply);
+    // A transcript with only ordinary quotes is returned as is.
+    const plain = [userReply];
+    expect(withoutBackgroundTaskCards(plain)).toBe(plain);
+  });
+
   it("returns the same transcript when there is nothing to hide", () => {
     const messages = [message("a", [{ kind: "text", text: "hi" }])];
     expect(withoutBackgroundTaskCards(messages)).toBe(messages);

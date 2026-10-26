@@ -42,21 +42,68 @@ function isHiddenTaskBlock(block: unknown): boolean {
  * kept. A worker relay's files stay, shown as the bot's: the relay is the bot handing them over.
  * Returns the input when nothing changes so memoized views stay stable.
  */
-export function withoutBackgroundTaskCards<M extends { blocks: readonly unknown[]; role?: string }>(
-  messages: readonly M[],
-): readonly M[] {
-  if (!messages.some((message) => message.blocks.some(isHiddenTaskBlock))) return messages;
+export function withoutBackgroundTaskCards<
+  M extends {
+    blocks: readonly unknown[];
+    role?: string;
+    id?: string;
+    replyToMessageId?: string | null;
+    replyQuote?: string | null;
+    replyPreview?: { text?: string } | null;
+  },
+>(messages: readonly M[]): readonly M[] {
+  const hiddenIds = new Set(
+    messages.flatMap((message) =>
+      // Only messages that disappear: a relay keeps its files, so replies to it still land.
+      message.id && message.blocks.length && message.blocks.every(isHiddenTaskBlock)
+        ? [message.id]
+        : [],
+    ),
+  );
+  const quotesHidden = (message: M) =>
+    !!(
+      (message.replyToMessageId && hiddenIds.has(message.replyToMessageId)) ||
+      isBackgroundHandoffText(message.replyQuote) ||
+      isBackgroundHandoffText(message.replyPreview?.text)
+    );
+  if (
+    !messages.some((message) => message.blocks.some(isHiddenTaskBlock) || quotesHidden(message))
+  ) {
+    return messages;
+  }
   return messages.flatMap((message) => {
-    if (!message.blocks.some(isHiddenTaskBlock)) return [message];
-    const blocks = message.blocks.filter((block) => !isHiddenTaskBlock(block));
+    const hidden = message.blocks.some(isHiddenTaskBlock);
+    const blocks = hidden
+      ? message.blocks.filter((block) => !isHiddenTaskBlock(block))
+      : message.blocks;
     if (!blocks.length) return [];
     const relayed = message.blocks.some(
       (block) =>
         isBackgroundWorkerReceipt(block) &&
         (block as { kind: string }).kind === "bot_message_received",
     );
-    return [(relayed ? { ...message, role: "bot", blocks } : { ...message, blocks }) as M];
+    // A relay answers the bot's handoff to its worker, and a quote of a hidden handoff or
+    // worker message ("↩ Bot: 【后台任务】…") points at nothing the chat shows: drop the quote.
+    const dropQuote = relayed || quotesHidden(message);
+    if (!hidden && !dropQuote) return [message];
+    return [
+      {
+        ...message,
+        ...(relayed ? { role: "bot" } : {}),
+        blocks,
+        ...(dropQuote
+          ? { replyToMessageId: undefined, replyQuote: undefined, replyPreview: undefined }
+          : {}),
+      } as M,
+    ];
   });
+}
+
+/** The text a bot hands a background worker opens with this (see background-tasks.ts). */
+const BACKGROUND_HANDOFF_PREFIX = "【后台任务】";
+
+function isBackgroundHandoffText(text: string | null | undefined): boolean {
+  return !!text && text.trimStart().startsWith(BACKGROUND_HANDOFF_PREFIX);
 }
 
 /** Whether a bot has background work in flight: any running or queued task, never a count. */
