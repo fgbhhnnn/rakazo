@@ -4,6 +4,7 @@ import {
   type TaskProgressBlock,
   type TaskProgressEntry,
   taskProgressCounts,
+  taskProgressDetailStep,
   taskProgressRunSeconds,
 } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
@@ -162,6 +163,7 @@ export function TaskProgressCard({ block, pressableProps, now }: TaskProgressCar
         {block.tasks.map((entry, index) => {
           const seconds = taskProgressRunSeconds(entry, clock);
           const label = stateLabel(entry, t);
+          const detail = taskProgressDetailStep(entry.state, entry.step, label);
           const color = stateColor(entry.state, tokens);
           return (
             <Pressable
@@ -203,8 +205,11 @@ export function TaskProgressCard({ block, pressableProps, now }: TaskProgressCar
                 </View>
                 <Text numberOfLines={2} style={{ ...typeScale.caption, marginTop: 2 }}>
                   <Text style={{ color }}>{label}</Text>
-                  {entry.step ? (
-                    <Text style={{ color: tokens.mutedForeground }}> · {entry.step}</Text>
+                  {detail ? (
+                    <Text style={{ color: tokens.mutedForeground }} testID="task-progress-step">
+                      {" "}
+                      · {detail}
+                    </Text>
                   ) : null}
                 </Text>
               </View>

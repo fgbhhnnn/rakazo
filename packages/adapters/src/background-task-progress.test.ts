@@ -99,8 +99,28 @@ describe("background task progress card entries", () => {
       { now: at(60), stuckMs: STUCK },
     );
     expect(entry.state).toBe("continuing");
+    expect(entry.step).toBeUndefined();
     expect(entry.finishedAt).toBeUndefined();
     expect(TaskProgressBlockSchema.shape.tasks.element.parse(entry).state).toBe("continuing");
+  });
+
+  it("keeps a real step while continuing when the worker has events", () => {
+    const events = [line("Reading layout screenshot", 20), called("web_fetch", "e2", 20)];
+    const entry = taskProgressEntry(
+      {
+        row: row({
+          ref: "TIZS60WO",
+          name: "按原版截图改布局",
+          args: { incompleteContinues: 1, incompleteContinuing: true },
+        }),
+        run: runInfo("running"),
+        events,
+        lastEventAt: at(20),
+      },
+      { now: at(60), stuckMs: STUCK },
+    );
+    expect(entry.state).toBe("continuing");
+    expect(entry.step).toBe("Reading layout screenshot");
   });
 
   it("prefers the worker's own note when it came after its last call", () => {

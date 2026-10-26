@@ -235,3 +235,90 @@ it("draws the borderless chat-card shell shared with ChoiceCard and approvals", 
   expect(style).not.toHaveProperty("borderWidth");
   expect(style).not.toHaveProperty("borderColor");
 });
+
+it("shows the continuing status label exactly once when step repeats it", () => {
+  translate.catalog = ZH_MESSAGES;
+  const card = mount({
+    block: {
+      ...block,
+      tasks: [
+        {
+          ref: "TIZS60WO",
+          name: "按原版截图改布局",
+          state: "continuing",
+          workerBotId: "worker-1",
+          queuedAt: ago(800),
+          startedAt: ago(750),
+          step: "继续中",
+        },
+      ],
+    },
+    now,
+  });
+  const row = card.querySelector('[data-testid="task-progress-TIZS60WO"]')!;
+  expect(row.textContent).toContain("继续中");
+  expect(row.textContent).not.toMatch(/继续中\s*·\s*继续中/);
+  expect([...row.textContent!.matchAll(/继续中/g)]).toHaveLength(1);
+});
+
+it("still shows a real continuing step when it differs from the status label", () => {
+  translate.catalog = ZH_MESSAGES;
+  const card = mount({
+    block: {
+      ...block,
+      tasks: [
+        {
+          ref: "TIZS60WO",
+          name: "按原版截图改布局",
+          state: "continuing",
+          workerBotId: "worker-1",
+          queuedAt: ago(800),
+          startedAt: ago(750),
+          step: "Reading layout screenshot",
+        },
+      ],
+    },
+    now,
+  });
+  const row = card.querySelector('[data-testid="task-progress-TIZS60WO"]')!;
+  expect(row.textContent).toContain("继续中");
+  expect(row.textContent).toContain("Reading layout screenshot");
+  expect(row.textContent).toMatch(/继续中\s*·\s*Reading layout screenshot/);
+  expect([...row.textContent!.matchAll(/继续中/g)]).toHaveLength(1);
+});
+
+it("does not duplicate status for other states when step matches the label", () => {
+  translate.catalog = ZH_MESSAGES;
+  const card = mount({
+    block: {
+      ...block,
+      tasks: [
+        {
+          ref: "TRUN0001",
+          name: "跑脚本",
+          state: "running",
+          workerBotId: "worker-1",
+          queuedAt: ago(100),
+          startedAt: ago(90),
+          step: "运行中",
+        },
+        {
+          ref: "TSTUCK02",
+          name: "卡住",
+          state: "stuck",
+          workerBotId: "worker-2",
+          queuedAt: ago(1500),
+          startedAt: ago(1440),
+          step: "没有进展",
+        },
+      ],
+    },
+    now,
+  });
+  const run = card.querySelector('[data-testid="task-progress-TRUN0001"]')!;
+  const stuck = card.querySelector('[data-testid="task-progress-TSTUCK02"]')!;
+  expect([...run.textContent!.matchAll(/运行中/g)]).toHaveLength(1);
+  expect(run.textContent).not.toMatch(/运行中\s*·\s*运行中/);
+  expect([...stuck.textContent!.matchAll(/没有进展/g)]).toHaveLength(1);
+  expect(stuck.textContent).not.toMatch(/没有进展\s*·\s*没有进展/);
+});
