@@ -2454,10 +2454,6 @@ msgstr ""
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker limita el acceso a tu computadora para mayor seguridad. Usar {hostLabel} permite que los bots trabajen con tus archivos y herramientas locales."
 
-#: src/components/SidebarFooter.tsx
-msgid "Docs"
-msgstr "Documentación"
-
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "El documento ha cambiado. Vuelve a abrirlo para editar la última versión."
@@ -2852,10 +2848,6 @@ msgstr "ID de gateway"
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "General"
-
-#: src/components/SidebarFooter.tsx
-msgid "Get the mobile app"
-msgstr "Obtener la aplicación móvil"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"

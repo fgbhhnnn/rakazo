@@ -2455,10 +2455,6 @@ msgstr "Docker 已設定，但電腦沒有回應。請確認沙箱管理服務�
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker 限制對你電腦的存取，以提高安全性。使用 {hostLabel} 時，機器人可以處理你的本機檔案並使用本機工具。"
 
-#: src/components/SidebarFooter.tsx
-msgid "Docs"
-msgstr "說明文件"
-
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "文件已變更，請重新開啟以編輯最新版本。"
@@ -2853,10 +2849,6 @@ msgstr "閘道器 ID"
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "一般"
-
-#: src/components/SidebarFooter.tsx
-msgid "Get the mobile app"
-msgstr "下載手機應用程式"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
