@@ -1608,6 +1608,10 @@ msgstr "通过 {0} 继续"
 msgid "Continue with credits"
 msgstr ""
 
+#: src/components/TaskProgressCard.tsx
+msgid "continuing"
+msgstr "继续中"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Conversations"
 msgstr ""
@@ -4752,9 +4756,6 @@ msgstr "运行时间必须是将来的时间。"
 #: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "运行中"
-
-msgid "continuing"
-msgstr "继续中"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx

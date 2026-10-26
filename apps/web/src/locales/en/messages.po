@@ -1608,6 +1608,10 @@ msgstr "Continue with {0}"
 msgid "Continue with credits"
 msgstr "Continue with credits"
 
+#: src/components/TaskProgressCard.tsx
+msgid "continuing"
+msgstr "continuing"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Conversations"
 msgstr "Conversations"
@@ -4752,9 +4756,6 @@ msgstr "Run time must be in the future."
 #: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "running"
-
-msgid "continuing"
-msgstr "continuing"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx

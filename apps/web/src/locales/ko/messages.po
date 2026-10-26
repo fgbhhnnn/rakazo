@@ -1608,6 +1608,10 @@ msgstr "{0}(으)로 계속"
 msgid "Continue with credits"
 msgstr ""
 
+#: src/components/TaskProgressCard.tsx
+msgid "continuing"
+msgstr "계속 중"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Conversations"
 msgstr ""
@@ -4752,9 +4756,6 @@ msgstr "실행 시간은 미래여야 합니다."
 #: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "실행 중"
-
-msgid "continuing"
-msgstr "계속 중"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx

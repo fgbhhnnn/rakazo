@@ -1608,6 +1608,10 @@ msgstr "{0}で続行"
 msgid "Continue with credits"
 msgstr "クレジットで続行"
 
+#: src/components/TaskProgressCard.tsx
+msgid "continuing"
+msgstr "続行中"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Conversations"
 msgstr ""
@@ -4752,9 +4756,6 @@ msgstr "実行日時は未来の日時を指定してください。"
 #: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "実行中"
-
-msgid "continuing"
-msgstr "続行中"
 
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
