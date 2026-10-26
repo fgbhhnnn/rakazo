@@ -1,5 +1,6 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
+import { thinkWorkerToolRefusal } from "./background-task-lanes.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
 import { pauseForApproval } from "./run-context.js";
@@ -16,6 +17,7 @@ import { messagingTools } from "./run-tools-messaging.js";
 import { secretTools } from "./run-tools-secrets.js";
 import { taskTools } from "./run-tools-tasks.js";
 import { workerNestingRefusal } from "./worker-nesting.js";
+import { workerUserFacingRefusal } from "./worker-user-facing-tools.js";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
@@ -86,10 +88,14 @@ async function dispatchTool(
   }
   if (name === "propose_instructions_update" && ctx.state.approval.pausePending)
     return pauseForApproval(ctx);
+  const nestingRefusal = workerNestingRefusal(ctx.bot, name);
+  if (nestingRefusal) return { error: nestingRefusal };
+  const userFacingRefusal = workerUserFacingRefusal(ctx.bot, name);
+  if (userFacingRefusal) return { error: userFacingRefusal };
+  const thinkRefusal = thinkWorkerToolRefusal(ctx.bot, name);
+  if (thinkRefusal) return { error: thinkRefusal };
   if (ctx.tools.disabled.has(name)) {
-    return {
-      error: workerNestingRefusal(ctx.bot, name) ?? "This tool is disabled for this bot.",
-    };
+    return { error: "This tool is disabled for this bot." };
   }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
     return { error: "Page browser is unavailable on this computer." };

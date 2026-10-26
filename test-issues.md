@@ -845,3 +845,5 @@ No stuck 处理中, no hung runs. After the deploy: 48 runs completed, 0 failed,
 - New migrations on tip: `20261026130000_routine_account_failures`, `20261026140000_computer_auto_recovered_at` (plus others already between f916 and tip).
 - 12ed7a457: hides unrunnable catalog models at connect; keeps saved `provider:id` preferences — does not alter existing model configs.
 - OTA: not published this turn (no deploy). UI continuing-card / mobile changes would need OTA if/when deployed.
+
+- CI Postgres journeys: think-lane shell refused with generic "disabled" because run-tools only surfaced workerNestingRefusal. Restored pre-merge order: nesting → user-facing → thinkWorkerToolRefusal → generic disabled.
