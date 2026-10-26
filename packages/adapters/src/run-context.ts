@@ -238,6 +238,8 @@ export interface RunContext {
     turn: MessageBlock[][];
     recent: MessageBlock[];
   };
+  /** Paths/content-keys already attached this turn (worker relay + attach_file dedup). */
+  attachedFilePaths: Set<string>;
   thread: Thread;
   task: Task;
   /** Provider context for this run's calls; aborting the run aborts its signal. */

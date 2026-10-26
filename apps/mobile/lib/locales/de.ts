@@ -1122,4 +1122,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} bis {to}",
   "Every {day}": "Jeden {day}",
   "Every {days} and {last}": "Jeden {days} und {last}",
+  "Add workspace": "Workspace hinzufügen",
+  "Chat with your bot from Slack.": "Chatte über Slack mit deinem Bot.",
+  "Markdown file": "Markdown-Datei",
 };

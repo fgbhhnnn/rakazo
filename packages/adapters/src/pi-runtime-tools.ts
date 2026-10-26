@@ -14,6 +14,7 @@ import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { isToolPauseResult } from "./approval-effect.js";
 import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { shortenToolResultText } from "./context-selection.js";
+import { SEQUENTIAL_DISPATCH_TOOL_NAMES } from "./dispatch-tool-order.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
 import { clipToolResultContent, clipToolResultText } from "./pi-runtime-limits.js";
@@ -249,7 +250,9 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
     // sequential. Remember also needs this to avoid competing revision writes.
-    ...(SCHEDULE_TOOL_NAMES.has(tool.name) || tool.name === "remember"
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
+    tool.name === "remember" ||
+    SEQUENTIAL_DISPATCH_TOOL_NAMES.has(tool.name)
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),

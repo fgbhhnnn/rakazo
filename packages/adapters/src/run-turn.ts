@@ -26,6 +26,13 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
+import {
+  DISPATCHER_RESTART_TRIGGERS,
+  DispatcherTurnTimeout,
+  dispatcherTurnMaxMs,
+  restartDispatcherTurn,
+} from "./dispatcher-mode.js";
+import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
 import {
   COMPACTION_BATCH_SIZE,
@@ -79,8 +86,57 @@ import {
   finalBlocksAfterMidTurnProgress,
   userProgressClientNonce,
 } from "./user-progress.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
+
+/** Dispatcher wake: attach the worker's listed files and forward relayed attachments. */
+async function relayWorkerReportIfNeeded(ctx: RunContext): Promise<string[]> {
+  return relayWorkerReportAttachments({
+    deps: ctx.deps,
+    run: ctx.run,
+    bot: ctx.bot,
+    threadGroupId: ctx.thread.groupId ?? undefined,
+    peerMessage: ctx.source.peerMessage,
+    dispatcherTurn: ctx.state.dispatcherTurn,
+    computerMode: ctx.computer.mode,
+    readComputer: () => ctx.computer.get("tool", "attach_file"),
+    context: ctx.context,
+    alreadyAttached: ctx.attachedFilePaths,
+    publish: (blocks) => publishMessage(ctx.deps, ctx.run, "bot", blocks),
+  });
+}
+
+/** Post the dispatcher's pre-ask text (and worker files) before parking on ask_user. */
+async function publishDispatcherPreAskReply(ctx: RunContext) {
+  const { deps, run, runId } = ctx;
+  const { reply } = ctx.state;
+  const dispatcherVisible = slotFree(ctx.state.dispatcherTurn);
+  const pending = reply.assembled.trim();
+  const text = clampUserProgressMessage(dispatcherVisible(redactSecrets(pending, ctx.secrets)));
+  if (text && !reply.midTurnUserTexts.includes(text)) {
+    const guarded = guardDispatcherReply(true, [{ kind: "text", text }], ctx.state.turnLedger, {
+      wokenByWorker: Boolean(ctx.source.peerMessage),
+      runId,
+    });
+    if (guarded.blocks.length) {
+      await publishMessage(
+        deps,
+        run,
+        "bot",
+        guarded.blocks,
+        undefined,
+        userProgressClientNonce(run.id, reply.midTurnProgressCount++),
+      );
+      reply.midTurnUserTexts.push(text);
+      reply.publishedMidTurnUserMessage = true;
+    }
+  }
+  reply.assembled = "";
+  reply.hasStreamedText = false;
+  reply.pendingProgress = "";
+  await relayWorkerReportIfNeeded(ctx);
+}
 
 /**
  * Stream the runtime's events into the thread. Returns true when the attempt stopped before
@@ -240,6 +296,12 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
     id: action.id,
     label: redactSecrets(action.label, ctx.secrets),
   }));
+  // ask_user pauses without a final reply, so a dispatcher's text before the card
+  // (e.g. its relay of a worker result) and the report's files are posted first.
+  if (ctx.state.dispatcherTurn) {
+    await flushProgress(ctx);
+    await publishDispatcherPreAskReply(ctx);
+  }
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, event.executionId);
   await ctx.settleRunningHelpers();
@@ -289,7 +351,9 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
   // does not treat pre-takeover text as the delegated final result.
   await publishMidTurnNarration(ctx);
   if (reply.assembled.trim()) {
-    const narration = clampUserProgressMessage(redactSecrets(reply.assembled, ctx.secrets));
+    const narration = clampUserProgressMessage(
+      slotFree(ctx.state.dispatcherTurn)(redactSecrets(reply.assembled, ctx.secrets)),
+    );
     if (narration && canPublishDurableNarration(ctx)) {
       await publishMessage(
         deps,
@@ -640,6 +704,7 @@ export async function completeRun(ctx: RunContext) {
   ) {
     throw new Error(TOOL_STEPS_WITHOUT_RESPONSE);
   }
+  await relayWorkerReportIfNeeded(ctx);
   if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) return;
   const botMessageOutcome =
     run.trigger === "bot_message"
@@ -756,6 +821,15 @@ export async function failRun(
     if (!(computerError instanceof SandboxRateLimitError)) throw computerError;
     error = computerError;
   }
+  // The runtime reports the watchdog's abort as a generic "Request was aborted";
+  // record what actually happened.
+  if (
+    ctx.state.dispatcherWatchdogFired &&
+    !(error instanceof DispatcherTurnTimeout) &&
+    !(error instanceof SandboxRateLimitError)
+  ) {
+    error = new DispatcherTurnTimeout(dispatcherTurnMaxMs());
+  }
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
@@ -821,6 +895,28 @@ export async function failRun(
     await deps.jobs
       .enqueue(runContinueJob(failed.continuationRunId))
       .catch((error) => getLogger().error("steering continuation enqueue", error));
+  }
+  if (ctx.state.dispatcherTurn && DISPATCHER_RESTART_TRIGGERS.has(run.trigger)) {
+    // A main turn that hung or failed must not leave the user with silence: restart it
+    // on the latest messages (bounded), or say truthfully that it failed.
+    const restarted =
+      (ctx.state.dispatcherWatchdogFired || error instanceof DispatcherTurnTimeout) &&
+      (await restartDispatcherTurn(deps, run, Boolean(failed.continuationRunId)).catch(
+        (restartError) => {
+          getLogger().error("dispatcher turn restart", restartError);
+          return false;
+        },
+      ));
+    if (!restarted) {
+      const reason =
+        ctx.state.dispatcherWatchdogFired || error instanceof DispatcherTurnTimeout
+          ? `回复超时（超过 ${Math.round(dispatcherTurnMaxMs() / 1000)} 秒），已重试仍未完成。请再发一次消息。`
+          : `这次回复失败了：${message}`;
+      await publishMessage(deps, run, "bot", [{ kind: "text", text: reason }]).catch((postError) =>
+        getLogger().error("dispatcher failure message", postError),
+      );
+    }
+    return;
   }
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(

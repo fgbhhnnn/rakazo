@@ -1075,4 +1075,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",
+  "Add workspace": "Werkruimte toevoegen",
+  "Chat with your bot from Slack.": "Chat vanuit Slack met je bot.",
+  "Markdown file": "Markdown-bestand",
 };

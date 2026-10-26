@@ -20,6 +20,7 @@ import {
   resolveActionApprovalForTools,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
+  truthyFlag,
   unattendedTriggerToolRequiresApproval,
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
@@ -175,6 +176,7 @@ export async function gateToolCall(
             ctx.trust.searchResultUrls.has(fetchUrl) ||
             (await ctx.trust.loadTrustedSites()).has(fetchSite),
           rules: await ctx.trust.loadApprovalRules(),
+          trustAll: truthyFlag(process.env.RAKAZO_TRUST_ALL_FETCH_SITES),
         })
       : "allow";
   const connectorReadGated =

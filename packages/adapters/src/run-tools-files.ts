@@ -3,12 +3,21 @@ import { inferAttachmentMimeType, isBackgroundRunTrigger } from "@rakazo/core";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 import { desktopProtectionGuardMessage } from "./desktop-command-guard.js";
 import { protectedActivateScriptWriteRefusal } from "./desktop-guard-words.js";
+import {
+  attachedContentKey,
+  attachedPathKey,
+  realWorkspacePathToRoot,
+} from "./dispatcher-relay.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
 import type { RunContext } from "./run-context.js";
 import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { recordComputerAction } from "./run-tools-computer.js";
-import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
+import {
+  alreadyPostedFile,
+  attachWorkspaceFileToThread,
+  postedAttachmentHashes,
+} from "./thread-artifacts.js";
 import { textContentArg } from "./tool-text.js";
 import type { RunWorkspace } from "./workspace-file-tools.js";
 import { listFilesFromTool, readFileFromTool, renderPlotFromTool } from "./workspace-file-tools.js";
@@ -149,7 +158,7 @@ export const fileTools: ToolHandlers = {
     return renderPlotFromTool(deps, run, args, executionId, workspace, call.finish);
   },
   async attach_file(ctx, call) {
-    const { deps, run, bot, thread, context } = ctx;
+    const { deps, run, bot, thread, context, attachedFilePaths } = ctx;
     const { name, args, executionId } = call;
     const filePath = String(args.path ?? "");
     const failAttach = async (error: string) => {
@@ -157,7 +166,13 @@ export const fileTools: ToolHandlers = {
       return call.finish({ error, path: filePath });
     };
     if (!deps.artifacts) return failAttach("artifact storage unavailable");
-    const storedPath = resolveBotWorkspacePath(ctx.computer.mode, bot.id, filePath);
+    // A worker's report lists real paths (/home/user/rakazo-home/...); "/" is the
+    // workspace root here, so the real prefix is mapped onto it before resolving.
+    const storedPath = resolveBotWorkspacePath(
+      ctx.computer.mode,
+      bot.id,
+      realWorkspacePathToRoot(filePath) ?? filePath,
+    );
     let bytes: Uint8Array;
     try {
       bytes = await deps.sandbox.readFile(
@@ -173,6 +188,28 @@ export const fileTools: ToolHandlers = {
     }
     const mimeType = inferAttachmentMimeType(filePath);
     if (!mimeType) return failAttach("unsupported attachment type");
+    const contentKey = attachedContentKey(bytes);
+    if (
+      attachedFilePaths.has(contentKey) ||
+      alreadyPostedFile(
+        await postedAttachmentHashes(deps.prisma, {
+          spaceId: run.spaceId,
+          threadId: run.threadId,
+          botId: bot.id,
+          sinceUserTurn: true,
+        }),
+        contentKey,
+        filePath,
+      )
+    ) {
+      await recordComputerAction(ctx, call, "attach_file", filePath);
+      return call.finish({
+        ok: true,
+        path: filePath,
+        alreadyAttached: true,
+        note: "This file is already attached in the chat above; do not attach or promise it again.",
+      });
+    }
     try {
       const attached = await attachWorkspaceFileToThread(
         {
@@ -194,6 +231,9 @@ export const fileTools: ToolHandlers = {
         },
       );
       await publishMessage(deps, run, "bot", [attached.block]);
+      attachedFilePaths.add(filePath);
+      attachedFilePaths.add(attachedPathKey(storedPath));
+      attachedFilePaths.add(contentKey);
       await recordComputerAction(ctx, call, "attach_file", filePath);
       return call.finish({ ok: true, artifactId: attached.artifactId, path: filePath });
     } catch (error) {

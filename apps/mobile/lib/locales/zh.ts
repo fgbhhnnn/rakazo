@@ -1076,4 +1076,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",
+  "Add workspace": "添加工作区",
+  "Chat with your bot from Slack.": "在 Slack 中与你的机器人聊天。",
+  "Markdown file": "Markdown 文件",
 };

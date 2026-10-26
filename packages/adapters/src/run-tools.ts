@@ -15,6 +15,7 @@ import { memoryTools } from "./run-tools-memory.js";
 import { messagingTools } from "./run-tools-messaging.js";
 import { secretTools } from "./run-tools-secrets.js";
 import { taskTools } from "./run-tools-tasks.js";
+import { workerNestingRefusal } from "./worker-nesting.js";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
@@ -86,7 +87,9 @@ async function dispatchTool(
   if (name === "propose_instructions_update" && ctx.state.approval.pausePending)
     return pauseForApproval(ctx);
   if (ctx.tools.disabled.has(name)) {
-    return { error: "This tool is disabled for this bot." };
+    return {
+      error: workerNestingRefusal(ctx.bot, name) ?? "This tool is disabled for this bot.",
+    };
   }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
     return { error: "Page browser is unavailable on this computer." };

@@ -34,9 +34,9 @@ export function workerApprovalClosedState(block: MirrorLike): "cancelled" | "exp
  */
 export function askAnswerRunId(message: {
   runId?: string | null;
-  blocks: readonly MirrorLike[];
+  blocks?: readonly MirrorLike[] | null;
 }): string | undefined {
-  for (const block of message.blocks) {
+  for (const block of message.blocks ?? []) {
     if (block.kind === "ask" && block.workerApproval) return block.workerApproval.runId;
     // A restart card has no run; its answer names the computer instead.
     if (block.kind === "ask" && block.computerRestart) return block.computerRestart.computerId;

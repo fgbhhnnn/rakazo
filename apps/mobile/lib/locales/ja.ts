@@ -1110,4 +1110,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}〜{to}",
   "Every {day}": "毎週{day}",
   "Every {days} and {last}": "毎週{days}と{last}",
+  "Add workspace": "ワークスペースを追加",
+  "Chat with your bot from Slack.": "Slackからボットとチャットできます。",
+  "Markdown file": "Markdown ファイル",
 };

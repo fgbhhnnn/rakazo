@@ -20,6 +20,7 @@ import {
   midTurnProgressBudgetAllows,
   userProgressClientNonce,
 } from "./user-progress.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
 /** A fresh reply that knows the progress messages earlier attempts of this run posted. */
 export async function createReplyState(
@@ -133,7 +134,9 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const narration = clampUserProgressMessage(redactSecrets(extracted.text, ctx.secrets));
+  const narration = clampUserProgressMessage(
+    slotFree(ctx.state.dispatcherTurn)(redactSecrets(extracted.text, ctx.secrets)),
+  );
   const canPublish =
     canPublishDurableNarration(ctx) ||
     (beforeConnectCard && runPromotesMidTurnNarration(run.trigger));

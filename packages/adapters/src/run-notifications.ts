@@ -8,7 +8,7 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { countUnreadInboxChats } from "@rakazo/db";
+import { countUnreadInboxChats, isHiddenBot } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 
@@ -36,11 +36,13 @@ async function runNotice(
       userId: run.userId,
     },
     select: {
-      bot: { select: { notifyOnFinish: true } },
+      bot: { select: { notifyOnFinish: true, spawnKey: true } },
       thread: { select: { groupId: true } },
     },
   });
   if (!source) return { enabled: false, groupId: null };
+  // Hidden background workers never notify; the dispatcher's card and reply carry their result.
+  if (isHiddenBot(source.bot)) return { enabled: false, groupId: null };
   return {
     enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     groupId: source.thread.groupId,

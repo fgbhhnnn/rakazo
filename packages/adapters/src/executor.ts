@@ -83,10 +83,13 @@ import { dispatcherImageNote, dispatcherWithholdsImages } from "./dispatcher-ima
 import {
   applyDispatcherToolPolicy,
   DISPATCHER_TOOL_NAMES,
+  DispatcherTurnTimeout,
+  dispatcherTurnMaxMs,
   isDispatcherBot,
   SkipComputerLease,
   startDispatcherWatchdog,
 } from "./dispatcher-mode.js";
+import { relayWorkerReportAttachments, workerFilesAttachedNote } from "./dispatcher-relay.js";
 import { createDispatcherTurnLedger } from "./dispatcher-reply-guard.js";
 import {
   isDispatcherTimeoutRetry,
@@ -152,6 +155,7 @@ import {
   setupFailureStreak,
   writeComputerRunRequeue,
 } from "./run-lifecycle.js";
+import { publishMessage } from "./run-messages.js";
 import {
   cloudflareRunFields,
   isTerminalModelSetupError,
@@ -207,7 +211,6 @@ import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { createWebProvider } from "./web-provider-factory.js";
 import { dataBotId, loadWorkerOwner } from "./worker-owner-scope.js";
-import { slotFree } from "./worker-slot-mentions.js";
 
 export { userTurnInstructions } from "./run-instructions.js";
 export { DISPATCHER_PLUGIN_LISTING_MAX_MS, loadLivePluginSlugs };
@@ -330,7 +333,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // A think-lane worker has no computer either: it never leases, wakes or holds one.
       const thinkTurn = isThinkWorker(leaseTarget);
       const turnLedger = createDispatcherTurnLedger();
-      const _dispatcherVisible = slotFree(dispatcherTurn);
       if (!leaseTarget.computerId && !dispatcherTurn && !thinkTurn)
         throw new Error("Bot has no computer");
       if (dispatcherTurn) {
@@ -421,6 +423,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let runAbortController: AbortController | null = null;
       let dispatcherWatchdogClear: ReturnType<typeof startDispatcherWatchdog> | undefined;
       let dispatcherWatchdogFired = false;
+      let runState: RunState | undefined;
       const runningHelpers = new Map<string, RunningHelper>();
       const settleHelpers = () => settleRunningHelpers(deps, run, runningHelpers);
 
@@ -567,6 +570,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (dispatcherTurn) {
           dispatcherWatchdogClear = startDispatcherWatchdog(runAbortController, () => {
             dispatcherWatchdogFired = true;
+            if (runState) runState.dispatcherWatchdogFired = true;
           });
         }
         if (deps.shutdownSignal?.aborted) runAbortController.abort(deps.shutdownSignal.reason);
@@ -621,9 +625,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           payload: { trigger: run.trigger, routineId: run.routineId },
         });
 
-        const discoveredPromise = deps.connector
-          ? deps.connector.discoverTools(context)
-          : Promise.resolve([]);
+        // Dispatcher turns never expose connector tools (see exposedConnectorTools), so they
+        // must not wait on a slow or failing provider before answering.
+        const discoveredPromise =
+          deps.connector && !dispatcherTurn
+            ? deps.connector.discoverTools(context)
+            : Promise.resolve([]);
         const threadContext = threadContextForRun(
           run.trigger,
           {
@@ -1162,6 +1169,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           runId,
         };
 
+        runState = state;
+        const attachedFilePaths = new Set<string>();
         const ctx: RunContext = {
           deps,
           providers: { web, mediaGeneration, browser, cloudAgent },
@@ -1176,6 +1185,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             turn: pendingTurnFiles,
             recent: recentAttachmentBlocks(history, historyMessages, recentFilesInput),
           },
+          attachedFilePaths,
           thread,
           task,
           context,
@@ -1302,9 +1312,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
             // Lateness is optional context; a lookup failure must not prevent a run.
           }
         }
+        // A worker result's listed files go out before the model's turn, and the model is told
+        // so: it then relays the result instead of re-attaching, re-asking the worker or
+        // promising a "preview". The end-of-turn relay below only catches what is still missing.
+        const workerFilesNote = workerFilesAttachedNote(
+          await relayWorkerReportAttachments({
+            deps,
+            run,
+            bot,
+            threadGroupId: thread.groupId ?? undefined,
+            peerMessage,
+            dispatcherTurn,
+            computerMode,
+            readComputer: () => getRunComputer("tool", "attach_file"),
+            context,
+            alreadyAttached: attachedFilePaths,
+            publish: (blocks) => publishMessage(deps, run, "bot", blocks),
+          }),
+        );
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
+          workerFilesNote,
           takeoverResume?.promptNote,
           approvalContinuation,
           // A hang-up turn is read, not heard: no spoken-reply constraint.
@@ -1394,6 +1423,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           where: { id: runId },
           select: { status: true, leaseOwner: true, leaseFence: true },
         });
+        let setupTimeout: DispatcherTurnTimeout | undefined;
         if (
           !mayOpenModelStream(
             beforeModel,
@@ -1402,7 +1432,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             !lease.valid || Boolean(runAbortController?.signal.aborted),
           )
         ) {
-          return;
+          // The reply budget ran out during setup while this worker still owns the run.
+          // Returning here would leave it "running" until the lease expires; fail it as a
+          // timeout instead so the bounded restart or a truthful message follows.
+          if (
+            !dispatcherWatchdogFired ||
+            !lease.valid ||
+            !mayOpenModelStream(beforeModel, workerId, fence, false)
+          ) {
+            return;
+          }
+          setupTimeout = new DispatcherTurnTimeout(dispatcherTurnMaxMs());
         }
 
         let fallbackModels: ModelRoleChoice[] = [];
@@ -1439,6 +1479,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
 
         try {
+          if (setupTimeout) throw setupTimeout;
           if (checkpointLoadError) throw checkpointLoadError;
           const runtimeEvents = deps.runtime.run(
             {
@@ -1634,6 +1675,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           })();
           if (await consumeRunEvents(ctx, watchedEvents)) return;
+          runComputer.throwIfFailed();
+          // A runtime may end quietly when aborted; a stopped main turn still failed.
+          if (dispatcherWatchdogFired) throw new DispatcherTurnTimeout(dispatcherTurnMaxMs());
           await completeRun(ctx);
         } catch (caughtError) {
           await failRun(ctx, caughtError, {

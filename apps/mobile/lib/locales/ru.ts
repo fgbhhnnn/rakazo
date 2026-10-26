@@ -1119,4 +1119,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} — {to}",
   "Every {day}": "Каждую неделю: {day}",
   "Every {days} and {last}": "Каждую неделю: {days} и {last}",
+  "Add workspace": "Добавить рабочее пространство",
+  "Chat with your bot from Slack.": "Общайтесь с ботом из Slack.",
+  "Markdown file": "Файл Markdown",
 };

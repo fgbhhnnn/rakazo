@@ -114,6 +114,9 @@ const BOUNDARY =
 const CJK_BOUNDARY = /([。！？；!?;．])(["'”’」』）)\]]*)\s*/g;
 const HAS_CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
+/** CJK scripts plus CJK/fullwidth punctuation — never insert a Latin space when gluing these. */
+const TIGHT_GLUE =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]/u;
 
 /** CJK characters carry about a word each, so they count double toward a fragment's length. */
 function weight(text: string): number {
@@ -147,11 +150,15 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
     const parts = piece.length <= maxChars ? [piece] : splitLong(piece, maxChars);
     for (const [index, part] of parts.entries()) {
       const prev = out[out.length - 1];
-      if (prev && (weight(prev) < minChars || weight(part) < minChars)) {
-        out[out.length - 1] = HAS_CJK.test(prev.slice(-2)) ? `${prev}${part}` : `${prev} ${part}`;
-      } else {
-        out.push(part);
+      if (index === 0 && prev && (weight(prev) < minChars || weight(part) < minChars)) {
+        const tight = TIGHT_GLUE.test(prev) || TIGHT_GLUE.test(part);
+        const joined = tight ? `${prev}${part}` : `${prev} ${part}`;
+        if (joined.length <= maxChars) {
+          out[out.length - 1] = joined;
+          continue;
+        }
       }
+      out.push(part);
     }
   }
   return out;
@@ -231,7 +238,6 @@ export function narrateTool(toolName: string): string | null {
     [/^remember$/, "writing a memory"],
     [/^save_shared_memory$/, "saving shared memory"],
     [/^attach_file$/, "attaching a file"],
-    [/^(write|edit)_page$/, "writing a page"],
     [/^request_takeover$/, "asking you to take over"],
   ];
   for (const [pattern, phrase] of verbs) {

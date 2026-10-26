@@ -20,9 +20,22 @@ import {
   messageUserMaxLength,
   userProgressClientNonce,
 } from "./user-progress.js";
+import { REPORT_PROGRESS_TOOL, reportWorkerProgress } from "./worker-progress.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
 /** Messages to the user, other bots and connected agents, and calls. */
 export const messagingTools: ToolHandlers = {
+  async [REPORT_PROGRESS_TOOL](ctx, call) {
+    return call.finish(
+      await reportWorkerProgress(ctx.deps, {
+        run: ctx.run,
+        threadId: ctx.thread.id,
+        bot: ctx.bot,
+        args: call.args,
+        secrets: ctx.secrets,
+      }),
+    );
+  },
   async call_user(ctx, call) {
     const { deps, run, thread } = ctx;
     const { args } = call;
@@ -70,7 +83,9 @@ export const messagingTools: ToolHandlers = {
     const { deps, run } = ctx;
     const { args } = call;
     const { reply } = ctx.state;
-    const rawMessage = redactSecrets(String(args.message ?? ""), ctx.secrets);
+    const rawMessage = slotFree(ctx.state.dispatcherTurn)(
+      redactSecrets(String(args.message ?? ""), ctx.secrets),
+    );
     const maxLength = messageUserMaxLength();
     const text = clampUserProgressMessage(rawMessage, maxLength);
     if (!text) return call.finish({ error: "message is required" });

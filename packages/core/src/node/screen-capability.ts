@@ -243,7 +243,7 @@ export function openScreenCapability(
       expiresAt,
       target: {
         protocol: target.protocol,
-        hostname: target.hostname,
+        hostname: target.hostname.replace(/^\[|\]$/g, ""),
         port,
         path: screenPolicyPath(remoteTargetPath(target, requestedPath), interactive),
         interactive,

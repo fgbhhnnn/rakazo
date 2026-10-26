@@ -1,4 +1,5 @@
 import type { RpcInput } from "@rakazo/contracts";
+import { askAnswerRunId } from "@rakazo/core";
 import type { MobileMessage } from "./api";
 
 export type ThreadAnswerContext = {
@@ -14,16 +15,18 @@ export type ThreadAnswerContext = {
 /** Sends an ask answer or dismissal; resolves once the server accepts it. */
 export async function answerThreadMessage(
   { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead }: ThreadAnswerContext,
-  message: Pick<MobileMessage, "id" | "runId">,
+  message: Pick<MobileMessage, "id" | "runId"> & { blocks?: MobileMessage["blocks"] | null },
   answer: string,
   username?: string,
   dismiss?: boolean,
 ) {
-  if (readOnly || (!botId && !groupId) || !message.runId) return;
+  // A mirrored worker approval answers the worker's run, not this chat's.
+  const runId = askAnswerRunId(message);
+  if (readOnly || (!botId && !groupId) || !runId) return;
   markRead();
   await rpc("threads/answer", {
     ...(groupId ? { groupId } : { botId }),
-    runId: message.runId,
+    runId,
     messageId: message.id,
     answer,
     ...(username ? { username } : {}),

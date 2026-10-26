@@ -1098,4 +1098,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "no progress": "沒有進展",
   done: "完成",
   "Slack workspace": "Slack 工作區",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "在「模型」中接入你自己的 API 金鑰，或在「帳單」中選擇 Rakazo 額度。",
 };

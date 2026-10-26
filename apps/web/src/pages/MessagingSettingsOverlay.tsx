@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
 import { isRetryableError } from "@rakazo/core";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
   Dialog,
@@ -18,9 +19,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-
 import { providerLabel } from "../lib/messaging";
-import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
