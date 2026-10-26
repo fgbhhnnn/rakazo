@@ -919,7 +919,7 @@ function SpaceShell() {
               enterToSend={enterToSend}
               onImportAgent={(agent) => openImport(agent, false)}
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
-              running={composerRunning}
+              busy={composerRunning}
               disabled={Boolean(recordingSkill)}
               pendingAttachments={composer.activePendingAttachments}
               attachmentNotice={composer.attachmentNotice}
@@ -946,7 +946,6 @@ function SpaceShell() {
               onAttachmentPick={composer.onAttachmentPick}
               onRemoveAttachment={composer.removeAttachment}
               onSend={composer.sendMessage}
-              onStop={stopRun}
               phoneCallsEnabled={bootstrapMe?.phoneCallsEnabled === true}
               dictationTranscribe={voiceStatus ? Boolean(voiceStatus.transcribe) : undefined}
               artifactTarget={transcriptArtifactTarget}

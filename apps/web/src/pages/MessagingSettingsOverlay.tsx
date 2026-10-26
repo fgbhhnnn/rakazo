@@ -20,7 +20,8 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { providerLabel } from "../lib/messaging";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../lib/query";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 

@@ -226,18 +226,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
-  // Hidden background workers keep the main bot visibly busy (green dot + working line).
-  const backgroundCount =
-    !inGroup && snap?.backgroundTasks
-      ? snap.backgroundTasks.running + snap.backgroundTasks.queued
-      : 0;
-  const ownRunActive = isActiveStatus(snap?.run?.status);
-  const backgroundOnly = !ownRunActive && backgroundCount > 0;
-  const currentBotStatus = snap
-    ? backgroundOnly
-      ? "running"
-      : snap.run?.status
-    : titleBot?.status;
+  const currentBotStatus = snap ? snap.run?.status : titleBot?.status;
   // The group's members in its order, once the chat or its group list has loaded them; the
   // title seats the inbox's copy until then.
   const groupMembers = threadGroupMembers(groupId, snap, mentionGroups);
@@ -490,14 +479,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         composing: composingBots.split(",").includes(bot.id),
       }))}
       atBottom={!scroll.state.detached}
-      label={backgroundOnly ? t("Coordinating background tasks") : (activityLine ?? t("Working…"))}
-      accessibilityLabel={
-        backgroundOnly
-          ? t("Coordinating background tasks")
-          : !inGroup && currentBot
-            ? t("{name} is working", { name: currentBot.name })
-            : undefined
-      }
+      label={activityLine ?? t("Working…")}
     />
   );
 
@@ -604,13 +586,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             attachmentIds={attachments.activePendingAttachments.map((attachment) => attachment.id)}
             botId={botId}
             onCall={onCall}
-            working={working}
             sending={composer.sending}
             styles={styles}
             attachActions={attachments.attachActions}
             attachFrom={attachments.attachFrom}
             send={composer.send}
-            stop={composer.stop}
             startVoiceCall={startVoiceCall}
             onSlashAction={composer.runSlashAction}
           />

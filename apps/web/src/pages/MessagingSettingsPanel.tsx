@@ -220,6 +220,7 @@ export function MessagingSettingsPanel() {
     if (popup) popup.opener = null;
     void act(async () => {
       try {
+        if (!linkBotId) throw new Error("Pick a bot before connecting a chat app.");
         const { url } = await rpc.messaging.installations.start({ botId: linkBotId });
         if (popup) popup.location.href = url;
         else window.location.assign(url);

@@ -3,11 +3,11 @@ import { pagePath } from "@rakazo/contracts";
 import { currentApiBase, rpc } from "./api";
 
 export function listPages(input: { botId?: string; limit?: number } = {}): Promise<PageSummary[]> {
-  return rpc<PageSummary[]>("pages/list", input);
+  return rpc("pages/list", input);
 }
 
 export function getPage(pageId: string): Promise<Page> {
-  return rpc<Page>("pages/get", { pageId });
+  return rpc("pages/get", { pageId });
 }
 
 /** Saves the owner's edit as the next version; a newer saved version rejects it. */
@@ -16,7 +16,7 @@ export function savePage(input: {
   markdown: string;
   baseVersion: number;
 }): Promise<Page> {
-  return rpc<Page>("pages/update", input);
+  return rpc("pages/update", input);
 }
 
 /** The signed-in link to a page on this server; it opens only for its owner. */

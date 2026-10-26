@@ -1,6 +1,6 @@
 import { type ComponentType, useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import { type MobileMe, rpc } from "./api";
+import { rpc } from "./api";
 import { useI18n } from "./i18n";
 import { queryClient } from "./query";
 
@@ -24,7 +24,7 @@ export function withMemberSettingsGuard(Screen: ComponentType) {
         queryClient.setQueryData(LOCK_KEY, value);
         if (live) setLocked(value);
       };
-      void rpc<MobileMe>("me")
+      void rpc("me")
         .then((me) => settle(me.memberSettingsLocked === true))
         .catch(() => settle(false));
       return () => {

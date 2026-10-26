@@ -153,6 +153,15 @@ export async function artifactFileUri(
   return (await cacheMobileArtifact(target, artifactId, mimeType)).uri;
 }
 
+export async function readMobileArtifactText(
+  target: MobileArtifactTarget,
+  artifactId: string,
+  mimeType: string,
+): Promise<string> {
+  const file = await cacheMobileArtifact(target, artifactId, mimeType);
+  return file.text();
+}
+
 export async function openMobileArtifact(
   target: MobileArtifactTarget,
   artifactId: string,
