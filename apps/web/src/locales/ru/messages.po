@@ -222,6 +222,7 @@ msgid "{name} stopped"
 msgstr "{name}: остановлено"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "{PRODUCT_NAME} credits"
 msgstr ""
 
@@ -1633,10 +1634,6 @@ msgstr "Копировать"
 msgid "Copy .env example"
 msgstr ""
 
-#: src/components/pages/PageReader.tsx
-msgid "Copy link"
-msgstr "Копировать ссылку"
-
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
 msgstr "Копировать код"
@@ -1644,6 +1641,10 @@ msgstr "Копировать код"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "Копировать источник диаграммы"
+
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr "Копировать ссылку"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3220,10 +3221,6 @@ msgstr "Задача Linear"
 msgid "Link copied"
 msgstr "Ссылка скопирована"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link DMs"
-msgstr "Привязать ЛС"
-
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "Привязать SSO"
@@ -4124,13 +4121,13 @@ msgstr "Вывод"
 msgid "Owner"
 msgstr "Владелец"
 
-#: src/components/pages/PageReader.tsx
-msgid "Page markdown"
-msgstr "Markdown страницы"
-
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Страница {page} из {count}"
+
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr "Markdown страницы"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4343,10 +4340,6 @@ msgstr "В очереди"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "в очереди #{0}"
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Rakazo credits"
-msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -5292,7 +5285,6 @@ msgid "Steps"
 msgstr "Шаги"
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5716,6 +5708,10 @@ msgstr ""
 msgid "Try the test again."
 msgstr "Повторите тест."
 
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "вторник"
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile secret key"
 msgstr ""
@@ -5723,10 +5719,6 @@ msgstr ""
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr ""
-
-#: src/lib/cron.ts
-msgid "Tuesday"
-msgstr "вторник"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5864,7 +5856,6 @@ msgid "Use {oauthEnvReference} for the access token."
 msgstr "Используйте {oauthEnvReference} для токена доступа."
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use {PRODUCT_NAME} credits"
 msgstr ""
 
@@ -5895,10 +5886,6 @@ msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/space-bots-model.tsx

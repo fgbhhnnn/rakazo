@@ -18,6 +18,7 @@ export const WORKER_USER_FACING_TOOLS = [
   "add_mcp_server",
   "schedule_create",
   "schedule_list",
+  "schedule_update",
   "schedule_cancel",
 ] as const;
 

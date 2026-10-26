@@ -222,6 +222,7 @@ msgid "{name} stopped"
 msgstr "{name} foi interrompido"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "{PRODUCT_NAME} credits"
 msgstr ""
 
@@ -1633,10 +1634,6 @@ msgstr "Copiar"
 msgid "Copy .env example"
 msgstr ""
 
-#: src/components/pages/PageReader.tsx
-msgid "Copy link"
-msgstr ""
-
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
 msgstr "Copiar código"
@@ -1644,6 +1641,10 @@ msgstr "Copiar código"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "Copiar fonte do diagrama"
+
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3220,10 +3221,6 @@ msgstr ""
 msgid "Link copied"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link DMs"
-msgstr "Vincular mensagens diretas"
-
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "Vincular SSO"
@@ -4124,13 +4121,13 @@ msgstr "Saída"
 msgid "Owner"
 msgstr "Proprietário"
 
-#: src/components/pages/PageReader.tsx
-msgid "Page markdown"
-msgstr ""
-
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Página {page} de {count}"
+
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4343,10 +4340,6 @@ msgstr "Na fila"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "na fila #{0}"
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Rakazo credits"
-msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -5292,7 +5285,6 @@ msgid "Steps"
 msgstr "Passos"
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5716,6 +5708,10 @@ msgstr "Tentar novamente"
 msgid "Try the test again."
 msgstr "Tente o teste novamente."
 
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "terça-feira"
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile secret key"
 msgstr ""
@@ -5723,10 +5719,6 @@ msgstr ""
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr ""
-
-#: src/lib/cron.ts
-msgid "Tuesday"
-msgstr "terça-feira"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5864,7 +5856,6 @@ msgid "Use {oauthEnvReference} for the access token."
 msgstr "Use {oauthEnvReference} para o token de acesso."
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use {PRODUCT_NAME} credits"
 msgstr ""
 
@@ -5895,10 +5886,6 @@ msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/space-bots-model.tsx

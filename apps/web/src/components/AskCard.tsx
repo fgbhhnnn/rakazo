@@ -13,8 +13,8 @@ import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
-import { WorkerApprovalLabel } from "./WorkerApprovalLabel";
 import { BuiCard } from "./ai/primitives";
+import { WorkerApprovalLabel } from "./WorkerApprovalLabel";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 

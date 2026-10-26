@@ -176,5 +176,5 @@ it("hides models and voice from a member of a locked deployment", async () => {
   expect(control("Customize Models")).toBeNull();
   expect(control("Customize Voice")).toBeNull();
   expect(container.querySelector("button")).toBeNull();
-  expect(control("Customize Confirmations")?.checked).toBe(false);
+  expect(control("Customize Approvals")?.checked).toBe(false);
 });

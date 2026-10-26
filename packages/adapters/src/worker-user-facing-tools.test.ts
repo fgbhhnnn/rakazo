@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { applyDispatcherToolPolicy } from "./dispatcher-mode.js";
+import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import {
   WORKER_USER_FACING_REFUSAL,
   WORKER_USER_FACING_TOOLS,
@@ -25,8 +26,15 @@ describe("worker user-facing tools", () => {
         "schedule_cancel",
         "schedule_create",
         "schedule_list",
+        "schedule_update",
       ].sort(),
     );
+  });
+
+  it("withholds every schedule tool, including ones added upstream later", () => {
+    for (const name of SCHEDULE_TOOL_NAMES) {
+      expect(WORKER_USER_FACING_TOOLS as readonly string[]).toContain(name);
+    }
   });
 
   it("withholds them from hidden workers only", () => {

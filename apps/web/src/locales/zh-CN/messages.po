@@ -222,6 +222,7 @@ msgid "{name} stopped"
 msgstr "{name} 已停止"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "{PRODUCT_NAME} credits"
 msgstr ""
 
@@ -1633,10 +1634,6 @@ msgstr "复制"
 msgid "Copy .env example"
 msgstr ""
 
-#: src/components/pages/PageReader.tsx
-msgid "Copy link"
-msgstr "复制链接"
-
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
 msgstr "复制代码"
@@ -1644,6 +1641,10 @@ msgstr "复制代码"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "复制图表源代码"
+
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr "复制链接"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3220,10 +3221,6 @@ msgstr "Linear 工单"
 msgid "Link copied"
 msgstr "链接已复制"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link DMs"
-msgstr "关联私信"
-
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "关联 SSO"
@@ -4002,13 +3999,13 @@ msgstr "{day}日 {time}"
 msgid "on the 1st at {0}"
 msgstr "1 日 {0}"
 
-#: src/lib/cron.ts
-msgid "One-time"
-msgstr "一次性"
-
 #: src/components/pages/PageReader.tsx
 msgid "On this page"
 msgstr "本页内容"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "一次性"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4124,13 +4121,13 @@ msgstr "输出"
 msgid "Owner"
 msgstr "所有者"
 
-#: src/components/pages/PageReader.tsx
-msgid "Page markdown"
-msgstr "页面 Markdown"
-
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "第 {page} 页，共 {count} 页"
+
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr "页面 Markdown"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4343,10 +4340,6 @@ msgstr "排队中"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "排队第 {0} 位"
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Rakazo credits"
-msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -5292,7 +5285,6 @@ msgid "Steps"
 msgstr "步骤"
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5716,6 +5708,10 @@ msgstr "重试"
 msgid "Try the test again."
 msgstr "请重试测试。"
 
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "周二"
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile secret key"
 msgstr "Turnstile 密钥（Secret key）"
@@ -5723,10 +5719,6 @@ msgstr "Turnstile 密钥（Secret key）"
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr "Turnstile 站点密钥（Site key）"
-
-#: src/lib/cron.ts
-msgid "Tuesday"
-msgstr "周二"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5864,7 +5856,6 @@ msgid "Use {oauthEnvReference} for the access token."
 msgstr "访问令牌请使用 {oauthEnvReference}。"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use {PRODUCT_NAME} credits"
 msgstr ""
 
@@ -5895,10 +5886,6 @@ msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/space-bots-model.tsx

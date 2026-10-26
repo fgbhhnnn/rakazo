@@ -24,8 +24,8 @@ import {
   legacyTeamHomeKey,
   type Prisma,
   type PrismaClient,
-  VISIBLE_BOT_WHERE,
   recordComputerRunEnd,
+  VISIBLE_BOT_WHERE,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";

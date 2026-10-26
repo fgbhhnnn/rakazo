@@ -222,6 +222,7 @@ msgid "{name} stopped"
 msgstr "{name} 중지됨"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "{PRODUCT_NAME} credits"
 msgstr ""
 
@@ -1633,10 +1634,6 @@ msgstr "복사"
 msgid "Copy .env example"
 msgstr ""
 
-#: src/components/pages/PageReader.tsx
-msgid "Copy link"
-msgstr ""
-
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
 msgstr "코드 복사"
@@ -1644,6 +1641,10 @@ msgstr "코드 복사"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "다이어그램 소스 복사"
+
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3220,10 +3221,6 @@ msgstr "Linear 이슈"
 msgid "Link copied"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link DMs"
-msgstr "DM 연결"
-
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO 연결"
@@ -4002,13 +3999,13 @@ msgstr "{day}일 {time}"
 msgid "on the 1st at {0}"
 msgstr "1일 {0}에"
 
-#: src/lib/cron.ts
-msgid "One-time"
-msgstr "한 번"
-
 #: src/components/pages/PageReader.tsx
 msgid "On this page"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "한 번"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4124,13 +4121,13 @@ msgstr "출력"
 msgid "Owner"
 msgstr "소유자"
 
-#: src/components/pages/PageReader.tsx
-msgid "Page markdown"
-msgstr ""
-
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "{page} / {count}페이지"
+
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4343,10 +4340,6 @@ msgstr "대기 중"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "대기 #{0}"
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Rakazo credits"
-msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -5292,7 +5285,6 @@ msgid "Steps"
 msgstr "실행 단계"
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5716,6 +5708,10 @@ msgstr "다시 시도"
 msgid "Try the test again."
 msgstr "테스트를 다시 시도하세요."
 
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "화요일"
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile secret key"
 msgstr ""
@@ -5723,10 +5719,6 @@ msgstr ""
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr ""
-
-#: src/lib/cron.ts
-msgid "Tuesday"
-msgstr "화요일"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5864,7 +5856,6 @@ msgid "Use {oauthEnvReference} for the access token."
 msgstr "액세스 토큰에는 {oauthEnvReference}를 사용하세요."
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use {PRODUCT_NAME} credits"
 msgstr ""
 
@@ -5895,10 +5886,6 @@ msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/space-bots-model.tsx

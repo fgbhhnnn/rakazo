@@ -22,7 +22,7 @@ async function controlNeedsModel(page: Page, { survey = false } = {}) {
 test("a new user can start from an imported agent instead of Chief", async ({ page }, testInfo) => {
   const model = await controlNeedsModel(page, { survey: true });
   await signup(page, `onboarding-import-${Date.now()}@rakazo.test`, "password12", "Importer");
-  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Welcome to Gose Bot" })).toBeVisible({
     timeout: 20_000,
   });
   const entry = page.getByRole("button", { name: "Import an agent", exact: true });
@@ -98,7 +98,7 @@ test("a new user can start from an imported agent instead of Chief", async ({ pa
     preview.getByRole("button", { name: "Create", exact: true }),
     "bots/importCreate",
   );
-  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome to Gose Bot" })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.waitForURL(/\/app\/[^/]+$/, { timeout: 20_000 });
   await expect(page.getByPlaceholder("Message Pebble")).toBeVisible();

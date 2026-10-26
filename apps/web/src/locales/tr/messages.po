@@ -222,6 +222,7 @@ msgid "{name} stopped"
 msgstr "{name} durduruldu"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "{PRODUCT_NAME} credits"
 msgstr ""
 
@@ -1633,10 +1634,6 @@ msgstr "Kopyala"
 msgid "Copy .env example"
 msgstr ""
 
-#: src/components/pages/PageReader.tsx
-msgid "Copy link"
-msgstr ""
-
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
 msgstr "Kodu kopyala"
@@ -1644,6 +1641,10 @@ msgstr "Kodu kopyala"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "Diyagram kaynağını kopyala"
+
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3220,10 +3221,6 @@ msgstr ""
 msgid "Link copied"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link DMs"
-msgstr "Özel mesajları bağla"
-
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO bağla"
@@ -4002,13 +3999,13 @@ msgstr "{day} günü saat {time}"
 msgid "on the 1st at {0}"
 msgstr "ayın 1'inde saat {0}"
 
-#: src/lib/cron.ts
-msgid "One-time"
-msgstr "Tek seferlik"
-
 #: src/components/pages/PageReader.tsx
 msgid "On this page"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "Tek seferlik"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4124,13 +4121,13 @@ msgstr "Çıktı"
 msgid "Owner"
 msgstr "Sahip"
 
-#: src/components/pages/PageReader.tsx
-msgid "Page markdown"
-msgstr ""
-
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Sayfa {page} / {count}"
+
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4343,10 +4340,6 @@ msgstr "Kuyrukta"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "sırada #{0}"
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Rakazo credits"
-msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -5292,7 +5285,6 @@ msgid "Steps"
 msgstr "Adımlar"
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5716,6 +5708,10 @@ msgstr "Tekrar dene"
 msgid "Try the test again."
 msgstr "Testi yeniden dene."
 
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "Salı"
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile secret key"
 msgstr ""
@@ -5723,10 +5719,6 @@ msgstr ""
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr ""
-
-#: src/lib/cron.ts
-msgid "Tuesday"
-msgstr "Salı"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5864,7 +5856,6 @@ msgid "Use {oauthEnvReference} for the access token."
 msgstr "Erişim belirteci için {oauthEnvReference} kullanın."
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use {PRODUCT_NAME} credits"
 msgstr ""
 
@@ -5895,10 +5886,6 @@ msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/space-bots-model.tsx

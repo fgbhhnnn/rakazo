@@ -222,6 +222,7 @@ msgid "{name} stopped"
 msgstr "{name}が停止しました"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "{PRODUCT_NAME} credits"
 msgstr "{PRODUCT_NAME}クレジット"
 
@@ -1633,10 +1634,6 @@ msgstr "コピー"
 msgid "Copy .env example"
 msgstr ".env の例をコピー"
 
-#: src/components/pages/PageReader.tsx
-msgid "Copy link"
-msgstr "リンクをコピー"
-
 #: src/components/markdown-copy.tsx
 msgid "Copy code"
 msgstr "コードをコピー"
@@ -1644,6 +1641,10 @@ msgstr "コードをコピー"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "ダイアグラムのソースをコピー"
+
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr "リンクをコピー"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -3220,10 +3221,6 @@ msgstr "Linear課題"
 msgid "Link copied"
 msgstr "リンクをコピーしました"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link DMs"
-msgstr "DMを連携"
-
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSOを連携"
@@ -4002,13 +3999,13 @@ msgstr "{day}日 {time}"
 msgid "on the 1st at {0}"
 msgstr "1日 {0}"
 
-#: src/lib/cron.ts
-msgid "One-time"
-msgstr "1回のみ"
-
 #: src/components/pages/PageReader.tsx
 msgid "On this page"
 msgstr "このページの内容"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "1回のみ"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4124,13 +4121,13 @@ msgstr "出力"
 msgid "Owner"
 msgstr "オーナー"
 
-#: src/components/pages/PageReader.tsx
-msgid "Page markdown"
-msgstr "ページの Markdown"
-
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "{page} / {count} ページ"
+
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr "ページの Markdown"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4343,10 +4340,6 @@ msgstr "待機中"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "待機中 #{0}"
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Rakazo credits"
-msgstr "Rakazoクレジット"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -5292,7 +5285,6 @@ msgid "Steps"
 msgstr "手順"
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5716,6 +5708,10 @@ msgstr "再試行"
 msgid "Try the test again."
 msgstr "もう一度テストしてください。"
 
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "火曜日"
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile secret key"
 msgstr "Turnstileシークレットキー"
@@ -5723,10 +5719,6 @@ msgstr "Turnstileシークレットキー"
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr "Turnstileサイトキー"
-
-#: src/lib/cron.ts
-msgid "Tuesday"
-msgstr "火曜日"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5864,7 +5856,6 @@ msgid "Use {oauthEnvReference} for the access token."
 msgstr "アクセストークンには{oauthEnvReference}を使用してください。"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use {PRODUCT_NAME} credits"
 msgstr "{PRODUCT_NAME}クレジットを使用"
 
@@ -5896,10 +5887,6 @@ msgstr "自分のサブスクリプションまたはAPIキーを使用"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "パスワードには保護された入力を使用してください。"
-
-#: src/components/ModelCredits.tsx
-msgid "Use Rakazo credits"
-msgstr "Rakazoクレジットを使用"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Use space default"

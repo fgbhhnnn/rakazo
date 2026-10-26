@@ -111,6 +111,10 @@ msgstr "直接提及 {0} 時，它仍會回應。"
 msgid "{0}'s screen"
 msgstr "{0} 的螢幕"
 
+#: src/components/TaskProgressCard.tsx
+msgid "{active} running"
+msgstr "{active} 個進行中"
+
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -150,6 +154,14 @@ msgstr "{count} 年"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days} 天前"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{done} done"
+msgstr "{done} 個完成"
+
+#: src/components/TaskProgressCard.tsx
+msgid "{failed} not finished"
+msgstr "{failed} 個未完成"
 
 #: src/components/markdown-copy.tsx
 msgid "{from}–{to} of {total} rows"
@@ -209,6 +221,11 @@ msgstr "{name} 選項"
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
 msgstr "{name} 已停止"
+
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "{PRODUCT_NAME} credits"
+msgstr "{PRODUCT_NAME} 額度"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -373,6 +390,10 @@ msgstr "什麼都做一點"
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "命令的輸出"
+
+#: src/components/pages/PageReader.tsx
+msgid "A page can't be empty."
+msgstr "頁面不能為空。"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -668,8 +689,8 @@ msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此供應商儲存的是 API 金鑰，不是訂閱登入。"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "An existing Honcho peer to read from. Rakazo never writes to it."
-msgstr "用於讀取資料的現有 Honcho peer。Rakazo 絕不會向其寫入資料。"
+msgid "An existing Honcho peer to read from. {PRODUCT_NAME} never writes to it."
+msgstr "用於讀取資料的現有 Honcho peer。{PRODUCT_NAME} 絕不會向其寫入資料。"
 
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
@@ -893,6 +914,14 @@ msgstr "返回"
 msgid "Back to sign in"
 msgstr "返回登入"
 
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks"
+msgstr "背景任務"
+
+#: src/components/TaskProgressCard.tsx
+msgid "Background tasks finished"
+msgstr "背景任務已結束"
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "基底網址"
@@ -1043,6 +1072,7 @@ msgstr "無法讀取影像"
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1079,6 +1109,7 @@ msgid "Canceled"
 msgstr "已取消"
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "cancelled"
 msgstr "已取消"
 
@@ -1217,8 +1248,8 @@ msgid "Choose folder"
 msgstr "選擇資料夾"
 
 #: src/components/ModelCredits.tsx
-msgid "Choose how to use Rakazo"
-msgstr "選擇 Rakazo 的使用方式"
+msgid "Choose how to use {PRODUCT_NAME}"
+msgstr "選擇 {PRODUCT_NAME} 的使用方式"
 
 #: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
@@ -1294,6 +1325,10 @@ msgstr "關閉模型設定"
 #: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "關閉導覽"
+
+#: src/components/pages/PageReader.tsx
+msgid "Close page"
+msgstr "關閉頁面"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
@@ -1380,6 +1415,10 @@ msgstr "緊湊"
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
 msgstr "完成"
+
+#: src/pages/Auth.tsx
+msgid "Complete the security check first"
+msgstr "請先完成安全驗證"
 
 #: src/components/SubagentCard.tsx
 msgid "Completed"
@@ -1492,10 +1531,6 @@ msgstr "連接自己的服務"
 msgid "Connect OAuth"
 msgstr "連線 OAuth"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Connect Slack"
-msgstr "連結 Slack"
-
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
 msgstr "請先連結此模型的供應商。"
@@ -1578,6 +1613,10 @@ msgstr "使用額度繼續"
 msgid "Conversations"
 msgstr "對話"
 
+#: src/components/ai/BackgroundCoordinating.tsx
+msgid "Coordinating background tasks"
+msgstr "正在協調背景任務"
+
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -1603,6 +1642,10 @@ msgstr "複製程式碼"
 #: src/components/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "複製圖表原始碼"
+
+#: src/components/pages/PageReader.tsx
+msgid "Copy link"
+msgstr "複製連結"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
@@ -1692,6 +1735,10 @@ msgstr "無法連線至電腦螢幕"
 #: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "無法繼續"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not copy the link."
+msgstr "無法複製連結。"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -1866,9 +1913,21 @@ msgstr "無法登出，請再試一次。"
 msgid "Could not open billing"
 msgstr "無法開啟帳務頁面"
 
+#: src/components/pages/PageReader.tsx
+msgid "Could not open this page."
+msgstr "無法開啟此頁面。"
+
+#: src/components/PdfViewer.tsx
+msgid "Could not open this PDF. Download it to view it."
+msgstr "無法開啟此 PDF。請下載後檢視。"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "無法播放測試片段"
+
+#: src/components/FileViewer.tsx
+msgid "Could not preview this file. Download it to open it."
+msgstr "無法預覽此檔案。請下載後開啟。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
@@ -1984,6 +2043,10 @@ msgstr "無法儲存憑證"
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "無法儲存此選擇"
+
+#: src/components/pages/PageReader.tsx
+msgid "Could not save this page."
+msgstr "無法儲存此頁面。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
@@ -2105,8 +2168,8 @@ msgid "Create space"
 msgstr "建立空間"
 
 #: src/pages/Auth.tsx
-msgid "Create your Rakazo"
-msgstr "建立你的 Rakazo"
+msgid "Create your {PRODUCT_NAME}"
+msgstr "建立你的 {PRODUCT_NAME}"
 
 #: src/components/AskCard.tsx
 msgid "Created"
@@ -2404,6 +2467,10 @@ msgstr "文件已變更，請重新開啟以編輯最新版本。"
 msgid "Don’t have an account?"
 msgstr "還沒有帳號？"
 
+#: src/components/TaskProgressCard.tsx
+msgid "done"
+msgstr "完成"
+
 #: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
@@ -2472,6 +2539,10 @@ msgstr "編輯標籤"
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
 msgstr "編輯名稱"
+
+#: src/components/pages/PageReader.tsx
+msgid "Edit page"
+msgstr "編輯頁面"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -2658,6 +2729,7 @@ msgid "Extra high"
 msgstr "極高"
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "failed"
 msgstr "失敗"
 
@@ -2909,8 +2981,8 @@ msgid "How to check"
 msgstr "如何檢查"
 
 #: src/components/SignupSurvey.tsx
-msgid "How will you use Rakazo?"
-msgstr "你會如何使用 Rakazo？"
+msgid "How will you use {PRODUCT_NAME}?"
+msgstr "你會如何使用 {PRODUCT_NAME}？"
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
@@ -3146,9 +3218,9 @@ msgstr "淺色"
 msgid "Linear issue"
 msgstr "Linear 工單"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link DMs"
-msgstr "連結私訊"
+#: src/components/pages/PageReader.tsx
+msgid "Link copied"
+msgstr "連結已複製"
 
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
@@ -3204,7 +3276,13 @@ msgstr "正在載入記憶設定…"
 msgid "Loading model catalog…"
 msgstr "正在載入模型目錄…"
 
+#: src/components/pages/PageReader.tsx
+msgid "Loading page…"
+msgstr "正在載入頁面…"
+
 #: src/components/ArtifactFileCard.tsx
+#: src/components/FileViewer.tsx
+#: src/components/PdfViewer.tsx
 msgid "Loading preview…"
 msgstr "正在載入預覽…"
 
@@ -3212,6 +3290,7 @@ msgstr "正在載入預覽…"
 msgid "Loading voice providers…"
 msgstr "正在載入語音供應商…"
 
+#: src/components/MemberAccessSettings.tsx
 #: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -3358,6 +3437,14 @@ msgstr "成員"
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
 msgstr "成員（{0}）"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members and sign-up"
+msgstr "成員與註冊"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Members without their own model or voice use my defaults"
+msgstr "沒有自己模型或語音的成員使用我的預設設定"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3624,6 +3711,10 @@ msgstr "需要輸入"
 msgid "Needs takeover"
 msgstr "需要接管"
 
+#: src/components/TaskProgressCard.tsx
+msgid "needs you"
+msgstr "等你處理"
+
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
@@ -3769,6 +3860,10 @@ msgstr "未列出模型。"
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "找不到 OpenClaw、Hermes 或代理程式文件。"
 
+#: src/components/TaskProgressCard.tsx
+msgid "no progress"
+msgstr "沒有進展"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr "找不到遠端 MCP 伺服器"
@@ -3820,8 +3915,8 @@ msgid "Not imported"
 msgstr "未匯入"
 
 #: src/pages/shell/import-status.ts
-msgid "Not in Rakazo's catalog"
-msgstr "不在 Rakazo 目錄中"
+msgid "Not in {PRODUCT_NAME}'s catalog"
+msgstr "不在 {PRODUCT_NAME} 目錄中"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3833,12 +3928,12 @@ msgstr "暫不"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
-msgid "Not supported in Rakazo"
-msgstr "Rakazo 不支援"
+msgid "Not supported in {PRODUCT_NAME}"
+msgstr "{PRODUCT_NAME} 不支援"
 
 #: src/pages/shell/agent-import.tsx
-msgid "Not used by Rakazo"
-msgstr "Rakazo 不使用"
+msgid "Not used by {PRODUCT_NAME}"
+msgstr "{PRODUCT_NAME} 不使用"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
@@ -3905,6 +4000,10 @@ msgstr "{day} 日 {time}"
 msgid "on the 1st at {0}"
 msgstr "每月 1 日 {0}"
 
+#: src/components/pages/PageReader.tsx
+msgid "On this page"
+msgstr "本頁內容"
+
 #: src/lib/cron.ts
 msgid "One-time"
 msgstr "一次性"
@@ -3912,6 +4011,10 @@ msgstr "一次性"
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr "單次購買，額度不會到期。"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
+msgstr "僅由我管理模型、語音和 MCP 伺服器（成員使用我的配置且無法修改）"
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
@@ -3959,6 +4062,10 @@ msgstr "在完整視窗中開啟"
 #: src/pages/Shell.tsx
 msgid "Open navigation"
 msgstr "開啟導覽"
+
+#: src/components/pages/PageCard.tsx
+msgid "Open page {title}"
+msgstr "開啟頁面 {title}"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
@@ -4019,9 +4126,17 @@ msgstr "擁有者"
 msgid "Page {page} of {count}"
 msgstr "第 {page} 頁，共 {count} 頁"
 
+#: src/components/pages/PageReader.tsx
+msgid "Page markdown"
+msgstr "頁面 Markdown"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty 事件"
+
+#: src/components/pages/PagesShelf.tsx
+msgid "Pages"
+msgstr "頁面"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -4070,8 +4185,8 @@ msgid "Paste a replacement key"
 msgstr "貼上替換金鑰"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
-msgstr "貼上伺服器的 OpenAI 相容地址。需要時 Rakazo 會補上 /v1。"
+msgid "Paste the OpenAI-compatible address from your server. {PRODUCT_NAME} adds /v1 if needed."
+msgstr "貼上伺服器的 OpenAI 相容地址。需要時 {PRODUCT_NAME} 會補上 /v1。"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Paste the reply"
@@ -4214,18 +4329,22 @@ msgstr "供應商"
 msgid "Pull request"
 msgstr "Pull request"
 
+#: src/components/TaskProgressCard.tsx
+msgid "queued"
+msgstr "排隊中"
+
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "排隊中"
 
-#: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
-msgid "Rakazo credits"
-msgstr "Rakazo 額度"
+#. placeholder {0}: entry.position
+#: src/components/TaskProgressCard.tsx
+msgid "queued #{0}"
+msgstr "排隊第 {0} 位"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
-msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
-msgstr "rakazo-shared 與以 bot- 開頭的 ID 保留給 Rakazo 使用。"
+msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
+msgstr "rakazo-shared 與以 bot- 開頭的 ID 保留給 {PRODUCT_NAME} 使用。"
 
 #: src/pages/shell/message-hover-actions.tsx
 msgid "React"
@@ -4493,6 +4612,10 @@ msgstr "請重新獲取驗證碼"
 msgid "Requests"
 msgstr "請求"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Require a Cloudflare Turnstile check to create an account"
+msgstr "註冊帳號時需要透過 Cloudflare Turnstile 驗證"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr "調研和寫作"
@@ -4578,14 +4701,14 @@ msgstr "立即重試"
 msgid "Retry screen"
 msgstr "重新連線螢幕"
 
+#: src/pages/McpOAuthCallback.tsx
+msgid "Return to {PRODUCT_NAME}"
+msgstr "返回 {PRODUCT_NAME}"
+
 #. placeholder {0}: call.botName
 #: src/components/call/CallCard.tsx
 msgid "Return to call with {0}"
 msgstr "返回與 {0} 的通話"
-
-#: src/pages/McpOAuthCallback.tsx
-msgid "Return to Rakazo"
-msgstr "返回 Rakazo"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
@@ -4635,6 +4758,7 @@ msgid "Run time must be in the future."
 msgstr "執行時間必須是將來的時間。"
 
 #: src/components/CloudAgentCard.tsx
+#: src/components/TaskProgressCard.tsx
 msgid "running"
 msgstr "執行中"
 
@@ -4662,6 +4786,7 @@ msgid "Saturday"
 msgstr "週六"
 
 #: src/components/AskCard.tsx
+#: src/components/pages/PageReader.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4684,6 +4809,10 @@ msgstr "儲存"
 msgid "Save credential"
 msgstr "儲存憑證"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Save keys"
+msgstr "儲存金鑰"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr "儲存新值"
@@ -4698,10 +4827,15 @@ msgstr "儲存工作空間並安裝最新軟體。"
 msgid "Saved"
 msgstr "已儲存"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Saved — enter to replace"
+msgstr "已儲存——輸入新值可替換"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "已儲存，但清單重新整理失敗"
 
+#: src/components/MemberAccessSettings.tsx
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "已儲存。"
@@ -4978,8 +5112,8 @@ msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "在 <0>{0}</0> 登入，然後將代碼貼到這裡。"
 
 #: src/pages/Auth.tsx
-msgid "Sign in to Rakazo"
-msgstr "登入 Rakazo"
+msgid "Sign in to {PRODUCT_NAME}"
+msgstr "登入 {PRODUCT_NAME}"
 
 #: src/lib/user-error.ts
 msgid "Sign in to your existing account to link SSO"
@@ -5040,6 +5174,10 @@ msgstr "Slack 訊息"
 #: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
 msgstr "未啟用 Slack"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Slack workspace"
+msgstr ""
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
@@ -5123,6 +5261,10 @@ msgstr "開始 {trialDays} 天免費試用"
 msgid "Start recording"
 msgstr "開始錄製"
 
+#: src/components/TaskProgressCard.tsx
+msgid "starting"
+msgstr "啟動中"
+
 #: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "正在開始"
@@ -5144,7 +5286,6 @@ msgid "Steps"
 msgstr "步驟"
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
@@ -5407,6 +5548,10 @@ msgstr "此模型的上下文視窗太小。請選擇其他模型。"
 msgid "This month"
 msgstr "本月"
 
+#: src/components/pages/PageReader.tsx
+msgid "This page changed since you opened it. Close it and open it again to edit the latest version."
+msgstr "此頁面在你開啟後已被更改。請關閉後重新開啟，再編輯最新版本。"
+
 #: src/components/AccountAccess.tsx
 msgid "This permanently deletes your account and data."
 msgstr "此操作將永久刪除你的帳號和資料。"
@@ -5444,8 +5589,8 @@ msgid "This server is already connected. Disconnect it first to authorize again.
 msgstr "此伺服器已連線。請先中斷再重新授權。"
 
 #: src/pages/model-settings/connection-controls.tsx
-msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
-msgstr "此訂閱登入在 Rakazo 中尚不可用。請使用部署憑證或選擇其他供應商。"
+msgid "This subscription sign-in is not available in {PRODUCT_NAME} yet. Use a deployment credential or choose another provider."
+msgstr "此訂閱登入在 {PRODUCT_NAME} 中尚不可用。請使用部署憑證或選擇其他供應商。"
 
 #: src/pages/Artifacts.tsx
 msgid "This week"
@@ -5568,6 +5713,14 @@ msgstr "請重試測試。"
 msgid "Tuesday"
 msgstr "週二"
 
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile secret key"
+msgstr "Turnstile 金鑰（Secret key）"
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Turnstile site key"
+msgstr "Turnstile 站點金鑰（Site key）"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr "類型"
@@ -5650,6 +5803,7 @@ msgstr "更新指令？"
 msgid "Update progress"
 msgstr "更新進度"
 
+#: src/components/pages/PageReader.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
 msgstr "更新於 {updated}"
@@ -5702,6 +5856,10 @@ msgstr "使用 {hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "存取權杖請使用 {oauthEnvReference}。"
 
+#: src/components/ModelCredits.tsx
+msgid "Use {PRODUCT_NAME} credits"
+msgstr "使用 {PRODUCT_NAME} 額度"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
@@ -5730,10 +5888,6 @@ msgstr "使用我的訂閱或 API 金鑰"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "輸入密碼時，請使用受保護的輸入。"
-
-#: src/components/ModelCredits.tsx
-msgid "Use Rakazo credits"
-msgstr "使用 Rakazo 額度"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Use space default"
@@ -5843,16 +5997,16 @@ msgid "Weekends"
 msgstr "週末"
 
 #: src/components/SignupSurvey.tsx
-msgid "Welcome to Rakazo"
-msgstr "歡迎使用 Rakazo"
+msgid "Welcome to {PRODUCT_NAME}"
+msgstr "歡迎使用 {PRODUCT_NAME}"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "它的記憶怎麼處理？"
 
 #: src/components/SignupSurvey.tsx
-msgid "What do you most want Rakazo to help with?"
-msgstr "你最希望 Rakazo 幫你做什麼？"
+msgid "What do you most want {PRODUCT_NAME} to help with?"
+msgstr "你最希望 {PRODUCT_NAME} 幫你做什麼？"
 
 #: src/pages/shell/message-cards.tsx
 msgid "What do you want me on first?"

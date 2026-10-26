@@ -87,6 +87,8 @@ it("answers the copy through the screen's handler with the worker's run", async 
     isCurrentTarget: () => true,
     refresh,
     askAnswerRunId,
+    setReadBoundary: vi.fn(),
+    readVisit: { current: { visit: 1 } },
   };
   const answerMessage = new Function(
     ...Object.keys(scope),
