@@ -5,6 +5,14 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ZH_MESSAGES } from "./locales/zh";
+import { threadCardWidth } from "./message-presentation";
+
+declare global {
+  interface Window {
+    rn: { dimensions: { width: number; height: number } };
+  }
+}
+window.rn = { dimensions: { width: 393, height: 852 } };
 
 vi.mock("react-native", () => {
   type Props = {
@@ -44,8 +52,13 @@ vi.mock("react-native", () => {
         children,
       ),
     Text: ({ children }: Props) => createElement("rn-text", null, children),
-    View: ({ children, testID }: Props) =>
-      createElement("rn-view", { "data-testid": testID }, children),
+    View: ({ children, testID, style }: Props) =>
+      createElement(
+        "rn-view",
+        { "data-testid": testID, "data-style": testID ? JSON.stringify(style) : undefined },
+        children,
+      ),
+    useWindowDimensions: () => window.rn.dimensions,
   };
 });
 vi.mock("../components/native-symbol", () => ({
@@ -171,6 +184,26 @@ it("is view-only: no row opens its hidden worker, long-press still reaches the m
       .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
   );
   expect(onLongPress).toHaveBeenCalledOnce();
+});
+
+it("keeps the thread card's full width on any phone, with no chevron", () => {
+  // iOS and Android resolve a percentage width in a content-sized bot row to nothing, and
+  // the card then collapsed to its icon column with one character per line.
+  for (const width of [375, 393, 430, 1024]) {
+    window.rn.dimensions = { width, height: 852 };
+    const card = mount({ block, now });
+    const style = JSON.parse(
+      card.querySelector<HTMLElement>('[data-testid="task-progress-card"]')!.dataset.style!,
+    ) as { width: unknown };
+    expect(style.width).toBe(threadCardWidth(width));
+    expect(typeof style.width).toBe("number");
+    expect(style.width as number).toBeGreaterThan(300);
+    expect(card.querySelector('rn-symbol[data-ios="chevron.right"]')).toBeNull();
+    expect(card.querySelector('rn-symbol[data-android="chevron-forward"]')).toBeNull();
+    unmount();
+    unmount = () => undefined;
+  }
+  window.rn.dimensions = { width: 393, height: 852 };
 });
 
 it("counts up on its own and reads in Chinese", () => {
