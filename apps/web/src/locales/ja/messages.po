@@ -2454,10 +2454,6 @@ msgstr "Dockerは設定されていますが、コンピューターが応答し
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Dockerはセキュリティ強化のため、コンピューターへのアクセスを制限します。{hostLabel}を使用すると、ボットがローカルのファイルやツールを扱えるようになります。"
 
-#: src/components/SidebarFooter.tsx
-msgid "Docs"
-msgstr "ドキュメント"
-
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "ドキュメントが変更されました。最新版を編集するには開き直してください。"
@@ -2852,10 +2848,6 @@ msgstr "ゲートウェイID"
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "一般"
-
-#: src/components/SidebarFooter.tsx
-msgid "Get the mobile app"
-msgstr "モバイルアプリを入手"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
