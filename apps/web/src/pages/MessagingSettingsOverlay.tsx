@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessagingChannelMembership, MessagingInstallationsStatus } from "@rakazo/contracts";
-import { isRetryableError } from "@rakazo/core";
+import { isRetryableError, messagingConnectOptions } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -116,7 +116,9 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
         if (
           next.identities.some(
             (identity) =>
-              identity.botId === linkRequest?.botId && known.get(identity.id) !== identity.botId,
+              identity.provider === linkRequest?.provider &&
+              identity.botId === linkRequest?.botId &&
+              known.get(identity.id) !== identity.botId,
           )
         ) {
           active = false;
@@ -173,12 +175,16 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
       agentByIdentity.size > 1 ? agentByIdentity.get(channel.identityId) : undefined,
     ]
       .filter(Boolean)
-      .join(" · ");
+      .join(", ");
   }
 
-  // Every app links personal DMs with a code sent from the chat app; Slack can
-  // also be installed workspace-wide when this server supports it.
-  const codeProviders = status?.providers ?? [];
+  const connectOptions = messagingConnectOptions(
+    (status?.providers ?? []).filter(
+      (provider) => provider !== "slack" || installationsQuery.isSuccess,
+    ),
+    installationsQuery.isSuccess && installationStatus.available,
+  );
+  const slackOnly = connectOptions.length === 1 && connectOptions[0]?.method === "install";
   const invitedChannels = channels.filter((channel) => channel.status === "invited");
   const incomingConnections = connections.filter(
     (connection) => connection.status === "pending" && connection.incoming,
@@ -309,7 +315,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                 >
                   <span className="text-foreground">{providerLabel(identity.provider)}</span>
                   <Meta>
-                    {identity.address} · {identity.botName}
+                    {identity.address}, {identity.botName}
                   </Meta>
                 </Row>
               ))}
@@ -317,22 +323,36 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                 <Row
                   key={installation.id}
                   actions={
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        void act(() => rpc.messaging.installations.remove({ id: installation.id }))
-                      }
-                    >
-                      <Trans>Disconnect</Trans>
-                    </Button>
+                    <>
+                      {status?.providers.includes(installation.provider) ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={!linkBotId}
+                          onClick={() => startLink(installation.provider)}
+                        >
+                          <Trans>Link DMs</Trans>
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          void act(() =>
+                            rpc.messaging.installations.remove({ id: installation.id }),
+                          )
+                        }
+                      >
+                        <Trans>Disconnect</Trans>
+                      </Button>
+                    </>
                   }
                 >
                   <span className="text-foreground">{providerLabel(installation.provider)}</span>
                   <Meta>
                     {[installation.workspaceName, botName(installation.botId)]
                       .filter(Boolean)
-                      .join(" · ")}
+                      .join(", ")}
                   </Meta>
                 </Row>
               ))}
@@ -355,27 +375,45 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                 ))}
               </NativeSelect>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={!linkBotId || (!codeProviders.length && !installationStatus.available)}
-                render={<Button variant="outline" />}
+            {slackOnly ? (
+              <Button variant="outline" disabled={!linkBotId} onClick={installSlack}>
+                <Trans>Connect Slack</Trans>
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={!linkBotId || !connectOptions.length}
+                  render={<Button variant="outline" />}
+                >
+                  <Trans>Connect a chat app</Trans>
+                  <ChevronDownIcon data-icon="inline-end" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-auto min-w-44">
+                  {connectOptions.map(({ provider, method }) => (
+                    <DropdownMenuItem
+                      key={provider}
+                      onClick={method === "install" ? installSlack : () => startLink(provider)}
+                    >
+                      {providerLabel(provider)}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {installationStatus.personalLinkAvailable &&
+            !installationStatus.installations.some(
+              (installation) => installation.provider === "slack",
+            ) &&
+            status?.providers.includes("slack") ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!linkBotId}
+                onClick={() => startLink("slack")}
               >
-                <Trans>Connect a chat app</Trans>
-                <ChevronDownIcon data-icon="inline-end" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-auto min-w-44">
-                {codeProviders.map((provider) => (
-                  <DropdownMenuItem key={provider} onClick={() => startLink(provider)}>
-                    {providerLabel(provider)}
-                  </DropdownMenuItem>
-                ))}
-                {installationStatus.available ? (
-                  <DropdownMenuItem onClick={installSlack}>
-                    <Trans>Slack workspace</Trans>
-                  </DropdownMenuItem>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                <Trans>Link DMs</Trans>
+              </Button>
+            ) : null}
           </div>
           {linkCode ? (
             <p className="mt-3 text-[14px] text-foreground/75" data-testid="messaging-link-code">

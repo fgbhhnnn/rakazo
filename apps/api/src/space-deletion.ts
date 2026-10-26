@@ -13,6 +13,7 @@ import {
   deleteClaimedSpaceForMember,
   listClaimedSpaceBots,
   listClaimedSpaceComputers,
+  recordComputerRunEnd,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
@@ -158,6 +159,7 @@ export async function deleteSpaceWithContent(
         },
         data: { state: "stopped", providerRef: null },
       });
+      await recordComputerRunEnd(deps.prisma, computer, "deleted");
     }
     await assertClaim();
     claimActive = false;

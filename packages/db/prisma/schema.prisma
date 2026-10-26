@@ -57,6 +57,7 @@ model User {
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
   signupSurvey                SignupSurvey?
+  computerRuns                ComputerRun[]
 
   @@unique([email])
   @@map("user")
@@ -288,10 +289,12 @@ model Space {
   artifacts                   Artifact[]
   notificationPreferences     NotificationPreference[]
   computers                   Computer[]
+  computerRuns                ComputerRun[]
   externalEffects             ExternalEffect[]
   mcpServers                  McpServer[]
   mcpOAuthSessions            McpOAuthSession[]
-  botMcpServers               BotMcpServer[]
+  modelOAuthSessions          ModelOAuthSession[]
+  botMcpServers              BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
@@ -680,6 +683,7 @@ model Message {
   @@unique([threadId, clientNonce])
   @@index([threadId, seq])
   @@index([replyToMessageId])
+  @@index([runId, seq])
   @@index([searchTokens], type: Gin)
   @@map("messages")
 }
@@ -778,6 +782,8 @@ model Run {
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
+  @@index([botId])
+  @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
   @@index([routineId])
@@ -1187,6 +1193,34 @@ model ComputerHealth {
   @@map("computer_health")
 }
 
+/// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,
+/// attributed to the computer's owning user and space. Run time is what sandbox providers bill.
+///
+/// `computerId` is deliberately not a relation, so the row outlives a deleted computer. Deleting
+/// the user or space anonymises the row instead of erasing the run time it records.
+model ComputerRun {
+  id         String    @id @default(cuid())
+  computerId String
+  spaceId    String?
+  space      Space?    @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// The provider kind, such as docker or e2b.
+  kind       String
+  /// The provider's id for the sandbox, to match runs with the provider's own usage and billing.
+  providerRef String?
+  startedAt  DateTime
+  /// Null while running. When the end was not seen as it happened, this is when it was detected.
+  endedAt    DateTime?
+  /// How it ended; see `ComputerRunEnd` in packages/db/src/computer-runs.ts.
+  endReason  String?
+
+  @@unique([computerId, startedAt])
+  @@index([spaceId, userId, startedAt])
+  // computer_runs_open_idx (open runs by computer) is raw SQL: Prisma cannot express partial indexes.
+  @@map("computer_runs")
+}
+
 model ComputerExecutionLease {
   id         String   @id @default(cuid())
   computerId String
@@ -1201,6 +1235,7 @@ model ComputerExecutionLease {
   @@unique([computerId, botId])
   @@index([runId])
   @@index([computerId, expiresAt])
+  @@index([botId, expiresAt])
   @@map("computer_execution_leases")
 }
 
@@ -1380,6 +1415,25 @@ model McpOAuthSession {
 
   @@index([spaceId, userId, createdAt])
   @@map("mcp_oauth_sessions")
+}
+
+/// A subscription sign-in waiting for its pasted code, so whichever API process
+/// receives the code can finish it. The ciphertext holds the PKCE verifier.
+model ModelOAuthSession {
+  id         String   @id
+  spaceId    String
+  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId     String
+  provider   String
+  /// The connection it signs in to; a newer sign-in for the same one replaces it.
+  scope      String
+  ciphertext String
+  createdAt  DateTime @default(now())
+
+  @@index([userId, provider])
+  @@index([scope])
+  @@index([createdAt])
+  @@map("model_oauth_sessions")
 }
 
 model BotMcpServer {

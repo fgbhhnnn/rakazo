@@ -22,11 +22,6 @@ msgstr " (okunmadı)"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr ""
 
-#. placeholder {0}: health.toolCount
-#: src/components/McpServerHealthLine.tsx
-msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
-msgstr "{0, plural, one {Çalışıyor · # araç} other {Çalışıyor · # araç}}"
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
@@ -56,7 +51,7 @@ msgid "{0} (over {1})"
 msgstr "{0} ({1} üzeri)"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
@@ -135,6 +130,10 @@ msgstr "{botName} adlı botun bilgisayarı"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable} ayrılmıştır ve komut değişkeni olarak kullanılamaz. Başka bir ad seçin."
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# satır} other {# satır}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr ""
@@ -163,6 +162,18 @@ msgstr "{done} tamamlandı"
 msgid "{failed} not finished"
 msgstr "{failed} tamamlanamadı"
 
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{from}–{to} / {total} satır"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "{fromName}-{toName}"
+
+#: src/components/markdown-copy.tsx
+msgid "{header}, column {index}"
+msgstr "{header}, sütun {index}"
+
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr ""
@@ -170,6 +181,10 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours} sa önce"
+
+#: src/components/markdown-copy.tsx
+msgid "{label}, empty"
+msgstr "{label}, boş"
 
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -306,8 +321,8 @@ msgid "{provider} took too long to respond. Try again."
 msgstr "{provider} çok geç yanıt verdi. Tekrar deneyin."
 
 #: src/components/teach/TeachRecordingChrome.tsx
-msgid "{remaining} left · bot is watching, not acting"
-msgstr "{remaining} kaldı · bot yalnızca izliyor"
+msgid "{remaining} left"
+msgstr "{remaining} kaldı"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -316,14 +331,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Done · # tool} other {Done · # tools}}"
-msgstr ""
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
-msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -353,9 +360,11 @@ msgstr "{title}, {label}"
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}, {savedAs} olarak kaydedilir"
 
+#: src/components/McpServerHealthLine.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
-msgstr ""
+msgstr "{toolCount, plural, one {# araç} other {# araç}}"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
@@ -629,36 +638,17 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "{0} işlemlerine sormadan izin ver"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "{0} bağlayıcısına sormadan izin ver"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "{0} için sormadan izin ver"
+msgid "Allow"
+msgstr "İzin ver"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "E-posta işlemlerine sormadan izin ver"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Bir kez izin ver"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "Satın alma işlemlerine sormadan izin ver"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -792,6 +782,11 @@ msgstr "Onay sınırları"
 msgid "Approval model"
 msgstr "Onay modeli"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "Onaylar"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -822,39 +817,12 @@ msgstr "Argümanlar"
 msgid "Artifacts"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "{0} öncesinde sor"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "{0} işlemlerinden önce sor"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "{0} bağlayıcısından önce sor"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "E-posta işlemlerinden önce sor"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "Satın alma işlemlerinden önce sor"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "Satın almadan önce sor"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "Dışarıya e-posta göndermeden önce sor"
+msgid "Ask"
+msgstr "Sor"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "saat {0}"
 
@@ -881,8 +849,8 @@ msgstr "Kimlik doğrulama başarısız."
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "Yetkilendirme kodu veya callback URL'si"
+msgid "Authorization code"
+msgstr "Yetkilendirme kodu"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -903,6 +871,10 @@ msgstr "Yetkilendir"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "Agent'ların araçlarını kullanabilmesi için bu sunucuyu yetkilendir. Bir açılır pencere açılır."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "Otomatik"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -970,6 +942,10 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "Engelle"
+
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr ""
@@ -1002,6 +978,10 @@ msgstr "Bot"
 #: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "Bot"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Bot is watching, not acting"
+msgstr "Bot yalnızca izliyor"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Bot models"
@@ -1357,6 +1337,10 @@ msgstr "Paneli kapat"
 msgid "Close preview"
 msgstr "Önizlemeyi kapat"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "Tabloyu kapat"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "Kullanıcı ayarlarını kapat"
@@ -1379,7 +1363,7 @@ msgctxt "email sign-in"
 msgid "Code"
 msgstr "Kod"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Collapse {0}"
 msgstr ""
@@ -1395,6 +1379,10 @@ msgstr "Renk"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "Renk {color}"
+
+#: src/components/markdown-copy.tsx
+msgid "column {index}"
+msgstr "sütun {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
@@ -1453,6 +1441,7 @@ msgstr "Bilgisayar uykuda"
 msgid "Computer is asleep. Open it to wake."
 msgstr ""
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "Bilgisayar durduruldu"
@@ -1490,11 +1479,6 @@ msgstr "Parolayı doğrulayın"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "URL'nin bu tarayıcı oturumundan erişilebilir olduğunu doğrula, sonra yeniden test et."
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1545,6 +1529,10 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "OAuth ile bağlan"
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Connect Slack"
+msgstr "Slack’i bağla"
+
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
 msgstr "Önce bu modelin sağlayıcısını bağla."
@@ -1565,10 +1553,6 @@ msgstr "Bağlandı"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0} bağlandı."
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "Bağlandı. Araçları bir sonraki mesajından itibaren kullanılabilir."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1636,11 +1620,12 @@ msgid "Coordinating background tasks"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Copied"
-msgstr ""
+msgstr "Kopyalandı"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1656,9 +1641,21 @@ msgstr ""
 msgid "Copy link"
 msgstr ""
 
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "Kodu kopyala"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "Diyagram kaynağını kopyala"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "İstemi kopyala"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "Satırları kopyala"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -2074,6 +2071,10 @@ msgstr "OAuth başlatılamadı"
 msgid "Could not start teaching"
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Could not stop computer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Could not submit this answer"
 msgstr "Bu yanıt gönderilemedi"
@@ -2207,7 +2208,7 @@ msgstr "Kimlik bilgileri: {names}"
 msgid "Credit amount"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2245,7 +2246,7 @@ msgid "Dark"
 msgstr "Koyu"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "gün"
 
@@ -2253,7 +2254,7 @@ msgstr "gün"
 msgid "Day-to-day work"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "gün"
 
@@ -2472,6 +2473,7 @@ msgstr "Hesabın yok mu?"
 msgid "done"
 msgstr "tamamlandı"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2496,6 +2498,10 @@ msgstr "{0} indir"
 #: src/components/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "{name} indir"
+
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "CSV indir"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
@@ -2621,10 +2627,21 @@ msgstr ""
 msgid "Error details"
 msgstr "Hata ayrıntıları"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "Her"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "Her {0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "Her {0} ve {1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2634,17 +2651,24 @@ msgstr "her {intervalAmountSelect} {intervalUnitSelect}"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Bu alandaki tüm botlar bu notları okur ve güncel tutar."
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Her gün"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Her saat"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "Her saat :{0}"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "Her pazartesi"
 
@@ -2666,7 +2690,7 @@ msgstr "Executor belirteci"
 msgid "Expand"
 msgstr "Genişlet"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr ""
@@ -2674,6 +2698,10 @@ msgstr ""
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "{label} genişlet"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "Tabloyu genişlet"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -2776,12 +2804,6 @@ msgstr "Aranıyor…"
 msgid "Finish setting up"
 msgstr "Kurulumu tamamla"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "<0>{0}</0> adresinde oturum açmayı tamamla. Son sayfa yüklenmeyebilir; URL'sini veya kodu buraya yapıştır."
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "Abonelik girişini tamamla, sonra yeniden test et."
@@ -2799,10 +2821,6 @@ msgstr "Tamamlandı."
 msgid "Finishing MCP connection…"
 msgstr "MCP bağlantısı tamamlanıyor…"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Parolanızı mı unuttunuz?"
@@ -2811,6 +2829,10 @@ msgstr "Parolanızı mı unuttunuz?"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "Cuma"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -2931,12 +2953,12 @@ msgstr ""
 msgid "Hold to talk, release to send"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "saat"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "saat"
 
@@ -3202,6 +3224,10 @@ msgstr ""
 msgid "Link copied"
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Link DMs"
+msgstr "Özel mesajları bağla"
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO bağla"
@@ -3359,6 +3385,10 @@ msgstr "Okunmadı olarak işaretle"
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
 msgstr "Okunmadı olarak işaretle"
+
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "Markdown tablosu"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3526,18 +3556,22 @@ msgstr ""
 msgid "Minimize call"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "dakika"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "dakika"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Missed call"
 msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "Mod"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -3586,11 +3620,15 @@ msgstr "Sunucudan gelen modeller"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "Model listesi tamam. {modelCount, plural, one {# model} other {# model}} kullanılabilir. Sohbet test edilmedi."
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "Pazartesi"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Aylık"
 
@@ -3692,6 +3730,10 @@ msgstr ""
 msgid "Needs: {names}"
 msgstr "Gerekenler: {names}"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "Asla sorma"
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr ""
@@ -3744,6 +3786,10 @@ msgstr ""
 #: src/pages/Board.tsx
 msgid "New ticket"
 msgstr ""
+
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "Sonraki sayfa"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
@@ -3833,6 +3879,10 @@ msgstr ""
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "Sonuç yok"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "Satır yok"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -3947,10 +3997,18 @@ msgstr ""
 msgid "On a schedule"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "{day} günü saat {time}"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
-msgstr "her ayın 1'inde saat {0}"
+msgstr "ayın 1'inde saat {0}"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "Tek seferlik"
 
 #: src/components/pages/PageReader.tsx
 msgid "On this page"
@@ -3971,7 +4029,7 @@ msgstr ""
 msgid "Open"
 msgstr "Aç"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr ""
@@ -3984,12 +4042,6 @@ msgstr "{name} öğesini aç"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> and enter this code:"
-msgstr ""
-
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -4080,6 +4132,10 @@ msgstr "Sahip"
 msgid "Page markdown"
 msgstr ""
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "Sayfa {page} / {count}"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr ""
@@ -4102,6 +4158,10 @@ msgstr "Geçiş anahtarları"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Password"
 msgstr "Parola"
+
+#: src/lib/user-error.ts
+msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
@@ -4233,6 +4293,10 @@ msgstr "{0} önizle"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
 
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "Önceki sayfa"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr ""
@@ -4283,6 +4347,10 @@ msgstr "Kuyrukta"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "sırada #{0}"
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "Rakazo credits"
+msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -4683,9 +4751,9 @@ msgstr "Rutinler"
 msgid "Routines that run while you're away"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "Eylemleri sormadan çalıştır"
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "Satır"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -4707,12 +4775,9 @@ msgstr "çalışıyor"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Çalışıyor"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Running · Stop"
-msgstr "Çalışıyor · Durdur"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -4725,6 +4790,10 @@ msgstr "Çalıştırmalar"
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "Cumartesi"
 
 #: src/components/AskCard.tsx
 #: src/components/pages/PageReader.tsx
@@ -5046,6 +5115,12 @@ msgstr "Oturum aç"
 msgid "Sign in again"
 msgstr "Yeniden giriş yap"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "<0>{0}</0> adresinde oturum açın, ardından kodu buraya yapıştırın."
+
 #: src/pages/Auth.tsx
 msgid "Sign in to {PRODUCT_NAME}"
 msgstr "{PRODUCT_NAME}'da oturum aç"
@@ -5110,10 +5185,6 @@ msgstr ""
 msgid "Slack not enabled"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Slack workspace"
-msgstr ""
-
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr ""
@@ -5134,6 +5205,22 @@ msgstr "Aynı adda bir şey az önce eklendi. Yeniden dene."
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "Seçtiğin bir şey burada çalışamaz. İşaretini kaldırıp yeniden dene."
+
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "{column} sütununa göre sırala"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "Sıralama temizlendi"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "{column} sütununa göre sıralandı, artan"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "{column} sütununa göre sıralandı, azalan"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -5168,6 +5255,10 @@ msgstr "Konuşma modeli"
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO geçici olarak kullanılamıyor. Yeniden deneyin."
 
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
 msgstr ""
@@ -5200,10 +5291,16 @@ msgstr ""
 msgid "Steps"
 msgstr "Adımlar"
 
+#: src/pages/RoutineEditor.tsx
+#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
 msgstr "Durdur"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stop computer"
+msgstr ""
 
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
@@ -5217,6 +5314,10 @@ msgstr "Öğretmeyi durdur"
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "Durduruldu."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stopping…"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
@@ -5244,6 +5345,10 @@ msgstr ""
 msgid "Subscription required"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "Pazar"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5269,6 +5374,10 @@ msgstr "Geçiliyor…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "Sistem"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "Tablo"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
@@ -5494,6 +5603,10 @@ msgstr "Bu abonelik girişi {PRODUCT_NAME}'da henüz kullanılamıyor. Bir dağ�
 msgid "This week"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "Perşembe"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "Günün saati"
@@ -5610,6 +5723,10 @@ msgstr ""
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "Salı"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5780,6 +5897,10 @@ msgstr ""
 msgid "Use Protected input for passwords."
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Use Rakazo credits"
+msgstr ""
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Use space default"
 msgstr ""
@@ -5869,14 +5990,23 @@ msgstr ""
 msgid "Website login"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "Çarşamba"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr ""
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Hafta içi"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "Hafta sonları"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to {PRODUCT_NAME}"
@@ -5958,6 +6088,7 @@ msgstr ""
 msgid "Working instructions"
 msgstr "Çalışma talimatları"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx

@@ -276,8 +276,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   }
   await preview.getByRole("button", { name: "Not imported", exact: true }).click();
   await expect(preview.getByTestId("agent-import-skipped").getByRole("listitem")).toHaveText([
-    "IDENTITY.md: Emoji · Not used by Gose Bot",
-    "TOOLS.md · Not used by Gose Bot",
+    /IDENTITY\.md: Emoji\s*Not used by Gose Bot/,
+    /TOOLS\.md\s*Not used by Gose Bot/,
   ]);
   // IDENTITY.md names and describes the bot; it is not part of its instructions.
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
@@ -678,11 +678,11 @@ test("untouched defaults start unticked, and OpenClaw runtime references are fla
   const instructions = panel.getByTestId("agent-import-instructions");
   await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
   await expect(
-    instructions.getByText("Persona · Default from OpenClaw", { exact: true }),
+    instructions.getByText("Persona, Default from OpenClaw", { exact: true }),
   ).toBeVisible();
   await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
   await expect(
-    instructions.getByText("Working instructions · Mentions OpenClaw features", { exact: true }),
+    instructions.getByText("Working instructions, Mentions OpenClaw features", { exact: true }),
   ).toBeVisible();
   await instructions.getByRole("button", { name: "AGENTS.md", exact: true }).click();
   await expect(instructions.getByText("Mentions: Session Startup, BOOTSTRAP.md")).toBeVisible();
@@ -701,7 +701,7 @@ test("untouched defaults start unticked, and OpenClaw runtime references are fla
   await panel.getByTestId("agent-import-archive").setInputFiles(hermes);
   await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
   await expect(
-    instructions.getByText("Persona · Default from Hermes", { exact: true }),
+    instructions.getByText("Persona, Default from Hermes", { exact: true }),
   ).toBeVisible();
   await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
   await captureScreenshot(page, testInfo, "agent-import-defaults-hermes");

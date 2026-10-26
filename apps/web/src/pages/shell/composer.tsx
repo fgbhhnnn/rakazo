@@ -22,6 +22,7 @@ import {
 import { FileKindIcon } from "../../components/FileKindIcon";
 import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
+import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
 import { newClientId } from "../../lib/client-id";
 import {
@@ -32,7 +33,6 @@ import {
   writeComposerDraft,
 } from "../../lib/composer-draft";
 import { isFileDrag, isFilePaste } from "../../lib/pending-attachments";
-import { ATTACHMENT_ACCEPT } from "./attachment-accept";
 import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
@@ -45,6 +45,7 @@ import {
 } from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
+const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
 export const Composer = memo(function Composer({
   artifactTarget,
   activeName,

@@ -129,7 +129,7 @@ export function BotCreatePicker({
 /** Explains a command row on hover without selecting the row. */
 function PickerInfo({ testId, label }: { testId: string; label: string }) {
   return (
-    <IconTooltip label={label}>
+    <IconTooltip label={label} side="right">
       <button
         type="button"
         data-testid={testId}

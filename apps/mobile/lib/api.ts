@@ -1212,12 +1212,21 @@ export function prependMobileMessagePage(
 
 export { messagingProviderLabel };
 
+function channelMessageLine(block: {
+  provider: Parameters<typeof messagingProviderLabel>[0];
+  transport?: Parameters<typeof messagingProviderLabel>[1];
+  fromLabel: string;
+  text: string;
+}): string {
+  return `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`;
+}
+
 /** The message's text exactly as written, for a view that selects part of it. */
 export function selectableMobileMessageText(message: MobileMessage): string {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
+        return channelMessageLine(block);
       }
       if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
         return block.text;
@@ -1235,7 +1244,7 @@ export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
+        return channelMessageLine(block);
       }
       if (block.kind === "task_progress") return taskProgressHeadline(block);
       if (block.kind === "cloud_agent")
@@ -1254,7 +1263,7 @@ export function blockText(message: MobileMessage) {
       if (block.kind === "steps") {
         return (block.steps ?? [])
           .map((step) => `${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
-          .join(" · ");
+          .join(", ");
       }
       return ("text" in block ? block.text : "state" in block ? block.state : "") ?? "";
     })

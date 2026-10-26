@@ -87,6 +87,7 @@ async function failRun(scenario: Scenario) {
             : scenario.nextRunAt,
       })),
     },
+    chatGroup: { findMany: vi.fn(async () => []) },
     event: { count: vi.fn(async () => scenario.toolCalls ?? 0) },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({

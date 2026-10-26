@@ -27,6 +27,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanima
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppErrorBoundary } from "../components/app-error-boundary";
 import { CallCard } from "../components/CallCard";
+import { chatRouteHeader } from "../components/chat-route-header";
 import { CodeCopyButton } from "../components/code-copy-button";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
@@ -236,7 +237,8 @@ function LayoutContent() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
-  const chatAnimation = useSplitView().split ? "none" : undefined;
+  const { split, inboxHidden, foldActive } = useSplitView();
+  const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
   const screen = analyticsScreen(usePathname());
@@ -421,7 +423,11 @@ function LayoutContent() {
                     />
                     <Stack.Screen
                       name="group-thread"
-                      options={{ title: t("Group"), animation: chatAnimation }}
+                      options={({ route }) => ({
+                        title: t("Group"),
+                        animation: chatAnimation,
+                        ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
+                      })}
                     />
                     <Stack.Screen
                       name="group-settings"
@@ -435,7 +441,11 @@ function LayoutContent() {
                     <Stack.Screen name="bot-model" options={glassHeaderOptions(t("Model"))} />
                     <Stack.Screen
                       name="thread"
-                      options={{ title: t("Thread"), animation: chatAnimation }}
+                      options={({ route }) => ({
+                        title: t("Thread"),
+                        animation: chatAnimation,
+                        ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
+                      })}
                     />
                     <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />

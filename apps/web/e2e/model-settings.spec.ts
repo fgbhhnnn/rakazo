@@ -287,8 +287,8 @@ test("the bot's model picker marks models that cannot read images", async ({ pag
   await expect(picker).toBeVisible();
   await picker.click();
   await page.getByRole("combobox", { name: "Search models" }).fill("model");
-  const textOnly = page.getByRole("option", { name: "OpenRouter · Text-only model", exact: true });
-  const vision = page.getByRole("option", { name: "OpenRouter · Vision model 1", exact: true });
+  const textOnly = page.getByRole("option", { name: "Text-only model (OpenRouter)", exact: true });
+  const vision = page.getByRole("option", { name: "Vision model 1 (OpenRouter)", exact: true });
   await expect(textOnly).toBeVisible();
   await captureScreenshot(page, testInfo, "bot-model-picker-text-only-row");
   await page.evaluate(() => {
@@ -676,7 +676,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
 
   const codex = await openModelConnection(page, "ChatGPT subscription", { search: "ChatGPT" });
-  await codex.getByRole("button", { name: /Sign in with ChatGPT Plus\/Pro/ }).click();
+  await codex.getByRole("button", { name: /Sign in with ChatGPT/ }).click();
 
   // The popup is blocked (window.open returned null): the card still carries the
   // code, a copy button, the expiry, and a way to abandon the attempt.
@@ -696,7 +696,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await expect(codex.getByText("TEST-CODE")).toBeHidden();
 
   // A canceled attempt leaves sign-in reusable.
-  await codex.getByRole("button", { name: /Sign in with ChatGPT Plus\/Pro/ }).click();
+  await codex.getByRole("button", { name: /Sign in with ChatGPT/ }).click();
   await expect(codex.getByText("TEST-CODE")).toBeVisible();
 
   // Closing the dialog abandons the attempt.
@@ -724,7 +724,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   // offers to connect.
   oauthReady = true;
   await openModelConnection(page, "ChatGPT subscription", { search: "ChatGPT" });
-  await codex.getByRole("button", { name: /Sign in with ChatGPT Plus\/Pro/ }).click();
+  await codex.getByRole("button", { name: /Sign in with ChatGPT/ }).click();
   await expect(codex).toBeHidden();
   const reopened = page.getByRole("combobox", { name: "Search models" });
   await expect(reopened).toBeVisible();
@@ -995,7 +995,7 @@ test("chat settings search a long model list", async ({ page }, testInfo) => {
   await captureScreenshot(page, testInfo, "chat-settings-model-search-empty");
 
   await search.fill(target.id);
-  const targetLabel = `${target.providerName ?? target.provider} · ${target.label}`;
+  const targetLabel = `${target.label} (${target.providerName ?? target.provider})`;
   await page
     .locator('[data-slot="command-list"]')
     .getByRole("option", { name: targetLabel, exact: true })

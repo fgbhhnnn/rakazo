@@ -12,7 +12,6 @@ const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   overrides: [] as string[],
   locked: false,
-  autoReview: { enabled: false, skipApprovals: false },
 }));
 type SwitchProps = {
   accessibilityLabel?: string;
@@ -57,7 +56,6 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: state.push }),
 }));
 vi.mock("react-native", () => ({
-  Alert: { alert: vi.fn() },
   ScrollView: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: element("span"),
@@ -81,14 +79,6 @@ vi.mock("../components/settings-group", () => ({
       onPress ? createElement("button", { type: "button", onClick: onPress }, title) : title,
       trailing,
     ),
-  SettingsSwitch: ({
-    label,
-    onChange,
-    ...props
-  }: Omit<SwitchProps, "onValueChange"> & {
-    label: string;
-    onChange: (value: boolean) => void;
-  }) => toggle({ ...props, accessibilityLabel: label, onValueChange: onChange }),
 }));
 
 const spaceContext = {
@@ -119,11 +109,6 @@ beforeEach(async () => {
           : state.overrides.filter((entry) => entry !== setting);
         return state.overrides;
       }
-      if (proc === "autoReview/get") return state.autoReview;
-      if (proc === "autoReview/set") {
-        state.autoReview = { ...state.autoReview, skipApprovals: input!.skipApprovals as boolean };
-        return state.autoReview;
-      }
       throw new Error(`Unexpected RPC: ${proc}`);
     });
   container = document.createElement("div");
@@ -139,7 +124,7 @@ afterEach(() => {
 
 it("follows the account until a setting is customized, then opens the same screen for the Space", async () => {
   expect(state.rpc).toHaveBeenCalledWith("spaceSettings/overrides", undefined, spaceContext);
-  for (const name of ["Models", "Voice", "Confirmations"])
+  for (const name of ["Models", "Voice", "Approvals"])
     expect(control(`Customize ${name}`)?.checked).toBe(false);
   expect(container.querySelector("button")).toBeNull();
 
@@ -171,19 +156,17 @@ it("follows the account until a setting is customized, then opens the same scree
   expect(control("Customize Models")?.checked).toBe(false);
 });
 
-it("shows the account's skip-approvals switch for the Space once confirmations are customized", async () => {
-  expect(control("Run actions without asking")).toBeNull();
-  await act(async () => control("Customize Confirmations")!.click());
-  expect(state.push).not.toHaveBeenCalled();
-  expect(state.rpc).toHaveBeenCalledWith("autoReview/get", { scope: "space" }, spaceContext);
-
-  await act(async () => control("Run actions without asking")!.click());
+it("opens the Approvals screen for the Space once approvals are customized", async () => {
+  await act(async () => control("Customize Approvals")!.click());
   expect(state.rpc).toHaveBeenCalledWith(
-    "autoReview/set",
-    { skipApprovals: true, scope: "space" },
+    "spaceSettings/setOverride",
+    { setting: "confirmations", enabled: true },
     spaceContext,
   );
-  expect(control("Run actions without asking")?.checked).toBe(true);
+  expect(state.push).toHaveBeenCalledWith({
+    pathname: "/approvals",
+    params: { spaceId: "space-other" },
+  });
 });
 
 it("hides models and voice from a member of a locked deployment", async () => {

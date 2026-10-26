@@ -126,6 +126,7 @@ import {
   INBOX_ROW_ACTIONS,
   inboxRowActionList,
   unreadOverrideKey,
+  withoutArchiving,
 } from "../lib/inbox-swipe";
 import { afterChatNotifyChange, dismissThreadNotifications } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
@@ -137,7 +138,12 @@ import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { androidRipple } from "../lib/ripple";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
-import { setSearchInbox } from "../lib/search-inbox";
+import {
+  addToSearchInbox,
+  removeFromSearchInbox,
+  searchInboxSession,
+  setSearchInbox,
+} from "../lib/search-inbox";
 import { promptSectionName } from "../lib/section-name-prompt";
 import {
   currentReadySessionGeneration,
@@ -308,6 +314,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );
+  // Chats whose archive is in flight, by unreadOverrideKey; hidden until it settles.
+  const [archiving, setArchiving] = useState<ReadonlySet<string>>(() => new Set());
   const [organizeTarget, setOrganizeTarget] = useState<{
     kind: "bot" | "group";
     id: string;
@@ -573,17 +581,29 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   );
 
   const visible = useMemo(
-    () => applyUnreadOverrides("bot", bots, unreadOverrides),
-    [bots, unreadOverrides],
+    () => withoutArchiving("bot", applyUnreadOverrides("bot", bots, unreadOverrides), archiving),
+    [bots, unreadOverrides, archiving],
   );
   const visibleGroups = useMemo(
-    () => applyUnreadOverrides("group", groups, unreadOverrides),
-    [groups, unreadOverrides],
+    () =>
+      withoutArchiving("group", applyUnreadOverrides("group", groups, unreadOverrides), archiving),
+    [groups, unreadOverrides, archiving],
+  );
+  const shownSpaces = useMemo(
+    () =>
+      archiving.size === 0
+        ? spaces
+        : spaces.map((space) => ({
+            ...space,
+            bots: withoutArchiving("bot", space.bots, archiving),
+            groups: withoutArchiving("group", space.groups, archiving),
+          })),
+    [spaces, archiving],
   );
   const inboxSpaces = useMemo(
     () =>
-      spaces.length > 0
-        ? spaces.map((space) =>
+      shownSpaces.length > 0
+        ? shownSpaces.map((space) =>
             space.id === me?.spaceId
               ? { ...space, bots: visible, groups: visibleGroups, botSections }
               : space,
@@ -601,7 +621,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
               },
             ]
           : [],
-    [spaces, me, visible, visibleGroups, botSections, t, locale],
+    [shownSpaces, me, visible, visibleGroups, botSections, t, locale],
   );
   useEffect(() => {
     // A remounted session has no roster until its saved or live inbox arrives.
@@ -609,7 +629,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   }, [inboxSpaces, me]);
   const listData = useMemo((): InboxItem[] => {
     // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
-    const otherSpaces = spaces.filter((space) => space.id !== me?.spaceId);
+    const otherSpaces = shownSpaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
       ...[...visible, ...otherSpaces.flatMap((space) => space.bots)]
         .filter((bot) => bot.pinned)
@@ -625,7 +645,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
-  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups, locale]);
+  }, [inboxSpaces, collapsed, me?.spaceId, shownSpaces, visible, visibleGroups, locale]);
   const badgeCount = me ? unreadChatCount(inboxSpaces) : null;
   useEffect(() => {
     if (badgeCount === null || badgeLoad === null) return;
@@ -796,6 +816,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     if (creatingBotRef.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
       return;
     creatingBotRef.current = true;
+    const askedIn = searchInboxSession();
     try {
       // Authoritative roster so a slow home fetch does not treat later bots as first.
       // A failed list is unknown — use the delayed path rather than assuming first.
@@ -808,6 +829,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       });
       void refreshBots().catch(() => undefined);
       allowFocusPrompt(bot.id);
+      addToSearchInbox({ kind: "bot", bot }, askedIn);
       openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })
@@ -1084,17 +1106,44 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         });
         return;
       }
+      // The row goes at the tap. A failure puts it back where it was; a success drops it here
+      // too, so the row stays gone even if the reload after it fails.
       if (action === "archive") {
+        const key = unreadOverrideKey(kind, chat.id);
+        const settle = () =>
+          setArchiving((current) => {
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          });
+        setArchiving((current) => new Set(current).add(key));
         try {
           await chatRpc(chat.spaceId, `${kind}s/archive`, chatTarget(kind, chat.id));
+          const others = <T extends { id: string }>(chats: T[]) =>
+            chats.filter((item) => item.id !== chat.id);
+          if (kind === "bot") setBots(others);
+          else setGroups(others);
+          setSpaces((current) =>
+            current.map((space) =>
+              kind === "bot"
+                ? { ...space, bots: others(space.bots) }
+                : { ...space, groups: others(space.groups) },
+            ),
+          );
+          removeFromSearchInbox(chat.id);
           notifyArchivedChatsChanged();
         } catch (err) {
+          settle();
           Alert.alert(
             kind === "bot" ? t("Could not archive bot") : t("Could not update chat"),
             errorText(err, t("Try again.")),
           );
         }
-        await loadBots();
+        try {
+          await loadBots();
+        } finally {
+          settle();
+        }
         return;
       }
       // The same confirmation as the chat's own menu; the row goes once the server deletes it.
@@ -1626,10 +1675,11 @@ function ActivityRow({
   bot?: MobileBot;
   onPress: () => void;
 }) {
-  const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const status = activityStatusLabel(run.status);
   const snippet = activityPreview(run);
-  const preview = snippet ? `${snippet} · ${status}` : status;
+  const preview = snippet ? `${status}: ${snippet}` : status;
+  // Compact rows hide tags, so the group stays in the title.
+  const title = [run.botName, run.groupName].filter(Boolean).join(", ");
   return (
     <ConversationRow
       title={title}

@@ -5,7 +5,11 @@ import {
   removeDeletedBotsFromLegacyTeamHome,
   toComputerRef,
 } from "@rakazo/adapters";
-import { claimSpacesLeavingWithAccount, deleteSpaceLeavingWithAccount } from "@rakazo/db";
+import {
+  claimSpacesLeavingWithAccount,
+  deleteSpaceLeavingWithAccount,
+  recordComputerRunEnd,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { SpaceDeletionDeps } from "./space-deletion.js";
 
@@ -85,6 +89,7 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
       }
       if (computer.providerRef) {
         await deps.sandbox.destroy(toComputerRef(computer), context(computer.spaceId));
+        await recordComputerRunEnd(deps.prisma, computer, "deleted");
       }
       await removeAgentHome(deps.home, computer.homeKey, deps.dataDir);
       // The row holds the stored home's key, so the stored copy is unreadable from here on.

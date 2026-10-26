@@ -2203,6 +2203,13 @@ describe("answerRunInput", () => {
   it.each([
     ["destination.write", {}, "tool", "destination.write", false],
     ["web_fetch", { url: "https://docs.example.com/a?b=c" }, "site", "example.com", true],
+    [
+      "COMPOSIO_MULTI_EXECUTE_TOOL",
+      { tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }] },
+      "tool",
+      "GMAIL_SEND_EMAIL",
+      false,
+    ],
   ])(
     "approves %s and upserts always-allow without overwriting the task prompt",
     async (kind, request, matchKind, matchValue, spaceOverridesConfirmations) => {

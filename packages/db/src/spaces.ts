@@ -341,19 +341,17 @@ export async function listClaimedSpaceBots(
 export async function listClaimedSpaceComputers(
   prisma: Pick<PrismaClient, "computer">,
   input: ClaimedSpaceDeleteInput,
-): Promise<Array<{ homeKey: string; kind: string; providerRef: string }>> {
+): Promise<Array<{ id: string; homeKey: string; kind: string; providerRef: string }>> {
   const computers = await prisma.computer.findMany({
     where: {
       spaceId: input.spaceId,
       providerRef: { not: null },
       space: { deletionClaimId: input.claimId },
     },
-    select: { homeKey: true, kind: true, providerRef: true },
+    select: { id: true, homeKey: true, kind: true, providerRef: true },
   });
   return computers.flatMap((computer) =>
-    computer.providerRef
-      ? [{ homeKey: computer.homeKey, kind: computer.kind, providerRef: computer.providerRef }]
-      : [],
+    computer.providerRef ? [{ ...computer, providerRef: computer.providerRef }] : [],
   );
 }
 

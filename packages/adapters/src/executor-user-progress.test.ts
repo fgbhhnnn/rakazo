@@ -117,6 +117,7 @@ async function runTurn(
         return { count: 1 };
       }),
     },
+    chatGroup: { findMany: vi.fn(async () => []) },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,

@@ -19,7 +19,8 @@ import { LocalAgentHomeStore } from "./home.js";
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
 
-const skippedBrowserProfileDirectories = new Set([
+/** Browser profile directories the browser rebuilds on its own; exports skip them. */
+export const SKIPPED_BROWSER_PROFILE_DIRECTORIES: ReadonlySet<string> = new Set([
   "Cache",
   "Code Cache",
   "CacheStorage",
@@ -70,8 +71,24 @@ export function shouldSkipPortableWorkspaceFile(relative: string) {
   const segments = relative.split("/");
   const name = segments.at(-1) ?? "";
   return (
-    segments.some((segment) => skippedBrowserProfileDirectories.has(segment)) ||
+    segments.some((segment) => SKIPPED_BROWSER_PROFILE_DIRECTORIES.has(segment)) ||
     skippedBrowserProfileFiles.has(name)
+  );
+}
+
+/** The computer already reads and writes the server's home directory, so there is nothing to copy. */
+async function homeIsMounted(
+  home: AgentHomeStore,
+  sandbox: SandboxProvider,
+  computer: ComputerRef,
+  context: AdapterContext,
+) {
+  if (!(home instanceof LocalAgentHomeStore)) return false;
+  if (computer.kind === "docker") return true;
+  // Object-backed homes must hydrate and export even when a claim was configured.
+  if (home.describe().id !== "local-fs") return false;
+  return (
+    computer.kind === "kubernetes" && (await sandbox.hasMountedHome?.(computer, context)) === true
   );
 }
 
@@ -82,7 +99,7 @@ export async function restoreComputerWorkspace(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<void> {
-  if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) return;
+  if (await homeIsMounted(home, sandbox, computer, context)) return;
   await sandbox.importWorkspace(computer, home.exportHome(homeKey, context), context);
 }
 
@@ -333,7 +350,10 @@ export async function checkpointComputerWorkspace(
   /** Read after the export, just before saving, so a deletion during the export still counts. */
   excludedFolders?: () => Promise<ReadonlySet<string> | undefined>,
 ): Promise<string> {
-  if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) {
+  if (
+    home instanceof LocalAgentHomeStore &&
+    (await homeIsMounted(home, sandbox, computer, context))
+  ) {
     return home.revise(homeKey);
   }
   const staging = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-"));

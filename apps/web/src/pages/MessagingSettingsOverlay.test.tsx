@@ -65,7 +65,11 @@ vi.mock("@rakazo/ui-web", () => {
     DialogTitle: Pass,
     DropdownMenu: Pass,
     DropdownMenuContent: Pass,
-    DropdownMenuTrigger: Pass,
+    DropdownMenuTrigger: ({ children, disabled }: ComponentProps<"button">) => (
+      <button type="button" disabled={disabled}>
+        {children}
+      </button>
+    ),
     DropdownMenuItem: ({ children, onClick }: ComponentProps<"button">) => (
       <button type="button" onClick={onClick}>
         {children}
@@ -116,6 +120,7 @@ async function renderOverlay() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  messaging.installations.list.mockResolvedValue({ available: false, installations: [] });
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
   document.body.append(container);
@@ -187,13 +192,13 @@ it("detects a same-address relink to the selected bot", async () => {
     statusWith([{ ...identity, botId: "bot-2", botName: "Other" }]),
   );
   await startLink();
-  expect(container.textContent).toContain("424242 · Other");
+  expect(container.textContent).toContain("424242, Other");
 
   messaging.status.mockResolvedValue(statusWith([identity]));
   await act(async () => vi.advanceTimersByTimeAsync(3_000));
 
-  expect(container.textContent).toContain("424242 · Chief");
-  expect(container.textContent).not.toContain("424242 · Other");
+  expect(container.textContent).toContain("424242, Chief");
+  expect(container.textContent).not.toContain("424242, Other");
   expect(container.querySelector('[data-testid="messaging-link-code"]')).toBeNull();
 });
 
@@ -265,13 +270,78 @@ it("ignores a pending response after expiry", async () => {
   expect(messaging.status).toHaveBeenCalledTimes(calls);
 });
 
-it("offers personal Slack linking alongside a workspace install", async () => {
+it("connects Slack through workspace authorization without offering a setup choice", async () => {
   messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack"] });
-  messaging.installations.list.mockResolvedValueOnce({ available: true, installations: [] });
+  messaging.installations.list.mockResolvedValue({ available: true, installations: [] });
+  const popup = { opener: window, location: { href: "about:blank" }, close: vi.fn() };
+  const open = vi.spyOn(window, "open").mockReturnValue(popup as never);
+  messaging.installations.start.mockResolvedValue({ url: "https://slack.example.test/authorize" });
+  try {
+    await renderOverlay();
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.filter((button) => button.textContent === "Connect Slack")).toHaveLength(1);
+    expect(
+      buttons.some((button) =>
+        ["Slack", "Slack workspace", "Link DMs"].includes(button.textContent ?? ""),
+      ),
+    ).toBe(false);
+    await act(async () =>
+      buttons.find((button) => button.textContent === "Connect Slack")!.click(),
+    );
+    expect(messaging.installations.start).toHaveBeenCalledWith({ botId: "bot-1" });
+    expect(messaging.link.start).not.toHaveBeenCalled();
+    expect(popup.opener).toBeNull();
+    expect(popup.location.href).toBe("https://slack.example.test/authorize");
+  } finally {
+    open.mockRestore();
+  }
+});
+
+it("lists Slack once alongside other chat apps", async () => {
+  messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack", "telegram"] });
+  messaging.installations.list.mockResolvedValue({ available: true, installations: [] });
   await renderOverlay();
   const items = [...container.querySelectorAll("button")].map((button) => button.textContent);
-  expect(items).toContain("Slack");
-  expect(items).toContain("Slack workspace");
+  expect(items.filter((text) => text === "Slack")).toHaveLength(1);
+  expect(items).toContain("Telegram");
+  expect(items).not.toContain("Slack workspace");
+});
+
+it("keeps code linking for legacy Slack deployments", async () => {
+  messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack"] });
+  await renderOverlay();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Slack")!
+      .click(),
+  );
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(messaging.installations.start).not.toHaveBeenCalled();
+});
+
+it("links optional DMs to the selected personal bot, independently of the workspace bot", async () => {
+  messaging.status.mockResolvedValue({
+    ...statusWith([identity]),
+    providers: ["slack", "telegram"],
+  });
+  messaging.installations.list.mockResolvedValue({
+    available: true,
+    installations: [
+      { id: "install-1", provider: "slack", workspaceName: "Example workspace", botId: "bot-2" },
+    ],
+  } as never);
+  api.bots.list.mockResolvedValueOnce([
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ]);
+  await renderOverlay();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Link DMs")!
+      .click(),
+  );
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).not.toBeNull();
 });
 
 async function reopen() {
@@ -379,4 +449,52 @@ it("says which line to send the code to when the app has one", async () => {
   expect(container.querySelector('[data-testid="messaging-link-code"]')?.textContent).toContain(
     "+15550001111",
   );
+});
+
+it("keeps DM linking available for each connected workspace", async () => {
+  messaging.status.mockResolvedValue({
+    ...statusWith([{ ...identity, provider: "slack" }]),
+    providers: ["slack"],
+  });
+  messaging.installations.list.mockResolvedValue({
+    available: true,
+    installations: [
+      { id: "install-1", provider: "slack", workspaceName: "First workspace", botId: "bot-1" },
+      { id: "install-2", provider: "slack", workspaceName: "Second workspace", botId: "bot-1" },
+    ],
+  } as never);
+  await renderOverlay();
+  expect(
+    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Link DMs"),
+  ).toHaveLength(2);
+});
+
+it("lets members link personal DMs without owning the workspace connection", async () => {
+  messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack"] });
+  messaging.installations.list.mockResolvedValue({
+    available: true,
+    installations: [],
+    personalLinkAvailable: true,
+  } as never);
+  await renderOverlay();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Link DMs")!
+      .click(),
+  );
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(messaging.installations.start).not.toHaveBeenCalled();
+});
+
+it("keeps other apps usable and withholds Slack when its setup method cannot load", async () => {
+  messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack", "telegram"] });
+  messaging.installations.list.mockRejectedValue(new Error("unavailable"));
+  await renderOverlay();
+  const buttons = [...container.querySelectorAll("button")];
+  expect(buttons.find((button) => button.textContent === "Connect a chat app")!.disabled).toBe(
+    false,
+  );
+  expect(buttons.some((button) => button.textContent === "Slack")).toBe(false);
+  await act(async () => telegramItem()!.click());
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
 });

@@ -511,7 +511,7 @@ export function AgentImportForm({
       ...others.map(warningText),
     ]
       .filter(Boolean)
-      .join(" · ");
+      .join(", ");
     return label ? note(label) : undefined;
   };
   // Its own line under the name, so a long status never cuts the name short.
@@ -646,7 +646,7 @@ export function AgentImportForm({
                         entry.stock ? defaultNote : mentions ? t`Mentions OpenClaw features` : null,
                       ]
                         .filter(Boolean)
-                        .join(" · "),
+                        .join(", "),
                     ),
                     mentions ? t`Mentions: ${mentions}` : undefined,
                   );
@@ -700,7 +700,7 @@ export function AgentImportForm({
                         ? note(
                             [entry.containsKey ? keyNote : null, entry.stock ? defaultNote : null]
                               .filter(Boolean)
-                              .join(" · "),
+                              .join(", "),
                           )
                         : null}
                     </>,
@@ -857,7 +857,10 @@ export function AgentImportForm({
                 <ul className="mt-2 text-[13px] text-muted-foreground">
                   {plan.skipped.map((entry, index) => (
                     <li key={`${index}:${entry.path}`} className="py-1">
-                      {entry.path} · {skipReason(entry.reason)}
+                      <span>{entry.path}</span>
+                      <span className="ml-2 text-muted-foreground/70">
+                        {skipReason(entry.reason)}
+                      </span>
                     </li>
                   ))}
                 </ul>

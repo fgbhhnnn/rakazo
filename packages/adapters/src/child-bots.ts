@@ -25,6 +25,7 @@ import {
   type Prisma,
   type PrismaClient,
   VISIBLE_BOT_WHERE,
+  recordComputerRunEnd,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -381,6 +382,7 @@ export async function archiveBot(
       },
       data: { state: "stopped" },
     });
+    await recordComputerRunEnd(deps.prisma, currentDedicated, "stopped");
   }
 }
 
@@ -442,6 +444,9 @@ export async function destroyBot(
         WHERE id = ${bot.id} AND "spaceId" = ${bot.spaceId}
         FOR UPDATE
       `;
+      // A concurrent removal of the same bot committed while this one waited for the lock;
+      // it owns the deletion and the cleanup that follows.
+      if (locked.length === 0) return null;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
       const deleteMemories = (await options.within?.(tx))?.deleteMemories ?? options.deleteMemories;
       const botArtifacts = await tx.artifact.findMany({
@@ -496,6 +501,7 @@ export async function destroyBot(
       };
     }),
   );
+  if (!deletion) return;
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );
@@ -520,6 +526,7 @@ export async function destroyBot(
     }),
   );
   if (dedicated) {
+    await recordComputerRunEnd(deps.prisma, { id: dedicated.id }, "deleted");
     await removeAgentHome(deps.home, dedicated.homeKey, deps.dataDir).catch(() => undefined);
   }
   await removeTeamBrowserProfile(deps, bot.id, sharedComputer, context);
@@ -692,7 +699,16 @@ async function sharedTeamComputer(
   return computer;
 }
 
-const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos"]);
+const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos", "kubernetes"]);
+
+/**
+ * Whether only the server writes this computer's stored home. A Kubernetes computer that
+ * mounts the server's home directory writes it itself, like a Docker computer.
+ */
+function serverOwnsTeamHome(sandbox: SandboxProvider, kind: string) {
+  if (!REMOTE_TEAM_SANDBOX_KINDS.has(kind)) return false;
+  return !(kind === "kubernetes" && sandbox.describe().capabilities.persistentHome);
+}
 // The bot is already deleted; whatever this misses is removed when the computer next boots.
 const LIVE_CLEANUP_BUDGET_MS = 10_000;
 
@@ -727,7 +743,7 @@ async function removeTeamBrowserProfile(
       getLogger().error("team browser profile cleanup", error);
     });
   }
-  if (!REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) return;
+  if (!serverOwnsTeamHome(deps.sandbox, computer.kind)) return;
   await removeAgentHomeFolders(
     deps.home,
     computer.homeKey,
@@ -812,7 +828,7 @@ async function removeTeamBotWorkspace(
  * saved; bot_deletions keeps the ids, so the caller can retry.
  */
 export async function removeDeletedBotsFromLegacyTeamHome(
-  deps: Pick<BotLifecycleDeps, "prisma" | "home" | "dataDir">,
+  deps: Pick<BotLifecycleDeps, "prisma" | "home" | "sandbox" | "dataDir">,
   spaceId: string,
   botIds: readonly string[],
 ) {
@@ -820,7 +836,7 @@ export async function removeDeletedBotsFromLegacyTeamHome(
     where: { homeKey: legacyTeamHomeKey(spaceId) },
   });
   // Only a remote provider's stored copy is written by the server alone; see removeBotFolders.
-  if (legacy?.scope !== "team" || !REMOTE_TEAM_SANDBOX_KINDS.has(legacy.kind)) return;
+  if (legacy?.scope !== "team" || !serverOwnsTeamHome(deps.sandbox, legacy.kind)) return;
   const folders = botIds.filter(isTeamBotFolderName);
   const profiles = botIds.flatMap((id) => teamBrowserProfileName(id) ?? []);
   if (folders.length)
@@ -845,7 +861,7 @@ async function removeBotFolders(
   // Remote providers keep a stored copy that only the server writes, and replacement computers
   // restore from it. Any other home may be mounted by a running computer, where a bot could
   // swap bots/ for a symlink between the checks and rm, so it is only cleaned inside the computer.
-  if (REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) {
+  if (serverOwnsTeamHome(deps.sandbox, computer.kind)) {
     for (const [parent, name] of folders) {
       await removeAgentHomeFolders(deps.home, computer.homeKey, parent, [name], deps.dataDir).catch(
         (error) => {

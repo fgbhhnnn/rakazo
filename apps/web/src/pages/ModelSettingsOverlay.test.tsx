@@ -191,6 +191,7 @@ function account(provider: string, modelId: string) {
     computerHost: null,
     canChooseHostComputer: false,
     sandboxProvider: "docker",
+    mcpStdioEnabled: false,
     avatarStyle: "organic" as const,
     billingEnabled: false,
     ticketBoardEnabled: false,
@@ -1189,7 +1190,7 @@ it.each([undefined, "api_key", "oauth"])(
         billing: "Subscription",
         auth: "oauth",
         signIn: "device-code",
-        oauthLabel: "Sign in with ChatGPT Plus/Pro",
+        oauthLabel: "Sign in with ChatGPT",
       },
     ]);
     models.credentials.mockResolvedValue(
@@ -1280,7 +1281,7 @@ it("lists every connection under Providers and adds another for a connected prov
       [...providersSection().querySelectorAll('[data-testid^="model-provider-"]')].map(
         (row) => row.textContent,
       ),
-    ).toEqual(["DeepSeek", "DeepSeek · Work"]);
+    ).toEqual(["DeepSeek", "DeepSeek (Work)"]);
     await click(buttons(providersSection() as HTMLElement, "Add provider")[0]);
     expect(pickerOptions()).toContain("DeepSeek");
     await choose("DeepSeek");
@@ -1307,8 +1308,8 @@ it("replaces one connection's key and disconnects only that connection", async (
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const view = await renderSettings();
   try {
-    await openProvider("DeepSeek · Work");
-    expect(titles(view.container)).toEqual(["DeepSeek · Work"]);
+    await openProvider("DeepSeek (Work)");
+    expect(titles(view.container)).toEqual(["DeepSeek (Work)"]);
     await typeInto(keyField(view.container), "sk-fixture-rotated");
     await click(buttons(view.container, "Replace API key")[0]);
     expect(models.connect).toHaveBeenCalledWith(
@@ -1319,7 +1320,7 @@ it("replaces one connection's key and disconnects only that connection", async (
       }),
     );
 
-    await openProvider("DeepSeek · Work");
+    await openProvider("DeepSeek (Work)");
     await click(buttons(view.container, "Disconnect")[0]);
     const confirm = buttons(view.container, "Disconnect");
     await click(confirm[confirm.length - 1]);
@@ -1369,7 +1370,7 @@ it("renames a connection", async () => {
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const view = await renderSettings();
   try {
-    await openProvider("DeepSeek · Work");
+    await openProvider("DeepSeek (Work)");
     const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
     if (!input) throw new Error("Missing name field");
     expect(input.value).toBe("Work");
@@ -1406,14 +1407,14 @@ it("shows what a disconnect left, not a read sent before it", async () => {
     [...providersSection().querySelectorAll("button")].map((entry) => entry.textContent);
   const view = await renderSettings(true, queryClient);
   try {
-    expect(providerNames()).toContain("DeepSeek · Work");
-    await openProvider("DeepSeek · Work");
+    expect(providerNames()).toContain("DeepSeek (Work)");
+    await openProvider("DeepSeek (Work)");
     await click(buttons(view.container, "Disconnect")[0]);
     const confirm = buttons(view.container, "Disconnect");
     await click(confirm[confirm.length - 1]);
     await act(async () => releaseStale());
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-    expect(providerNames()).not.toContain("DeepSeek · Work");
+    expect(providerNames()).not.toContain("DeepSeek (Work)");
   } finally {
     await view.unmount();
   }

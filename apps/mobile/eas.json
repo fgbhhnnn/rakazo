@@ -29,7 +29,8 @@
       "extends": "production",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "environment": "production"
     },
     "ios-testflight": {
       "distribution": "store",

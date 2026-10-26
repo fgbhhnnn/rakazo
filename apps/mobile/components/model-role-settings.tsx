@@ -17,6 +17,7 @@ import {
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  withConnectionName,
 } from "@rakazo/contracts";
 import { createModelRoleSettings } from "@rakazo/core";
 import type { Href } from "expo-router";
@@ -269,7 +270,7 @@ export function ModelRoleSettings({
           )
           .map((option) => ({
             key: modelRoleChoiceKey(option),
-            label: `${option.connectionName} · ${option.label}`,
+            label: withConnectionName(option.label, option.connectionName),
             modelLabel: option.label,
             providerLabel: option.connectionName,
             provider: option.provider,

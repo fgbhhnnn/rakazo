@@ -474,7 +474,7 @@ function VoiceSettingsScreen() {
                 <Text style={styles.cardTitle}>{t("This device")}</Text>
                 <Text style={styles.cardMeta}>
                   {deviceVoice
-                    ? t("On · Free, works offline")
+                    ? t("Free, works offline")
                     : t("Your phone's built-in voice. Free, no account needed")}
                 </Text>
               </View>

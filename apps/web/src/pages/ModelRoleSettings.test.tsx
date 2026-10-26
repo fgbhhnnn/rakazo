@@ -447,18 +447,18 @@ it("groups models by connection and runs the same model on either account", asyn
   await click(trigger("Add fallback"));
   expect(
     [...document.querySelectorAll("[cmdk-group-heading]")].map((entry) => entry.textContent),
-  ).toEqual(["OpenRouter", "OpenRouter · Work"]);
+  ).toEqual(["OpenRouter", "OpenRouter (Work)"]);
   const workChat = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
     (entry) =>
       optionName(entry) === "Chat" &&
-      entry.closest("[cmdk-group]")?.textContent?.startsWith("OpenRouter · Work"),
+      entry.closest("[cmdk-group]")?.textContent?.startsWith("OpenRouter (Work)"),
   );
   await click(workChat);
   expect(saved).toEqual({
     primary: pin(chat),
     backups: [{ ...chat, credentialId: "work" }],
   });
-  expect(rows()).toEqual(["ChatOpenRouter", "ChatOpenRouter · Work"]);
+  expect(rows()).toEqual(["ChatOpenRouter", "ChatOpenRouter (Work)"]);
   await menu("Chat", "Manage OpenRouter");
   expect(onManage).toHaveBeenLastCalledWith("openrouter", "key");
 });

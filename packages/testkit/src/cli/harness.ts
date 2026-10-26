@@ -98,6 +98,11 @@ async function main() {
     process.env.SIGNUP_ALLOWLIST = "";
     // Model and speech fixtures listen on loopback, and most test accounts are not the owner.
     process.env.MCP_ALLOW_PRIVATE_ENDPOINT = "true";
+    if (!integration) {
+      // The scripted bot registers a stdio server, and the MCP settings offer stdio.
+      process.env.MCP_STDIO_ENABLED = "true";
+      process.env.MCP_STDIO_ALLOWED_COMMANDS = "echo";
+    }
     process.env.CI = "1";
     // Agent import is off in deployments; the harness turns it on (API and web build) so its
     // specs and integration tests keep exercising it.

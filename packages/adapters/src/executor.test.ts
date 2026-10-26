@@ -495,6 +495,26 @@ describe("run tool selection", () => {
     expect(disabled).toEqual(baseline.filter((name) => name !== "web_search"));
   });
 
+  it("offers group messaging to bots outside group threads", () => {
+    expect(toolNames("user")).toContain("handoff_to_bot");
+    for (const trigger of ["bot_message", "routine", "webhook", "follow_up"]) {
+      expect(toolNames(trigger)).toContain("handoff_to_bot");
+      expect(toolNames(trigger, "group-1")).toContain("handoff_to_bot");
+    }
+    expect(
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "follow_up",
+        followUpFromUser: true,
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+      }).map((tool) => tool.name),
+    ).toContain("handoff_to_bot");
+    expect(toolNames("user", "group-1")).not.toContain("message_bot");
+    expect(toolNames("user")).toContain("message_bot");
+  });
+
   it("keeps schedule tools in group chats and still blocks create on routines", () => {
     expect(toolNames("user", "group-1")).toEqual(
       expect.arrayContaining(["schedule_create", "schedule_list", "schedule_cancel"]),
@@ -1295,7 +1315,7 @@ describe("userTurnInstructions", () => {
   const stableTail = [
     'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
     PAGE_GUIDANCE,
-    "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. If it uses browser sign-in, an approval card appears in the chat — tell the user to click Authorize on it.",
+    "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
     replyGuidance,

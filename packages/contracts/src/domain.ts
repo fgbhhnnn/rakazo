@@ -739,17 +739,22 @@ export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
 
 export const ActionApprovalRuleSchema = z.object({
   id: Id,
-  effect: z.enum(["always_allow", "require_approval"]),
+  effect: z.enum(["always_allow", "require_approval", "deny"]),
   matchKind: z.enum(["tool", "connector", "category", "site"]),
   matchValue: z.string(),
   createdAt: z.string(),
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
+/** How much a space asks before acting; see VISION.md. */
+export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
+export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
+
 export const ActionAutoReviewSettingsSchema = z.object({
+  mode: ApprovalModeSchema,
+  /** The stored form of `mode`, kept for clients that predate it. */
   enabled: z.boolean(),
   checkerAvailable: z.boolean(),
-  /** Run every action that would ask, except the ones that always need a person. */
   skipApprovals: z.boolean(),
 });
 export type ActionAutoReviewSettings = z.infer<typeof ActionAutoReviewSettingsSchema>;
@@ -1047,6 +1052,8 @@ export const MessagingInstallationSummarySchema = z.object({
 export type MessagingInstallationSummary = z.infer<typeof MessagingInstallationSummarySchema>;
 export const MessagingInstallationsStatusSchema = z.object({
   available: z.boolean(),
+  /** A workspace in this space accepts personal links, including for non-owner members. */
+  personalLinkAvailable: z.boolean().optional(),
   installations: z.array(MessagingInstallationSummarySchema),
 });
 export type MessagingInstallationsStatus = z.infer<typeof MessagingInstallationsStatusSchema>;
@@ -1610,6 +1617,8 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
+  /** Whether this deployment runs stdio MCP servers. Absent from older servers. */
+  mcpStdioEnabled: z.boolean().default(false),
   avatarStyle: AvatarStyleSchema,
   /**
    * The user's IANA timezone, or null when unset (bots then see UTC only).

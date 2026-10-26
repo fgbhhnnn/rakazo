@@ -20,6 +20,8 @@ function setup(refresh: () => Promise<void>) {
     isCurrentTarget: () => true,
     refresh: vi.fn(refresh),
     askAnswerRunId,
+    setReadBoundary: vi.fn(),
+    readVisit: { current: { visit: 1 } },
   };
   const compiled = ts.transpileModule(`${handler}\nreturn answerMessage;`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },

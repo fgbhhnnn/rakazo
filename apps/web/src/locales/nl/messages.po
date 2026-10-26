@@ -22,11 +22,6 @@ msgstr " (ongelezen)"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr ""
 
-#. placeholder {0}: health.toolCount
-#: src/components/McpServerHealthLine.tsx
-msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
-msgstr "{0, plural, one {Draait · # tool} other {Draait · # tools}}"
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
@@ -56,7 +51,7 @@ msgid "{0} (over {1})"
 msgstr "{0} (meer dan {1})"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
@@ -135,6 +130,10 @@ msgstr "de computer van {botName}"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable} is gereserveerd en kan niet als commandovariabele worden gebruikt. Kies een andere naam."
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# rij} other {# rijen}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr "{count} dagen"
@@ -163,6 +162,18 @@ msgstr "{done} klaar"
 msgid "{failed} not finished"
 msgstr "{failed} niet afgerond"
 
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{from}–{to} van {total} rijen"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "{fromName} tot {toName}"
+
+#: src/components/markdown-copy.tsx
+msgid "{header}, column {index}"
+msgstr "{header}, kolom {index}"
+
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr "{hidden, plural, one {+# eerdere stap} other {+# eerdere stappen}}"
@@ -170,6 +181,10 @@ msgstr "{hidden, plural, one {+# eerdere stap} other {+# eerdere stappen}}"
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours}u geleden"
+
+#: src/components/markdown-copy.tsx
+msgid "{label}, empty"
+msgstr "{label}, leeg"
 
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -306,8 +321,8 @@ msgid "{provider} took too long to respond. Try again."
 msgstr "{provider} deed er te lang over om te antwoorden. Probeer het opnieuw."
 
 #: src/components/teach/TeachRecordingChrome.tsx
-msgid "{remaining} left · bot is watching, not acting"
-msgstr "nog {remaining} over · de bot kijkt alleen, handelt niet"
+msgid "{remaining} left"
+msgstr "Nog {remaining} over"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -316,14 +331,6 @@ msgstr "{seats, plural, one {# plaats} other {# plaatsen}}"
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Done · # tool} other {Done · # tools}}"
-msgstr "{stepCount, plural, one {Klaar · # tool} other {Klaar · # tools}}"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
-msgstr "{stepCount, plural, one {Bezig… · # tool} other {Bezig… · # tools}}"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -353,6 +360,8 @@ msgstr "{title}, {label}"
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}, opgeslagen als {savedAs}"
 
+#: src/components/McpServerHealthLine.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# tool} other {# tools}}"
@@ -629,36 +638,17 @@ msgstr "Alle statussen"
 msgid "All time"
 msgstr "Alle tijd"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "{0}-acties toestaan zonder te vragen"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "{0}-connector toestaan zonder te vragen"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "{0} toestaan zonder te vragen"
+msgid "Allow"
+msgstr "Toestaan"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Communicatie tussen bots in verschillende ruimtes toestaan"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "E-mailacties toestaan zonder te vragen"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Een keer toestaan"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "Aankoopacties toestaan zonder te vragen"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -792,6 +782,11 @@ msgstr "Goedkeuringsgrenzen"
 msgid "Approval model"
 msgstr "Goedkeuringsmodel"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "Goedkeuringen"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -822,39 +817,12 @@ msgstr "Argumenten"
 msgid "Artifacts"
 msgstr "Artefacten"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "Vragen voor {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "Vragen voor {0}-acties"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "Vragen voor {0}-connector"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "Vragen voor e-mailacties"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "Vragen voor aankoopacties"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "Vragen voor aankopen"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "Vragen voor het versturen van externe e-mail"
+msgid "Ask"
+msgstr "Vragen"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "om {0}"
 
@@ -881,8 +849,8 @@ msgstr "Authenticatie mislukt."
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "Autorisatiecode of callback-URL"
+msgid "Authorization code"
+msgstr "Autorisatiecode"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -903,6 +871,10 @@ msgstr "Autoriseren"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "Autoriseer deze server zodat agents zijn tools kunnen gebruiken. Er wordt een pop-up geopend."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "Auto"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -970,6 +942,10 @@ msgstr "Bearer-token"
 msgid "Billing"
 msgstr "Facturatie"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "Blokkeren"
+
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr "Geblokkeerd"
@@ -1002,6 +978,10 @@ msgstr "Bot"
 #: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "Bot"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Bot is watching, not acting"
+msgstr "De bot kijkt alleen, handelt niet"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Bot models"
@@ -1357,6 +1337,10 @@ msgstr "Paneel sluiten"
 msgid "Close preview"
 msgstr "Voorbeeld sluiten"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "Tabel sluiten"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "Gebruikersinstellingen sluiten"
@@ -1379,7 +1363,7 @@ msgctxt "email sign-in"
 msgid "Code"
 msgstr "Code"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Collapse {0}"
 msgstr "{0} inklappen"
@@ -1395,6 +1379,10 @@ msgstr "Kleur"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "Kleur {color}"
+
+#: src/components/markdown-copy.tsx
+msgid "column {index}"
+msgstr "kolom {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
@@ -1453,6 +1441,7 @@ msgstr "De computer is in slaapstand"
 msgid "Computer is asleep. Open it to wake."
 msgstr "De computer is in slaapstand. Open hem om hem te laten ontwaken."
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "De computer is gestopt"
@@ -1490,11 +1479,6 @@ msgstr "Wachtwoord bevestigen"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "Bevestig dat de URL vanuit deze browsersessie bereikbaar is en test daarna opnieuw."
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr "Bevestigingen"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1545,6 +1529,10 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "OAuth koppelen"
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Connect Slack"
+msgstr "Slack verbinden"
+
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
 msgstr "Verbind eerst de aanbieder van dit model."
@@ -1565,10 +1553,6 @@ msgstr "Gekoppeld"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0} gekoppeld."
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "Gekoppeld. Zijn tools zijn beschikbaar vanaf je volgende bericht."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1636,6 +1620,7 @@ msgid "Coordinating background tasks"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1656,9 +1641,21 @@ msgstr ".env-voorbeeld kopiëren"
 msgid "Copy link"
 msgstr "Link kopiëren"
 
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "Code kopiëren"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "Diagrambron kopiëren"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "Prompt kopiëren"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "Rijen kopiëren"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -2074,6 +2071,10 @@ msgstr "OAuth starten mislukt"
 msgid "Could not start teaching"
 msgstr "Onderwijs starten mislukt"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Could not stop computer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Could not submit this answer"
 msgstr "Dit antwoord insturen mislukt"
@@ -2207,7 +2208,7 @@ msgstr "Inloggegevens: {names}"
 msgid "Credit amount"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2245,7 +2246,7 @@ msgid "Dark"
 msgstr "Donker"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "dag"
 
@@ -2253,7 +2254,7 @@ msgstr "dag"
 msgid "Day-to-day work"
 msgstr "Dagelijkse taken"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "dagen"
 
@@ -2472,6 +2473,7 @@ msgstr "Heb je geen account?"
 msgid "done"
 msgstr "klaar"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2496,6 +2498,10 @@ msgstr "{0} downloaden"
 #: src/components/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "{name} downloaden"
+
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "CSV downloaden"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
@@ -2621,10 +2627,21 @@ msgstr "Fout"
 msgid "Error details"
 msgstr "Foutdetails"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "Elke"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "Elke {0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "Elke {0} en {1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2634,17 +2651,24 @@ msgstr "elke {intervalAmountSelect} {intervalUnitSelect}"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Alle bots in deze space lezen deze notities en houden ze bij."
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Elke dag"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Elk uur"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "Elk uur om :{0}"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "Elke maandag"
 
@@ -2666,7 +2690,7 @@ msgstr "Executor-token"
 msgid "Expand"
 msgstr "Uitklappen"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "{0} uitklappen"
@@ -2674,6 +2698,10 @@ msgstr "{0} uitklappen"
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "{label} uitklappen"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "Tabel uitvouwen"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -2776,12 +2804,6 @@ msgstr "Bezig met zoeken…"
 msgid "Finish setting up"
 msgstr "Instellen afronden"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "Rond de aanmelding af op <0>{0}</0>. De laatste pagina wordt mogelijk niet geladen; plak de URL of code hier."
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "Rond de abonnementsaanmelding af en test daarna opnieuw."
@@ -2799,10 +2821,6 @@ msgstr "Voltooid."
 msgid "Finishing MCP connection…"
 msgstr "MCP-verbinding afronden…"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr "Onverwachte acties markeren"
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Wachtwoord vergeten?"
@@ -2811,6 +2829,10 @@ msgstr "Wachtwoord vergeten?"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Gratis"
+
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "vrijdag"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -2931,12 +2953,12 @@ msgstr "Houd ingedrukt om te praten"
 msgid "Hold to talk, release to send"
 msgstr "Houd ingedrukt om te praten, laat los om te versturen"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "uur"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "uren"
 
@@ -3202,6 +3224,10 @@ msgstr "Linear-issue"
 msgid "Link copied"
 msgstr "Link gekopieerd"
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Link DMs"
+msgstr "DM’s koppelen"
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO koppelen"
@@ -3359,6 +3385,10 @@ msgstr "Markeren als ongelezen"
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
 msgstr "Markeren als ongelezen"
+
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "Markdown-tabel"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3526,18 +3556,22 @@ msgstr "Bots minimaliseren"
 msgid "Minimize call"
 msgstr "Gesprek minimaliseren"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "minuut"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "minuten"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Missed call"
 msgstr "Gemist gesprek"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "Modus"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -3586,11 +3620,15 @@ msgstr "Modellen van de server"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "Modellenlijst is in orde. {modelCount, plural, one {# model} other {# modellen}} beschikbaar. Chat is niet getest."
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "maandag"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr "maand"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Maandelijks"
 
@@ -3692,6 +3730,10 @@ msgstr "Heeft jou nodig"
 msgid "Needs: {names}"
 msgstr "Vereist: {names}"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "Nooit vragen"
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr "Nieuw"
@@ -3744,6 +3786,10 @@ msgstr "Nieuwe space"
 #: src/pages/Board.tsx
 msgid "New ticket"
 msgstr "Nieuw ticket"
+
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "Volgende pagina"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
@@ -3833,6 +3879,10 @@ msgstr "Geen externe MCP-servers gevonden"
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "Geen resultaten"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "Geen rijen"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -3947,14 +3997,22 @@ msgstr ""
 msgid "On a schedule"
 msgstr "Op een schema"
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "op dag {day} om {time}"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "op de 1e om {0}"
 
 #: src/components/pages/PageReader.tsx
 msgid "On this page"
 msgstr "Op deze pagina"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "Eenmalig"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -3971,7 +4029,7 @@ msgstr ""
 msgid "Open"
 msgstr "Openen"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr "{0} openen"
@@ -3985,12 +4043,6 @@ msgstr "{name} openen"
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "Open <0>{0}</0> en voer deze code in:"
-
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
-msgstr "Open <0>{0}</0> om de aanmelding af te ronden."
 
 #: src/pages/Shell.tsx
 msgid "Open call"
@@ -4080,6 +4132,10 @@ msgstr "Eigenaar"
 msgid "Page markdown"
 msgstr "Markdown van pagina"
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "Pagina {page} van {count}"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty-incident"
@@ -4102,6 +4158,10 @@ msgstr "Passkeys"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Password"
 msgstr "Wachtwoord"
+
+#: src/lib/user-error.ts
+msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
+msgstr "Het wachtwoord mag maximaal {MAX_PASSWORD_LENGTH} tekens bevatten"
 
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
@@ -4233,6 +4293,10 @@ msgstr "{0} bekijken"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Een voorbeeld is niet beschikbaar voor dit bestandstype — download het om het te bekijken."
 
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "Vorige pagina"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr ""
@@ -4283,6 +4347,10 @@ msgstr "In wachtrij"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "wachtrij #{0}"
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "Rakazo credits"
+msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -4683,9 +4751,9 @@ msgstr "Routines"
 msgid "Routines that run while you're away"
 msgstr "Routines die draaien terwijl je weg bent"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "Acties uitvoeren zonder te vragen"
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "Rij"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -4707,12 +4775,9 @@ msgstr "draait"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Draait"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Running · Stop"
-msgstr "Draait · Stoppen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -4725,6 +4790,10 @@ msgstr "Uitvoeringen"
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontvangt."
+
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "zaterdag"
 
 #: src/components/AskCard.tsx
 #: src/components/pages/PageReader.tsx
@@ -5046,6 +5115,12 @@ msgstr "Aanmelden"
 msgid "Sign in again"
 msgstr "Opnieuw aanmelden"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "Meld je aan op <0>{0}</0> en plak de code hier."
+
 #: src/pages/Auth.tsx
 msgid "Sign in to {PRODUCT_NAME}"
 msgstr "Aanmelden bij {PRODUCT_NAME}"
@@ -5110,10 +5185,6 @@ msgstr "Slack-bericht"
 msgid "Slack not enabled"
 msgstr "Slack is niet ingeschakeld"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Slack workspace"
-msgstr ""
-
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr "Schuif omhoog om te vergrendelen"
@@ -5134,6 +5205,22 @@ msgstr "Er is net iets met dezelfde naam toegevoegd. Probeer het opnieuw."
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "Iets wat je koos werkt hier niet. Vink het uit en probeer het opnieuw."
+
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "Sorteren op {column}"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "Sortering gewist"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "Gesorteerd op {column}, oplopend"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "Gesorteerd op {column}, aflopend"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -5168,6 +5255,10 @@ msgstr "Spraakmodel"
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO is tijdelijk niet beschikbaar. Probeer het opnieuw."
 
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
 msgstr "Start een gratis proefperiode van {trialDays} dagen"
@@ -5200,10 +5291,16 @@ msgstr "Status"
 msgid "Steps"
 msgstr "Stappen"
 
+#: src/pages/RoutineEditor.tsx
+#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
 msgstr "Stoppen"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stop computer"
+msgstr ""
 
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
@@ -5217,6 +5314,10 @@ msgstr "Onderwijs stoppen"
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "Gestopt."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stopping…"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
@@ -5244,6 +5345,10 @@ msgstr "Abonneren"
 msgid "Subscription required"
 msgstr "Abonnement vereist"
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "zondag"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5269,6 +5374,10 @@ msgstr "Bezig met wisselen…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "Systeem"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "Tabel"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
@@ -5494,6 +5603,10 @@ msgstr "Deze abonnementsaanmelding is nog niet beschikbaar in {PRODUCT_NAME}. Ge
 msgid "This week"
 msgstr "Deze week"
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "donderdag"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "Tijdstip van de dag"
@@ -5610,6 +5723,10 @@ msgstr ""
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "dinsdag"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5780,6 +5897,10 @@ msgstr ""
 msgid "Use Protected input for passwords."
 msgstr "Gebruik Beveiligde invoer voor wachtwoorden."
 
+#: src/components/ModelCredits.tsx
+msgid "Use Rakazo credits"
+msgstr ""
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Use space default"
 msgstr ""
@@ -5869,14 +5990,23 @@ msgstr "Webhook"
 msgid "Website login"
 msgstr "Websiteaanmelding"
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "woensdag"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr "week"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Werkdagen"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "Weekenden"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to {PRODUCT_NAME}"
@@ -5958,6 +6088,7 @@ msgstr ""
 msgid "Working instructions"
 msgstr "Werkinstructies"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx

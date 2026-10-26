@@ -22,11 +22,6 @@ msgstr " (अपठित)"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr ""
 
-#. placeholder {0}: health.toolCount
-#: src/components/McpServerHealthLine.tsx
-msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
-msgstr "{0, plural, one {चल रहा है · # टूल} other {चल रहा है · # टूल}}"
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
@@ -56,7 +51,7 @@ msgid "{0} (over {1})"
 msgstr "{0} ({1} से अधिक)"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
@@ -135,6 +130,10 @@ msgstr "{botName} का कंप्यूटर"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable} आरक्षित है और कमांड वेरिएबल के रूप में इस्तेमाल नहीं हो सकता। दूसरा नाम चुनें।"
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# पंक्ति} other {# पंक्तियाँ}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr ""
@@ -163,6 +162,18 @@ msgstr "{done} पूरे"
 msgid "{failed} not finished"
 msgstr "{failed} अधूरे"
 
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{total} पंक्तियों में से {from}–{to}"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "{fromName} से {toName}"
+
+#: src/components/markdown-copy.tsx
+msgid "{header}, column {index}"
+msgstr "{header}, स्तंभ {index}"
+
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr ""
@@ -170,6 +181,10 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours} घंटे पहले"
+
+#: src/components/markdown-copy.tsx
+msgid "{label}, empty"
+msgstr "{label}, खाली"
 
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -306,8 +321,8 @@ msgid "{provider} took too long to respond. Try again."
 msgstr "{provider} ने जवाब देने में बहुत समय लिया। फिर कोशिश करें।"
 
 #: src/components/teach/TeachRecordingChrome.tsx
-msgid "{remaining} left · bot is watching, not acting"
-msgstr "{remaining} शेष · बॉट देख रहा है, कार्रवाई नहीं कर रहा"
+msgid "{remaining} left"
+msgstr "{remaining} शेष"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -316,14 +331,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Done · # tool} other {Done · # tools}}"
-msgstr ""
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
-msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -353,9 +360,11 @@ msgstr "{title}, {label}"
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}, {savedAs} नाम से सेव होगा"
 
+#: src/components/McpServerHealthLine.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
-msgstr ""
+msgstr "{toolCount, plural, one {# टूल} other {# टूल}}"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
@@ -629,36 +638,17 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "{0} कार्रवाइयों को बिना पूछे अनुमति दें"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "{0} कनेक्टर को बिना पूछे अनुमति दें"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "{0} को बिना पूछे अनुमति दें"
+msgid "Allow"
+msgstr "अनुमति दें"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "ईमेल कार्रवाइयों को बिना पूछे अनुमति दें"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "एक बार अनुमति दें"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "खरीद कार्रवाइयों को बिना पूछे अनुमति दें"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -792,6 +782,11 @@ msgstr "अनुमोदन सीमाएं"
 msgid "Approval model"
 msgstr "अनुमोदन मॉडल"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "स्वीकृतियाँ"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -822,39 +817,12 @@ msgstr "आर्ग्युमेंट"
 msgid "Artifacts"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "{0} से पहले पूछें"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "{0} कार्रवाइयों से पहले पूछें"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "{0} कनेक्टर से पहले पूछें"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "ईमेल कार्रवाइयों से पहले पूछें"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "खरीद कार्रवाइयों से पहले पूछें"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "खरीद से पहले पूछें"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "बाहरी ईमेल भेजने से पहले पूछें"
+msgid "Ask"
+msgstr "पूछें"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "{0} बजे"
 
@@ -881,8 +849,8 @@ msgstr "प्रमाणीकरण विफल रहा।"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "ऑथराइज़ेशन कोड या कॉलबैक URL"
+msgid "Authorization code"
+msgstr "प्राधिकरण कोड"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -903,6 +871,10 @@ msgstr "ऑथराइज़ करें"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "एजेंटों को इसके टूल का उपयोग करने देने के लिए इस सर्वर को ऑथराइज़ करें। एक पॉपअप खुलता है।"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "ऑटो"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -970,6 +942,10 @@ msgstr "बियरर टोकन"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "ब्लॉक करें"
+
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr ""
@@ -1002,6 +978,10 @@ msgstr "बॉट"
 #: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "बॉट"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Bot is watching, not acting"
+msgstr "बॉट देख रहा है, कार्रवाई नहीं कर रहा"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Bot models"
@@ -1357,6 +1337,10 @@ msgstr "पैनल बंद करें"
 msgid "Close preview"
 msgstr "प्रीव्यू बंद करें"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "तालिका बंद करें"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "उपयोगकर्ता सेटिंग्स बंद करें"
@@ -1379,7 +1363,7 @@ msgctxt "email sign-in"
 msgid "Code"
 msgstr "कोड"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Collapse {0}"
 msgstr ""
@@ -1395,6 +1379,10 @@ msgstr "रंग"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "रंग {color}"
+
+#: src/components/markdown-copy.tsx
+msgid "column {index}"
+msgstr "स्तंभ {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
@@ -1453,6 +1441,7 @@ msgstr "कंप्यूटर निष्क्रिय है"
 msgid "Computer is asleep. Open it to wake."
 msgstr ""
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "कंप्यूटर रुका हुआ है"
@@ -1490,11 +1479,6 @@ msgstr "पासवर्ड की पुष्टि करें"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "पुष्टि करें कि यह URL इस ब्राउज़र सत्र से पहुँच योग्य है, फिर फिर से परीक्षण करें।"
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1545,6 +1529,10 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "OAuth कनेक्ट करें"
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Connect Slack"
+msgstr "Slack कनेक्ट करें"
+
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
 msgstr "पहले इस मॉडल का प्रदाता कनेक्ट करें।"
@@ -1565,10 +1553,6 @@ msgstr "कनेक्टेड"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0} कनेक्ट किया गया।"
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "कनेक्टेड। इसके टूल आपके अगले संदेश से उपलब्ध हैं।"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1636,11 +1620,12 @@ msgid "Coordinating background tasks"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Copied"
-msgstr ""
+msgstr "कॉपी किया गया"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1656,9 +1641,21 @@ msgstr ""
 msgid "Copy link"
 msgstr ""
 
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "कोड कॉपी करें"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "डायग्राम स्रोत कॉपी करें"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "प्रॉम्प्ट कॉपी करें"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "पंक्तियाँ कॉपी करें"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -2074,6 +2071,10 @@ msgstr "OAuth शुरू नहीं हो सका"
 msgid "Could not start teaching"
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Could not stop computer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Could not submit this answer"
 msgstr "यह उत्तर सबमिट नहीं किया जा सका"
@@ -2207,7 +2208,7 @@ msgstr "क्रेडेंशियल: {names}"
 msgid "Credit amount"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2245,7 +2246,7 @@ msgid "Dark"
 msgstr "डार्क"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "दिन"
 
@@ -2253,7 +2254,7 @@ msgstr "दिन"
 msgid "Day-to-day work"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "दिन"
 
@@ -2472,6 +2473,7 @@ msgstr "खाता नहीं है?"
 msgid "done"
 msgstr "पूरा"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2496,6 +2498,10 @@ msgstr "{0} डाउनलोड करें"
 #: src/components/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "{name} डाउनलोड करें"
+
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "CSV डाउनलोड करें"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
@@ -2621,10 +2627,21 @@ msgstr ""
 msgid "Error details"
 msgstr "त्रुटि का विवरण"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "हर"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "हर {0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "हर {0} और {1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2634,17 +2651,24 @@ msgstr "हर {intervalAmountSelect} {intervalUnitSelect}"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "इस स्पेस के सभी बॉट ये नोट्स पढ़ते हैं और इन्हें अपडेट रखते हैं।"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "हर दिन"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "हर घंटे"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "हर घंटे :{0} मिनट पर"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "हर सोमवार"
 
@@ -2666,7 +2690,7 @@ msgstr "Executor टोकन"
 msgid "Expand"
 msgstr "विस्तृत करें"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr ""
@@ -2674,6 +2698,10 @@ msgstr ""
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "{label} विस्तृत करें"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "तालिका बड़ी करें"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -2776,12 +2804,6 @@ msgstr "खोजा जा रहा है…"
 msgid "Finish setting up"
 msgstr "सेटअप पूरा करें"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "<0>{0}</0> पर साइन इन पूरा करें। अंतिम पेज शायद लोड न हो; उसका URL या कोड यहां पेस्ट करें।"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "सब्सक्रिप्शन साइन-इन पूरा करें, फिर फिर से परीक्षण करें।"
@@ -2799,10 +2821,6 @@ msgstr "पूरा हुआ।"
 msgid "Finishing MCP connection…"
 msgstr "MCP कनेक्शन पूरा हो रहा है…"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "पासवर्ड भूल गए?"
@@ -2811,6 +2829,10 @@ msgstr "पासवर्ड भूल गए?"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "शुक्रवार"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -2931,12 +2953,12 @@ msgstr "बोलने के लिए दबाए रखें"
 msgid "Hold to talk, release to send"
 msgstr "बोलने के लिए दबाए रखें, भेजने के लिए छोड़ें"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "घंटा"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "घंटे"
 
@@ -3202,6 +3224,10 @@ msgstr ""
 msgid "Link copied"
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Link DMs"
+msgstr "निजी संदेश लिंक करें"
+
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
 msgstr "SSO लिंक करें"
@@ -3359,6 +3385,10 @@ msgstr "अपठित चिह्नित करें"
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
 msgstr "अपठित चिह्नित करें"
+
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "Markdown तालिका"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3526,18 +3556,22 @@ msgstr ""
 msgid "Minimize call"
 msgstr "कॉल छोटी करें"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "मिनट"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "मिनट"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Missed call"
 msgstr "मिस्ड कॉल"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "मोड"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -3586,11 +3620,15 @@ msgstr "सर्वर से मॉडल"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "मॉडल सूची ठीक है। {modelCount, plural, one {# मॉडल} other {# मॉडल}} उपलब्ध है। चैट का परीक्षण नहीं हुआ।"
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "सोमवार"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "मासिक"
 
@@ -3692,6 +3730,10 @@ msgstr ""
 msgid "Needs: {names}"
 msgstr "ज़रूरी: {names}"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "कभी न पूछें"
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr ""
@@ -3744,6 +3786,10 @@ msgstr ""
 #: src/pages/Board.tsx
 msgid "New ticket"
 msgstr ""
+
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "अगला पृष्ठ"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
@@ -3833,6 +3879,10 @@ msgstr ""
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "कोई परिणाम नहीं"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "कोई पंक्ति नहीं"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -3947,14 +3997,22 @@ msgstr ""
 msgid "On a schedule"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "{day} तारीख को {time} पर"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
 
 #: src/components/pages/PageReader.tsx
 msgid "On this page"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "एक बार"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -3971,7 +4029,7 @@ msgstr ""
 msgid "Open"
 msgstr "खोलें"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr ""
@@ -3984,12 +4042,6 @@ msgstr "{name} खोलें"
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> and enter this code:"
-msgstr ""
-
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -4080,6 +4132,10 @@ msgstr "मालिक"
 msgid "Page markdown"
 msgstr ""
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "पृष्ठ {page} / {count}"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr ""
@@ -4102,6 +4158,10 @@ msgstr "पासकी"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Password"
 msgstr "पासवर्ड"
+
+#: src/lib/user-error.ts
+msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
@@ -4233,6 +4293,10 @@ msgstr "{0} का प्रीव्यू"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
 
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "पिछला पृष्ठ"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr ""
@@ -4283,6 +4347,10 @@ msgstr "कतार में"
 #: src/components/TaskProgressCard.tsx
 msgid "queued #{0}"
 msgstr "कतार में #{0}"
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "Rakazo credits"
+msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}."
@@ -4683,9 +4751,9 @@ msgstr "रूटीन्स"
 msgid "Routines that run while you're away"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "बिना पूछे कार्य चलाएँ"
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "पंक्ति"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -4707,12 +4775,9 @@ msgstr "चल रहा है"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "चल रहा है"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Running · Stop"
-msgstr "चल रहा है · रोकें"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -4725,6 +4790,10 @@ msgstr "रन"
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "शनिवार"
 
 #: src/components/AskCard.tsx
 #: src/components/pages/PageReader.tsx
@@ -5046,6 +5115,12 @@ msgstr "साइन इन करें"
 msgid "Sign in again"
 msgstr "फिर से साइन इन करें"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "<0>{0}</0> पर साइन इन करें, फिर कोड यहाँ पेस्ट करें।"
+
 #: src/pages/Auth.tsx
 msgid "Sign in to {PRODUCT_NAME}"
 msgstr "{PRODUCT_NAME} में साइन इन करें"
@@ -5110,10 +5185,6 @@ msgstr ""
 msgid "Slack not enabled"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Slack workspace"
-msgstr ""
-
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr "लॉक करने के लिए ऊपर खिसकाएँ"
@@ -5134,6 +5205,22 @@ msgstr "अभी इसी नाम से कुछ जोड़ा गया
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "आपका चुना हुआ कुछ यहाँ काम नहीं कर सकता। उसे अनचेक करके दोबारा कोशिश करें।"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "{column} के अनुसार क्रमबद्ध करें"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "क्रम हटाया गया"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "{column} के अनुसार क्रमबद्ध, आरोही"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "{column} के अनुसार क्रमबद्ध, अवरोही"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -5168,6 +5255,10 @@ msgstr "वाक् मॉडल"
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO अस्थायी रूप से उपलब्ध नहीं है। फिर कोशिश करें।"
 
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
 msgstr ""
@@ -5200,10 +5291,16 @@ msgstr ""
 msgid "Steps"
 msgstr "चरण"
 
+#: src/pages/RoutineEditor.tsx
+#: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Stop"
 msgstr "रोकें"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stop computer"
+msgstr ""
 
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
@@ -5217,6 +5314,10 @@ msgstr "सिखाना रोकें"
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "रोक दिया गया।"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stopping…"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
@@ -5244,6 +5345,10 @@ msgstr ""
 msgid "Subscription required"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "रविवार"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5269,6 +5374,10 @@ msgstr "बदला जा रहा है…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "सिस्टम"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "तालिका"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
@@ -5494,6 +5603,10 @@ msgstr "यह सब्सक्रिप्शन साइन-इन अभ�
 msgid "This week"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "गुरुवार"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "दिन का समय"
@@ -5610,6 +5723,10 @@ msgstr ""
 #: src/components/MemberAccessSettings.tsx
 msgid "Turnstile site key"
 msgstr ""
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "मंगलवार"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5780,6 +5897,10 @@ msgstr ""
 msgid "Use Protected input for passwords."
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Use Rakazo credits"
+msgstr ""
+
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Use space default"
 msgstr ""
@@ -5869,14 +5990,23 @@ msgstr ""
 msgid "Website login"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "बुधवार"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr ""
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "कार्यदिवस"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "सप्ताहांत"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to {PRODUCT_NAME}"
@@ -5958,6 +6088,7 @@ msgstr ""
 msgid "Working instructions"
 msgstr "काम के निर्देश"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx

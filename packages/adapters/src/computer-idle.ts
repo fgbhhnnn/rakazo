@@ -7,11 +7,13 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerSleepJob,
+  SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import {
@@ -41,6 +43,15 @@ export const DEFAULT_COMPUTER_MAX_ACTIVE_MS = 2 * 60 * 60 * 1000;
  * same open page. Billed computers get no grace: an ignored request would keep them running.
  */
 export const TAKEOVER_IDLE_GRACE_MS = 30 * 60 * 1000;
+/**
+ * A suspend claim this old belongs to a sleep job that died mid-checkpoint, usually with its
+ * worker in a deploy. The computer is still up on its provider; the sweeper gives it an idle
+ * check, which takes the claim back (recoverStaleSuspendClaim) so it sleeps on the check after.
+ * Tied to SUSPEND_CLAIM_STALE_MS: the checkpoint and stop deadlines bound how long a live sleep
+ * job can hold a claim or its job lock.
+ */
+export const ABANDONED_SUSPEND_CLAIM_MS = SUSPEND_CLAIM_STALE_MS;
+const IDLE_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 const EXECUTING_RUN_STATUSES = ["leased", "running"] as const;
 const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
@@ -333,10 +344,12 @@ export async function sleepComputerIfIdle(
   if (!computerIdleSleepEnabled()) return;
   let computer = await loadComputer(deps.prisma, computerId);
   if (computer?.state === "suspending" && computer.kind !== "desktop") {
+    // Our deadline-based recovery owns every "suspending" claim: a fresh one is left alone and
+    // rechecked, a stale one is taken back and counted as a failed check.
     await recoverStaleSuspendClaim(deps, computer);
     return;
   }
-  if (!computer?.providerRef || computer.state !== "running") return;
+  if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   // Native computers have no provisioned runtime to suspend; Electron owns their lifetime.
   if (computer.kind === "desktop") return;
   const checkpointMs = deps.deadlines?.checkpointMs ?? COMPUTER_CHECKPOINT_DEADLINE_MS;
@@ -345,7 +358,7 @@ export async function sleepComputerIfIdle(
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
     await expireComputerControl(deps, computer.id, computer.controlLeaseId);
     computer = await loadComputer(deps.prisma, computerId);
-    if (!computer?.providerRef || computer.state !== "running") return;
+    if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }
 
   const ref = toComputerRef(computer);
@@ -386,8 +399,9 @@ export async function sleepComputerIfIdle(
     try {
       await deps.sandbox.keepAlive?.(ref);
     } catch (error) {
-      // The holding run or the next idle check recovers a computer whose sandbox is gone.
-      if (!isSandboxGoneError(error)) throw error;
+      // The holding run or the next idle check recovers a computer whose sandbox is gone, and
+      // the next check sends the heartbeat a rate-limited provider refused.
+      if (!isSandboxGoneError(error) && !(error instanceof SandboxRateLimitError)) throw error;
     }
     // In use: a cheap, rate-limited disk/memory reading (never throws).
     await checkComputerResources(deps, computer, ref, ctx);
@@ -398,7 +412,7 @@ export async function sleepComputerIfIdle(
   const recorded = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
-      state: "running",
+      state: computer.state,
       maintenanceId: null,
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
@@ -450,7 +464,7 @@ export async function sleepComputerIfIdle(
     if (isSandboxGoneError(error)) {
       // Nothing is left to checkpoint or stop. Retrying would fail the same way every idle
       // window, so clear the dead ref and let the next use boot from the last saved revision.
-      await deps.prisma.computer.updateMany({
+      const cleared = await deps.prisma.computer.updateMany({
         where: suspensionClaim,
         data: {
           state: "stopped",
@@ -463,6 +477,7 @@ export async function sleepComputerIfIdle(
           controlRunId: null,
         },
       });
+      if (cleared.count === 1) await recordComputerRunEnd(deps.prisma, computer, "gone");
       return;
     }
     await deps.prisma.computer.updateMany({
@@ -470,24 +485,10 @@ export async function sleepComputerIfIdle(
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
-    // A sandbox too busy or stuck to answer cannot be checkpointed now; the next idle check
-    // tries again instead of reporting the same timeout every window. One the provider can only
-    // bring back from its own snapshot waits for the next use, which restores a newer save.
-    if (error instanceof SandboxUnresponsiveError || error instanceof SandboxUnavailableError) {
-      const reason =
-        error instanceof ComputerDeadlineError
-          ? "checkpoint_timeout"
-          : error instanceof SandboxUnresponsiveError
-            ? "unresponsive"
-            : "unavailable";
-      getLogger().warn("computer.sleep_deferred", {
-        "computer.id": computerId,
-        provider: computer.kind,
-        reason,
-      });
-      await recordComputerUnresponsive(deps, computer, reason);
-      return;
-    }
+    // A sandbox too busy or stuck to answer, or a provider rate limiting, cannot be
+    // checkpointed now; the next idle check tries again instead of failing the job. One the
+    // provider can only bring back from its own snapshot waits for the next use.
+    if (await deferSleep(deps, error, computer, "checkpoint")) return;
     throw error;
   }
   // The sandbox answered a full checkpoint.
@@ -540,17 +541,9 @@ export async function sleepComputerIfIdle(
       where: suspensionClaim,
       data: { state: "running" },
     });
-    if (error instanceof ComputerDeadlineError) {
-      // The saved checkpoint stands; the next idle check tries to stop it again.
-      scheduleComputerSleep(deps.jobs, computerId);
-      getLogger().warn("computer.sleep_deferred", {
-        "computer.id": computerId,
-        provider: computer.kind,
-        reason: "stop_timeout",
-      });
-      await recordComputerUnresponsive(deps, computer, "stop_timeout");
-      return;
-    }
+    // The saved checkpoint stands; the next idle check tries to stop it again.
+    scheduleComputerSleep(deps.jobs, computerId);
+    if (await deferSleep(deps, error, computer, "stop")) return;
     throw error;
   }
   const suspended = await deps.prisma.computer.updateMany({
@@ -571,6 +564,7 @@ export async function sleepComputerIfIdle(
     getLogger().warn("computer.suspend_superseded", { "computer.id": computerId });
     return;
   }
+  await recordComputerRunEnd(deps.prisma, computer, limitReached ? "active_limit" : "idle");
   getLogger().info("computer.suspended", {
     "computer.id": computerId,
     provider: computer.kind,
@@ -635,6 +629,94 @@ async function recoverStaleSuspendClaim(
   });
   scheduleComputerSleep(deps.jobs, computer.id);
   await recordComputerUnresponsive(deps, computer, "stale_suspend_claim");
+}
+
+/** A running computer, or one whose suspend claim was abandoned while it was still up. */
+function mayNeedSleep(computer: { state: string; updatedAt: Date }): boolean {
+  return (
+    computer.state === "running" ||
+    (computer.state === "suspending" &&
+      Date.now() - computer.updatedAt.getTime() >= ABANDONED_SUSPEND_CLAIM_MS)
+  );
+}
+
+type SleepDeps = {
+  prisma: PrismaClient;
+  sandbox: SandboxProvider;
+  jobs: JobPublisher;
+  events: ThreadEvents;
+};
+
+/**
+ * A provider that is rate limiting, too busy to answer, or that can only bring the sandbox back
+ * from its own snapshot cannot be checkpointed or stopped now, and a checkpoint or stop that hit
+ * its deadline is given up. The caller has already scheduled the next idle check, so the job
+ * succeeds instead of spending its retries on the same answer. Everything but a rate limit also
+ * counts as a failed check on the computer's health record.
+ */
+async function deferSleep(
+  deps: SleepDeps,
+  error: unknown,
+  computer: NonNullable<Awaited<ReturnType<typeof loadComputer>>>,
+  step: "checkpoint" | "stop",
+): Promise<boolean> {
+  const reason =
+    error instanceof SandboxRateLimitError
+      ? "rate_limited"
+      : error instanceof ComputerDeadlineError
+        ? `${step}_timeout`
+        : error instanceof SandboxUnresponsiveError
+          ? "unresponsive"
+          : error instanceof SandboxUnavailableError
+            ? "unavailable"
+            : undefined;
+  if (!reason) return false;
+  getLogger().warn("computer.sleep_deferred", {
+    "computer.id": computer.id,
+    provider: computer.kind,
+    reason,
+  });
+  if (reason !== "rate_limited") await recordComputerUnresponsive(deps, computer, reason);
+  return true;
+}
+
+/**
+ * Gives every computer that may still be up on its provider a pending idle check. Each sleep job
+ * schedules the next one, but a job that exhausted its retries, or died with its worker, leaves
+ * its computer running and billing until the next use. Runs about every ten minutes on the
+ * reconciler's tick and leaves a check that is already pending alone.
+ */
+export function createIdleComputerSweeper(
+  deps: { prisma: PrismaClient; jobs: JobPublisher },
+  options: { intervalMs?: number } = {},
+): () => Promise<void> {
+  const intervalMs = options.intervalMs ?? IDLE_SWEEP_INTERVAL_MS;
+  let lastRun: number | undefined;
+  return async () => {
+    const now = Date.now();
+    if (!computerIdleSleepEnabled()) return;
+    if (lastRun !== undefined && now - lastRun < intervalMs) return;
+    lastRun = now;
+    const abandonedBefore = new Date(now - ABANDONED_SUSPEND_CLAIM_MS);
+    const computers = await deps.prisma.computer.findMany({
+      where: {
+        providerRef: { not: null },
+        kind: { not: "desktop" },
+        OR: [{ state: "running" }, { state: "suspending", updatedAt: { lte: abandonedBefore } }],
+      },
+      select: { id: true },
+    });
+    await Promise.all(
+      computers.map((computer) =>
+        deps.jobs.enqueue({
+          ...computerSleepJob(computer.id, new Date(now + sandboxIdleMs())),
+          keepExisting: true,
+          // A job locked this long belongs to a worker that died with the claim.
+          replaceLockedBefore: abandonedBefore,
+        }),
+      ),
+    );
+  };
 }
 
 function loadComputer(prisma: PrismaClient, computerId: string) {

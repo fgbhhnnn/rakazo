@@ -38,6 +38,7 @@ import {
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
+  ApprovalModeSchema,
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
@@ -342,6 +343,8 @@ export const appContract = {
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
           makeDefault: z.boolean().optional(),
           scope: SettingsScopeSchema.optional(),
+          /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
+          codePage: z.boolean().optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),
@@ -1004,8 +1007,8 @@ export const appContract = {
     set: oc
       .input(
         settingsScopeInput.extend({
-          effect: z.enum(["always_allow", "require_approval"]),
-          matchKind: z.enum(["tool", "connector", "category"]),
+          effect: z.enum(["always_allow", "deny"]),
+          matchKind: z.enum(["tool", "connector", "site"]),
           matchValue: z.string().min(1),
         }),
       )
@@ -1019,6 +1022,7 @@ export const appContract = {
     set: oc
       .input(
         settingsScopeInput.extend({
+          mode: ApprovalModeSchema.optional(),
           enabled: z.boolean().optional(),
           skipApprovals: z.boolean().optional(),
         }),
