@@ -1,5 +1,6 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { isToolActivityBlock } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { acknowledgementOf, type LaunchedTask } from "./dispatch-acknowledgement.js";
 import type { ExecutorDeps } from "./executor.js";
@@ -132,7 +133,12 @@ export function guardDispatcherReply(
   enabled: boolean,
   blocks: MessageBlock[],
   ledger: DispatcherTurnLedger,
-  context: { wokenByWorker: boolean; runId: string },
+  context: {
+    wokenByWorker: boolean;
+    runId: string;
+    /** This turn already posted user-visible text mid-turn (the model's lead-in before its tools). */
+    acknowledgedMidTurn?: boolean;
+  },
 ): ReplyGuardOutcome {
   if (!enabled) return { blocks, changed: false, recheckClaim: false };
   const text = blocks
@@ -142,6 +148,26 @@ export function guardDispatcherReply(
   if (!text) return { blocks, changed: false, recheckClaim: false };
   let next = text;
   let recheckClaim = false;
+  if (
+    ledger.launchedNew &&
+    !context.wokenByWorker &&
+    context.acknowledgedMidTurn &&
+    !relaysOtherWork(text, ledger.launchedRefs) &&
+    !QUESTION.test(text)
+  ) {
+    // The lead-in it wrote before starting the task already acknowledged the request; a second,
+    // reworded acknowledgement as the final reply only repeats it. A question still goes out.
+    getLogger().info("dispatcher already acknowledged mid-turn; dropping the repeat", {
+      runId: context.runId,
+    });
+    const rest = blocks.filter((block) => block.kind !== "text");
+    return {
+      blocks: rest.every(isToolActivityBlock) ? [] : rest,
+      changed: true,
+      recheckClaim: false,
+      original: text,
+    };
+  }
   if (!ledger.actedOnWorkers && !context.wokenByWorker && claimsWorkerAction(text)) {
     getLogger().warn("dispatcher reply claims a worker action no tool performed", {
       runId: context.runId,
