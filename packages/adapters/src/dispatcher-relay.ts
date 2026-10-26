@@ -13,7 +13,11 @@ import { isThinkWorker } from "./background-task-lanes.js";
 import { BACKGROUND_WORKER_SPAWN_PREFIX, parseWorkerReportFiles } from "./background-tasks.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 import type { ExecutorDeps } from "./executor.js";
-import { attachWorkspaceFileToThread, postedAttachmentHashes } from "./thread-artifacts.js";
+import {
+  alreadyPostedFile,
+  attachWorkspaceFileToThread,
+  postedAttachmentHashes,
+} from "./thread-artifacts.js";
 
 /* How a dispatcher's main turn reads its thread and relays a worker's report files. */
 
@@ -176,7 +180,12 @@ export async function attachWorkerReportFiles(input: {
         maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
       });
       const contentKey = attachedContentKey(bytes);
-      if (input.alreadyAttached.has(contentKey) || postedHashes.has(contentKey)) continue;
+      if (
+        input.alreadyAttached.has(contentKey) ||
+        alreadyPostedFile(postedHashes, contentKey, fileName)
+      ) {
+        continue;
+      }
       const result = await attachWorkspaceFileToThread(
         {
           prisma: deps.prisma,

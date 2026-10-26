@@ -518,6 +518,7 @@ import {
 import { TASK_CATALOG_GUIDANCE, taskCatalogFromTool } from "./task-catalog.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
+  alreadyPostedFile,
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
   listCurrentTurnFiles,
@@ -6413,17 +6414,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (
               attachedFilePaths.has(contentKey) ||
               // A retried or resumed turn starts with an empty set: ask the thread too.
-              (
+              alreadyPostedFile(
                 await postedAttachmentHashes(deps.prisma, {
                   spaceId: run.spaceId,
                   threadId: run.threadId,
                   botId: bot.id,
                   sinceUserTurn: true,
-                })
-              ).has(contentKey)
+                }),
+                contentKey,
+                filePath,
+              )
             ) {
               // The same bytes are already in the chat since the user's last message (e.g. a
-              // worker report's file, or this turn's attempt that timed out and was retried).
+              // worker report's file or Page, or this turn's attempt that timed out and was
+              // retried), or the file is the source of a Page shown there.
               await recordComputerAction("attach_file", filePath);
               return finish({
                 ok: true,

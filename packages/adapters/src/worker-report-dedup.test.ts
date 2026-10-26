@@ -119,6 +119,40 @@ describe("worker report content dedup", () => {
     expect(attachWorkspaceFileToThread).not.toHaveBeenCalled();
   });
 
+  it("skips the .md behind a Page the report already showed, and keeps other files", async () => {
+    // Prod 2026-10-26 09:21 (UTC+8): the report showed the Page "大道出海 Expo 迁移进度"; the
+    // .md it was written from must not land under it as a second copy.
+    const page = new TextEncoder().encode("# 进度\n");
+    const { attached, prisma, published } = relay({
+      text: "文件：\n- /out/大道出海 Expo 迁移进度.md\n- /out/puppy.jpg",
+      files: {
+        "out/大道出海 Expo 迁移进度.md": page,
+        "out/puppy.jpg": BYTES,
+      },
+    });
+    Object.assign(prisma, {
+      message: {
+        findMany: vi.fn(async () => [
+          {
+            role: "user",
+            blocks: [
+              { kind: "bot_message_received", fromBotName: "Main · 后台1", text: "完成" },
+              { kind: "file", artifactId: "page-1" },
+            ],
+          },
+        ]),
+      },
+    });
+    prisma.artifact.findMany.mockImplementation(
+      async (args: { select: Record<string, boolean>; where?: { id?: unknown } }) =>
+        args.where?.id
+          ? [{ hash: sha256(page), kind: "page", name: "大道出海 Expo 迁移进度" }]
+          : [],
+    );
+    expect(await attached).toEqual(["/out/puppy.jpg"]);
+    expect(published).toHaveLength(1);
+  });
+
   it("still attaches a file whose bytes differ from what was posted", async () => {
     const { attached, published } = relay({
       text: "文件：\n- /out/puppy.jpg",
