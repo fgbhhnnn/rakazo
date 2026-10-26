@@ -1529,10 +1529,6 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "连接 OAuth"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Connect Slack"
-msgstr "连接 Slack"
-
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
 msgstr "请先连接此模型的提供方。"
@@ -5183,6 +5179,10 @@ msgstr "Slack 消息"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
+msgstr ""
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Slack workspace"
 msgstr ""
 
 #: src/components/composer/HoldToTalk.tsx

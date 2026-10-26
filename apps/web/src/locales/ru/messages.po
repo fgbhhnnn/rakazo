@@ -1529,10 +1529,6 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "Подключить OAuth"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Connect Slack"
-msgstr "Подключить Slack"
-
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
 msgstr "Сначала подключите провайдера этой модели."
@@ -5184,6 +5180,10 @@ msgstr "Сообщение Slack"
 #: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
 msgstr "Slack не включен"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Slack workspace"
+msgstr ""
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"

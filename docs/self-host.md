@@ -981,10 +981,10 @@ message/history, channel/user lookup, file read and write, and reaction-write sc
 reinstall the Slack app after changing scopes. Socket Mode is not used.
 
 In Messaging settings, choose the bot for shared channel conversations and select
-**Connect Slack**. Each Slack workspace belongs to one Rakazo space and
+**Connect Slack workspace**. Each Slack workspace belongs to one Rakazo space and
 one installation owner; installing it from another space is rejected. DMs stay
-personal: after connecting, choose your personal bot, use **Link DMs**, and send
-the code in a DM to the Slack app. Link codes must belong to the installation's Rakazo space.
+personal: choose a personal bot, select **Link a chat app**, and send the code in a
+DM to the Slack app. Link codes must belong to the installation's Rakazo space.
 Invite the Slack app to channels and mention it to receive replies there. The
 bot's external conversations offer **Mentions only**, **Listen**, and room guidance.
 Workspace setup and personal linking are available on web, desktop and mobile.

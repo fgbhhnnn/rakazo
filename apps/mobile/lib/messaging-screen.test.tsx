@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { Linking } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MessagingSettings from "../app/(settings)/messaging";
 import { rpc } from "./api";
@@ -256,87 +255,4 @@ it("opens a team conversation's room settings", async () => {
     pathname: "/team-conversation",
     params: { conversationId: "room-1" },
   });
-});
-
-it("connects Slack with workspace authorization rather than a code choice", async () => {
-  responses["messaging/status"] = { enabled: true, providers: ["slack"], identities: [] };
-  responses["messaging/installations/list"] = { available: true, installations: [] };
-  responses["messaging/installations/start"] = { url: "https://slack.example.test/authorize" };
-  await act(async () => root.render(<MessagingSettings />));
-  const buttons = [...container.querySelectorAll("button")];
-  expect(buttons.filter((button) => button.textContent === "Connect Slack")).toHaveLength(1);
-  expect(
-    buttons.some((button) =>
-      ["Slack", "Slack workspace", "Link DMs"].includes(button.textContent ?? ""),
-    ),
-  ).toBe(false);
-  await act(async () => buttons.find((button) => button.textContent === "Connect Slack")!.click());
-  expect(rpc).toHaveBeenCalledWith("messaging/installations/start", { botId: "bot-1" });
-  expect(rpc).not.toHaveBeenCalledWith("messaging/link/start", expect.anything());
-  expect(Linking.openURL).toHaveBeenCalledWith("https://slack.example.test/authorize");
-});
-
-it("links optional DMs to the selected personal bot even with another identity", async () => {
-  responses["messaging/status"] = {
-    enabled: true,
-    providers: ["slack", "telegram"],
-    identities: [
-      { id: "mi-other", provider: "telegram", botId: "bot-2", botName: "Team", address: "12345" },
-    ],
-  };
-  responses["messaging/installations/list"] = {
-    available: true,
-    installations: [
-      { id: "install-1", provider: "slack", workspaceName: "Example workspace", botId: "bot-2" },
-    ],
-  };
-  await act(async () => root.render(<MessagingSettings />));
-  await press("Slack", "Link DMs");
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" });
-  expect(container.textContent).toContain("ABCD-2345");
-});
-
-it("lets a workspace member link DMs without installing the app again", async () => {
-  responses["messaging/status"] = { enabled: true, providers: ["slack"], identities: [] };
-  responses["messaging/installations/list"] = {
-    available: true,
-    installations: [],
-    personalLinkAvailable: true,
-  };
-  await act(async () => root.render(<MessagingSettings />));
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Link DMs")!
-      .click(),
-  );
-  expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-1" });
-  expect(rpc).not.toHaveBeenCalledWith("messaging/installations/start", expect.anything());
-});
-
-it("keeps a new DM code visible when Slack is already linked in another workspace", async () => {
-  responses["messaging/status"] = {
-    enabled: true,
-    providers: ["slack"],
-    identities: [
-      {
-        id: "mi-existing",
-        provider: "slack",
-        botId: "bot-1",
-        botName: "Chief",
-        address: "T-OTHER:U1",
-      },
-    ],
-  };
-  responses["messaging/installations/list"] = {
-    available: true,
-    installations: [],
-    personalLinkAvailable: true,
-  };
-  await act(async () => root.render(<MessagingSettings />));
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Link DMs")!
-      .click(),
-  );
-  expect(container.textContent).toContain("ABCD-2345");
 });

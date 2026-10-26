@@ -1044,8 +1044,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "{bot} will still respond to direct mentions.":
     "{bot} reageert nog steeds op directe vermeldingen.",
   "{sender} rollup hours": "Bundeluren voor {sender}",
-  "Connect Slack": "Slack verbinden",
-  "Link DMs": "DM’s koppelen",
   "One-time": "Eenmalig",
   "Every hour": "Elk uur",
   Cron: "Cron",

@@ -699,16 +699,7 @@ async function sharedTeamComputer(
   return computer;
 }
 
-const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos", "kubernetes"]);
-
-/**
- * Whether only the server writes this computer's stored home. A Kubernetes computer that
- * mounts the server's home directory writes it itself, like a Docker computer.
- */
-function serverOwnsTeamHome(sandbox: SandboxProvider, kind: string) {
-  if (!REMOTE_TEAM_SANDBOX_KINDS.has(kind)) return false;
-  return !(kind === "kubernetes" && sandbox.describe().capabilities.persistentHome);
-}
+const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos"]);
 // The bot is already deleted; whatever this misses is removed when the computer next boots.
 const LIVE_CLEANUP_BUDGET_MS = 10_000;
 
@@ -743,7 +734,7 @@ async function removeTeamBrowserProfile(
       getLogger().error("team browser profile cleanup", error);
     });
   }
-  if (!serverOwnsTeamHome(deps.sandbox, computer.kind)) return;
+  if (!REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) return;
   await removeAgentHomeFolders(
     deps.home,
     computer.homeKey,
@@ -828,7 +819,7 @@ async function removeTeamBotWorkspace(
  * saved; bot_deletions keeps the ids, so the caller can retry.
  */
 export async function removeDeletedBotsFromLegacyTeamHome(
-  deps: Pick<BotLifecycleDeps, "prisma" | "home" | "sandbox" | "dataDir">,
+  deps: Pick<BotLifecycleDeps, "prisma" | "home" | "dataDir">,
   spaceId: string,
   botIds: readonly string[],
 ) {
@@ -836,7 +827,7 @@ export async function removeDeletedBotsFromLegacyTeamHome(
     where: { homeKey: legacyTeamHomeKey(spaceId) },
   });
   // Only a remote provider's stored copy is written by the server alone; see removeBotFolders.
-  if (legacy?.scope !== "team" || !serverOwnsTeamHome(deps.sandbox, legacy.kind)) return;
+  if (legacy?.scope !== "team" || !REMOTE_TEAM_SANDBOX_KINDS.has(legacy.kind)) return;
   const folders = botIds.filter(isTeamBotFolderName);
   const profiles = botIds.flatMap((id) => teamBrowserProfileName(id) ?? []);
   if (folders.length)
@@ -861,7 +852,7 @@ async function removeBotFolders(
   // Remote providers keep a stored copy that only the server writes, and replacement computers
   // restore from it. Any other home may be mounted by a running computer, where a bot could
   // swap bots/ for a symlink between the checks and rm, so it is only cleaned inside the computer.
-  if (serverOwnsTeamHome(deps.sandbox, computer.kind)) {
+  if (REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) {
     for (const [parent, name] of folders) {
       await removeAgentHomeFolders(deps.home, computer.homeKey, parent, [name], deps.dataDir).catch(
         (error) => {

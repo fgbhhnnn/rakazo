@@ -76,22 +76,6 @@ export function shouldSkipPortableWorkspaceFile(relative: string) {
   );
 }
 
-/** The computer already reads and writes the server's home directory, so there is nothing to copy. */
-async function homeIsMounted(
-  home: AgentHomeStore,
-  sandbox: SandboxProvider,
-  computer: ComputerRef,
-  context: AdapterContext,
-) {
-  if (!(home instanceof LocalAgentHomeStore)) return false;
-  if (computer.kind === "docker") return true;
-  // Object-backed homes must hydrate and export even when a claim was configured.
-  if (home.describe().id !== "local-fs") return false;
-  return (
-    computer.kind === "kubernetes" && (await sandbox.hasMountedHome?.(computer, context)) === true
-  );
-}
-
 export async function restoreComputerWorkspace(
   home: AgentHomeStore,
   sandbox: SandboxProvider,
@@ -99,7 +83,7 @@ export async function restoreComputerWorkspace(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<void> {
-  if (await homeIsMounted(home, sandbox, computer, context)) return;
+  if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) return;
   await sandbox.importWorkspace(computer, home.exportHome(homeKey, context), context);
 }
 
@@ -350,10 +334,7 @@ export async function checkpointComputerWorkspace(
   /** Read after the export, just before saving, so a deletion during the export still counts. */
   excludedFolders?: () => Promise<ReadonlySet<string> | undefined>,
 ): Promise<string> {
-  if (
-    home instanceof LocalAgentHomeStore &&
-    (await homeIsMounted(home, sandbox, computer, context))
-  ) {
+  if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) {
     return home.revise(homeKey);
   }
   const staging = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-"));

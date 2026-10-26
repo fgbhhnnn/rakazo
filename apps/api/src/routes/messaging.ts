@@ -17,15 +17,10 @@ export function messagingRoutes(ctx: RouterContext) {
   return {
     messaging: {
       installations: {
-        list: authed.messaging.installations.list.handler(async ({ context }) => {
-          if (!deps.messagingInstallations)
-            return { available: false, installations: [], personalLinkAvailable: false };
-          const [installations, personalLinkAvailable] = await Promise.all([
-            deps.messagingInstallations.list(context.actor),
-            deps.messagingInstallations.canLinkPersonalMessages(context.actor),
-          ]);
-          return { available: true, installations, personalLinkAvailable };
-        }),
+        list: authed.messaging.installations.list.handler(async ({ context }) => ({
+          available: Boolean(deps.messagingInstallations),
+          installations: (await deps.messagingInstallations?.list(context.actor)) ?? [],
+        })),
         start: authed.messaging.installations.start.handler(async ({ context, input }) => {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
           return { url: await deps.messagingInstallations.start(context.actor, input.botId) };

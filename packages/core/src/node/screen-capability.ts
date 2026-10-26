@@ -1,5 +1,4 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { isIP } from "node:net";
 
 export const SCREEN_PROXY_TTL_MS = 60 * 60_000;
 export const SCREEN_TARGET_ENDPOINT = "/api/internal/screen-target";
@@ -225,7 +224,7 @@ export function openScreenCapability(
       expiresAt,
       target: {
         protocol: target.protocol,
-        hostname: target.hostname.replace(/^\[|\]$/g, ""),
+        hostname: target.hostname,
         port,
         path: screenPolicyPath(remoteTargetPath(target, requestedPath), interactive),
         interactive,
@@ -259,9 +258,6 @@ function remoteTargetPath(target: URL, requestedPath: string) {
 }
 
 function isAllowedTargetName(hostname: string) {
-  const address = hostname.replace(/^\[|\]$/g, "");
-  // Local IPv6 screens follow the same private-network policy as IPv4.
-  if (isIP(address) === 6) return address === "::1" || /^f[cd][0-9a-f]{2}:/i.test(address);
   return (
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||

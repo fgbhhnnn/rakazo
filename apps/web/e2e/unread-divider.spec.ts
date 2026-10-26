@@ -66,7 +66,7 @@ test("a chat opens with a New divider above replies that arrived while away", as
   const followUp = `Thanks ${stamp}`;
   await page.getByPlaceholder("Message Chief").fill(followUp);
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("message-user-bubble").filter({ hasText: followUp })).toBeVisible();
+  await expect(page.locator("[data-message-id]").filter({ hasText: followUp })).toBeVisible();
   await expect(divider).toHaveCount(0);
   // Let Chief answer here so its reply is read before leaving.
   await expect
