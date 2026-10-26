@@ -61,8 +61,8 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { mcpScopeBotId } from "./worker-owner-scope.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import { mcpScopeBotId } from "./worker-owner-scope.js";
 
 type SessionEntry = {
   session: McpSession;

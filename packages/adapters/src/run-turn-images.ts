@@ -2,10 +2,10 @@ import type { AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit"
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
+import { dispatcherImageNote } from "./dispatcher-image-context.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { loadReplyContext } from "./reply-context.js";
 import { currentTurnFilesInstruction, listCurrentTurnFiles } from "./thread-artifacts.js";
-import { dispatcherImageNote } from "./dispatcher-image-context.js";
 
 const TURN_ATTACHMENT_UNAVAILABLE =
   "An attachment in this message could not be loaded. Tell the user the attachment was unavailable and do not guess its contents.";

@@ -553,11 +553,7 @@ export async function sleepComputerIfIdle(
     await withDeadline(
       stopMs,
       (signal) =>
-        deps.sandbox.stop(
-          ref,
-          { ...ctx, signal },
-          damaged ? { discardUnsaved: true } : undefined,
-        ),
+        deps.sandbox.stop(ref, { ...ctx, signal }, damaged ? { discardUnsaved: true } : undefined),
       () => new ComputerDeadlineError("stop", stopMs),
     );
   } catch (error) {

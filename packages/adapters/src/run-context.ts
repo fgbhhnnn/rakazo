@@ -21,6 +21,8 @@ import type { loadBotMessageContext } from "./bot-messages.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import type { selectRunConnections } from "./connection-context.js";
+import type { DispatcherWatchdog } from "./dispatcher-idle-watchdog.js";
+import type { DispatcherTurnLedger } from "./dispatcher-reply-guard.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
@@ -31,8 +33,6 @@ import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { inferScript } from "./scripted-runtime.js";
-import type { DispatcherWatchdog } from "./dispatcher-idle-watchdog.js";
-import type { DispatcherTurnLedger } from "./dispatcher-reply-guard.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;

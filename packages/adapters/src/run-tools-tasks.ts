@@ -1,7 +1,9 @@
+import { runBackgroundTaskTool } from "./background-task-tools.js";
 import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
+import { publishMessage } from "./run-messages.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
 import {
   cancelScheduleFromTool,
@@ -25,10 +27,8 @@ import {
   skillReadFromTool,
   skillUpdateFromTool,
 } from "./skill-tools.js";
-import { taskCatalogFromTool } from "./task-catalog.js";
-import { runBackgroundTaskTool } from "./background-task-tools.js";
-import { publishMessage } from "./run-messages.js";
 import { dispatcherTaskAttachments } from "./task-attachments.js";
+import { taskCatalogFromTool } from "./task-catalog.js";
 import {
   commentTicket,
   createTicket,
@@ -336,7 +336,6 @@ export const taskTools: ToolHandlers = {
     );
   },
 };
-
 
 async function finishBackgroundTaskTool(
   ctx: import("./run-context.js").RunContext,

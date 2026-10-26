@@ -187,7 +187,15 @@ export function SettingsOverlay({
       nav.removeEventListener("scroll", measure);
       observer?.disconnect();
     };
-  }, [section, showComputer, billingEnabled, messagingEnabled, showUpdates, memberSettingsLocked, i18n.locale]);
+  }, [
+    section,
+    showComputer,
+    billingEnabled,
+    messagingEnabled,
+    showUpdates,
+    memberSettingsLocked,
+    i18n.locale,
+  ]);
 
   function scrollSections(direction: number) {
     const nav = navRef.current;
@@ -387,7 +395,7 @@ export function SettingsOverlay({
                   ) : null}
                   {section === "space" && space ? (
                     <SpaceSettingsPanel
-                    memberSettingsLocked={memberSettingsLocked}
+                      memberSettingsLocked={memberSettingsLocked}
                       key={space.id}
                       space={space}
                       onRename={(name) => onRenameSpace?.(space.id, name) ?? Promise.resolve()}
@@ -396,7 +404,9 @@ export function SettingsOverlay({
                       onBusyChange={setVoiceBusy}
                     />
                   ) : null}
-                  {section === "confirmations" ? <ApprovalRulesSettings scope="account" readOnly={memberSettingsLocked} /> : null}
+                  {section === "confirmations" ? (
+                    <ApprovalRulesSettings scope="account" readOnly={memberSettingsLocked} />
+                  ) : null}
                   {section === "messaging" && messagingEnabled ? <MessagingSettingsPanel /> : null}
                   {section === "usage" ? (
                     <UsageSettingsPanel usage={usage} panelRef={usageRef} />

@@ -490,9 +490,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         composing: composingBots.split(",").includes(bot.id),
       }))}
       atBottom={!scroll.state.detached}
-      label={
-        backgroundOnly ? t("Coordinating background tasks") : (activityLine ?? t("Working…"))
-      }
+      label={backgroundOnly ? t("Coordinating background tasks") : (activityLine ?? t("Working…"))}
       accessibilityLabel={
         backgroundOnly
           ? t("Coordinating background tasks")

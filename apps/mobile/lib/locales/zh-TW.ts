@@ -1098,5 +1098,4 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "no progress": "沒有進展",
   done: "完成",
   "Slack workspace": "Slack 工作區",
-  "Connect your own API key in Models or choose {PRODUCT_NAME} credits in Billing.": "請在「模型」中連線你自己的 API 金鑰，或在「帳單」中選擇 {PRODUCT_NAME} 額度。",
 };

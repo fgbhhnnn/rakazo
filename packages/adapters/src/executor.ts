@@ -34,7 +34,6 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
-  isHiddenBot,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
@@ -74,7 +73,26 @@ import {
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+
 export type { ExecutorDeps } from "./executor-deps.js";
+
+import { isThinkWorker, THINK_WORKER_COMPUTER_REFUSAL } from "./background-task-lanes.js";
+import { startQueuedBackgroundTasks } from "./background-tasks.js";
+import { computerBusyWaitMs, provisionWhenNotBusy } from "./computer-busy-retry.js";
+import { dispatcherImageNote, dispatcherWithholdsImages } from "./dispatcher-image-context.js";
+import {
+  applyDispatcherToolPolicy,
+  DISPATCHER_TOOL_NAMES,
+  isDispatcherBot,
+  SkipComputerLease,
+  startDispatcherWatchdog,
+} from "./dispatcher-mode.js";
+import { createDispatcherTurnLedger } from "./dispatcher-reply-guard.js";
+import {
+  isDispatcherTimeoutRetry,
+  lightenDispatcherRetryHistory,
+} from "./dispatcher-retry-context.js";
+import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
 import {
@@ -182,35 +200,17 @@ import {
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeRecentThreadFiles,
-  recentThreadFilesInstruction,
   recentAttachmentBlocks,
+  recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { createWebProvider } from "./web-provider-factory.js";
-
-
-import { isThinkWorker, THINK_WORKER_COMPUTER_REFUSAL } from "./background-task-lanes.js";
-import { startQueuedBackgroundTasks } from "./background-tasks.js";
-import {
-  applyDispatcherToolPolicy,
-  DISPATCHER_TOOL_NAMES,
-  isDispatcherBot,
-  SkipComputerLease,
-  startDispatcherWatchdog,
-} from "./dispatcher-mode.js";
-import { dispatcherImageNote, dispatcherWithholdsImages } from "./dispatcher-image-context.js";
-import {
-  createDispatcherTurnLedger,
-} from "./dispatcher-reply-guard.js";
-import { isDispatcherTimeoutRetry, lightenDispatcherRetryHistory } from "./dispatcher-retry-context.js";
-import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
-import { slotFree } from "./worker-slot-mentions.js";
 import { dataBotId, loadWorkerOwner } from "./worker-owner-scope.js";
-import { computerBusyWaitMs, provisionWhenNotBusy } from "./computer-busy-retry.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
-export { DISPATCHER_PLUGIN_LISTING_MAX_MS, loadLivePluginSlugs };
 export { userTurnInstructions } from "./run-instructions.js";
+export { DISPATCHER_PLUGIN_LISTING_MAX_MS, loadLivePluginSlugs };
 
 export function createRunExecutor(deps: ExecutorDeps) {
   const contextStrategy = deps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
@@ -314,7 +314,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       });
       // A hidden worker uses its main bot's data (see worker-owner-scope.ts).
       const dataScope = { id: run.botId, ...leaseTarget };
-      const secretScope = {
+      const _secretScope = {
         userId: run.userId,
         spaceId: run.spaceId,
         botId: dataBotId(dataScope),
@@ -330,7 +330,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // A think-lane worker has no computer either: it never leases, wakes or holds one.
       const thinkTurn = isThinkWorker(leaseTarget);
       const turnLedger = createDispatcherTurnLedger();
-      const dispatcherVisible = slotFree(dispatcherTurn);
+      const _dispatcherVisible = slotFree(dispatcherTurn);
       if (!leaseTarget.computerId && !dispatcherTurn && !thinkTurn)
         throw new Error("Bot has no computer");
       if (dispatcherTurn) {

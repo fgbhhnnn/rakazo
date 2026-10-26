@@ -24,15 +24,9 @@ import { getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
-import {
-  capToolResultImages,
-  firstChangedIndex,
-  OVERFLOW_RETRY_MAX_IMAGES,
-  toolImageLimit,
-} from "./context-pruning.js";
+import { capToolResultImages, firstChangedIndex, toolImageLimit } from "./context-pruning.js";
 import { createInRunCompactor, IN_RUN_SUMMARY_INSTRUCTIONS } from "./in-run-compaction.js";
 import { estimateModelContextTokens } from "./model-context.js";
-import { withoutThinkingFrom } from "./thinking-signatures.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import {
   assistantText,
@@ -72,16 +66,10 @@ import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { withPiTelemetry } from "./pi-telemetry.js";
 import { observedPiStream } from "./pi-usage.js";
-import {
-  acquireProviderLane,
-  isProviderConcurrencyLimit,
-  noteProviderConcurrencyLimit,
-  noteProviderOk,
-  waitForProviderLane,
-} from "./provider-lanes.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
+import { withoutThinkingFrom } from "./thinking-signatures.js";
 import {
   restoreTurnCheckpoint,
   serializeTurnCheckpoint,
@@ -1095,7 +1083,6 @@ function createQueue(): EventQueue {
     },
   };
 }
-
 
 /** Swap the oldest tool-result images over `limit` for a note; drop signed thinking after the change. */
 export function withCappedImages<T extends { messages: Context["messages"] }>(

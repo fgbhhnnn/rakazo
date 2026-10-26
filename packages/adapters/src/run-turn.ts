@@ -26,6 +26,7 @@ import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
+import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
@@ -70,10 +71,6 @@ import { stripNoResponseReply, stripStrayNoResponse } from "./silent-reply.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
 import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
-import {
-  guardDispatcherReply,
-  queueClaimRecheck,
-} from "./dispatcher-reply-guard.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,

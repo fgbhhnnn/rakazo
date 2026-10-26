@@ -1,16 +1,13 @@
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
 import { toolRequiresExplicitApproval } from "@rakazo/core";
+import { dispatcherAskClause } from "./dispatcher-ask-guidance.js";
+import { BACKGROUND_DISPATCH_GUIDANCE, STEERING_REPLY_GUIDANCE } from "./dispatcher-mode.js";
+import { dispatcherOwnerToolsClause } from "./dispatcher-owner-tools.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
+import { PAGE_DISPATCH_GUIDANCE, PAGE_GUIDANCE } from "./page-tools.js";
 import { replyGuidanceForOfferedTools } from "./run-replies.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
-import { dispatcherAskClause } from "./dispatcher-ask-guidance.js";
-import {
-  BACKGROUND_DISPATCH_GUIDANCE,
-  STEERING_REPLY_GUIDANCE,
-} from "./dispatcher-mode.js";
-import { dispatcherOwnerToolsClause } from "./dispatcher-owner-tools.js";
-import { PAGE_DISPATCH_GUIDANCE, PAGE_GUIDANCE } from "./page-tools.js";
 
 /** Added to the turn prompt when the user spoke this message on a live voice call. */
 const VOICE_CALL_BASE_INSTRUCTION =

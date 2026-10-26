@@ -100,46 +100,12 @@ export function SpaceSettingsPanel({
                 {error}
               </p>
             ) : null}
-            <div className="flex items-center gap-3">
-              <Button type="submit" className="rounded-full" disabled={pending || !trimmed}>
-                <Trans>Save</Trans>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="rounded-full"
-                disabled={pending}
-                onClick={() => setDraft(null)}
-              >
-                <Trans>Cancel</Trans>
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <SettingsRow
-            label={<p className="break-words">{space.name}</p>}
-            control={
-              space.canRename ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="rounded-full"
-                  aria-label={t`Rename space`}
-                  onClick={() => {
-                    setError(null);
-                    setDraft(space.name);
-                  }}
-                >
-                  <Trans>Edit</Trans>
-                </Button>
-              ) : null
-            }
-          />
-        )}
-      </SettingsGroup>
+          </SettingsRow>
+        </SettingsGroup>
+      ) : null}
       <SpaceSettingOverrides
         onClose={onClose}
-        onBusyChange={onBusyChange}
+        onBusyChange={setOverridesBusy}
         memberSettingsLocked={memberSettingsLocked}
       />
       {space.canDelete ? (

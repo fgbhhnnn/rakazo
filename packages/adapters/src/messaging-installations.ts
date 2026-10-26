@@ -48,7 +48,6 @@ export class MessagingInstallations implements MessagingInstallationStore {
     return this.provider.authorizeUrl(state);
   }
 
-
   async complete(state: string, code: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !code || code.length > 4096)
       throw new Error("Invalid authorization");
