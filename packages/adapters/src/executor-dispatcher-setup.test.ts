@@ -59,6 +59,13 @@ async function runDispatcherTurn(options: {
     request: AgentRunRequest,
     context: { signal?: AbortSignal },
   ) => AsyncGenerator<AgentRuntimeEvent>;
+  /** Thread messages, newest first, as loadRunHistoryMessages returns them. */
+  threadMessages?: Record<string, unknown>[];
+  /** Image artifacts the thread's messages point at; enables the artifact store. */
+  imageArtifacts?: { id: string; name: string }[];
+  retryOfRunId?: string;
+  /** Error the retried run failed with. */
+  retriedRunError?: string;
 }) {
   const run = {
     id: "run-1",
@@ -70,7 +77,7 @@ async function runDispatcherTurn(options: {
     status: "queued",
     trigger: "user",
     sourceMessageId: "source-1",
-    retryOfRunId: null,
+    retryOfRunId: options.retryOfRunId ?? null,
     leaseFence: 0,
   };
   const restartRuns: string[] = [];
@@ -87,7 +94,11 @@ async function runDispatcherTurn(options: {
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
     run: {
-      findUnique: vi.fn(async () => run),
+      findUnique: vi.fn(async (args?: { where?: { id?: string } }) =>
+        options.retryOfRunId && args?.where?.id === options.retryOfRunId
+          ? { id: options.retryOfRunId, error: options.retriedRunError ?? null }
+          : run,
+      ),
       create: vi.fn(async () => {
         restartRuns.push("retry-run-1");
         return { id: "retry-run-1" };
@@ -154,8 +165,10 @@ async function runDispatcherTurn(options: {
         messages.push(data);
         return { ...data, id: `message-${messages.length}` };
       }),
-      findMany: vi.fn(async ({ where }: { where: { runId?: string } }) =>
-        where.runId === run.id ? [] : [],
+      findMany: vi.fn(async ({ where }: { where: { runId?: string; threadId?: string } }) =>
+        where.runId === undefined && where.threadId === run.threadId
+          ? (options.threadMessages ?? [])
+          : [],
       ),
       findUnique: vi.fn(async () =>
         run.trigger === "messaging"
@@ -199,6 +212,21 @@ async function runDispatcherTurn(options: {
     scratchpadItem: { findMany: vi.fn(async () => []) },
     chatGroup: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
+    artifact: {
+      findMany: vi.fn(async () =>
+        (options.imageArtifacts ?? []).map((artifact) => ({
+          id: artifact.id,
+          name: artifact.name,
+          storageKey: `key/${artifact.id}`,
+          mimeType: "image/png",
+          size: 4,
+          spaceId: run.spaceId,
+          userId: run.userId,
+          sha256: "0".repeat(64),
+          createdAt: new Date(0),
+        })),
+      ),
+    },
     computerExecutionLease: {
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -254,6 +282,9 @@ async function runDispatcherTurn(options: {
       notify: vi.fn(async () => undefined),
     },
     jobs: { enqueue },
+    ...(options.imageArtifacts
+      ? { artifacts: { get: vi.fn(async () => new Uint8Array([137, 80, 78, 71])) } }
+      : {}),
     secrets: [],
     ...(options.dispatcherMode === false ? {} : { dispatcherMode: true }),
   } as unknown as Parameters<typeof createRunExecutor>[0]);
@@ -409,5 +440,168 @@ describe("loadLivePluginSlugs", () => {
         "user-1",
       ),
     ).resolves.toEqual({ ok: true, slugs: ["slack"] });
+  });
+});
+
+describe("dispatcher turn reply budget", () => {
+  it("lets a slow reply that keeps streaming finish past the no-progress limit", async () => {
+    watchdog.ms = 150;
+    const result = await runDispatcherTurn({
+      runtime: async function* () {
+        for (let i = 0; i < 8; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          yield { type: "progress" as const, text: "." } as AgentRuntimeEvent;
+        }
+        yield { type: "text" as const, text: "Done." };
+        yield { type: "done" as const, text: "Done." };
+      },
+    });
+    expect(result.elapsedMs).toBeGreaterThan(450);
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "completed" }),
+    );
+    expect(result.restartRuns).toEqual([]);
+  });
+
+  it("counts activity the runtime reports through onStreamActivity (reasoning) as progress", async () => {
+    watchdog.ms = 150;
+    const result = await runDispatcherTurn({
+      runtime: async function* (request) {
+        for (let i = 0; i < 8; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          request.onStreamActivity?.();
+        }
+        yield { type: "text" as const, text: "Thought it through." };
+        yield { type: "done" as const, text: "Thought it through." };
+      },
+    });
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "completed" }),
+    );
+    expect(result.restartRuns).toEqual([]);
+  });
+});
+
+const imageBlock = (artifactId: string, name: string) => ({
+  kind: "image",
+  artifactId,
+  name,
+  mimeType: "image/png",
+  size: 4,
+});
+
+function threadWithImages() {
+  return [
+    {
+      id: "source-1",
+      threadId: "thread-1",
+      seq: 3,
+      role: "user",
+      botId: null,
+      runId: "run-1",
+      blocks: [
+        { kind: "text", text: "What is wrong in these?" },
+        imageBlock("art-new-1", "IMG_0001.PNG"),
+        imageBlock("art-new-2", "IMG_0002.PNG"),
+      ],
+      createdAt: new Date(2_000),
+    },
+    {
+      id: "bot-1",
+      threadId: "thread-1",
+      seq: 2,
+      role: "bot",
+      botId: "bot-1",
+      runId: "run-0",
+      blocks: [{ kind: "text", text: "Looks fine." }],
+      createdAt: new Date(1_500),
+    },
+    {
+      id: "user-0",
+      threadId: "thread-1",
+      seq: 1,
+      role: "user",
+      botId: null,
+      runId: "run-0",
+      blocks: [{ kind: "text", text: "Check this" }, imageBlock("art-old", "old.png")],
+      createdAt: new Date(1_000),
+    },
+  ];
+}
+
+const imageArtifacts = [
+  { id: "art-new-1", name: "IMG_0001.PNG" },
+  { id: "art-new-2", name: "IMG_0002.PNG" },
+  { id: "art-old", name: "old.png" },
+];
+
+describe("dispatcher turn images", () => {
+  it("sends the main turn a note about the images instead of their bytes", async () => {
+    const result = await runDispatcherTurn({ threadMessages: threadWithImages(), imageArtifacts });
+    const request = result.runtimeRun.mock.calls[0]?.[0] as AgentRunRequest;
+    expect(request.currentTurnImages).toBeUndefined();
+    expect(request.history.some((entry) => entry.images?.length)).toBe(false);
+    expect(request.prompt).toContain(
+      'The user attached 2 images to this message: "IMG_0001.PNG", "IMG_0002.PNG".',
+    );
+    expect(request.prompt).toContain("background_task");
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "completed" }),
+    );
+  });
+
+  it("still gives bots outside dispatcher mode the images themselves", async () => {
+    const result = await runDispatcherTurn({
+      dispatcherMode: false,
+      threadMessages: threadWithImages(),
+      imageArtifacts,
+    });
+    const request = result.runtimeRun.mock.calls[0]?.[0] as AgentRunRequest;
+    expect(request.currentTurnImages?.map((image) => image.name)).toEqual([
+      "IMG_0001.PNG",
+      "IMG_0002.PNG",
+    ]);
+    expect(request.prompt).not.toContain("You cannot see image contents");
+  });
+});
+
+describe("dispatcher turn restarted after a timeout", () => {
+  function longThread() {
+    return Array.from({ length: 30 }, (_, i) => ({
+      id: i === 0 ? "source-1" : `m-${i}`,
+      threadId: "thread-1",
+      seq: 30 - i,
+      role: i % 2 ? "bot" : "user",
+      botId: i % 2 ? "bot-1" : null,
+      runId: i === 0 ? "run-1" : `run-${i}`,
+      blocks: [{ kind: "text", text: `turn ${30 - i} ${"x".repeat(i === 1 ? 6_000 : 10)}` }],
+      createdAt: new Date((30 - i) * 1_000),
+    }));
+  }
+
+  it("retries with a lighter history instead of the same load", async () => {
+    const result = await runDispatcherTurn({
+      threadMessages: longThread(),
+      retryOfRunId: "run-0",
+      retriedRunError: "The reply took longer than 90 s and was stopped.",
+    });
+    const request = result.runtimeRun.mock.calls[0]?.[0] as AgentRunRequest;
+    expect(request.history.length).toBeLessThanOrEqual(12);
+    expect(Math.max(...request.history.map((entry) => entry.content.length))).toBeLessThanOrEqual(
+      2_000,
+    );
+  });
+
+  it("keeps the full history when the retried run failed for another reason", async () => {
+    const result = await runDispatcherTurn({
+      threadMessages: longThread(),
+      retryOfRunId: "run-0",
+      retriedRunError: "The model returned no reply.",
+    });
+    const request = result.runtimeRun.mock.calls[0]?.[0] as AgentRunRequest;
+    expect(request.history.length).toBeGreaterThan(12);
+    expect(Math.max(...request.history.map((entry) => entry.content.length))).toBeGreaterThan(
+      2_000,
+    );
   });
 });

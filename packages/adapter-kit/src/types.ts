@@ -534,6 +534,8 @@ export interface AgentRunRequest {
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
+  /** Called on any model stream activity (including reasoning deltas); must be cheap. */
+  onStreamActivity?: () => void;
 }
 
 export interface ScriptedTurn {

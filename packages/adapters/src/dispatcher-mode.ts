@@ -4,6 +4,11 @@ import {
   BACKGROUND_LANE_GUIDANCE,
   withholdComputerToolsFromThinkWorker,
 } from "./background-task-lanes.js";
+import {
+  type DispatcherWatchdog,
+  dispatcherTurnHardCapMs,
+  startDispatcherIdleWatchdog,
+} from "./dispatcher-idle-watchdog.js";
 import { DISPATCHER_OWNER_TOOL_NAMES } from "./dispatcher-owner-tools.js";
 import type { ExecutorDeps } from "./executor.js";
 import { withholdNestedAgentTools } from "./worker-nesting.js";
@@ -21,6 +26,11 @@ export class DispatcherTurnTimeout extends Error {
     super(`The reply took longer than ${Math.round(ms / 1000)} s and was stopped.`);
     this.name = "DispatcherTurnTimeout";
   }
+}
+
+/** Whether a stored run error is a DispatcherTurnTimeout's message. */
+export function isDispatcherTurnTimeoutMessage(error: string | null | undefined): boolean {
+  return /^The reply took longer than \d+ s and was stopped\.$/.test(error?.trim() ?? "");
 }
 
 /** Triggers whose main turn is a reply to a person, so a hung turn is restarted for them. */
@@ -101,7 +111,10 @@ export async function restartDispatcherTurn(
   return true;
 }
 
-/** Longest a dispatcher's main turn may run (RAKAZO_DISPATCHER_TURN_MAX_MS, default 90 s). */
+/**
+ * Longest a dispatcher's main turn may go without model progress (RAKAZO_DISPATCHER_TURN_MAX_MS,
+ * default 90 s). The whole turn is bounded by dispatcherTurnHardCapMs.
+ */
 export function dispatcherTurnMaxMs(env: Record<string, string | undefined> = process.env): number {
   const parsed = Number(env.RAKAZO_DISPATCHER_TURN_MAX_MS);
   return Number.isFinite(parsed) && parsed >= 5_000 ? Math.floor(parsed) : 90_000;
@@ -161,22 +174,23 @@ export const STEERING_REPLY_GUIDANCE =
   "If a new user message arrives while you are in the middle of work, first answer it briefly with message_user (acknowledge, answer a quick question, or confirm the change of plan), then continue, redirect, or stop as it asks.";
 
 /**
- * Watchdog: a dispatcher turn only talks and dispatches, so one that runs long has a hung model
- * call. Aborts it so the thread is free for the next message. Returns the clear function.
+ * Watchdog: a dispatcher turn only talks and dispatches, so one that stops making progress has a
+ * hung model call. Aborts it so the thread is free for the next message. `ms` is the no-progress
+ * limit (call `touch` on model progress), `capMs` the absolute ceiling. Returns the clear function.
  */
 export function startDispatcherWatchdog(
   controller: AbortController,
   onFire: () => void,
   ms = dispatcherTurnMaxMs(),
-): () => void {
-  const watchdog = setTimeout(() => {
-    onFire();
-    controller.abort(new DispatcherTurnTimeout(ms));
-  }, ms);
-  watchdog.unref?.();
-  const clear = () => clearTimeout(watchdog);
-  controller.signal.addEventListener("abort", clear);
-  return clear;
+  capMs = dispatcherTurnHardCapMs(ms),
+): DispatcherWatchdog {
+  return startDispatcherIdleWatchdog(
+    controller,
+    onFire,
+    ms,
+    capMs,
+    (limit) => new DispatcherTurnTimeout(limit),
+  );
 }
 
 /**

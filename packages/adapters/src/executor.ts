@@ -310,6 +310,8 @@ import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 import { decisionModel } from "./decision-models.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { dispatcherAskClause } from "./dispatcher-ask-guidance.js";
+import type { DispatcherWatchdog } from "./dispatcher-idle-watchdog.js";
+import { dispatcherImageNote, dispatcherWithholdsImages } from "./dispatcher-image-context.js";
 import {
   applyDispatcherToolPolicy,
   BACKGROUND_DISPATCH_GUIDANCE,
@@ -337,6 +339,10 @@ import {
   guardDispatcherReply,
   queueClaimRecheck,
 } from "./dispatcher-reply-guard.js";
+import {
+  isDispatcherTimeoutRetry,
+  lightenDispatcherRetryHistory,
+} from "./dispatcher-retry-context.js";
 import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
@@ -3973,7 +3979,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         | { computer: ComputerRef; context: AdapterContext; keepWarm: boolean }
         | undefined;
       let runAbortController: AbortController | null = null;
-      let dispatcherWatchdogClear: (() => void) | undefined;
+      let dispatcherWatchdogClear: DispatcherWatchdog | undefined;
       let dispatcherWatchdogFired = false;
       // Runtime cleanup can queue terminal events after the consumer has exited.
       // Track only helpers whose running state this attempt actually persisted.
@@ -4324,7 +4330,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           recalled,
         ] = await Promise.all([
           discoveredPromise,
-          loadCurrentTurnImages(deps, turnBlocks, context),
+          dispatcherWithholdsImages(dispatcherTurn)
+            ? Promise.resolve(undefined)
+            : loadCurrentTurnImages(deps, turnBlocks, context),
           messagingChannelRun
             ? Promise.resolve("")
             : loadAgentMemoryContext(deps.memory, memoryBotId, context),
@@ -8238,10 +8246,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
             : undefined;
         const agentSkillsLine = formatSkillsCatalogInstruction(agentSkills);
-        const missingImagesInstruction = missingTurnImagesInstruction(
-          turnBlocks,
-          currentTurnImages,
-        );
+        const missingImagesInstruction = dispatcherWithholdsImages(dispatcherTurn)
+          ? dispatcherImageNote(
+              turnBlocks,
+              recentThreadFiles
+                .filter((file) => isAttachmentImageMimeType(file.mimeType))
+                .map((file) => file.name),
+            )
+          : missingTurnImagesInstruction(turnBlocks, currentTurnImages);
         const taskPrompt = expandSkillReferencesInPrompt(
           [task.prompt, attachedFilesPrompt, missingImagesInstruction].filter(Boolean).join("\n\n"),
           agentSkills,
@@ -8383,13 +8395,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : Math.max(0, resolved.maxImagesPerPrompt - (currentTurnImages?.length ?? 0));
         // A text-only model keeps the [image:] marker. Putting image parts in
         // history makes the provider reject a follow-up that used to be text.
-        const historyWithImages = modelSeesImages
-          ? await withRecentTurnImages(deps, history, historyMessages, context, {
-              skipMessageId: currentTurnMessage?.id,
-              maxImages: modelImageBudget,
-            })
-          : history;
-        const runtimeHistory = [...historicalContext, ...historyWithImages];
+        const historyWithImages =
+          modelSeesImages && !dispatcherWithholdsImages(dispatcherTurn)
+            ? await withRecentTurnImages(deps, history, historyMessages, context, {
+                skipMessageId: currentTurnMessage?.id,
+                maxImages: modelImageBudget,
+              })
+            : history;
+        // A turn restarted after the watchdog stopped it must not resend the same load.
+        const runtimeHistory =
+          dispatcherTurn && (await isDispatcherTimeoutRetry(deps.prisma, run))
+            ? lightenDispatcherRetryHistory([...historicalContext, ...historyWithImages], {
+                pinned: historicalContext.length,
+              })
+            : [...historicalContext, ...historyWithImages];
         // Without a roster a bot only knows the bots it spawned itself.
         const [teammates, groupDirectory] = await Promise.all([
           thread.groupId
@@ -8658,6 +8677,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   runSecrets,
                 );
               },
+              onStreamActivity: dispatcherWatchdogClear?.touch,
               claimSteering: async (seenIds) => {
                 const steering = await deps.events.claimSteering({
                   threadId: thread.id,
@@ -8669,13 +8689,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 });
                 return Promise.all(
                   steering.map(async (item) => {
+                    const withholdImages = dispatcherWithholdsImages(dispatcherTurn);
                     const { images, files, unavailableInstruction } =
                       await settleSteeringAttachmentLoads(
-                        loadCurrentTurnImages(deps, item.blocks, context),
+                        withholdImages
+                          ? Promise.resolve(undefined)
+                          : loadCurrentTurnImages(deps, item.blocks, context),
                         deps.artifacts
                           ? listCurrentTurnFiles(deps, item.blocks, context)
                           : Promise.resolve([]),
-                        item.blocks,
+                        withholdImages ? undefined : item.blocks,
                         context.signal,
                       );
                     if (files.length) {
@@ -8692,6 +8715,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                         await loadReplyContext(deps.prisma, thread.id, item.messageId),
                         item.text,
                         filesInstruction,
+                        withholdImages ? dispatcherImageNote(item.blocks) : "",
                         unavailableInstruction,
                       ]
                         .filter(Boolean)
@@ -8705,6 +8729,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             context,
           );
           for await (const event of withRuntimeCleanup(runtimeEvents, runAbortController)) {
+            dispatcherWatchdogClear?.touch();
             if (approvalPausePending) return;
             if (!leaseValid) return;
             const now = Date.now();
