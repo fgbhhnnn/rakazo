@@ -38,7 +38,7 @@ export function PagesShelf({ botId }: { botId?: string }) {
               pageId={page.id}
               title={page.title}
               snippet={page.snippet}
-              className="flex h-full w-[300px] items-start gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 text-left text-foreground hover:bg-accent"
+              className="flex h-full w-[300px] items-start gap-3 rounded-[20px] bg-card px-4 py-3.5 text-left text-foreground hover:bg-accent"
             />
           </li>
         ))}

@@ -2,6 +2,7 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { useRouter } from "expo-router";
 import type { PressableProps } from "react-native";
 import { Pressable, Text, View } from "react-native";
+import { chatCardShell } from "../lib/chat-card-shell";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { pageRoute } from "../lib/pages";
@@ -14,10 +15,22 @@ type PageCardProps = {
   /** Long-press and accessibility actions from the message row. */
   pressableProps?: Omit<PressableProps, "onPress" | "style" | "children">;
   width?: number;
+  /**
+   * The card sits inside a message bubble. The bubble's muted fill matches the card fill
+   * (exactly, in dark mode), so with no outline the card takes the page background instead.
+   */
+  inBubble?: boolean;
 };
 
 /** A bot's report or plan in chat: the title and a preview, opening the full page. */
-export function PageCard({ pageId, title, snippet, pressableProps, width }: PageCardProps) {
+export function PageCard({
+  pageId,
+  title,
+  snippet,
+  pressableProps,
+  width,
+  inBubble,
+}: PageCardProps) {
   const router = useRouter();
   const { t } = useI18n();
   const tokens = useMobileTokens();
@@ -33,10 +46,10 @@ export function PageCard({ pageId, title, snippet, pressableProps, width }: Page
         flexDirection: "row",
         alignItems: "flex-start",
         gap: 12,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: tokens.border,
-        backgroundColor: pressed ? tokens.accent : tokens.card,
+        ...chatCardShell(
+          tokens,
+          pressed ? tokens.accent : inBubble ? tokens.background : tokens.card,
+        ),
         paddingHorizontal: 14,
         paddingVertical: 12,
       })}

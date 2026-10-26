@@ -130,3 +130,12 @@ describe("TaskProgressCard", () => {
     expect(card.querySelector('[data-testid="task-progress-counts"]')?.textContent).toBe("1 done");
   });
 });
+
+it("uses the borderless chat-card shell (BuiCard), like every other card in the chat", () => {
+  const card = mount({ block, now }).querySelector<HTMLElement>(
+    '[data-testid="task-progress-card"]',
+  )!;
+  const classes = card.className.split(/\s+/);
+  expect(classes).toEqual(expect.arrayContaining(["rounded-[20px]", "bg-card"]));
+  expect(classes.filter((name) => /^border(-|$)/.test(name))).toEqual([]);
+});

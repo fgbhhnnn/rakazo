@@ -20,6 +20,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { BuiCard } from "./ai/primitives";
 
 const STATE_ICON: Record<TaskProgressEntry["state"], LucideIcon> = {
   queued: Clock,
@@ -89,8 +90,8 @@ export function TaskProgressCard({
   const now = fixedNow ?? ticking;
   const { active, done, failed } = taskProgressCounts(block);
   return (
-    <div
-      className="w-[min(440px,100%)] min-w-[280px] rounded-2xl border border-border bg-card px-4 pt-3.5 pb-1.5 text-foreground"
+    <BuiCard
+      className="w-[min(440px,100%)] min-w-[280px] px-4 pt-3.5 pb-1.5 text-foreground"
       data-testid="task-progress-card"
     >
       <div className="flex items-center gap-3">
@@ -164,6 +165,6 @@ export function TaskProgressCard({
           );
         })}
       </ul>
-    </div>
+    </BuiCard>
   );
 }

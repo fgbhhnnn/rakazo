@@ -4274,6 +4274,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               title={attachment.name ?? t("Page")}
               snippet={attachment.page.snippet}
               pressableProps={actionProps}
+              inBubble
             />
           ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
             <AudioAttachment

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { CHAT_CARD_RADIUS } from "./chat-card-shell";
 import { ZH_MESSAGES } from "./locales/zh";
 import { threadCardWidth } from "./message-presentation";
 
@@ -222,4 +223,15 @@ it("counts up on its own and reads in Chinese", () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("draws the borderless chat-card shell shared with ChoiceCard and approvals", () => {
+  const card = mount({ block, now });
+  const style = JSON.parse(
+    card.querySelector<HTMLElement>('[data-testid="task-progress-card"]')!.dataset.style!,
+  ) as Record<string, unknown>;
+  expect(style.borderRadius).toBe(CHAT_CARD_RADIUS);
+  expect(style.backgroundColor).toBe("card");
+  expect(style).not.toHaveProperty("borderWidth");
+  expect(style).not.toHaveProperty("borderColor");
 });

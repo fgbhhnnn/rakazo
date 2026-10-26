@@ -62,3 +62,12 @@ it("shows the title and snippet, and opens the page only when tapped", async () 
   expect(dialog?.querySelector("h1")?.textContent).toBe("Weekly report");
   expect(dialog?.querySelector('button[aria-label="Close page"]')).not.toBeNull();
 });
+
+it("uses the borderless chat-card shell, keeping its press highlight", async () => {
+  await act(async () => root?.render(<PageCard pageId="page-1" title="Weekly report" />));
+  const classes = container
+    .querySelector<HTMLButtonElement>('button[aria-label="Open page Weekly report"]')!
+    .className.split(/\s+/);
+  expect(classes).toEqual(expect.arrayContaining(["rounded-[20px]", "bg-card", "hover:bg-accent"]));
+  expect(classes.filter((name) => /^border(-|$)/.test(name))).toEqual([]);
+});

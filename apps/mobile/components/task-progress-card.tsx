@@ -10,6 +10,7 @@ import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
 import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { chatCardShell } from "../lib/chat-card-shell";
 import { useI18n } from "../lib/i18n";
 import { threadCardWidth } from "../lib/message-presentation";
 import { useMobileTokens } from "../lib/native";
@@ -116,10 +117,7 @@ export function TaskProgressCard({ block, pressableProps, now }: TaskProgressCar
         // percentage resolves to nothing on iOS and Android, and the flexible title then
         // collapses the card to its icon column.
         width: threadCardWidth(windowWidth),
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: tokens.border,
-        backgroundColor: tokens.card,
+        ...chatCardShell(tokens),
         paddingHorizontal: 14,
         paddingTop: 12,
         paddingBottom: 4,

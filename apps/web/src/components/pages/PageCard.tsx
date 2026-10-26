@@ -27,7 +27,7 @@ export function PageCard({ pageId, title, snippet, className }: PageCardProps) {
         onClick={() => setOpen(true)}
         className={
           className ??
-          "flex w-[min(420px,100%)] min-w-[280px] items-start gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 text-left text-foreground hover:bg-accent"
+          "flex w-[min(420px,100%)] min-w-[280px] items-start gap-3 rounded-[20px] bg-card px-4 py-3.5 text-left text-foreground hover:bg-accent"
         }
       >
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
