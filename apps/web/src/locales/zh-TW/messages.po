@@ -1609,6 +1609,10 @@ msgstr "透過 {0} 繼續"
 msgid "Continue with credits"
 msgstr "使用額度繼續"
 
+#: src/components/TaskProgressCard.tsx
+msgid "continuing"
+msgstr "繼續中"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Conversations"
 msgstr "對話"

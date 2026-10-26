@@ -86,6 +86,23 @@ describe("background task progress card entries", () => {
     expect(TaskProgressBlockSchema.shape.tasks.element.parse(entry)).toEqual(entry);
   });
 
+  it("shows continuing when the task was auto-continued after an incomplete final", () => {
+    const entry = taskProgressEntry(
+      {
+        row: row({
+          ref: "TIZS60WO",
+          name: "按原版截图改布局",
+          args: { incompleteContinues: 1, incompleteContinuing: true },
+        }),
+        run: runInfo("running"),
+      },
+      { now: at(60), stuckMs: STUCK },
+    );
+    expect(entry.state).toBe("continuing");
+    expect(entry.finishedAt).toBeUndefined();
+    expect(TaskProgressBlockSchema.shape.tasks.element.parse(entry).state).toBe("continuing");
+  });
+
   it("prefers the worker's own note when it came after its last call", () => {
     const events = [
       line("Running: ./gradlew build", 10),

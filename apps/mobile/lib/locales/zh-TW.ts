@@ -173,6 +173,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Command variable": "命令變數",
   "Pull request": "Pull request",
   running: "執行中",
+  continuing: "繼續中",
   finished: "已完成",
   failed: "失敗",
   cancelled: "已取消",

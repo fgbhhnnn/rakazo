@@ -1608,6 +1608,10 @@ msgstr "{0}で続行"
 msgid "Continue with credits"
 msgstr "クレジットで続行"
 
+#: src/components/TaskProgressCard.tsx
+msgid "continuing"
+msgstr "続行中"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Conversations"
 msgstr ""

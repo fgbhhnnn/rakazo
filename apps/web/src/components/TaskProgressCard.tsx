@@ -26,6 +26,7 @@ const STATE_ICON: Record<TaskProgressEntry["state"], LucideIcon> = {
   queued: Clock,
   starting: History,
   running: LoaderCircle,
+  continuing: LoaderCircle,
   needs_user: Hand,
   stuck: TriangleAlert,
   done: CircleCheck,
@@ -37,6 +38,7 @@ const STATE_TONE: Record<TaskProgressEntry["state"], string> = {
   queued: "text-muted-foreground",
   starting: "text-muted-foreground",
   running: "text-foreground",
+  continuing: "text-foreground",
   needs_user: "text-warning",
   stuck: "text-warning",
   done: "text-success",
@@ -52,6 +54,8 @@ function StateLabel({ entry }: { entry: TaskProgressEntry }) {
       return <Trans>starting</Trans>;
     case "running":
       return <Trans>running</Trans>;
+    case "continuing":
+      return <Trans>continuing</Trans>;
     case "needs_user":
       return <Trans>needs you</Trans>;
     case "stuck":
@@ -128,7 +132,7 @@ export function TaskProgressCard({
                 size={17}
                 strokeWidth={1.9}
                 aria-hidden="true"
-                className={`mt-0.5 shrink-0 ${STATE_TONE[entry.state]} ${entry.state === "running" ? "animate-spin" : ""}`}
+                className={`mt-0.5 shrink-0 ${STATE_TONE[entry.state]} ${entry.state === "running" || entry.state === "continuing" ? "animate-spin" : ""}`}
               />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">

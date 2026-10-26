@@ -48,6 +48,7 @@ import { WORKER_ACTIVITY_NOTE, workerActivityFields } from "./worker-activity.js
 import { workerSettingsFromMain } from "./worker-main-settings.js";
 import { WORKER_NEEDS_USER_NOTE, workerPending } from "./worker-needs-user.js";
 import { WORKER_PROGRESS_INSTRUCTION } from "./worker-progress.js";
+import { nudgeStaleWorkerProgress } from "./worker-progress-nudge.js";
 import { WORKER_ALWAYS_DISABLED, workerDisabledTools } from "./worker-tool-policy.js";
 
 /**
@@ -747,6 +748,9 @@ export async function reconcileBackgroundTasks(
   }
   await refreshAllTaskProgressCards(deps as QueueDeps).catch((error) =>
     getLogger().error("background task progress cards", error),
+  );
+  await nudgeStaleWorkerProgress(deps as QueueDeps).catch((error) =>
+    getLogger().error("background worker progress nudge", error),
   );
 }
 

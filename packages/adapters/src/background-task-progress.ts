@@ -20,6 +20,7 @@ import { laneOfTask, laneQueueOrder } from "./background-task-lanes.js";
 import { ACTIVE_TASK_STATUSES } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
 import { activitySummary, summarizeWorkerActivity } from "./worker-activity.js";
+import { isIncompleteContinuing } from "./worker-incomplete-result.js";
 import { workerPending } from "./worker-needs-user.js";
 import { WORKER_PROGRESS_NOTICE } from "./worker-progress.js";
 
@@ -154,6 +155,10 @@ export function taskProgressEntry(
     if (pending) {
       state = "needs_user";
       step = clip(pending.text) ?? (pending.kind === "takeover" ? "等你操作电脑" : "等你确认");
+    } else if (isIncompleteContinuing(row.args)) {
+      // Auto-continued after an incomplete final; not done until a genuine result lands.
+      state = "continuing";
+      step = snapshot.events?.length ? latestStep(snapshot.events, now) : "继续中";
     } else if (!runActive && run) {
       // The worker ended; its result is on its way to the main bot.
       state = "running";

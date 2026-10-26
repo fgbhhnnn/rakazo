@@ -1,7 +1,7 @@
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
-import { closeWorkerApprovalMirrors } from "@rakazo/db";
+import { closeWorkerApprovalMirrors, type Prisma, type PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { incompleteContinueCount, withIncompleteContinueArgs } from "./worker-incomplete-result.js";
 
 /**
  * Task lifecycle. Every background_task is one durable row (the "task"), and its ref is the
@@ -69,16 +69,20 @@ export async function finalizeBackgroundTaskForRun(
     });
     return;
   }
+  const status =
+    run.status === "completed" ? "completed" : run.status === "cancelled" ? "cancelled" : "failed";
+  const row = await prisma.backgroundTaskQueue.findUnique({
+    where: { id: task.id },
+    select: { args: true },
+  });
+  const count = incompleteContinueCount(row?.args);
   await prisma.backgroundTaskQueue.updateMany({
     where: { id: task.id, status: "started" },
     data: {
-      status:
-        run.status === "completed"
-          ? "completed"
-          : run.status === "cancelled"
-            ? "cancelled"
-            : "failed",
+      status,
       finishedAt: new Date(),
+      // A genuine terminal result clears the auto-continue marker.
+      args: withIncompleteContinueArgs(row?.args, count, false) as Prisma.InputJsonValue,
     },
   });
 }

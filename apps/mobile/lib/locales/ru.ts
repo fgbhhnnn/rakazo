@@ -206,6 +206,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Command variable": "Командная переменная",
   "Pull request": "Запрос на слияние",
   running: "выполняется",
+  continuing: "продолжается",
   finished: "завершено",
   failed: "ошибка",
   cancelled: "отменено",

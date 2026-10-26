@@ -29,6 +29,8 @@ function stateLabel(entry: TaskProgressEntry, t: Translate): string {
       return t("starting");
     case "running":
       return t("running");
+    case "continuing":
+      return t("continuing");
     case "needs_user":
       return t("needs you");
     case "stuck":
@@ -46,12 +48,12 @@ function stateColor(state: TaskProgressEntry["state"], tokens: Tokens): string {
   if (state === "done") return tokens.success;
   if (state === "failed") return tokens.destructive;
   if (state === "stuck" || state === "needs_user") return tokens.warning;
-  if (state === "running") return tokens.foreground;
+  if (state === "running" || state === "continuing") return tokens.foreground;
   return tokens.mutedForeground;
 }
 
 const STATE_SYMBOL: Record<
-  Exclude<TaskProgressEntry["state"], "running">,
+  Exclude<TaskProgressEntry["state"], "running" | "continuing">,
   { ios: string; android: Parameters<typeof NativeSymbol>[0]["android"] }
 > = {
   queued: { ios: "clock", android: "time-outline" },
@@ -67,7 +69,7 @@ const STATE_SYMBOL: Record<
 function StateIcon({ state, color }: { state: TaskProgressEntry["state"]; color: string }) {
   return (
     <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
-      {state === "running" ? (
+      {state === "running" || state === "continuing" ? (
         <ActivityIndicator size="small" color={color} />
       ) : (
         <NativeSymbol {...STATE_SYMBOL[state]} size={17} color={color} />

@@ -348,6 +348,7 @@ export const JA_MESSAGES: Record<string, string> = {
   failed: "失敗",
   finished: "完了",
   running: "実行中",
+  continuing: "続行中",
   subagent: "サブエージェント",
   "{count} agents working": "{count}個のエージェントが作業中",
   "{from} messaged {to}": "{from}が{to}にメッセージを送信しました",
