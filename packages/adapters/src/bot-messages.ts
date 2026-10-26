@@ -20,7 +20,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { refreshTaskProgressForWorkerRun } from "./background-task-progress.js";
 import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
-import type { ExecutorDeps } from "./executor.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 import { runPageBlocks } from "./pages.js";
 import { attachmentBlocks } from "./task-attachments.js";
 import { handleIncompleteWorkerResult } from "./worker-incomplete-continue.js";

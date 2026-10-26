@@ -5,7 +5,6 @@ import type {
   MessagingChannelMembership,
   MessagingInstallationsStatus,
   MessagingStatus,
-  SpaceNavigation,
 } from "@rakazo/contracts";
 import { messagingProviderName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -22,7 +21,6 @@ import { native, useThemedStyles } from "../../lib/native";
 import { errorText } from "../../lib/user-error";
 
 // MenuView choice keys; provider ids never contain a colon.
-const SLACK_WORKSPACE = "install:slack";
 
 export default function MessagingSettings() {
   const { t } = useI18n();
@@ -49,12 +47,12 @@ export default function MessagingSettings() {
   const refresh = useCallback(async () => {
     const [nextBots, nextStatus, nextInstallations, nextChannels, nextConnections, navigation] =
       await Promise.all([
-        rpc<Bot[]>("bots/list"),
-        rpc<MessagingStatus>("messaging/status"),
-        rpc<MessagingInstallationsStatus>("messaging/installations/list"),
-        rpc<MessagingChannelMembership[]>("messaging/channels/list"),
-        rpc<MessagingAgentConnection[]>("messaging/connections/list"),
-        rpc<SpaceNavigation>("spaces/list"),
+        rpc("bots/list"),
+        rpc("messaging/status"),
+        rpc("messaging/installations/list"),
+        rpc("messaging/channels/list"),
+        rpc("messaging/connections/list"),
+        rpc("spaces/list"),
       ]);
     setBots(nextBots);
     setStatus(nextStatus);
@@ -145,8 +143,8 @@ export default function MessagingSettings() {
       return;
     }
     void act(async () => {
-      const issued = await rpc<{ code: string; expiresAt: string }>("messaging/link/start", {
-        botId,
+      const issued = await rpc("messaging/link/start", {
+        botId: linkBotId,
       });
       setLink({ ...issued, botId, provider: key });
     });
@@ -165,6 +163,17 @@ export default function MessagingSettings() {
       variant={prominence === "primary" ? undefined : "text"}
       disabled={busy}
       onPress={() => void act(onPress)}
+    />
+  );
+  const memberLinkButton = (
+    <NativeActionButton
+      label={t("Link DMs")}
+      prominence="quiet"
+      size="compact"
+      fill={false}
+      variant="text"
+      disabled={busy || !botId}
+      onPress={() => startLink("slack")}
     />
   );
   const respond = (onRespond: (accept: boolean) => Promise<unknown>) => (
@@ -198,6 +207,74 @@ export default function MessagingSettings() {
           />
         ))}
       </SettingsGroup>
+      {slackInstall || slackInstallations.length ? (
+        <SettingsGroup>
+          {slackInstallations.length === 0 ? (
+            <SettingsRow
+              title={messagingProviderName("slack")}
+              detail={t("Chat with your bot from Slack.")}
+              trailing={
+                <View style={styles.actions}>
+                  {memberLink ? memberLinkButton : null}
+                  <NativeActionButton
+                    label={t("Connect")}
+                    prominence="quiet"
+                    size="compact"
+                    fill={false}
+                    variant="text"
+                    disabled={busy}
+                    onPress={installSlack}
+                  />
+                </View>
+              }
+            />
+          ) : (
+            slackInstallations.map((installation) => (
+              <SettingsRow
+                key={installation.id}
+                title={messagingProviderName(installation.provider)}
+                detail={[
+                  installation.workspaceName,
+                  installation.botName ?? botName(installation.botId),
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+                trailing={
+                  <View style={styles.actions}>
+                    {status?.providers.includes(installation.provider) ? (
+                      <NativeActionButton
+                        label={t("Link DMs")}
+                        prominence="quiet"
+                        size="compact"
+                        fill={false}
+                        variant="text"
+                        disabled={busy}
+                        onPress={() => startLink(installation.provider, installation.botId)}
+                      />
+                    ) : null}
+                    {textAction(
+                      t("Disconnect"),
+                      () => rpc("messaging/installations/remove", { id: installation.id }),
+                      "destructive",
+                    )}
+                  </View>
+                }
+              />
+            ))
+          )}
+          {memberLink && slackInstallations.length ? (
+            <SettingsRow title={messagingProviderName("slack")} trailing={memberLinkButton} />
+          ) : null}
+          {slackInstall && slackInstallations.length ? (
+            <SettingsRow
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={installSlack}
+              title={t("Add workspace")}
+            />
+          ) : null}
+        </SettingsGroup>
+      ) : null}
       <SettingsGroup>
         {status?.identities.map((identity) => (
           <SettingsRow
@@ -227,7 +304,7 @@ export default function MessagingSettings() {
         ))}
       </SettingsGroup>
       <SettingsGroup>
-        {bots.length > 1 ? (
+        {bots.length > 1 && (connectChoices.length || memberLink) ? (
           <MenuPicker
             label={t("Bot")}
             choices={bots.map((bot) => ({ key: bot.id, label: bot.name }))}

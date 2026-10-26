@@ -64,10 +64,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Limit: "Limit",
   "Provider message": "Anbieternachricht",
   Status: "Status",
-  "Set your own key": "Eigenen Schlüssel hinterlegen",
-  "Add your own key or pick another model.":
-    "Füge deinen eigenen Schlüssel hinzu oder wähle ein anderes Modell.",
-  "Choose another model to keep chatting.": "Wähle ein anderes Modell, um weiterzuchatten.",
   "Resets {date}.": "Wird am {date} zurückgesetzt.",
 
   "Model provider": "Modellanbieter",
@@ -99,14 +95,17 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your OpenAI": "Dein OpenAI",
   "Your Anthropic": "Dein Anthropic",
   "Your model provider": "Dein Modellanbieter",
+  "Connect a model in Settings before running bots.":
+    "Verbinde ein Modell in den Einstellungen, bevor du Bots ausführst.",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "Verbinde deinen eigenen API-Schlüssel unter Modelle oder wähle Rakazo-Guthaben unter Abrechnung.",
   "The model provider returned an error.": "Der Modellanbieter hat einen Fehler zurückgegeben.",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} begrenzt die Anfragerate. Versuche es gleich noch einmal.",
   "{summary} Resets {date}.": "{summary} Zurücksetzung am {date}.",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} hat den API-Schlüssel abgelehnt. Prüfe deine Verbindungseinstellungen.",
-  "{provider} could not find the requested model.":
-    "{provider} konnte das angeforderte Modell nicht finden.",
+  "{provider} can't run this model.": "{provider} kann dieses Modell nicht ausführen.",
   "{provider} denied access to this model.":
     "{provider} hat den Zugriff auf dieses Modell verweigert.",
   "The model returned an unusable response. Try again.":
@@ -1093,6 +1092,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "{bot} will still respond to direct mentions.":
     "{bot} antwortet weiterhin auf direkte Erwähnungen.",
   "{sender} rollup hours": "{sender}: Bündelung in Stunden",
+  "Link DMs": "DMs verknüpfen",
   "One-time": "Einmalig",
   "Every hour": "Jede Stunde",
   Cron: "Cron",

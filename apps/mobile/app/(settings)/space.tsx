@@ -67,7 +67,7 @@ export default function SpaceSettings() {
     setPending(true);
     setError(null);
     try {
-      setOverrides(await rpc<SpaceSetting[]>("spaceSettings/setOverride", { setting, enabled }));
+      setOverrides(await rpc("spaceSettings/setOverride", { setting, enabled }));
       if (enabled) open(setting);
     } catch (err) {
       setError(errorText(err, t("Could not save that preference")));

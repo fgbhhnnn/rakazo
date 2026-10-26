@@ -272,16 +272,6 @@ export function GeneralSettingsPanels({
             }
           />
         )}
-        {messagingEnabled && onOpenMessaging ? (
-          <SettingsRow
-            label={<Trans>Messaging</Trans>}
-            control={
-              <Button variant="secondary" size="sm" onClick={onOpenMessaging}>
-                <Trans>Manage</Trans>
-              </Button>
-            }
-          />
-        ) : null}
       </SettingsGroup>
 
       <SettingsGroup title={<Trans>Preferences</Trans>}>

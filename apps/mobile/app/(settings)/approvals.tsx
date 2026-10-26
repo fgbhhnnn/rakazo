@@ -83,9 +83,7 @@ export default function Approvals() {
   }
 
   const setMode = (mode: ApprovalMode) =>
-    save(async () =>
-      setSettings(await rpc<ActionAutoReviewSettings>("autoReview/set", { scope, mode })),
-    );
+    save(async () => setSettings(await rpc("autoReview/set", { scope, mode })));
 
   const applyRuleAction = (rule: ActionApprovalRule, action: RuleAction) =>
     save(async () => {
@@ -95,7 +93,7 @@ export default function Approvals() {
         return;
       }
       if (action === rule.effect || rule.matchKind === "category") return;
-      const saved = await rpc<ActionApprovalRule>("approvalRules/set", {
+      const saved = await rpc("approvalRules/set", {
         scope,
         effect: action,
         matchKind: rule.matchKind,

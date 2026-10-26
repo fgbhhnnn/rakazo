@@ -1,5 +1,5 @@
 import type { ModelCallObserver } from "@rakazo/adapter-kit";
-import { PRODUCT_NAME } from "@rakazo/contracts";
+import { HOSTED_MODEL_CREDITS_REQUIRED_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   creditAccount,
@@ -19,9 +19,7 @@ export async function hostedModelCreditObserver(
   if (!membership) throw new Error("Model credit account is unavailable");
   const account = await creditAccount(prisma, membership.organizationId);
   if (account.mode !== "credits")
-    throw new HostedModelCreditsRequiredError(
-      `Connect your own API key in Models or choose ${PRODUCT_NAME} credits in Billing.`,
-    );
+    throw new HostedModelCreditsRequiredError(HOSTED_MODEL_CREDITS_REQUIRED_ERROR);
   return {
     beforeCall: (call) =>
       reserveModelCredits(prisma, membership.organizationId, call.maxCostUsd ?? Number.NaN, {

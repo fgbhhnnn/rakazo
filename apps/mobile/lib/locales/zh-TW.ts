@@ -53,9 +53,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Limit: "限額",
   "Provider message": "供應商訊息",
   Status: "狀態",
-  "Set your own key": "設定自己的金鑰",
-  "Add your own key or pick another model.": "新增自己的金鑰或選擇其他模型。",
-  "Choose another model to keep chatting.": "選擇其他模型以繼續聊天。",
   "Resets {date}.": "將於 {date} 重設。",
 
   "Model provider": "模型供應商",
@@ -80,13 +77,16 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Your OpenAI": "你的 OpenAI",
   "Your Anthropic": "你的 Anthropic",
   "Your model provider": "你的模型供應商",
+  "Connect a model in Settings before running bots.": "執行機器人前，請先在設定中連接模型。",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "請在「模型」中連接你自己的 API 金鑰，或在「帳務」中選擇 Rakazo 點數。",
   "The model provider returned an error.": "模型供應商回傳了錯誤。",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} 正在限制請求頻率。請稍後重試。",
   "{summary} Resets {date}.": "{summary} 將於 {date} 重設。",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} 拒絕了 API 金鑰。請檢查連線設定。",
-  "{provider} could not find the requested model.": "{provider} 找不到請求的模型。",
+  "{provider} can't run this model.": "{provider} 無法執行此模型。",
   "{provider} denied access to this model.": "{provider} 拒絕了對此模型的存取。",
   "The model returned an unusable response. Try again.": "模型回傳了無法使用的回覆，請再試一次。",
   "This model's context window is too small. Choose another model.":
@@ -985,7 +985,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Automated senders": "自動傳送者",
   "Automated senders will appear after they post here.": "自動傳送者在這裡發文後就會顯示。",
   Block: "封鎖",
-  "Connect Slack": "連結 Slack",
+  "Add workspace": "新增工作區",
+  "Chat with your bot from Slack.": "在 Slack 與你的機器人聊天。",
   "Connect a chat app": "連結聊天應用程式",
   "Connected.": "已連線。",
   Conversations: "對話",

@@ -23,7 +23,7 @@ import {
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
+import { MODEL_KEY_FORMAT_ERROR, REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { AnswerTooLongError, runProviderTransaction } from "@rakazo/db";
@@ -4525,6 +4525,52 @@ describe("model credential persistence", () => {
       "sk-test-key-123",
       expect.objectContaining({ userId: actor.userId }),
     );
+  });
+
+  it("checks the chosen model with the new key before saving it", async () => {
+    const { deps, handler } = persistDeps();
+    const check = vi.fn(async () => {
+      throw new Error("Your model provider denied access to this model.");
+    });
+    Object.assign(deps, { modelConnectionCheck: check });
+
+    const response = await call(handler, "models/connect", {
+      provider: "groq",
+      apiKey: "fixture-groq-key",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { code: "BAD_REQUEST", message: "Your model provider denied access to this model." },
+    });
+    // No model chosen: the provider's recommended default is the one checked.
+    expect(check).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "groq",
+        id: "openai/gpt-oss-120b",
+        apiKey: "fixture-groq-key",
+      }),
+      expect.any(Object),
+    );
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("refuses a pasted key that is not a header-safe token before checking it", async () => {
+    const { deps, handler } = persistDeps();
+    const check = vi.fn(async () => undefined);
+    Object.assign(deps, { modelConnectionCheck: check });
+
+    const response = await call(handler, "models/connect", {
+      provider: "deepseek",
+      apiKey: "sk-fixture-你好-key",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { message: MODEL_KEY_FORMAT_ERROR },
+    });
+    expect(check).not.toHaveBeenCalled();
+    expect(deps.secrets.put).not.toHaveBeenCalled();
   });
 
   it("adds another connection when the save names none, numbering its name", async () => {

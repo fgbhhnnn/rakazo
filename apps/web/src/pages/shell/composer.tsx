@@ -4,6 +4,7 @@ import type { AgentImportReader, ComposerMention, SlashActionId } from "@rakazo/
 import {
   clampMentionHighlightIndex,
   mentionChipKey,
+  newClientId,
   replyAttachment,
   resolveMentionPickerKey,
   SLASH_ACTIONS,
@@ -24,7 +25,6 @@ import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
-import { newClientId } from "../../lib/client-id";
 import {
   beginComposerDraftSubmission,
   readComposerDraft,
@@ -55,6 +55,7 @@ export const Composer = memo(function Composer({
   attachmentNotice,
   sendError,
   onOpenModels,
+  onOpenConnections,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -86,6 +87,7 @@ export const Composer = memo(function Composer({
   attachmentNotice: string | null;
   sendError: string | null;
   onOpenModels: () => void;
+  onOpenConnections: () => void;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -519,6 +521,7 @@ export const Composer = memo(function Composer({
         runErrorId={runErrorId}
         onRunErrorPresented={onRunErrorPresented}
         onOpenModels={onOpenModels}
+        onOpenConnections={onOpenConnections}
         onDismissError={onDismissError}
         textareaRef={textareaRef}
       />

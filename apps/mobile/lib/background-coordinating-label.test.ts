@@ -18,9 +18,13 @@ describe("background coordinating line", () => {
   });
 
   it("is what the chat's working row says while only background tasks run", () => {
-    const thread = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-    expect(thread).toContain('t("Coordinating background tasks")');
-    expect(thread).not.toContain("Background tasks running");
-    expect(thread).toContain("withoutBackgroundTaskCards(snap?.messages");
+    const screen = readFileSync(
+      new URL("../components/thread/thread-screen.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(screen).toContain('t("Coordinating background tasks")');
+    expect(screen).not.toContain("Background tasks running");
+    const transcript = readFileSync(new URL("./thread-transcript.ts", import.meta.url), "utf8");
+    expect(transcript).toContain("withoutBackgroundTaskCards(messages");
   });
 });
