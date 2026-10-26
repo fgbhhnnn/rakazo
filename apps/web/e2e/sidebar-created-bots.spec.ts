@@ -36,6 +36,15 @@ test("created bots appear as regular bots and reorder across their creator", asy
   await expect(scout).toBeVisible();
   await expect(chief).toBeVisible();
 
+  // Unpinned chats sort newest first; the Pinned list is the hand-ordered one.
+  for (const row of [chief, scout]) {
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+  }
+  await expect(sidebar.locator('[data-sidebar-group="pinned"] [data-roster-bot-id]')).toHaveCount(
+    2,
+  );
+
   const rosterOrder = () => sidebar.locator("[data-roster-bot-name]").allTextContents();
   const before = await rosterOrder();
   expect(before).toHaveLength(2);
