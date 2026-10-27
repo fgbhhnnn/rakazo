@@ -49,6 +49,13 @@ import {
   createSafeRemoteFetch,
   listRemoteMcpTools,
 } from "./remote-mcp.js";
+import {
+  isSharedOwnerInstall,
+  loadSharedOwnerCredential,
+  sharedOwnerMcpInstall,
+  sharedOwnerMcpInstalls,
+  sharedOwnerRedactions,
+} from "./shared-owner-installs.js";
 
 const ModelHeaderName = HeaderName.refine(
   (name) => !isSensitiveHeader(name),
@@ -144,14 +151,21 @@ export class InstalledConnectorProvider implements ConnectorProvider {
   }
 
   private async authorizedTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const installs = await this.prisma.capabilityInstall.findMany({
-      where: {
-        spaceId: context.spaceId,
-        userId: context.userId,
-        kind: { in: ["mcp", "api", "graphql"] },
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    const installs = [
+      ...(await this.prisma.capabilityInstall.findMany({
+        where: {
+          spaceId: context.spaceId,
+          userId: context.userId,
+          kind: { in: ["mcp", "api", "graphql"] },
+        },
+        orderBy: { createdAt: "asc" },
+      })),
+      // A locked deployment's member also gets the owner's MCP sources (RAKAZO_SHARE_OWNER_TOOLS).
+      ...(await sharedOwnerMcpInstalls<InstalledRow & { userId: string; spaceId: string }>(
+        this.prisma,
+        context,
+      )),
+    ];
     // Only MCP installs reach the network during discovery.
     const remote = installs.some((install) => install.kind === "mcp")
       ? await this.remoteFor(context)
@@ -255,14 +269,15 @@ export class InstalledConnectorProvider implements ConnectorProvider {
       yield { type: "error", message: "Installed connector route is missing" };
       return;
     }
-    const install = await this.prisma.capabilityInstall.findFirst({
-      where: {
-        id: installId,
-        spaceId: context.spaceId,
-        userId: context.userId,
-        kind: { in: ["mcp", "api", "graphql"] },
-      },
-    });
+    const install =
+      (await this.prisma.capabilityInstall.findFirst({
+        where: {
+          id: installId,
+          spaceId: context.spaceId,
+          userId: context.userId,
+          kind: { in: ["mcp", "api", "graphql"] },
+        },
+      })) ?? (await sharedOwnerMcpInstall(this.prisma, context, installId));
     if (!install) {
       yield { type: "error", message: "Installed connector is unavailable" };
       return;
@@ -285,7 +300,10 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         );
         yield {
           type: "result",
-          data: redactConnectorPayload(result, credential ? [credential] : []),
+          data: redactConnectorPayload(result, [
+            ...(credential ? [credential] : []),
+            ...sharedOwnerRedactions(install),
+          ]),
         };
         return;
       }
@@ -331,7 +349,10 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     } catch (error) {
       yield {
         type: "error",
-        message: sanitizeConnectorError(error, credential ? [credential] : []),
+        message: sanitizeConnectorError(error, [
+          ...(credential ? [credential] : []),
+          ...sharedOwnerRedactions(install),
+        ]),
       };
     }
   }
@@ -341,6 +362,10 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     context: AdapterContext,
   ): Promise<string | undefined> {
     if (!install.secretId) return undefined;
+    if (isSharedOwnerInstall(install))
+      return loadSharedOwnerCredential(this.prisma, install, (row) =>
+        this.secrets.load(row.ciphertext, row.id),
+      );
     const row = await this.prisma.secret.findFirst({
       where: {
         id: install.secretId,
