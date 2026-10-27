@@ -264,7 +264,7 @@ it("keeps a saved mode when a read that started before the save lands after it",
   expect(modes()).not.toContain("Ask*");
 });
 
-it("shows a locked member the approvals read-only", async () => {
+it("lets a locked member pick their own mode and keeps the rules read-only", async () => {
   state.locked = true;
   state.settings = { ...state.settings, checkerAvailable: true };
   state.rules = [rule({ id: "tool", matchValue: "send_email" })];
@@ -276,6 +276,17 @@ it("shows a locked member the approvals read-only", async () => {
     "Your administrator manages this setting.",
   );
   await act(async () => (container.querySelector('[role="radio"]') as HTMLElement).click());
-  expect(state.rpc).not.toHaveBeenCalledWith("autoReview/set", expect.anything());
-  expect(modes()).toEqual(["Never ask", "Auto", "Ask*"]);
+  expect(state.rpc).toHaveBeenCalledWith("autoReview/set", { scope: "account", mode: "never" });
+  expect(modes()).toEqual(["Never ask*", "Auto", "Ask"]);
+  expect(state.rpc).not.toHaveBeenCalledWith("approvalRules/set", expect.anything());
+  expect(state.rpc).not.toHaveBeenCalledWith("approvalRules/remove", expect.anything());
+});
+
+it("shows a locked member without rules no lock note, and Auto only with a checker", async () => {
+  state.locked = true;
+  await render();
+  expect(modes()).toEqual(["Never ask", "Ask*"]);
+  expect(container.querySelector("small")).toBeNull();
+  await act(async () => (container.querySelector('[role="radio"]') as HTMLElement).click());
+  expect(state.rpc).toHaveBeenCalledWith("autoReview/set", { scope: "account", mode: "never" });
 });

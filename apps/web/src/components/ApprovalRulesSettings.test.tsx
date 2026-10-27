@@ -155,7 +155,7 @@ it("blocks or removes an allowed tool", async () => {
   }
 });
 
-it("shows a locked member the approvals read-only", async () => {
+it("lets a locked member pick their own mode and keeps the rules read-only", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([
     {
@@ -167,6 +167,7 @@ it("shows a locked member the approvals read-only", async () => {
     },
   ]);
   rpcMock.autoReview.get.mockResolvedValue(settings);
+  rpcMock.autoReview.set.mockResolvedValue({ ...settings, mode: "never", skipApprovals: true });
   const { container, root } = await render("account", true);
   const rules = '[data-testid="approval-rules"]';
   try {
@@ -174,18 +175,44 @@ it("shows a locked member the approvals read-only", async () => {
     expect(container.querySelector('[data-testid="approval-settings-locked"]')?.textContent).toBe(
       "Your administrator manages this setting.",
     );
-    expect(container.querySelector('[data-testid="approval-mode"]')?.hasAttribute("disabled")).toBe(
-      true,
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector('[data-testid="approval-mode"]')?.hasAttribute("disabled"),
+      ).toBe(false),
     );
     expect(
       container.querySelector(`${rules} [aria-label="Gmail send email"]`)?.hasAttribute("disabled"),
     ).toBe(true);
     expect(button(container, "Remove", rules)).toBeUndefined();
-    await act(async () => button(container, "Never ask")?.click());
     await act(async () => button(container, "Block", rules)?.click());
-    expect(rpcMock.autoReview.set).not.toHaveBeenCalled();
     expect(rpcMock.approvalRules.set).not.toHaveBeenCalled();
-    expect(button(container, "Ask")?.getAttribute("aria-pressed")).toBe("true");
+    expect(rpcMock.approvalRules.remove).not.toHaveBeenCalled();
+    await act(async () => button(container, "Never ask")?.click());
+    expect(rpcMock.autoReview.set).toHaveBeenLastCalledWith({ scope: "account", mode: "never" });
+    await vi.waitFor(() =>
+      expect(button(container, "Never ask")?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    await act(async () => root.unmount());
+  } finally {
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows a locked member without rules only the mode, and Auto only with a checker", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([]);
+  rpcMock.autoReview.get.mockResolvedValue({ ...settings, checkerAvailable: false });
+  rpcMock.autoReview.set.mockResolvedValue({ ...settings, mode: "never", skipApprovals: true });
+  const { container, root } = await render("space", true);
+  try {
+    await vi.waitFor(() =>
+      expect(button(container, "Ask")?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    expect(container.querySelector('[data-testid="approval-settings-locked"]')).toBeNull();
+    expect(button(container, "Auto")).toBeUndefined();
+    await act(async () => button(container, "Never ask")?.click());
+    expect(rpcMock.autoReview.set).toHaveBeenLastCalledWith({ scope: "space", mode: "never" });
     await act(async () => root.unmount());
   } finally {
     container.remove();

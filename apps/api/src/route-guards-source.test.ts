@@ -64,7 +64,15 @@ const REQUIRED: Record<string, { root: string; tokens: string[] }> = {
   },
   "approvalRules.set": { root: "ownerManaged", tokens: ["saveApprovalRule("] },
   "approvalRules.remove": { root: "ownerManaged", tokens: ["removeApprovalRule("] },
-  "autoReview.set": { root: "ownerManaged", tokens: ["saveAutoReviewPreference("] },
+  // A member's own approval mode stays theirs on a locked deployment; it saves for the actor only.
+  "autoReview.set": {
+    root: "authed",
+    tokens: [
+      "saveAutoReviewPreference(",
+      "context.actor,",
+      "loadAutoReviewSettings(deps, context.actor",
+    ],
+  },
   "pages.list": { root: "authed", tokens: ["repos.getBot(", "listOwnedPages("] },
   "pages.get": { root: "authed", tokens: ["getOwnedPage("] },
   "pages.update": { root: "authed", tokens: ["updateOwnedPage("] },
@@ -92,6 +100,11 @@ describe("route guards at the source", () => {
     const procedure = procedureSource(path);
     expect(procedure.root).toBe(root);
     for (const token of tokens) expect(procedure.body, token).toContain(token);
+  });
+
+  it("autoReview.set never takes a user from its input", () => {
+    const body = procedureSource("autoReview.set").body;
+    expect(body).not.toMatch(/input\.(userId|spaceId|actor)/);
   });
 
   it("an admin check runs before anything else in deployment.update", () => {

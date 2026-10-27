@@ -19,8 +19,8 @@ type RuleAction = "always_allow" | "deny" | "remove";
 /**
  * How bots ask before acting, and the tools and sites always allowed or blocked. Rules come from
  * approval cards, so this screen only switches or removes them. Opened with a Space, it edits that
- * Space's override instead of the account's. A locked deployment's member only reads them: the
- * owner or an admin manages approvals there.
+ * Space's override instead of the account's. A locked deployment's member still picks their own
+ * mode, but only reads the rules: the owner or an admin manages those there.
  */
 export default function Approvals() {
   const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
@@ -43,7 +43,7 @@ export default function Approvals() {
     useCallback(() => {
       let current = true;
       const savesAtRead = saves.current;
-      // The server refuses a locked member's change either way; this only keeps it read-only.
+      // The server refuses a locked member's rule change either way; this keeps the rules read-only.
       void rpc("me")
         .then((me) => {
           if (current) setLocked(me.memberSettingsLocked === true);
@@ -65,7 +65,6 @@ export default function Approvals() {
   );
 
   async function save(change: () => Promise<void>) {
-    if (locked) return;
     saves.current += 1;
     setPending(true);
     setError(null);
@@ -83,6 +82,7 @@ export default function Approvals() {
 
   const applyRuleAction = (rule: ActionApprovalRule, action: RuleAction) =>
     save(async () => {
+      if (locked) return;
       if (action === "remove") {
         await rpc("approvalRules/remove", { scope, id: rule.id });
         setRules((current) => current.filter((entry) => entry.id !== rule.id));
@@ -132,7 +132,7 @@ export default function Approvals() {
         <View style={styles.section}>
           <NativeSegmentedControl
             accessibilityLabel={t("Approvals")}
-            disabled={!settings || pending || locked}
+            disabled={!settings || pending}
             onChange={(mode) => void setMode(mode)}
             options={modes}
             value={settings?.mode}
@@ -140,10 +140,10 @@ export default function Approvals() {
           {settings?.mode === "auto" && !settings.checkerAvailable ? (
             <SettingsFooter>{t("Add a model in Settings to use this.")}</SettingsFooter>
           ) : null}
-          {locked ? (
-            <SettingsFooter>{t("Your administrator manages this setting.")}</SettingsFooter>
-          ) : null}
         </View>
+        {locked && rules.length > 0 ? (
+          <SettingsFooter>{t("Your administrator manages this setting.")}</SettingsFooter>
+        ) : null}
         <SettingsGroup>
           {rules.map((rule) => {
             const title =

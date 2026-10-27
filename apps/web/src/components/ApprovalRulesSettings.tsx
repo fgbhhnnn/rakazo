@@ -20,7 +20,8 @@ const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:sh
 
 /**
  * Approvals for the account, or for the bound Space when it customizes them. A locked
- * deployment's member sees them read-only: the owner or an admin manages them.
+ * deployment's member still picks their own mode; the allow/block rules are read-only for them:
+ * the owner or an admin manages those.
  */
 export function ApprovalRulesSettings({
   scope,
@@ -64,7 +65,7 @@ export function ApprovalRulesSettings({
   }
 
   async function save(work: () => Promise<unknown>, failure: string) {
-    if (saving || readOnly) return;
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -84,7 +85,7 @@ export function ApprovalRulesSettings({
 
   const setEffect = (rule: ActionApprovalRule, effect: "always_allow" | "deny") =>
     save(async () => {
-      if (rule.matchKind === "category") return;
+      if (readOnly || rule.matchKind === "category") return;
       const saved = await rpc.approvalRules.set({
         scope,
         effect,
@@ -97,17 +98,13 @@ export function ApprovalRulesSettings({
 
   const removeRule = (rule: ActionApprovalRule) =>
     save(async () => {
+      if (readOnly) return;
       await rpc.approvalRules.remove({ scope, id: rule.id });
       await setRules((current) => current.filter((other) => other.id !== rule.id));
     }, t`Could not remove rule`);
 
   return (
     <div data-testid="approval-settings" className="space-y-8">
-      {readOnly ? (
-        <p data-testid="approval-settings-locked" className="text-[13px] text-muted-foreground">
-          <Trans>Your administrator manages this setting.</Trans>
-        </p>
-      ) : null}
       <SettingsGroup>
         <SettingsRow
           label={<Trans>Mode</Trans>}
@@ -119,7 +116,7 @@ export function ApprovalRulesSettings({
               onValueChange={([next]) => {
                 if (next && next !== autoReview?.mode) void setMode(next as ApprovalMode);
               }}
-              disabled={readOnly || loading || saving || !autoReview}
+              disabled={loading || saving || !autoReview}
               spacing={1}
               className={segmented}
             >
@@ -138,6 +135,11 @@ export function ApprovalRulesSettings({
           ) : null}
         </SettingsRow>
       </SettingsGroup>
+      {readOnly && rules.length > 0 ? (
+        <p data-testid="approval-settings-locked" className="text-[13px] text-muted-foreground">
+          <Trans>Your administrator manages this setting.</Trans>
+        </p>
+      ) : null}
       {rules.length > 0 ? (
         <SettingsGroup data-testid="approval-rules">
           {rules.map((rule) => (

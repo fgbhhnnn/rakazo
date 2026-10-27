@@ -177,8 +177,9 @@ export function accountRoutes(ctx: RouterContext) {
         throw new ORPCError("FORBIDDEN");
       }),
     },
-    // Approval mode and the allow/block lists are owner/admin settings on a locked deployment;
-    // members still read them.
+    // The allow/block lists are owner/admin settings on a locked deployment; members still read
+    // them. The approval mode is each member's own choice even there: it writes only the actor's
+    // own account copy (or their own Space copy), never another user's.
     approvalRules: {
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
@@ -201,7 +202,7 @@ export function accountRoutes(ctx: RouterContext) {
       get: authed.autoReview.get.handler(async ({ context, input }) => {
         return loadAutoReviewSettings(deps, context.actor, input?.scope);
       }),
-      set: ownerManaged.autoReview.set.handler(async ({ context, input }) => {
+      set: authed.autoReview.set.handler(async ({ context, input }) => {
         await deps.prisma.$transaction((tx) =>
           saveAutoReviewPreference(
             tx,

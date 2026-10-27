@@ -40,8 +40,13 @@ const OWNER_MANAGED = [
   "mcp.oauth.disconnect",
   "approvalRules.set",
   "approvalRules.remove",
-  "autoReview.set",
 ] as const;
+
+/**
+ * Changes a locked deployment still leaves to each member, for their own account only. The
+ * approval mode (Never ask / Auto / Ask) is the member's choice; the allow/block lists stay above.
+ */
+const MEMBER_OWN = ["autoReview.set"] as const;
 
 /** Reads (and cancels/tests that change nothing stored) a locked member still needs. */
 const MEMBER_OPEN = [
@@ -152,6 +157,7 @@ describe("router owner/admin guards", () => {
     for (const path of [
       ...OWNER_MANAGED,
       ...MEMBER_OPEN,
+      ...MEMBER_OWN,
       ...ADMIN_ONLY,
       ...NOBODY,
       ...AGENT_IMPORT,
@@ -161,7 +167,7 @@ describe("router owner/admin guards", () => {
   });
 
   it("classifies every model, voice, MCP and approval procedure", () => {
-    const classified = new Set<string>([...OWNER_MANAGED, ...MEMBER_OPEN]);
+    const classified = new Set<string>([...OWNER_MANAGED, ...MEMBER_OPEN, ...MEMBER_OWN]);
     const unclassified = paths.filter(
       (path) =>
         /^(models|voice|mcp|approvalRules|autoReview)\./.test(path) && !classified.has(path),
@@ -185,6 +191,20 @@ describe("router owner/admin guards", () => {
     vi.stubEnv("RAKAZO_ADMIN_EMAILS", ADMIN.email);
     const error = await failure(call(MEMBER, path));
     expect(error?.message).not.toBe(LOCK_MESSAGE);
+  });
+
+  it.each(MEMBER_OWN)("%s lets a member of a locked deployment change their own", async (path) => {
+    vi.stubEnv("RAKAZO_ADMIN_EMAILS", ADMIN.email);
+    const error = await failure(call(MEMBER, path, { scope: "account", mode: "never" }));
+    expect(error?.message).not.toBe(LOCK_MESSAGE);
+  });
+
+  it("keeps the member lock on every model, voice, MCP and approval-rule change", () => {
+    expect(OWNER_MANAGED.filter((path) => /^(models|voice|mcp)\./.test(path))).toHaveLength(24);
+    expect(OWNER_MANAGED).toEqual(
+      expect.arrayContaining(["approvalRules.set", "approvalRules.remove"]),
+    );
+    expect(OWNER_MANAGED).not.toContain("autoReview.set");
   });
 
   it.each(ADMIN_ONLY)("%s is admin-only", async (path) => {
