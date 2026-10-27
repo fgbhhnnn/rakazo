@@ -918,3 +918,40 @@ describe("a kept partial reply in later history", () => {
     expect(content("m4")).toBe("A whole reply.");
   });
 });
+
+describe("a final cut at the output limit", () => {
+  it("tells the outcome return so a worker result can be continued", async () => {
+    vi.mocked(returnBotMessageOutcome).mockClear();
+    await runTurn("", true, undefined, [], "request", {
+      runtimeEvents: [
+        { type: "text", text: "当前测试服版本为 v1." },
+        { type: "done", text: "当前测试服版本为 v1.", truncated: true },
+      ],
+    });
+    expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      "当前测试服版本为 v1.",
+      "result",
+      { truncatedOutput: true },
+    );
+  });
+
+  it("adds no options for a final that ended normally", async () => {
+    vi.mocked(returnBotMessageOutcome).mockClear();
+    await runTurn("", true, undefined, [], "request", {
+      runtimeEvents: [
+        { type: "text", text: "全文完。" },
+        { type: "done", text: "全文完。" },
+      ],
+    });
+    expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      "全文完。",
+      "result",
+    );
+  });
+});

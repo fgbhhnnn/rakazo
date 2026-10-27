@@ -188,6 +188,7 @@ export async function consumeRunEvents(
         operationId: runId,
       });
     } else if (event.type === "done") {
+      ctx.state.finalCutAtOutputLimit = event.truncated === true;
       recordExplicitNoResponse(reply, event.text ?? "");
       if (!reply.assembled && event.text) {
         if (reply.publishedMidTurnUserMessage || reply.discardedMidTurnNarration) {
@@ -771,6 +772,8 @@ export async function completeRun(ctx: RunContext) {
       { id: bot.id, name: bot.name },
       botMessageOutcome.text,
       botMessageOutcome.intent,
+      // Only a final cut at the output limit adds options, so other returns are unchanged.
+      ...(ctx.state.finalCutAtOutputLimit ? [{ truncatedOutput: true }] : []),
     ).catch((error) => getLogger().error("bot message result return", error));
   }
   const notifyBody = completionNotificationPreview(text);

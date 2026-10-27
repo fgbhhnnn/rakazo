@@ -5,6 +5,7 @@
  */
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { clampBotMessage } from "@rakazo/core";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
@@ -19,11 +20,25 @@ import {
   buildIncompleteContinueMessage,
   type IncompleteReason,
   incompleteContinueCount,
+  incompleteExhaustedLead,
   incompleteExhaustedNote,
   MAX_INCOMPLETE_CONTINUES,
   userFacingIncompleteText,
   withIncompleteContinueArgs,
 } from "./worker-incomplete-result.js";
+import { workerOutcomeRelay } from "./worker-outcome-relay.js";
+import {
+  INCOMPLETE_LAST_SIGNATURE_KEY,
+  nearlyIdenticalSignatures,
+  resultSignature,
+  storedResultSignature,
+} from "./worker-result-repeat.js";
+import {
+  boundedTruncatedPrefix,
+  INCOMPLETE_TRUNCATED_PREFIX_KEY,
+  joinTruncatedContinuation,
+  storedTruncatedPrefix,
+} from "./worker-truncated-output.js";
 
 type ContinueDeps = Pick<ExecutorDeps, "prisma" | "jobs"> & {
   events: { notify: (threadId: string, seq: number) => Promise<void> };
@@ -31,7 +46,15 @@ type ContinueDeps = Pick<ExecutorDeps, "prisma" | "jobs"> & {
 
 export type IncompleteContinueDecision =
   | { action: "continue"; runId: string; attempt: number; cleanedText: string }
-  | { action: "fail"; cleanedText: string; continues: number; note: string }
+  | {
+      action: "fail";
+      /** The worker's full final text, joined with any earlier cut-off output. */
+      cleanedText: string;
+      continues: number;
+      note: string;
+      /** The note's lead line alone, for when the full text travels as a file. */
+      lead: string;
+    }
   | { action: "skip" };
 
 /**
@@ -77,27 +100,37 @@ export async function handleIncompleteWorkerResult(
 
   const prior = incompleteContinueCount(row.args);
   const next = prior + 1;
-  if (next > max) {
-    const note = incompleteExhaustedNote({
-      reason: input.reason,
-      cleanedText,
-      continues: prior,
-    });
+  // Text an earlier run already wrote before it was cut at the output limit.
+  const fullText = joinTruncatedContinuation(storedTruncatedPrefix(row.args), cleanedText);
+  const signature = resultSignature(cleanedText);
+  // A continue answered with (nearly) the same final is not progress: stop instead of looping.
+  const repeated =
+    prior > 0 && nearlyIdenticalSignatures(storedResultSignature(row.args), signature);
+  if (next > max || repeated) {
+    const exhausted = { reason: input.reason, cleanedText: fullText, continues: prior, repeated };
     await deps.prisma.backgroundTaskQueue.updateMany({
       where: { id: row.id, status: "started" },
       data: {
         status: "failed",
         finishedAt: new Date(),
-        error: `incomplete after ${prior} auto-continue(s): ${input.reason}`,
+        error: repeated
+          ? `incomplete, continuation repeated the previous result after ${prior} auto-continue(s): ${input.reason}`
+          : `incomplete after ${prior} auto-continue(s): ${input.reason}`,
         args: withIncompleteContinueArgs(row.args, prior, false) as Prisma.InputJsonValue,
       },
     });
-    return { action: "fail", cleanedText, continues: prior, note };
+    return {
+      action: "fail",
+      cleanedText: fullText,
+      continues: prior,
+      note: incompleteExhaustedNote(exhausted),
+      lead: incompleteExhaustedLead(exhausted),
+    };
   }
 
   const continueText = buildIncompleteContinueMessage({
     reason: input.reason,
-    priorText: cleanedText,
+    priorText: input.reason === "truncated_output" ? fullText : cleanedText,
     attempt: next,
     maxAttempts: max,
   });
@@ -112,11 +145,7 @@ export async function handleIncompleteWorkerResult(
     });
   } catch (error) {
     getLogger().error("incomplete worker continue failed to start", error);
-    const note = incompleteExhaustedNote({
-      reason: input.reason,
-      cleanedText,
-      continues: prior,
-    });
+    const exhausted = { reason: input.reason, cleanedText: fullText, continues: prior };
     await deps.prisma.backgroundTaskQueue.updateMany({
       where: { id: row.id, status: "started" },
       data: {
@@ -126,16 +155,29 @@ export async function handleIncompleteWorkerResult(
         args: withIncompleteContinueArgs(row.args, prior, false) as Prisma.InputJsonValue,
       },
     });
-    return { action: "fail", cleanedText, continues: prior, note };
+    return {
+      action: "fail",
+      cleanedText: fullText,
+      continues: prior,
+      note: incompleteExhaustedNote(exhausted),
+      lead: incompleteExhaustedLead(exhausted),
+    };
   }
 
+  const continueArgs: Record<string, unknown> = {
+    ...withIncompleteContinueArgs(row.args, next, true),
+    [INCOMPLETE_LAST_SIGNATURE_KEY]: signature,
+  };
+  if (input.reason === "truncated_output") {
+    continueArgs[INCOMPLETE_TRUNCATED_PREFIX_KEY] = boundedTruncatedPrefix(fullText);
+  }
   await deps.prisma.backgroundTaskQueue.updateMany({
     where: { id: row.id, status: "started" },
     data: {
       workerRunId: nextRunId,
       finishedAt: null,
       error: null,
-      args: withIncompleteContinueArgs(row.args, next, true) as Prisma.InputJsonValue,
+      args: continueArgs as Prisma.InputJsonValue,
     },
   });
 
@@ -243,4 +285,60 @@ export async function clearIncompleteContinuingFlag(
     where: { id: taskId },
     data: { args: withIncompleteContinueArgs(row.args, count, false) as Prisma.InputJsonValue },
   });
+}
+
+/**
+ * A worker result that follows an output-limit cut-off: join the text the earlier run already
+ * wrote so the dispatcher gets the whole report, not only the continuation.
+ */
+export async function withTruncatedOutputPrefix(
+  prisma: PrismaClient,
+  run: { id: string; botId: string },
+  text: string,
+): Promise<string> {
+  try {
+    const task = await backgroundTaskForWorkerRun(prisma, run);
+    if (!task) return text;
+    const row = await prisma.backgroundTaskQueue.findUnique({
+      where: { id: task.id },
+      select: { args: true },
+    });
+    const prefix = storedTruncatedPrefix(row?.args);
+    return prefix ? joinTruncatedContinuation(prefix, text) : text;
+  } catch (error) {
+    // Best effort, like the rest of the relay: the result itself still goes.
+    getLogger().warn("worker cut-off prefix not joined", {
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return text;
+  }
+}
+
+/**
+ * What an unconfirmed (auto-continue exhausted or repeated) worker result relays: the lead and
+ * the worker's full final text. A long text travels whole as the result file, which holds only
+ * the worker's own text; the short note that goes instead starts with the lead.
+ */
+export async function incompleteFailedRelay(
+  deps: Parameters<typeof workerOutcomeRelay>[0],
+  run: Parameters<typeof workerOutcomeRelay>[1],
+  workerTitle: string | undefined,
+  decision: { cleanedText: string; note: string; lead: string },
+  ownerBotId?: string,
+): Promise<Awaited<ReturnType<typeof workerOutcomeRelay>>> {
+  const full = await workerOutcomeRelay(deps, run, workerTitle, decision.cleanedText, ownerBotId);
+  if (full.attachments?.length) return withIncompleteLead(full, decision.lead);
+  return withIncompleteLead(
+    await workerOutcomeRelay(deps, run, workerTitle, decision.note, ownerBotId),
+    decision.lead,
+  );
+}
+
+/** Put the lead in front of a relay whose full text went as a file. */
+export function withIncompleteLead<T extends { message: string; attachments?: unknown[] }>(
+  relay: T,
+  lead: string,
+): T {
+  if (!relay.attachments?.length) return relay;
+  return { ...relay, message: clampBotMessage(`${lead}\n${relay.message}`) };
 }

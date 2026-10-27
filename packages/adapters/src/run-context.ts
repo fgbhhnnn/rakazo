@@ -169,6 +169,8 @@ export interface RunState {
   earlierAttempt: Promise<boolean> | undefined;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
+  /** The runtime's final message stopped at the output-token limit after writing text. */
+  finalCutAtOutputLimit?: boolean;
 }
 
 /** The computer this run may use and how. */

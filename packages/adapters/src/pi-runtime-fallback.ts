@@ -56,6 +56,7 @@ import {
   withoutThinkingBlocks,
   withoutThinkingFrom,
 } from "./thinking-signatures.js";
+import { withTurnOutputDefault } from "./turn-output-budget.js";
 
 const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
 /** About 65 s in total before jitter; used only for gateway concurrency limits. */
@@ -340,13 +341,16 @@ export function fallbackAwareModelStream(
           reason,
         });
       try {
-        const config = state.request.resolveFallbackModel
-          ? await state.request.resolveFallbackModel(
-              choice.provider,
-              choice.id,
-              choice.connectionId,
-            )
-          : (choice as AgentRunRequest["model"]);
+        const config = withTurnOutputDefault(
+          state.request.lane,
+          state.request.resolveFallbackModel
+            ? await state.request.resolveFallbackModel(
+                choice.provider,
+                choice.id,
+                choice.connectionId,
+              )
+            : (choice as AgentRunRequest["model"]),
+        );
         if (signalAborted()) return undefined;
         if (config.provider !== choice.provider || config.id !== choice.id) {
           skip("The saved backup connection no longer matches this model.");

@@ -643,7 +643,12 @@ export type AgentRuntimeEvent =
       progress?: string;
       result?: string;
     }
-  | { type: "done"; text?: string };
+  | {
+      type: "done";
+      text?: string;
+      /** The final assistant message stopped at the output-token limit after writing text. */
+      truncated?: true;
+    };
 
 export interface AgentRuntimeCapabilities {
   streaming: boolean;

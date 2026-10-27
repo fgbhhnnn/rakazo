@@ -78,6 +78,14 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "./turn-checkpoint.js";
+import {
+  continuesLengthCut,
+  LENGTH_CUT_CONTINUATION_PROMPT,
+  lengthCutNotice,
+  MAX_LENGTH_CONTINUATIONS,
+} from "./turn-length-cut.js";
+import { withTurnOutputDefault } from "./turn-output-budget.js";
+import { finalCutAtOutputLimit } from "./worker-truncated-output.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Some OpenAI-compatible models return EOS immediately after a tool result
@@ -159,7 +167,9 @@ export class PiAgentRuntime implements AgentRuntime {
     context?: Partial<AdapterContext>,
   ): AsyncIterableIterator<AgentRuntimeEvent> {
     const controller = new AbortController();
-    const events = this.runEvents(request, controller, context);
+    // Background workers get a wider output default unless the connection configures one.
+    const runRequest = { ...request, model: withTurnOutputDefault(request.lane, request.model) };
+    const events = this.runEvents(runRequest, controller, context);
     return {
       [Symbol.asyncIterator]() {
         return this;
@@ -576,6 +586,8 @@ export class PiAgentRuntime implements AgentRuntime {
           streamed += text;
           queue.push({ type: "text", text });
         };
+        // Continues asked for after a reply stopped at the output-token limit.
+        let lengthContinuations = 0;
         let toolWorkPendingFinal = false;
         // Text streamed before this point is tool-turn narration. Only text after
         // it counts as the final reply, including when the completed message omits it.
@@ -713,6 +725,24 @@ export class PiAgentRuntime implements AgentRuntime {
               agent.followUp({
                 role: "user",
                 content: CUT_REPLY_CONTINUATION_PROMPT,
+                timestamp: Date.now(),
+              });
+            }
+            if (
+              !joinCutReply &&
+              continuesLengthCut(request.lane) &&
+              lengthContinuations < MAX_LENGTH_CONTINUATIONS &&
+              finalCutAtOutputLimit(event.message, Boolean(text.trim())) &&
+              !signal.aborted &&
+              !host.toolCallBudget.exceeded &&
+              !host.pausePending
+            ) {
+              // A bot reply cut at the output limit continues in the same bubble.
+              lengthContinuations += 1;
+              joinCutReply = { tail: streamed.slice(-MAX_CONTINUATION_OVERLAP * 2), held: "" };
+              agent.followUp({
+                role: "user",
+                content: LENGTH_CUT_CONTINUATION_PROMPT,
                 timestamp: Date.now(),
               });
             }
@@ -927,7 +957,20 @@ export class PiAgentRuntime implements AgentRuntime {
             queue.push({ type: "text", text: streamed });
           }
         }
-        queue.push(streamed.trim() ? { type: "done", text: streamed } : { type: "done" });
+        // A final cut at the output limit is reported so a worker's result can be continued.
+        const cutAtLimit =
+          !budgetExceeded && finalCutAtOutputLimit(terminalMessage, Boolean(streamed.trim()));
+        if (cutAtLimit && request.lane === "main" && !signal.aborted) {
+          // Still cut after the in-run continues: say so instead of ending on a half sentence.
+          const notice = lengthCutNotice(streamed);
+          streamed += notice;
+          queue.push({ type: "text", text: notice });
+        }
+        queue.push(
+          streamed.trim()
+            ? { type: "done", text: streamed, ...(cutAtLimit ? { truncated: true as const } : {}) }
+            : { type: "done" },
+        );
       } catch (error) {
         span?.setStatus({ status: "error" });
         const message = sanitizeError(error instanceof Error ? error.message : String(error));

@@ -791,6 +791,90 @@ describe("automatic outcome return", () => {
     expect(prompt).not.toContain("后台1");
   });
 
+  function hiddenWorkerHarness(args: Record<string, unknown> = {}) {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "write the summary",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "项目总结 #TZ5P9D3Y" });
+    const row = {
+      id: "q1",
+      name: "项目总结",
+      ref: "TZ5P9D3Y",
+      status: "started",
+      args: { lane: "computer", ...args },
+      workerBotId: run.botId,
+      workerRunId: run.id,
+    };
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    (harness.deps.prisma as unknown as { backgroundTaskQueue: unknown }).backgroundTaskQueue = {
+      findFirst: vi.fn().mockResolvedValue(row),
+      findUnique: vi.fn().mockResolvedValue(row),
+      updateMany,
+    };
+    return { ...harness, updateMany };
+  }
+
+  it("relays a worker summary with a 未完成事项 heading as a normal result", async () => {
+    const harness = hiddenWorkerHarness();
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "摘要已完成。\n\n## 5. 进行中或未完成事项\n- 支付重试尚未完成\n\n## 6. 下一步\n1. 确认范围。",
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("## 5. 进行中或未完成事项");
+    expect(texts).not.toContain("系统自动继续");
+    expect(texts).not.toContain("未确认完成");
+  });
+
+  it("auto-continues a worker final cut at the output limit instead of relaying it", async () => {
+    const harness = hiddenWorkerHarness();
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "## 4. 版本计划\n- 当前测试服版本为 v1.",
+      "result",
+      { truncatedOutput: true },
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("原样接着往下写");
+    expect(texts).not.toContain("【后台任务：");
+    const argsUpdate = harness.updateMany.mock.calls
+      .map(([input]) => (input as { data: { args?: Record<string, unknown> } }).data.args)
+      .find((args) => args?.incompleteContinues === 1);
+    expect(argsUpdate?.incompleteTruncatedPrefix).toBe("## 4. 版本计划\n- 当前测试服版本为 v1.");
+  });
+
+  it("relays a cut-off result joined with the text written before the cut", async () => {
+    const harness = hiddenWorkerHarness({
+      incompleteContinues: 1,
+      incompleteContinuing: true,
+      incompleteTruncatedPrefix: "前半部分，当前版本为 v1.",
+    });
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "2.0。全文完。",
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("前半部分，当前版本为 v1.2.0。全文完。");
+  });
+
   it("returns the pages a hidden worker wrote with its result", async () => {
     const harness = deps({
       hopBlocks: [

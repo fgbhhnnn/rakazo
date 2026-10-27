@@ -365,7 +365,9 @@ describe("a call that spends its whole output budget on thinking", () => {
     );
     const events = await run(request(plain));
     expect(providerState.stream).toHaveBeenCalledOnce();
-    expect(events.at(-1)).toEqual({ type: "done", text: "A long reply that" });
+    // The cut reply is still delivered once; the done event now also reports the cut so a
+    // background worker's result can be continued instead of passing as complete.
+    expect(events.at(-1)).toEqual({ type: "done", text: "A long reply that", truncated: true });
   });
 
   it("repeats at most three calls in one run", async () => {

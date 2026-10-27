@@ -23,7 +23,11 @@ import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./backgr
 import type { ExecutorDeps } from "./executor-deps.js";
 import { runPageBlocks } from "./pages.js";
 import { attachmentBlocks } from "./task-attachments.js";
-import { handleIncompleteWorkerResult } from "./worker-incomplete-continue.js";
+import {
+  handleIncompleteWorkerResult,
+  incompleteFailedRelay,
+  withTruncatedOutputPrefix,
+} from "./worker-incomplete-continue.js";
 import { incompleteResultReason } from "./worker-incomplete-result.js";
 import { workerOutcomeRelay } from "./worker-outcome-relay.js";
 import { slotFree } from "./worker-slot-mentions.js";
@@ -360,7 +364,11 @@ export async function returnBotMessageOutcome(
   sender: { id: string; name: string },
   text: string,
   intent: "result" | "status" = "result",
-  options?: { forceUnread?: boolean },
+  options?: {
+    forceUnread?: boolean;
+    /** The runtime reported the final stopped at the output-token limit after writing text. */
+    truncatedOutput?: boolean;
+  },
 ) {
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   if (!source) {
@@ -397,8 +405,9 @@ export async function returnBotMessageOutcome(
   // A hidden worker's final text that is truncated or clearly unfinished must not close the
   // task as completed: auto-continue the same worker (capped) or fail honestly.
   let outcomeText = text;
+  let failed: { cleanedText: string; note: string; lead: string } | undefined;
   if (workerTitle !== undefined && intent === "result") {
-    const reason = incompleteResultReason(text);
+    const reason = incompleteResultReason(text, { cutAtOutputLimit: options?.truncatedOutput });
     if (reason) {
       const decision = await handleIncompleteWorkerResult(deps, {
         run,
@@ -413,12 +422,18 @@ export async function returnBotMessageOutcome(
         return true;
       }
       if (decision.action === "fail") {
-        outcomeText = decision.note;
+        failed = decision;
       }
+    } else {
+      // A result after an output-limit cut-off carries the text written before the cut.
+      outcomeText = await withTruncatedOutputPrefix(deps.prisma, run, text);
     }
   }
   // The dispatcher names the task by its title and #ref; an over-long result travels as a file.
-  const relay = await workerOutcomeRelay(deps, run, workerTitle, outcomeText, source.fromBotId);
+  // An unconfirmed result still goes in full, led by a note that it is unconfirmed.
+  const relay = failed
+    ? await incompleteFailedRelay(deps, run, workerTitle, failed, source.fromBotId)
+    : await workerOutcomeRelay(deps, run, workerTitle, outcomeText, source.fromBotId);
   // Pages the worker wrote or edited go back with its result, so they show in the main chat.
   const pages =
     workerTitle === undefined || intent !== "result"
