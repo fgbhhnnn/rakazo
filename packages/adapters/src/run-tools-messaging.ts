@@ -7,6 +7,7 @@ import {
 import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { handoffBriefFromArgs, handoffToGroupBot } from "./group-handoff.js";
+import { noticeHandoffToolFailure } from "./group-reply-routing.js";
 import { publishMessage } from "./run-messages.js";
 import {
   canPublishDurableProgress,
@@ -199,6 +200,8 @@ export const messagingTools: ToolHandlers = {
     if ("ok" in result && result.ok) {
       ctx.state.handoffTargets.push(result.botId);
       if (thread.groupId) ctx.state.handedOff = true;
+    } else if ("reason" in result) {
+      await noticeHandoffToolFailure(deps, { ...run, groupId: thread.groupId }, result.reason);
     }
     return call.finish(result);
   },

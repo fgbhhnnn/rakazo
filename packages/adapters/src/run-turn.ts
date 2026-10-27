@@ -34,6 +34,7 @@ import {
 } from "./dispatcher-mode.js";
 import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
+import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
@@ -685,14 +686,22 @@ export async function completeRun(ctx: RunContext) {
           reply.publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
         ),
       );
+  const groupReply = await planGroupReply(deps, {
+    groupId: thread.groupId,
+    bot,
+    handedOff: ctx.state.handedOff,
+    handoffTargets: ctx.state.handoffTargets,
+    blocks: draftBlocks,
+  });
   const replyGuard = guardDispatcherReply(
     ctx.state.dispatcherTurn && !ctx.state.handedOff,
-    draftBlocks,
+    groupReply.blocks,
     ctx.state.turnLedger,
     {
       wokenByWorker: Boolean(ctx.source.peerMessage),
       runId,
       acknowledgedMidTurn: reply.publishedMidTurnUserMessage,
+      exemptClaim: groupReply.isTeamClaim,
     },
   );
   const blocks = replyGuard.blocks;
@@ -756,6 +765,9 @@ export async function completeRun(ctx: RunContext) {
       .enqueue(runContinueJob(completed.continuationRunId))
       .catch((error) => getLogger().error("steering continuation enqueue", error));
   }
+  await routeGroupReply(deps, run, groupReply.plan).catch((error) =>
+    getLogger().error("group reply handoff", error),
+  );
   if (replyGuard.recheckClaim && !completed.continuationRunId) {
     await queueClaimRecheck(deps, run, replyGuard.original ?? text).catch((error) =>
       getLogger().error("dispatcher claim recheck", error),

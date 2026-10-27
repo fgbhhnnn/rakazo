@@ -212,6 +212,9 @@ export async function handoffToGroupBot(
       } as const;
     }
 
+    // A finished run can no longer write history; its reply's "@Name" handoff is recorded
+    // without a run link (the handoff block names the sender bot).
+    const historyRunId = inGroup && !options.allowFinishedSource ? run.id : undefined;
     const handoffBlock: MessageBlock = {
       kind: "handoff",
       fromBotId: run.botId,
@@ -224,7 +227,7 @@ export async function handoffToGroupBot(
       role: "bot",
       blocks: [handoffBlock],
       botId: run.botId,
-      runId: inGroup ? run.id : undefined,
+      runId: historyRunId,
       clientNonce: deliveryKey,
     });
     const task = await tx.task.create({
@@ -254,7 +257,7 @@ export async function handoffToGroupBot(
       threadId: targetThreadId,
       botId: run.botId,
       type: "group.handoff",
-      runId: inGroup ? run.id : undefined,
+      runId: historyRunId,
       payload: {
         messageId: message.id,
         fromBotId: run.botId,

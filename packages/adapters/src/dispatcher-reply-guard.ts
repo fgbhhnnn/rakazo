@@ -78,14 +78,19 @@ const CLAIM_PATTERNS: readonly RegExp[] = [
 // Offers and questions ("要不要我让它重发？") are not claims.
 const QUESTION = /[？?]\s*$|吗[。！!]?\s*$|要不要|是否|需不需要|可以让/;
 
-function isClaimSentence(sentence: string): boolean {
+/** A sentence another guard owns (a group handoff claim naming a member); not a worker claim. */
+export type ClaimExemption = (sentence: string) => boolean;
+
+function isClaimSentence(sentence: string, exempt?: ClaimExemption): boolean {
   return (
-    !QUESTION.test(sentence.trim()) && CLAIM_PATTERNS.some((pattern) => pattern.test(sentence))
+    !QUESTION.test(sentence.trim()) &&
+    CLAIM_PATTERNS.some((pattern) => pattern.test(sentence)) &&
+    !exempt?.(sentence)
   );
 }
 
-export function claimsWorkerAction(text: string): boolean {
-  return sentences(text).some(isClaimSentence);
+export function claimsWorkerAction(text: string, exempt?: ClaimExemption): boolean {
+  return sentences(text).some((sentence) => isClaimSentence(sentence, exempt));
 }
 
 const SENTENCE = /[^。！？!?\n]+[。！？!?]*\s*|\n+/g;
@@ -95,9 +100,9 @@ function sentences(text: string): string[] {
 }
 
 /** Drops the sentences that claim a worker action; keeps the rest of the reply as written. */
-export function withoutWorkerClaims(text: string): string {
+export function withoutWorkerClaims(text: string, exempt?: ClaimExemption): string {
   return sentences(text)
-    .filter((sentence) => !isClaimSentence(sentence))
+    .filter((sentence) => !isClaimSentence(sentence, exempt))
     .join("")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -138,6 +143,8 @@ export function guardDispatcherReply(
     runId: string;
     /** This turn already posted user-visible text mid-turn (the model's lead-in before its tools). */
     acknowledgedMidTurn?: boolean;
+    /** Group handoff claims are checked by the group reply guard, not as worker claims. */
+    exemptClaim?: ClaimExemption;
   },
 ): ReplyGuardOutcome {
   if (!enabled) return { blocks, changed: false, recheckClaim: false };
@@ -168,11 +175,15 @@ export function guardDispatcherReply(
       original: text,
     };
   }
-  if (!ledger.actedOnWorkers && !context.wokenByWorker && claimsWorkerAction(text)) {
+  if (
+    !ledger.actedOnWorkers &&
+    !context.wokenByWorker &&
+    claimsWorkerAction(text, context.exemptClaim)
+  ) {
     getLogger().warn("dispatcher reply claims a worker action no tool performed", {
       runId: context.runId,
     });
-    next = withoutWorkerClaims(text) || "收到。";
+    next = withoutWorkerClaims(text, context.exemptClaim) || "收到。";
     recheckClaim = true;
   } else if (
     ledger.launchedNew &&
