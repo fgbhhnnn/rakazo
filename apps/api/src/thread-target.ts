@@ -47,6 +47,7 @@ import {
   resolveSendAttachments,
 } from "./artifacts.js";
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
+import { assertOpenableBot } from "./hidden-worker-access.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { loadMessagePage } from "./thread-message-pages.js";
 
@@ -296,7 +297,7 @@ export async function resolveThreadTarget(
   const repos = createRepos(prisma);
   const groupRepos = createGroupRepos(prisma);
   if (input.botId) {
-    const bot = await repos.getBot(actor, input.botId, options);
+    const bot = assertOpenableBot(await repos.getBot(actor, input.botId, options));
     if (!bot.thread) throw new IsolationError();
     return {
       kind: "bot",

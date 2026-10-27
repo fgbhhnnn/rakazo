@@ -76,7 +76,7 @@ describeIntegration("background tasks: dispatcher stays idle, stop is immediate"
     );
     expect(await activeRuns([chief.id])).toBe(0);
 
-    // Workers are hidden from every listing but still open from the task card.
+    // Workers are hidden from every listing and never open as a chat.
     const listed = await rpc<Array<{ id: string }>>(app, cookie, "bots/list", {});
     expect(listed.map((b) => b.id)).toContain(chief.id);
     expect(listed.map((b) => b.id)).not.toContain(worker.id);
@@ -89,13 +89,17 @@ describeIntegration("background tasks: dispatcher stays idle, stop is immediate"
       { botId: worker.id },
     );
     expect(boot.bots.map((b) => b.id)).not.toContain(worker.id);
-    expect(boot.thread?.botId).toBe(worker.id);
-    const opened = await rpc<{ id: string }>(app, cookie, "bots/get", { botId: worker.id });
-    expect(opened.id).toBe(worker.id);
-    const workerThread = await rpc<{ botId: string }>(app, cookie, "threads/get", {
-      botId: worker.id,
-    });
-    expect(workerThread.botId).toBe(worker.id);
+    // A worker's id falls back to the first chat; bots/get and every thread call refuse it.
+    expect(boot.thread?.botId).toBe(chief.id);
+    await expect(rpc(app, cookie, "bots/get", { botId: worker.id })).rejects.toThrow(
+      /^bots\/get (403|404)/,
+    );
+    await expect(rpc(app, cookie, "threads/get", { botId: worker.id })).rejects.toThrow(
+      /^threads\/get (403|404)/,
+    );
+    await expect(
+      rpc(app, cookie, "threads/send", { botId: worker.id, text: "hi worker" }),
+    ).rejects.toThrow(/^threads\/send (403|404)/);
 
     // 2. Mid-task user message: a fresh main run starts (no steering into a busy run)
     //    and, being a stop request, cancels the worker.

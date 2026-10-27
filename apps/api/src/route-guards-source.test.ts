@@ -50,8 +50,6 @@ function functionSource(name: string): string {
 }
 
 const REQUIRED: Record<string, { root: string; tokens: string[] }> = {
-  bootstrap: { root: "authed", tokens: ["includeHidden: true"] },
-  "bots.get": { root: "authed", tokens: ["includeHidden: true"] },
   "threads.answer": {
     root: "authed",
     tokens: [
@@ -100,6 +98,11 @@ describe("route guards at the source", () => {
     const procedure = procedureSource(path);
     expect(procedure.root).toBe(root);
     for (const token of tokens) expect(procedure.body, token).toContain(token);
+  });
+
+  // Hidden background workers are never opened as chats (hidden-worker-access.ts).
+  it.each(["bootstrap", "bots.get"])("%s never serves a hidden worker", (path) => {
+    expect(procedureSource(path).body).not.toContain("includeHidden");
   });
 
   it("autoReview.set never takes a user from its input", () => {

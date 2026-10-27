@@ -163,14 +163,8 @@ export function spacesRoutes(ctx: RouterContext) {
         groupRepos.listGroups(actor, { archived: true }),
       ]);
       const { bots, groups, botSections } = navigation.current;
-      // A hidden background worker opened from its task card: serve its thread, keep it unlisted.
-      const hiddenActive =
-        input.botId && !bots.some((bot) => bot.id === input.botId)
-          ? (await repos.listBots(actor, { includeHidden: true })).find(
-              (bot) => bot.id === input.botId,
-            )
-          : undefined;
-      const active = bots.find((bot) => bot.id === input.botId) ?? hiddenActive ?? bots[0];
+      // A hidden background worker is never opened: its id falls back to the first chat.
+      const active = bots.find((bot) => bot.id === input.botId) ?? bots[0];
       const [thread, routines] = active
         ? await Promise.all([
             resolveThreadTarget(deps.prisma, actor, { botId: active.id }).then((target) =>
