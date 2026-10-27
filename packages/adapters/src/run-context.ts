@@ -143,6 +143,8 @@ export interface RunState {
   computerUse: RunComputerUseState;
   /** True when this attempt is a dispatcher main-bot turn (no computer, withheld work tools). */
   dispatcherTurn: boolean;
+  /** Tool calls refused in this dispatcher turn (see refused-tool-breaker.ts). */
+  refusedToolCalls?: number;
   /** True when this attempt is a think-lane worker (no computer). */
   thinkTurn: boolean;
   /** Tracks dispatched tasks this turn for the reply guard. */

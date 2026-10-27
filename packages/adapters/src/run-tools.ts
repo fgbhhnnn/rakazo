@@ -2,6 +2,7 @@ import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
 import { thinkWorkerToolRefusal } from "./background-task-lanes.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
+import { refusedTool } from "./refused-tool-breaker.js";
 import type { RunContext } from "./run-context.js";
 import { pauseForApproval } from "./run-context.js";
 import type { ToolHandler } from "./run-tool-gate.js";
@@ -85,21 +86,21 @@ async function dispatchTool(
 ) {
   ctx.context.signal.throwIfAborted();
   if (ctx.state.handedOff) {
-    return {
+    return refusedTool(ctx.state, {
       error: "This stage was handed off. End the turn without more tool calls.",
       ...(name === "handoff_to_bot" ? { reason: "one_handoff_per_turn" } : {}),
-    };
+    });
   }
   if (name === "propose_instructions_update" && ctx.state.approval.pausePending)
     return pauseForApproval(ctx);
   const nestingRefusal = workerNestingRefusal(ctx.bot, name);
-  if (nestingRefusal) return { error: nestingRefusal };
+  if (nestingRefusal) return refusedTool(ctx.state, { error: nestingRefusal });
   const userFacingRefusal = workerUserFacingRefusal(ctx.bot, name);
-  if (userFacingRefusal) return { error: userFacingRefusal };
+  if (userFacingRefusal) return refusedTool(ctx.state, { error: userFacingRefusal });
   const thinkRefusal = thinkWorkerToolRefusal(ctx.bot, name);
-  if (thinkRefusal) return { error: thinkRefusal };
+  if (thinkRefusal) return refusedTool(ctx.state, { error: thinkRefusal });
   if (ctx.tools.disabled.has(name)) {
-    return { error: "This tool is disabled for this bot." };
+    return refusedTool(ctx.state, { error: "This tool is disabled for this bot." });
   }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
     return { error: "Page browser is unavailable on this computer." };

@@ -87,7 +87,7 @@ import { dispatcherImageNote, dispatcherWithholdsImages } from "./dispatcher-ima
 import {
   applyDispatcherToolPolicy,
   DISPATCHER_TOOL_NAMES,
-  DispatcherTurnTimeout,
+  type DispatcherTurnTimeout,
   dispatcherTurnMaxMs,
   isDispatcherBot,
   SkipComputerLease,
@@ -103,6 +103,7 @@ import {
   isDispatcherTimeoutRetry,
   lightenDispatcherRetryHistory,
 } from "./dispatcher-retry-context.js";
+import { dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
@@ -1495,7 +1496,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ) {
             return;
           }
-          setupTimeout = new DispatcherTurnTimeout(dispatcherTurnMaxMs());
+          setupTimeout = dispatcherWatchdogTimeout(runAbortController?.signal);
         }
 
         let fallbackModels: ModelRoleChoice[] = [];
@@ -1736,7 +1737,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (await consumeRunEvents(ctx, watchedEvents)) return;
           runComputer.throwIfFailed();
           // A runtime may end quietly when aborted; a stopped main turn still failed.
-          if (dispatcherWatchdogFired) throw new DispatcherTurnTimeout(dispatcherTurnMaxMs());
+          if (dispatcherWatchdogFired) throw dispatcherWatchdogTimeout(runAbortController?.signal);
           await completeRun(ctx);
         } catch (caughtError) {
           await failRun(ctx, caughtError, {

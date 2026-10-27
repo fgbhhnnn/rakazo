@@ -104,6 +104,20 @@ async function runDispatcherTurn(options: {
         return { id: "retry-run-1" };
       }),
       findUniqueOrThrow: vi.fn(async () => run),
+      // restartDispatcherTurn: the failed turn must be settled, and is retried only once.
+      findFirst: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { id?: string; status?: { in: string[] }; retryOfRunId?: string };
+        }) => {
+          if (where.retryOfRunId !== undefined)
+            return restartRuns.length > 0 ? { id: restartRuns[0] } : null;
+          return where.id === run.id && where.status?.in.includes(String(run.status))
+            ? { id: run.id }
+            : null;
+        },
+      ),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         Object.assign(run, data);
         return { count: 1 };
@@ -245,9 +259,11 @@ async function runDispatcherTurn(options: {
     }),
   };
   const finalizeRun = vi.fn(
-    async (_input: { outcome: string; error?: string; blocks?: MessageBlock[] }) => ({
-      continuationRunId: null,
-    }),
+    async (input: { outcome: string; error?: string; blocks?: MessageBlock[] }) => {
+      // Like the real finalizeRun, the run row is terminal once this returns.
+      Object.assign(run, { status: input.outcome });
+      return { continuationRunId: null };
+    },
   );
   const append = vi.fn(async (event: AppendEventInput) =>
     appendEventInTransaction(prisma as unknown as Prisma.TransactionClient, event),

@@ -22,7 +22,7 @@ import { withholdUserFacingTools } from "./worker-user-facing-tools.js";
 
 /** Thrown into a dispatcher turn that ran past its watchdog. */
 export class DispatcherTurnTimeout extends Error {
-  constructor(ms: number) {
+  constructor(readonly ms: number) {
     super(`The reply took longer than ${Math.round(ms / 1000)} s and was stopped.`);
     this.name = "DispatcherTurnTimeout";
   }
@@ -78,6 +78,18 @@ export async function restartDispatcherTurn(
   });
   if (!task) return false;
   const queued = await deps.prisma.$transaction(async (tx) => {
+    // Restart only a turn whose failure is recorded, and only once: a retry created before the
+    // failure is marked, or a second retry of the same turn, would answer the user twice.
+    const settled = await tx.run.findFirst({
+      where: { id: failed.id, status: { in: ["failed", "cancelled"] } },
+      select: { id: true },
+    });
+    if (!settled) return "unsettled" as const;
+    const earlier = await tx.run.findFirst({
+      where: { retryOfRunId: failed.id },
+      select: { id: true },
+    });
+    if (earlier) return null;
     await tx.steeringMessage.updateMany({ where: { runId: failed.id }, data: { runId: null } });
     // A continuation already queued for newer messages answers them; it sees the stopped
     // turn's messages too now that their claim is released.
@@ -107,6 +119,7 @@ export async function restartDispatcherTurn(
       select: { id: true },
     });
   });
+  if (queued === "unsettled") return false;
   if (queued) await deps.jobs.enqueue(runContinueJob(queued.id));
   return true;
 }

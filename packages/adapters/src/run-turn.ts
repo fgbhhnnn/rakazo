@@ -34,6 +34,7 @@ import {
 } from "./dispatcher-mode.js";
 import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
+import { dispatcherTimeoutNotice, dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
 import {
   COMPACTION_BATCH_SIZE,
@@ -853,7 +854,7 @@ export async function failRun(
     !(error instanceof DispatcherTurnTimeout) &&
     !(error instanceof SandboxRateLimitError)
   ) {
-    error = new DispatcherTurnTimeout(dispatcherTurnMaxMs());
+    error = dispatcherWatchdogTimeout(ctx.abortController.signal);
   }
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
@@ -935,7 +936,7 @@ export async function failRun(
     if (!restarted) {
       const reason =
         ctx.state.dispatcherWatchdogFired || error instanceof DispatcherTurnTimeout
-          ? `回复超时（超过 ${Math.round(dispatcherTurnMaxMs() / 1000)} 秒），已重试仍未完成。请再发一次消息。`
+          ? dispatcherTimeoutNotice(error, ctx.abortController.signal)
           : `这次回复失败了：${message}`;
       await publishMessage(deps, run, "bot", [{ kind: "text", text: reason }]).catch((postError) =>
         getLogger().error("dispatcher failure message", postError),
