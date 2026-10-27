@@ -37,14 +37,10 @@ import {
   uncertainEffectResult,
 } from "./approval-effect.js";
 import type { AutoReviewChecker } from "./auto-review.js";
-import {
-  isAutoReviewCheckerConfigured,
-  redactToolArgsForReview,
-  resolveAutoReviewChecker,
-} from "./auto-review.js";
+import { redactToolArgsForReview, resolveAutoReviewChecker } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
+import { runAutoReviewCheckerConfigured } from "./auto-review-checker-configured.js";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { findConnectedModelCredential } from "./model-selection.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
 import {
@@ -250,22 +246,14 @@ export async function gateToolCall(
           }
         : null
       : resolveAutoReviewChecker();
-  const checkerConfigured =
-    reviewable &&
-    (Boolean(injectedReview) ||
-      memberChecker ||
-      Boolean(reviewSettings?.backups.length) ||
-      (checker
-        ? isAutoReviewCheckerConfigured({}) ||
-          Boolean(
-            await findConnectedModelCredential(
-              deps.prisma,
-              deps.secretStore,
-              { userId: run.userId, spaceId: run.spaceId },
-              checker.provider,
-            ),
-          )
-        : false));
+  const checkerConfigured = await runAutoReviewCheckerConfigured(deps, {
+    reviewable,
+    injectedReview: Boolean(injectedReview),
+    memberChecker,
+    backups: reviewSettings?.backups.length ?? 0,
+    checker,
+    modelScope: ctx.modelScope,
+  });
   const plan = planActionGate({
     resolved: approvalResolved,
     mode,

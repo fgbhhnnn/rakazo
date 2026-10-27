@@ -23,8 +23,10 @@ import {
   saveApprovalRule,
   saveAutoReviewPreference,
   selectVoicePreference,
+  sharedModelScope,
   sharedVoiceScope,
   voicePreferenceTarget,
+  withinScope,
 } from "@rakazo/db";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
@@ -348,14 +350,18 @@ function approvalRuleDto(row: {
 }
 
 async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: SettingsScope) {
+  // A member on shared models is judged by what their runs use (run-trust.ts): the approval
+  // model and connections of the owner, as they apply where the owner reads them, on every page.
+  const modelScope = await sharedModelScope(deps.prisma, actor);
+  const borrowed = modelScope.userId !== actor.userId;
   const [role, preference] = await Promise.all([
     // The account page judges the account's approval model; a Space, the one that applies there.
     effectiveModelRole(
       deps.prisma,
-      actor,
+      modelScope,
       "approval",
       { env: process.env },
-      scope === "account" ? "account" : undefined,
+      scope === "account" && !borrowed ? "account" : undefined,
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
   ]);
@@ -377,18 +383,21 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
         ? null
         : deploymentChecker?.provider;
     const credential = requiredUserProvider
-      ? await deps.prisma.userModelCredential.findFirst({
-          where: { userId: actor.userId, provider: requiredUserProvider },
-          select: { id: true },
-        })
+      ? await withinScope(modelScope, () =>
+          deps.prisma.userModelCredential.findFirst({
+            where: { userId: modelScope.userId, provider: requiredUserProvider },
+            select: { id: true },
+          }),
+        )
       : null;
     return { ...settings, checkerAvailable: environmentAvailable || Boolean(credential) };
   }
+  // These read the connections as the owner of the scope they are given.
   const connections = await Promise.all(
     memberChoices.map((choice) =>
       choice.credentialId
-        ? findModelCredentialById(deps.prisma, actor, choice.credentialId)
-        : findModelCredential(deps.prisma, actor, choice.provider, choice.modelId),
+        ? findModelCredentialById(deps.prisma, modelScope, choice.credentialId)
+        : findModelCredential(deps.prisma, modelScope, choice.provider, choice.modelId),
     ),
   );
   const checkerAvailable =
