@@ -3,7 +3,11 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import {
+  COMPLETE_TEAM_RUN_TOOL_NAME,
+  isBackgroundRunTrigger,
+  isOwnerStartedRun,
+} from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -34,7 +38,11 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "background_task_status",
 ]);
 
-export const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
+export const BUILTIN_AGENT_TOOL_NAMES = new Set([
+  ...builtinAgentTools.map((tool) => tool.name),
+  // Not in the shared catalog: the executor offers it only to a team run's leader.
+  COMPLETE_TEAM_RUN_TOOL_NAME,
+]);
 
 const FLEET_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_TOOL_NAMES);
 

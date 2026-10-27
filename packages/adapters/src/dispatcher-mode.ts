@@ -1,4 +1,5 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
+import { COMPLETE_TEAM_RUN_TOOL_NAME } from "@rakazo/core";
 import { isHiddenBot } from "@rakazo/db";
 import {
   BACKGROUND_LANE_GUIDANCE,
@@ -160,6 +161,8 @@ export const DISPATCHER_TOOL_NAMES: ReadonlySet<string> = new Set([
   // Group teamwork: passing the next stage to a teammate is talk, not work. Without it a
   // dispatcher in a group could only fake a handoff through a background worker.
   "handoff_to_bot",
+  // Closing a group team run the dispatcher leads is talk too (offered only to that leader).
+  COMPLETE_TEAM_RUN_TOOL_NAME,
   ...DISPATCHER_OWNER_TOOL_NAMES,
 ]);
 

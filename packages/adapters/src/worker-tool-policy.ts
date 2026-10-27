@@ -17,6 +17,7 @@ export const WORKER_ALWAYS_DISABLED = [
   "archive_bot",
   "update_bot",
   "handoff_to_bot",
+  "complete_team_run",
   "call_user",
   "end_call",
   "create_space",

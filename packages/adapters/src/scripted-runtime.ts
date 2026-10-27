@@ -570,6 +570,21 @@ code-b
       },
     ];
   }
+  // A team run's leader got a finished stage back: close the run when the request said so.
+  if (prompt.includes("已完成，交回") && lower.includes("ship it")) {
+    return [
+      {
+        assistant: "closing the team task.",
+        toolCalls: [
+          {
+            name: "complete_team_run",
+            args: { summary: "scripted team task done", deliverables: ["scripted-result"] },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
   if (
     lower.includes("hand this to") ||
     lower.includes("hand off to") ||

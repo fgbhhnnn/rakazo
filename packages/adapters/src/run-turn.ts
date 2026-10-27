@@ -35,6 +35,7 @@ import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
 import { dispatcherTimeoutNotice, dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
+import { afterGroupTurn } from "./group-turn-end.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
@@ -649,7 +650,6 @@ export async function completeRun(ctx: RunContext) {
   recordExplicitNoResponse(reply, reply.lastDiscardedMidTurnNarration);
   if (
     !isBackgroundRunTrigger(run.trigger) &&
-    !ctx.state.handedOff &&
     !reply.explicitNoResponse &&
     !reply.assembled.trim() &&
     reply.lastDiscardedMidTurnNarration &&
@@ -678,14 +678,13 @@ export async function completeRun(ctx: RunContext) {
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
     });
   }
-  const draftBlocks = ctx.state.handedOff
-    ? []
-    : withoutRestatedLeadSentences(
-        finalBlocksAfterMidTurnProgress(
-          redactBlocks(completionBlocks, ctx.secrets),
-          reply.publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
-        ),
-      );
+  // A bot that handed off still says what it did: its reply shows beside the handoff card.
+  const draftBlocks = withoutRestatedLeadSentences(
+    finalBlocksAfterMidTurnProgress(
+      redactBlocks(completionBlocks, ctx.secrets),
+      reply.publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
+    ),
+  );
   const groupReply = await planGroupReply(deps, {
     groupId: thread.groupId,
     bot,
@@ -706,12 +705,10 @@ export async function completeRun(ctx: RunContext) {
     },
   );
   const blocks = replyGuard.blocks;
-  const text = ctx.state.handedOff
-    ? ""
-    : redactSecrets(
-        completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
-        ctx.secrets,
-      );
+  const text = redactSecrets(
+    completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
+    ctx.secrets,
+  );
   if (containsSecret(text, ctx.secrets)) {
     throw new Error("refusing to persist a secret in the thread");
   }
@@ -769,6 +766,13 @@ export async function completeRun(ctx: RunContext) {
   await routeGroupReply(deps, run, groupReply.plan).catch((error) =>
     getLogger().error("group reply handoff", error),
   );
+  await afterGroupTurn(deps, run, {
+    thread,
+    bot,
+    blocks,
+    handoffTargets: ctx.state.handoffTargets,
+    continued: Boolean(completed.continuationRunId),
+  });
   if (replyGuard.recheckClaim && !completed.continuationRunId) {
     await queueClaimRecheck(deps, run, replyGuard.original ?? text).catch((error) =>
       getLogger().error("dispatcher claim recheck", error),

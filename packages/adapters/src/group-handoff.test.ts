@@ -41,6 +41,8 @@ function harness(
     },
     message: {
       findUnique: vi.fn(async (_args: unknown) => existing ?? null),
+      // No human message anchors a group team run here: plain handoff rules apply.
+      findFirst: vi.fn(async (_args: unknown) => null),
       create: messageCreate,
     },
     thread: {

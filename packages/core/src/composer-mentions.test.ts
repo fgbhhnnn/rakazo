@@ -61,6 +61,38 @@ describe("buildComposerMentionOptions", () => {
     expect(mentionChipKey(options[1]!)).toBe("routine:r2");
   });
 
+  it("offers only the group's own members as bots in a group chat", () => {
+    const bots = [
+      { id: "chief", name: "Chief" },
+      { id: "new", name: "New Bot" },
+      { id: "site", name: "wp建站" },
+      { id: "wa", name: "大道出海whatsapp" },
+    ];
+    const base = { query: "", bots, groups: [], routines: [], connectors: [] };
+    const inGroup = buildComposerMentionOptions({
+      ...base,
+      includeEveryone: true,
+      currentGroupId: "g1",
+      groupMemberBotIds: ["site", "wa"],
+    });
+    expect(inGroup.map((option) => option.id)).toEqual(["everyone", "site", "wa"]);
+    // Before the roster is known, no outside bot is offered.
+    const unknown = buildComposerMentionOptions({
+      ...base,
+      includeEveryone: true,
+      currentGroupId: "g1",
+      groupMemberBotIds: [],
+    });
+    expect(unknown.map((option) => option.id)).toEqual(["everyone"]);
+    // A direct chat is unchanged: every bot can be mentioned.
+    expect(buildComposerMentionOptions(base).map((option) => option.id)).toEqual([
+      "chief",
+      "new",
+      "site",
+      "wa",
+    ]);
+  });
+
   it("skips the current group", () => {
     const options = buildComposerMentionOptions({
       query: "",

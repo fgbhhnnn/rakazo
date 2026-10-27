@@ -99,6 +99,12 @@ export function useComposerMentions({
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
+        // A group's picker offers its own members only, never every bot of the user.
+        groupMemberBotIds: inGroup
+          ? (groups.find((group) => group.id === groupId)?.members ?? []).map(
+              (member) => member.botId,
+            )
+          : undefined,
         bots: bots.map((bot) => ({ id: bot.id, name: bot.name, color: bot.color })),
         groups: groups.map((group) => ({ id: group.id, name: group.name })),
         routines: mentionRoutines.map((routine) => ({

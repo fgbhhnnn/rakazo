@@ -18,6 +18,7 @@ import { messagingTools } from "./run-tools-messaging.js";
 import { pageTools } from "./run-tools-pages.js";
 import { secretTools } from "./run-tools-secrets.js";
 import { taskTools } from "./run-tools-tasks.js";
+import { teamTools } from "./run-tools-team.js";
 import { workerNestingRefusal } from "./worker-nesting.js";
 import { workerUserFacingRefusal } from "./worker-user-facing-tools.js";
 
@@ -32,6 +33,7 @@ export const TOOL_HANDLERS: ReadonlyMap<string, ToolHandler> = new Map<string, T
   ...Object.entries(secretTools),
   ...Object.entries(fleetTools),
   ...Object.entries(pageTools),
+  ...Object.entries(teamTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 

@@ -609,6 +609,7 @@ model ChatGroup {
   members    ChatGroupMember[]
   thread     Thread?
   artifacts  Artifact[]
+  teamRuns   GroupTeamRun[]
 
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -626,6 +627,38 @@ model ChatGroupMember {
   @@unique([groupId, botId])
   @@index([botId])
   @@map("chat_group_members")
+}
+
+/// A group task the team runs to completion: the leader (first visible member) hands stages
+/// out, a finished stage returns to the leader, and the leader closes it with a summary.
+model GroupTeamRun {
+  id                 String    @id @default(cuid())
+  spaceId            String
+  userId             String
+  groupId            String
+  group              ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  threadId           String
+  leaderBotId        String
+  /// The human message that started it. A newer human message in the thread ends it.
+  /// The run's goal is that message's text; this table holds no message content itself.
+  originMessageId    String    @unique
+  /// active | completed | paused | stopped | answered | superseded
+  status             String    @default("active")
+  /// Handoffs made inside this run (its own budget, separate from the plain chain limit).
+  hops               Int       @default(0)
+  /// Times the system asked the leader to go on after a turn that neither handed off nor closed.
+  nudges             Int       @default(0)
+  /// The member the leader last handed a stage to, and how many times in a row.
+  lastLeaderTargetId String?
+  leaderTargetStreak Int       @default(0)
+  endReason          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  endedAt            DateTime?
+
+  @@index([threadId, status])
+  @@index([groupId])
+  @@map("group_team_runs")
 }
 
 model Thread {

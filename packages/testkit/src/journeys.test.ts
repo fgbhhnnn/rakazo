@@ -2593,6 +2593,130 @@ describeJourneys("required product journeys", () => {
     expect(remainingBotIds).not.toContain(artifactOwnerId);
   });
 
+  it("54b: a group team carries a request to the end on its own, for any kind of team", async () => {
+    const ada = await signup(app, `ada-team-${stamp}@rakazo.test`, "Ada Team");
+    const bot = (name: string, description: string) =>
+      rpc<Bot>(app, ada, "bots/create", {
+        name,
+        title: "",
+        description,
+        instructions: "",
+        notifyOnFinish: false,
+      });
+    // A writing desk, not a dev team; one member has no description at all.
+    const planner = await bot("Planner", "Plans the piece and checks it against the brief");
+    const drafter = await bot("Drafter", "");
+    const desk = async (name: string) =>
+      rpc<{ id: string; threadId: string }>(app, ada, "groups/create", {
+        name,
+        botIds: [planner.id, drafter.id],
+      });
+    const texts = async (threadId: string) =>
+      (await prisma.message.findMany({ where: { threadId }, orderBy: { seq: "asc" } })).map(
+        (message) =>
+          (message.blocks as MessageBlock[])
+            .map((block) => (block.kind === "text" || block.kind === "handoff" ? block.text : ""))
+            .join(""),
+      );
+    // The run the group's first request started.
+    const teamRun = (threadId: string) =>
+      prisma.groupTeamRun.findFirst({ where: { threadId }, orderBy: { createdAt: "asc" } });
+    const settled = async (threadId: string, status: string) => {
+      await waitForDatabase(async () => (await teamRun(threadId))?.status === status);
+      await waitForDatabase(
+        async () =>
+          (await prisma.run.count({
+            where: { threadId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+          })) === 0,
+      );
+    };
+
+    // Asked to pass the work on, the leader's turn ends without the tool: the system hands it
+    // to Drafter, Drafter's finished stage returns to Planner, and Planner closes the run.
+    const done = await desk("Writing desk");
+    await rpc(app, ada, "threads/send", {
+      groupId: done.id,
+      text: "@Planner 写一份大纲，然后交给 Drafter。ship it",
+    });
+    await settled(done.threadId, "completed");
+    const doneTexts = await texts(done.threadId);
+    expect(doneTexts.some((text) => text.includes("（系统按你的要求交给 Drafter）"))).toBe(true);
+    expect(doneTexts.some((text) => text.startsWith("Drafter 已完成，交回 Planner。"))).toBe(true);
+    // The summary is posted by the tool; the leader's own short reply may follow it.
+    expect(doneTexts.slice(-2)).toContain(
+      "✅ 团队任务完成\nscripted team task done\n交付物：\n- scripted-result",
+    );
+    expect(await teamRun(done.threadId)).toMatchObject({ hops: 2, endReason: "leader_completed" });
+
+    // A leader that stops without closing gets one nudge, then the run pauses visibly.
+    const stall = await desk("Writing desk 2");
+    await rpc(app, ada, "threads/send", {
+      groupId: stall.id,
+      text: "@Planner 写一份大纲，然后交给 Drafter",
+    });
+    await settled(stall.threadId, "paused");
+    const stallTexts = await texts(stall.threadId);
+    expect(stallTexts.filter((text) => text.startsWith("（系统提醒 Planner"))).toHaveLength(1);
+    expect(stallTexts.at(-1)).toBe("团队任务已暂停，等你回复。");
+
+    // The hop budget stops the run with a visible notice.
+    vi.stubEnv("RAKAZO_GROUP_TEAM_RUN_MAX_HOPS", "1");
+    try {
+      const capped = await desk("Writing desk 3");
+      await rpc(app, ada, "threads/send", {
+        groupId: capped.id,
+        text: "@Planner 写一份大纲，然后交给 Drafter",
+      });
+      await settled(capped.threadId, "stopped");
+      expect((await texts(capped.threadId)).at(-1)).toBe(
+        "团队任务已达到交接次数或时长上限，已暂停，等你回复。",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    // An @ of a bot that is not in the group (typed or as a chip) never wakes it there.
+    const outsider = await bot("Chief", "Not in the group");
+    const mentionDesk = await desk("Writing desk 5");
+    const sent = await rpc<{ runId: string; runIds?: string[] }>(app, ada, "threads/send", {
+      groupId: mentionDesk.id,
+      text: "@Chief @Drafter 看一下",
+      mentions: [{ kind: "bot", id: outsider.id }],
+    });
+    const woken = await prisma.run.findMany({
+      where: { id: { in: sent.runIds ?? [sent.runId] } },
+      select: { botId: true },
+    });
+    expect(woken.map((run) => run.botId)).toEqual([drafter.id]);
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { threadId: mentionDesk.threadId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    expect(
+      await prisma.run.count({ where: { botId: outsider.id, threadId: mentionDesk.threadId } }),
+    ).toBe(0);
+
+    // A human message while a stage is running wins: the old run stops and nothing returns.
+    const interrupted = await desk("Writing desk 4");
+    await rpc(app, ada, "threads/send", {
+      groupId: interrupted.id,
+      text: "@Planner 写一份大纲，然后交给 Drafter。work for 2 seconds",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { threadId: interrupted.threadId, botId: drafter.id, status: "running" },
+        })) === 1,
+    );
+    await rpc(app, ada, "threads/send", { groupId: interrupted.id, text: "@Planner 先停一下" });
+    await settled(interrupted.threadId, "superseded");
+    expect(
+      (await texts(interrupted.threadId)).some((text) => text.startsWith("Drafter 已完成，交回")),
+    ).toBe(false);
+  });
+
   it("17: teach a task end to end", async () => {
     const cookie = await signup(app, `teach-j-${stamp}@rakazo.test`, "Teach Ada");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

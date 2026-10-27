@@ -15,6 +15,7 @@ import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
+  deferredHandoffTargetId,
   isConversationalRun,
   messageReaction,
   projectMessages,
@@ -873,11 +874,19 @@ export async function sendThreadMessage(
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
-      const targetBotIds = resolveGroupTargetBotIds({
+      const groupMembers = members.map((member) => ({ id: member.botId, name: member.name }));
+      const mentionedBotIds = resolveGroupTargetBotIds({
         text: input.text ?? "",
-        members: members.map((member) => ({ id: member.botId, name: member.name })),
+        members: groupMembers,
         explicitMentions: mentionTargets.botMentionIds,
       });
+      // "@A 写需求，然后交给@B": B gets the work from A's turn, not at once with the raw request.
+      const deferredBotId = deferredHandoffTargetId(
+        input.text ?? "",
+        groupMembers,
+        mentionedBotIds,
+      );
+      const targetBotIds = mentionedBotIds.filter((botId) => botId !== deferredBotId);
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx },
         actor,

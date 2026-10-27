@@ -193,6 +193,11 @@ export function buildComposerMentionOptions(input: {
   routines: readonly MentionPickerRoutine[];
   connectors: readonly MentionPickerConnector[];
   currentGroupId?: string | null;
+  /**
+   * In a group chat, the bots that are its members: only they can be @mentioned there. Pass
+   * an empty list while the roster is unknown; omit it outside a group.
+   */
+  groupMemberBotIds?: readonly string[];
   includeEveryone?: boolean;
   /** Localized schedule words for routine subtitles; English when omitted. */
   cronLabels?: CronLabels;
@@ -214,7 +219,9 @@ export function buildComposerMentionOptions(input: {
     });
   }
 
+  const members = input.groupMemberBotIds ? new Set(input.groupMemberBotIds) : undefined;
   for (const bot of input.bots) {
+    if (members && !members.has(bot.id)) continue;
     const name = displayName(bot.name, "Bot");
     if (!matches(name)) continue;
     options.push({

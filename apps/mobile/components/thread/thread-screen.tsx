@@ -200,6 +200,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         query: "",
         includeEveryone: inGroup,
         currentGroupId: groupId,
+        // A group's picker offers its own members only, never every bot of the user.
+        groupMemberBotIds: inGroup
+          ? (mentionGroups.find((group) => group.id === groupId)?.members ?? []).map(
+              (member) => member.botId,
+            )
+          : undefined,
         bots: mentionBots.map((bot) => ({ id: bot.id, name: bot.name, color: bot.color })),
         groups: mentionGroups.map((group) => ({ id: group.id, name: group.name })),
         routines: mentionRoutines.map((routine) => ({

@@ -22,6 +22,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { recordTeamRunHandoff, teamRunHandoffGate } from "./group-team-run-gate.js";
 
 export type HandoffResult =
   | { error: string; reason: HandoffFailureReason }
@@ -197,7 +198,11 @@ export async function handoffToGroupBot(
     const sourceHandoff = sourceBlocks.find(
       (block): block is Extract<MessageBlock, { kind: "handoff" }> => block.kind === "handoff",
     );
-    if (sourceHandoff?.fromBotId === targetId) {
+    // A group team run replaces the plain chain limit with its own budget and loop guard.
+    const team = inGroup ? await teamRunHandoffGate(tx, run, targetId) : { kind: "none" as const };
+    if (team.kind === "refused") return { error: team.error, reason: team.reason } as const;
+    const teamStep = team.kind === "team" ? team : undefined;
+    if (sourceHandoff?.fromBotId === targetId && !teamStep?.allowHandBack) {
       return {
         error:
           "do not hand this stage back to its sender; post the result in the shared thread instead",
@@ -205,7 +210,7 @@ export async function handoffToGroupBot(
       } as const;
     }
     const hop = nextBotMessageHop(sourceHandoff?.hop ?? botMessageContext(sourceBlocks)?.hop);
-    if (botMessageHopExhausted(hop)) {
+    if (!teamStep && botMessageHopExhausted(hop)) {
       return {
         error:
           "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
@@ -266,6 +271,7 @@ export async function handoffToGroupBot(
         text,
       },
     });
+    if (teamStep) await recordTeamRunHandoff(tx, teamStep, run.botId, targetId);
     await touchGroupUpdatedAt(tx, groupId);
     return {
       ok: true,

@@ -7,6 +7,8 @@ import {
   handoffClaims,
   mentionedMembersInOrder,
   replyMentionTarget,
+  TEAM_RUN_BUDGET_NOTICE,
+  TEAM_RUN_LOOP_NOTICE,
   unverifiedHandoffClaimNote,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -109,23 +111,24 @@ export async function planGroupReply(
   isTeamClaim?: (sentence: string) => boolean;
 }> {
   const { groupId, bot, blocks } = input;
-  if (!groupId || input.handedOff || isHiddenBot(bot)) return { blocks };
+  if (!groupId || isHiddenBot(bot)) return { blocks };
   const text = replyText(blocks);
   if (!text) return { blocks };
   const members = await activeGroupMembers(deps.prisma, groupId);
   if (!members) return { blocks };
   const others = members.filter((member) => member.id !== bot.id);
-  // The tool already handed off this turn: a reply "@Name" is then only a mention.
   const addressed = input.humanTurn
     ? await humanAddressedIds(deps.prisma, input.humanTurn, others)
     : new Set<string>();
-  const target = input.handoffTargets.length
-    ? undefined
-    : replyMentionTarget(
-        text,
-        others.filter((member) => !addressed.has(member.id)),
-        bot.id,
-      );
+  // The tool already handed off this turn: a reply "@Name" is then only a mention.
+  const target =
+    input.handedOff || input.handoffTargets.length
+      ? undefined
+      : replyMentionTarget(
+          text,
+          others.filter((member) => !addressed.has(member.id)),
+          bot.id,
+        );
   const note = unverifiedHandoffClaimNote(text, others, [
     ...input.handoffTargets,
     ...(target ? [target.id] : []),
@@ -186,8 +189,16 @@ export async function noticeHandoffToolFailure(
   run: GroupRun & { groupId: string | null | undefined },
   reason: HandoffFailureReason,
 ): Promise<void> {
-  if (!run.groupId || reason !== "hop_limit") return;
-  await postGroupNotice(deps, run, HANDOFF_CHAIN_LIMIT_NOTICE).catch((error) =>
+  const notice =
+    reason === "hop_limit"
+      ? HANDOFF_CHAIN_LIMIT_NOTICE
+      : reason === "team_budget"
+        ? TEAM_RUN_BUDGET_NOTICE
+        : reason === "team_loop"
+          ? TEAM_RUN_LOOP_NOTICE
+          : undefined;
+  if (!run.groupId || !notice) return;
+  await postGroupNotice(deps, run, notice).catch((error) =>
     getLogger().error("group handoff notice", error),
   );
 }

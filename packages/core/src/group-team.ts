@@ -1,4 +1,5 @@
 import { type GroupMemberRef, mentionedMembersInOrder } from "./group-mentions.js";
+import { TEAM_RUN_LOOP_NOTICE } from "./group-team-run.js";
 
 /**
  * Group "team" contract shared by the handoff tool and an "@Name" in a bot's group reply:
@@ -14,7 +15,14 @@ export type HandoffFailureReason =
   | "group_unavailable"
   | "source_inactive"
   | "invalid_message"
-  | "invalid_chain";
+  | "invalid_chain"
+  // A team run's own guards (see group-team-run.ts).
+  | "team_budget"
+  | "team_loop"
+  | "team_interrupted";
+
+/** Shown in the group when a team run reaches its handoff or time budget. */
+export const TEAM_RUN_BUDGET_NOTICE = "团队任务已达到交接次数或时长上限，已暂停，等你回复。";
 
 /** Shown in the group when a chain of bot-to-bot handoffs reaches its limit. */
 export const HANDOFF_CHAIN_LIMIT_NOTICE = "已达到连续交接上限，等你回复。";
@@ -27,6 +35,8 @@ export function unverifiedHandoffNote(names: readonly string[]): string {
 /** Shown in the group when a handoff named in a reply could not be made. */
 export function failedHandoffNotice(name: string, reason: HandoffFailureReason): string {
   if (reason === "hop_limit") return HANDOFF_CHAIN_LIMIT_NOTICE;
+  if (reason === "team_budget") return TEAM_RUN_BUDGET_NOTICE;
+  if (reason === "team_loop") return TEAM_RUN_LOOP_NOTICE;
   const why: Record<HandoffFailureReason, string> = {
     hop_limit: "已达到连续交接上限",
     not_in_group: "对方不是本群成员",
@@ -37,6 +47,9 @@ export function failedHandoffNotice(name: string, reason: HandoffFailureReason):
     source_inactive: "本轮已结束",
     invalid_message: "交接内容为空或过长",
     invalid_chain: "交接链无法校验",
+    team_budget: "团队任务已达到上限",
+    team_loop: "同一阶段反复往返",
+    team_interrupted: "你发了新消息，之前的团队任务已停止",
   };
   return `未能交接给 ${name}：${why[reason]}。`;
 }

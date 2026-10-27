@@ -265,6 +265,10 @@ describe("group members roster", () => {
     expect(withTool).toContain("handoff_to_bot");
     expect(withTool).toContain("never start a background task just to hand off");
     expect(withTool).toContain("One handoff per turn");
+    expect(withTool).toContain(
+      'If the user asks you to pass the work to a member (for example "然后交给 <member>"), do your part, then call handoff_to_bot to that member in the same turn.',
+    );
+    expect(without).not.toContain("If the user asks you to pass the work");
   });
 
   it("reuses the same roster line formatting as the teammate directory", () => {

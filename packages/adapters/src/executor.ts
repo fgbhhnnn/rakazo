@@ -106,6 +106,7 @@ import { dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
+import { teamRunForRun, teamRunPromptContext } from "./group-team-run.js";
 import {
   formatCompactedSummary,
   formatRecalledMemory,
@@ -187,6 +188,7 @@ import {
   selectBuiltinToolsForRun,
 } from "./run-tool-selection.js";
 import { applyTool } from "./run-tools.js";
+import { completeTeamRunTool } from "./run-tools-team.js";
 import { createRunTrustLoaders } from "./run-trust.js";
 import { completeRun, consumeRunEvents, failRun } from "./run-turn.js";
 import {
@@ -1120,14 +1122,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ),
           ...(run.trigger === "created" ? [] : exposedConnectorTools),
         ];
+        const handoffTool = tools.some((tool) => tool.name === "handoff_to_bot");
+        // A group team run (group-team-run.ts): its leader can close it, and both roles are told.
+        const teamRun = handoffTool
+          ? await teamRunForRun(deps.prisma, run, thread, bot, { start: true }).catch((error) => {
+              getLogger().error("team run lookup", error);
+              return undefined;
+            })
+          : undefined;
+        if (teamRun?.role === "leader" && !teamRun.interrupted) tools.push(completeTeamRunTool);
         // Rendered after the tool list so the group prompt only names tools this run has.
         const groupContext = thread.groupId
-          ? await loadGroupContext(
-              deps.prisma,
-              thread.groupId,
-              { id: bot.id, name: bot.name },
-              { handoffTool: tools.some((tool) => tool.name === "handoff_to_bot") },
-            )
+          ? [
+              await loadGroupContext(
+                deps.prisma,
+                thread.groupId,
+                { id: bot.id, name: bot.name },
+                { handoffTool },
+              ),
+              await teamRunPromptContext(deps.prisma, teamRun),
+            ]
+              .filter(Boolean)
+              .join("\n") || undefined
           : undefined;
         const taskCatalogInstruction = tools.some((tool) => tool.name === "task_catalog")
           ? TASK_CATALOG_GUIDANCE
