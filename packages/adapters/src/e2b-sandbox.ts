@@ -20,11 +20,10 @@ import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import { isE2BSandboxPaused } from "./e2b-save-scope.js";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
+import { walkE2BWorkspaceConcurrently } from "./e2b-workspace-walk.js";
 import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -60,6 +59,11 @@ export interface E2BSandboxSdk {
   connect(id: string, options: { apiKey: string; timeoutMs: number }): Promise<E2BDesktop>;
   pause(id: string, options: { apiKey: string }): Promise<unknown>;
   kill(id: string, options: { apiKey: string }): Promise<boolean>;
+  /** Read-only status; never resumes a paused sandbox. */
+  getInfo?(
+    id: string,
+    options: { apiKey: string; signal?: AbortSignal; requestTimeoutMs?: number },
+  ): Promise<{ state: string }>;
 }
 
 const e2bSdk: E2BSandboxSdk = {
@@ -67,6 +71,7 @@ const e2bSdk: E2BSandboxSdk = {
   connect: (id, options) => Sandbox.connect(id, options),
   pause: (id, options) => Sandbox.pause(id, options),
   kill: (id, options) => Sandbox.kill(id, options),
+  getInfo: (id, options) => Sandbox.getInfo(id, options),
 };
 
 export function e2bCreateOptions(botId: string, apiKey: string) {
@@ -376,7 +381,10 @@ export class E2BSandboxProvider implements SandboxProvider {
     const desktop = await this.box(computer);
     await this.desktops.stopBrowsers(computer, context);
     try {
-      yield* keepingAwake(desktop, walkE2BWorkspace(desktop, "", context));
+      yield* keepingAwake(
+        desktop,
+        walkE2BWorkspaceConcurrently(desktop.files, E2B_WORKSPACE, context),
+      );
     } catch (error) {
       throw await this.recover(computer, desktop, error);
     }
@@ -421,6 +429,14 @@ export class E2BSandboxProvider implements SandboxProvider {
     // throws when it is gone or the key no longer works.
     this.lastTouchedAt.delete(sandboxId(computer));
     await this.box(computer);
+  }
+
+  /**
+   * Read-only: E2B holds a paused sandbox with its disk kept, and it resumes as it was. A
+   * sandbox E2B no longer knows is not stopped; it is gone.
+   */
+  async isStopped(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    return isE2BSandboxPaused(this.sdk, this.apiKey, sandboxId(computer), context.signal);
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -570,45 +586,6 @@ function extendPeriodically(desktop: Pick<E2BDesktop, "setTimeout">): () => void
 /** A third of the idle window, so a handle box() returns outlives the first extension. */
 function extendEveryMs(): number {
   return Math.min(60_000, sandboxIdleMs() / 3);
-}
-
-async function* walkE2BWorkspace(
-  desktop: E2BDesktop,
-  directory: string,
-  context: AdapterContext,
-): AsyncIterable<PortableFile> {
-  const entries = await desktop.files.list(workspacePath(E2B_WORKSPACE, directory), {
-    signal: context.signal,
-  });
-  const files: Array<{ relative: string; mode: number }> = [];
-  const directories: string[] = [];
-  for (const entry of entries) {
-    const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
-    if (shouldSkipPortableWorkspaceFile(relative)) continue;
-    if (entry.type === "dir") directories.push(relative);
-    else if (entry.type === "file") files.push({ relative, mode: entry.mode });
-  }
-  for (let index = 0; index < files.length; index += 8) {
-    const batch = await Promise.all(
-      files.slice(index, index + 8).map(async ({ relative, mode }) => {
-        const content = await desktop.files
-          .read(workspacePath(E2B_WORKSPACE, relative), {
-            format: "bytes",
-            signal: context.signal,
-          })
-          .catch((error) => {
-            if (relative.startsWith(".browser-profiles/")) return undefined;
-            throw error;
-          });
-        if (!content) return undefined;
-        return { path: relative, content, executable: Boolean(mode & 0o100) };
-      }),
-    );
-    for (const file of batch) {
-      if (file) yield file;
-    }
-  }
-  for (const relative of directories) yield* walkE2BWorkspace(desktop, relative, context);
 }
 
 function e2bCwd(cwd: string | undefined): string {
