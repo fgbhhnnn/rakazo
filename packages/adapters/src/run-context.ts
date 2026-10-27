@@ -168,6 +168,8 @@ export interface RunState {
   tainted: boolean;
   earlierAttempt: Promise<boolean> | undefined;
   handedOff: boolean;
+  /** Bots this turn really handed work to (the handoff tool's delivered results). */
+  handoffTargets: string[];
   terminalCheckpointComplete: boolean;
   /** The runtime's final message stopped at the output-token limit after writing text. */
   finalCutAtOutputLimit?: boolean;

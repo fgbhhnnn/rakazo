@@ -87,6 +87,7 @@ async function dispatchTool(
   if (ctx.state.handedOff) {
     return {
       error: "This stage was handed off. End the turn without more tool calls.",
+      ...(name === "handoff_to_bot" ? { reason: "one_handoff_per_turn" } : {}),
     };
   }
   if (name === "propose_instructions_update" && ctx.state.approval.pausePending)

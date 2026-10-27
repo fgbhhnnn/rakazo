@@ -3,7 +3,9 @@ import { MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   botMessageContext,
+  type HandoffFailureReason,
   botMessageHopExhausted,
+  formatHandoffBrief,
   nextBotMessageHop,
   renderBotGroupDirectory,
   renderGroupMembersContext,
@@ -21,6 +23,33 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 
+export type HandoffResult =
+  | { error: string; reason: HandoffFailureReason }
+  | {
+      ok: true;
+      /** The next bot's run is recorded (queued); it starts even if the immediate wake fails. */
+      delivered: true;
+      botId: string;
+      runId: string;
+      hop: number | undefined;
+      groupId: string;
+      groupName: string;
+      note: string;
+    };
+
+type CommittedHandoff =
+  | { error: string; reason: HandoffFailureReason }
+  | {
+      ok: true;
+      botId: string;
+      runId: string;
+      hop: number | undefined;
+      eventSeq: number;
+      threadId: string;
+      inGroup: boolean;
+      groupName: string;
+    };
+
 export async function handoffToGroupBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
   run: {
@@ -32,17 +61,27 @@ export async function handoffToGroupBot(
   },
   groupId: string,
   input: { bot_id?: string; confirm_name?: string; message: string; deliveryKey?: string },
-) {
+  options: {
+    /**
+     * An "@Name" in the bot's own group reply is routed right after the reply is posted, when
+     * its run has just completed; the tool call itself always needs a running source.
+     */
+    allowFinishedSource?: boolean;
+  } = {},
+): Promise<HandoffResult> {
   const text = input.message.trim();
   if (!text || text.length > BOT_MESSAGE_MAX_LENGTH) {
-    return { error: `message must contain 1 to ${BOT_MESSAGE_MAX_LENGTH} characters` } as const;
+    return {
+      error: `message must contain 1 to ${BOT_MESSAGE_MAX_LENGTH} characters`,
+      reason: "invalid_message",
+    } as const;
   }
-  const committed = await deps.prisma.$transaction(async (tx) => {
+  const committed = await deps.prisma.$transaction(async (tx): Promise<CommittedHandoff> => {
     try {
       await lockOwnedGroup(tx, run, groupId);
     } catch (error) {
       if (error instanceof IsolationError)
-        return { error: "group is no longer available" } as const;
+        return { error: "group is no longer available", reason: "group_unavailable" } as const;
       throw error;
     }
     const group = await tx.chatGroup.findFirst({
@@ -56,7 +95,8 @@ export async function handoffToGroupBot(
         },
       },
     });
-    if (!group?.thread) return { error: "group is no longer available" } as const;
+    if (!group?.thread)
+      return { error: "group is no longer available", reason: "group_unavailable" } as const;
     const targetThreadId = group.thread.id;
     // Match message_bot's lock order and serialize source cancellation/clearing with delivery.
     for (const threadId of [...new Set([run.threadId, targetThreadId])].sort()) {
@@ -69,7 +109,7 @@ export async function handoffToGroupBot(
         threadId: run.threadId,
         botId: run.botId,
         userId: run.userId,
-        status: "running",
+        status: options.allowFinishedSource ? { in: ["running", "completed"] } : "running",
       },
       select: {
         id: true,
@@ -77,13 +117,17 @@ export async function handoffToGroupBot(
         sourceMessage: { select: { blocks: true } },
       },
     });
-    if (!activeSource) return { error: "source run is no longer active" } as const;
+    if (!activeSource)
+      return { error: "source run is no longer active", reason: "source_inactive" } as const;
     const inGroup = targetThreadId === run.threadId;
     if (!inGroup && activeSource.thread.groupId) {
-      return { error: "group handoffs must stay in the current group" } as const;
+      return {
+        error: "group handoffs must stay in the current group",
+        reason: "not_in_group",
+      } as const;
     }
     if (!group.members.some((member) => member.bot.id === run.botId)) {
-      return { error: "source bot is no longer a group member" } as const;
+      return { error: "source bot is no longer a group member", reason: "not_in_group" } as const;
     }
 
     // A group stage has one owner; an outside turn can send several independent tasks.
@@ -92,6 +136,7 @@ export async function handoffToGroupBot(
       where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
       select: {
         id: true,
+        blocks: true,
         sourceRuns: {
           orderBy: { createdAt: "asc" },
           take: 1,
@@ -110,11 +155,16 @@ export async function handoffToGroupBot(
         orderBy: { seq: "desc" },
         select: { seq: true },
       });
-      if (!nextRun || !event) return { error: "recorded handoff is incomplete" } as const;
+      if (!nextRun || !event) return { error: "recorded handoff is incomplete", reason: "source_inactive" } as const;
+      // Only a replay of the same call reuses the record; a second, different handoff in one
+      // turn must not report a success that never happened.
+      const conflict = secondHandoffConflict(existing.blocks, group.members, input, text);
+      if (conflict) return conflict;
       return {
         ok: true,
         botId: nextRun.botId,
         runId: nextRun.id,
+        hop: recordedHandoff(existing.blocks)?.hop,
         eventSeq: event.seq,
         threadId: targetThreadId,
         inGroup,
@@ -129,15 +179,17 @@ export async function handoffToGroupBot(
         name: input.confirm_name,
       },
     );
-    if (!target) return { error: "handoff target is not a group member" } as const;
+    if (!target)
+      return { error: "handoff target is not a group member", reason: "not_in_group" } as const;
     const targetId = target.id;
-    if (targetId === run.botId) return { error: "cannot hand off to yourself" } as const;
+    if (targetId === run.botId)
+      return { error: "cannot hand off to yourself", reason: "self_target" } as const;
 
     let sourceBlocks: MessageBlock[] = [];
     if (activeSource.sourceMessage) {
       const parsedSource = MessageBlock.array().safeParse(activeSource.sourceMessage.blocks);
       if (!parsedSource.success) {
-        return { error: "cannot verify the group handoff chain" } as const;
+        return { error: "cannot verify the group handoff chain", reason: "invalid_chain" } as const;
       }
       sourceBlocks = parsedSource.data;
     }
@@ -148,6 +200,7 @@ export async function handoffToGroupBot(
       return {
         error:
           "do not hand this stage back to its sender; post the result in the shared thread instead",
+        reason: "hand_back",
       } as const;
     }
     const hop = nextBotMessageHop(sourceHandoff?.hop ?? botMessageContext(sourceBlocks)?.hop);
@@ -155,6 +208,7 @@ export async function handoffToGroupBot(
       return {
         error:
           "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
+        reason: "hop_limit",
       } as const;
     }
 
@@ -213,6 +267,7 @@ export async function handoffToGroupBot(
       ok: true,
       botId: targetId,
       runId: nextRun.id,
+      hop,
       eventSeq: event.seq,
       threadId: targetThreadId,
       inGroup,
@@ -229,8 +284,10 @@ export async function handoffToGroupBot(
   });
   return {
     ok: true,
+    delivered: true,
     botId: committed.botId,
     runId: committed.runId,
+    hop: committed.hop,
     groupId,
     groupName: committed.groupName,
     note: committed.inGroup
@@ -239,10 +296,60 @@ export async function handoffToGroupBot(
   };
 }
 
+function recordedHandoff(blocks: unknown) {
+  const parsed = MessageBlock.array().safeParse(blocks);
+  return parsed.success
+    ? parsed.data.find(
+        (block): block is Extract<MessageBlock, { kind: "handoff" }> => block.kind === "handoff",
+      )
+    : undefined;
+}
+
+/**
+ * A turn hands off once. Returns an error when the recorded handoff of this turn went to a
+ * different member or carried a different message than this call; undefined for a replay.
+ */
+export function secondHandoffConflict(
+  recordedBlocks: unknown,
+  members: readonly { bot: { id: string; name: string } }[],
+  input: { bot_id?: string; confirm_name?: string },
+  text: string,
+): { error: string; reason: HandoffFailureReason } | undefined {
+  const recorded = recordedHandoff(recordedBlocks);
+  if (!recorded) return { error: "recorded handoff is incomplete", reason: "source_inactive" };
+  const target = resolveBotAddress(
+    members.map((member) => member.bot),
+    { botId: input.bot_id, name: input.confirm_name },
+  );
+  if (target?.id === recorded.toBotId && recorded.text === text) return undefined;
+  const recordedName =
+    members.find((member) => member.bot.id === recorded.toBotId)?.bot.name ?? recorded.toBotId;
+  return {
+    error: `this turn already handed off to ${recordedName}; a turn hands off once, so this second handoff was not made. Do not say it was. End the turn; that member can hand the next stage on.`,
+    reason: "one_handoff_per_turn",
+  };
+}
+
+/** The handoff tool's message plus its optional brief fields, as one text for the receiver. */
+export function handoffBriefFromArgs(args: Record<string, unknown>): string {
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+  return formatHandoffBrief({
+    message: String(args.message ?? ""),
+    objective: text(args.objective),
+    context: text(args.context),
+    deliverable: text(args.deliverable),
+    acceptance: text(args.acceptance),
+    artifacts: Array.isArray(args.artifacts)
+      ? args.artifacts.filter((ref): ref is string => typeof ref === "string")
+      : undefined,
+  });
+}
+
 export async function loadGroupContext(
   prisma: PrismaClient,
   groupId: string,
   self: { id: string; name: string },
+  options: { handoffTool?: boolean } = {},
 ): Promise<string | undefined> {
   const group = await prisma.chatGroup.findUnique({
     where: { id: groupId },
@@ -261,6 +368,7 @@ export async function loadGroupContext(
     group.name,
     group.members.map((member) => member.bot),
     self,
+    options,
   );
 }
 

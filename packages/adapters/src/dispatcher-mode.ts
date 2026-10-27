@@ -144,6 +144,9 @@ export const DISPATCHER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "background_task_message",
   "background_task_cancel",
   "attach_file",
+  // Group teamwork: passing the next stage to a teammate is talk, not work. Without it a
+  // dispatcher in a group could only fake a handoff through a background worker.
+  "handoff_to_bot",
   ...DISPATCHER_OWNER_TOOL_NAMES,
 ]);
 

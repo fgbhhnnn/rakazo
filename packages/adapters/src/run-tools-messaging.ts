@@ -6,7 +6,7 @@ import {
 } from "./agent-connections.js";
 import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
-import { handoffToGroupBot } from "./group-handoff.js";
+import { handoffBriefFromArgs, handoffToGroupBot } from "./group-handoff.js";
 import { publishMessage } from "./run-messages.js";
 import {
   canPublishDurableProgress,
@@ -193,10 +193,13 @@ export const messagingTools: ToolHandlers = {
     const result = await handoffToGroupBot(deps, run, groupId, {
       bot_id: args.bot_id ? String(args.bot_id) : undefined,
       confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
-      message: redactSecrets(String(args.message ?? ""), ctx.secrets),
+      message: redactSecrets(handoffBriefFromArgs(args), ctx.secrets),
       deliveryKey: effectKey,
     });
-    if ("ok" in result && result.ok && thread.groupId) ctx.state.handedOff = true;
+    if ("ok" in result && result.ok) {
+      ctx.state.handoffTargets.push(result.botId);
+      if (thread.groupId) ctx.state.handedOff = true;
+    }
     return call.finish(result);
   },
 };

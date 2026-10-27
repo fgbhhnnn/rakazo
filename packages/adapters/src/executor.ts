@@ -1000,12 +1000,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           resolved.acceptsImages,
         );
         const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
-        const groupContext = thread.groupId
-          ? await loadGroupContext(deps.prisma, thread.groupId, {
-              id: bot.id,
-              name: bot.name,
-            })
-          : undefined;
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
           : false;
@@ -1126,6 +1120,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ),
           ...(run.trigger === "created" ? [] : exposedConnectorTools),
         ];
+        // Rendered after the tool list so the group prompt only names tools this run has.
+        const groupContext = thread.groupId
+          ? await loadGroupContext(
+              deps.prisma,
+              thread.groupId,
+              { id: bot.id, name: bot.name },
+              { handoffTool: tools.some((tool) => tool.name === "handoff_to_bot") },
+            )
+          : undefined;
         const taskCatalogInstruction = tools.some((tool) => tool.name === "task_catalog")
           ? TASK_CATALOG_GUIDANCE
           : undefined;
@@ -1205,6 +1208,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           tainted: initiallyTainted,
           earlierAttempt: undefined,
           handedOff: false,
+          handoffTargets: [],
           terminalCheckpointComplete: false,
         };
         const { effects } = state;

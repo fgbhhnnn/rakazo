@@ -265,3 +265,48 @@ describe("memberName", () => {
     expect(memberName(undefined, "b1")).toBeUndefined();
   });
 });
+
+describe("CJK mentions", () => {
+  const team = [
+    { id: "pm", name: "团队-产品" },
+    { id: "fe", name: "团队-前端" },
+    { id: "be", name: "团队-后端" },
+    { id: "team", name: "团队" },
+  ];
+  const wake = (text: string) => resolveGroupTargetBotIds({ text, members: team });
+
+  it("wakes a member named right before Chinese text", () => {
+    expect(wake("@团队-前端请实现登录页")).toEqual(["fe"]);
+  });
+
+  it("wakes a member mentioned right after Chinese text", () => {
+    expect(wake("好的，请@团队-后端先出接口")).toEqual(["be"]);
+  });
+
+  it("picks the longest member name the mention starts with", () => {
+    expect(wake("@团队请看下")).toEqual(["team"]);
+    expect(wake("@团队-产品和@团队-前端一起看")).toEqual(["pm", "fe"]);
+  });
+
+  it("wakes everyone written before Chinese text", () => {
+    expect(wake("@everyone请看下")).toEqual(["pm", "fe", "be", "team"]);
+  });
+
+  it("keeps Latin boundaries strict", () => {
+    // Nothing mentioned falls back to the first member (Amy).
+    const latin = [
+      { id: "amy", name: "Amy" },
+      { id: "bob", name: "Bob" },
+    ];
+    expect(resolveGroupTargetBotIds({ text: "@Bobby hi", members: latin })).toEqual(["amy"]);
+    expect(resolveGroupTargetBotIds({ text: "mail x@Bob.com", members: latin })).toEqual(["amy"]);
+    expect(hasMentionToken("mail x@Bob.com", "Bob")).toBe(false);
+    expect(resolveGroupTargetBotIds({ text: "@Bob请看", members: latin })).toEqual(["bob"]);
+  });
+
+  it("matches chip text that runs into Chinese", () => {
+    expect(hasMentionToken("@团队-前端请看", "团队-前端")).toBe(true);
+    expect(hasMentionToken("请@团队-前端", "团队-前端")).toBe(true);
+    expect(hasMentionToken("@团队-前端x", "团队-前端")).toBe(false);
+  });
+});

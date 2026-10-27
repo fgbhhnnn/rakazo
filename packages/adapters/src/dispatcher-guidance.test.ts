@@ -66,6 +66,21 @@ describe("dispatcher ask_user guidance", () => {
   });
 });
 
+describe("dispatcher group teamwork", () => {
+  it("keeps handoff_to_bot on a dispatcher's main turn so it can hand off in a group", () => {
+    const disabled = new Set<string>();
+    const dispatcher = applyDispatcherToolPolicy(true, { spawnKey: null }, disabled, [
+      { name: "handoff_to_bot" },
+      { name: "message_bot" },
+      { name: "run_command" },
+    ]);
+    expect(dispatcher).toBe(true);
+    expect(disabled.has("handoff_to_bot")).toBe(false);
+    expect(disabled.has("run_command")).toBe(true);
+    expect(DISPATCHER_TOOL_NAMES.has("handoff_to_bot")).toBe(true);
+  });
+});
+
 describe("dispatcher owner tools", () => {
   it("keeps the quick owner tools on the main turn, never request_takeover", () => {
     for (const name of DISPATCHER_OWNER_TOOL_NAMES)

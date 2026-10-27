@@ -1526,7 +1526,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "handoff_to_bot",
     description:
-      "Transfer a genuinely distinct next stage to another current group member. In a group, stay in that group. Outside a group, supply group_id from your groups list to coordinate there. Appends a visible handoff and starts that bot asynchronously. Do not hand a stage back merely to report or repeat the same work; post results in the shared thread.",
+      "Transfer a genuinely distinct next stage to another current group member. In a group, stay in that group. Outside a group, supply group_id from your groups list to coordinate there. Appends a visible handoff and starts that bot asynchronously. One handoff per turn; only a result with delivered: true means it happened. Do not hand a stage back merely to report or repeat the same work; post results in the shared thread.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1541,6 +1541,18 @@ export const builtinAgentTools: ConnectorTool[] = [
           description: "Exact name of the target member when bot_id is omitted.",
         },
         message: { type: "string", description: "What the receiving bot should do next." },
+        objective: { type: "string", description: "Optional: the goal of the next stage." },
+        context: {
+          type: "string",
+          description: "Optional: the short background it needs; not a pasted transcript.",
+        },
+        deliverable: { type: "string", description: "Optional: what it should produce." },
+        acceptance: { type: "string", description: "Optional: how the result will be checked." },
+        artifacts: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: links, file paths or Page ids to work from, by reference.",
+        },
       },
       required: ["message"],
     },

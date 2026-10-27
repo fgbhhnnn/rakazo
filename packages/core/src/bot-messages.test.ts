@@ -250,6 +250,23 @@ describe("group members roster", () => {
     expect(context).not.toContain("orchestrator");
   });
 
+  it("mentions handoff_to_bot only when the run has the tool", () => {
+    const members = [
+      { id: "b_1", name: "Researcher" },
+      { id: "b_2", name: "Analyst" },
+    ];
+    const without = renderGroupMembersContext("Ops", members, members[0]!, {
+      handoffTool: false,
+    });
+    expect(without).not.toContain("handoff_to_bot");
+    expect(without).toContain("exact @Name");
+    expect(without).toContain("cannot approve");
+    const withTool = renderGroupMembersContext("Ops", members, members[0]!, { handoffTool: true });
+    expect(withTool).toContain("handoff_to_bot");
+    expect(withTool).toContain("never start a background task just to hand off");
+    expect(withTool).toContain("One handoff per turn");
+  });
+
   it("reuses the same roster line formatting as the teammate directory", () => {
     const members = [
       {

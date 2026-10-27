@@ -12,7 +12,7 @@ const run = {
 
 function harness(
   sourceBlocks: unknown,
-  existing?: { id?: string; sourceRuns: { id: string; botId: string }[] },
+  existing?: { id?: string; blocks?: unknown; sourceRuns: { id: string; botId: string }[] },
 ) {
   const runCreate = vi.fn(async () => ({ id: "run-b" }));
   const messageCreate = vi.fn(async (_args: unknown) => ({ id: "message-1" }));
@@ -112,6 +112,7 @@ describe("group handoff ownership", () => {
     ).resolves.toEqual({
       error:
         "do not hand this stage back to its sender; post the result in the shared thread instead",
+        reason: "hand_back",
     });
     expect(runCreate).not.toHaveBeenCalled();
   });
@@ -129,23 +130,57 @@ describe("group handoff ownership", () => {
     ).resolves.toEqual({
       error:
         "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
+        reason: "hop_limit",
     });
     expect(runCreate).not.toHaveBeenCalled();
   });
 
-  it("reuses the recorded transfer when a source run is retried", async () => {
-    const { deps, messageCreate, runCreate } = harness([], {
-      sourceRuns: [{ id: "run-b", botId: "bot-b" }],
-    });
+  const recordedHandoff = (toBotId: string, text: string) => ({
+    blocks: [{ kind: "handoff", fromBotId: "bot-a", toBotId, text, hop: 1 }],
+    sourceRuns: [{ id: "run-b", botId: toBotId }],
+  });
+
+  it("reuses the recorded transfer when a source run replays the same call", async () => {
+    const { deps, messageCreate, runCreate } = harness(
+      [],
+      recordedHandoff("bot-b", "The next stage"),
+    );
 
     await expect(
       handoffToGroupBot(deps as never, run, "group-1", {
-        bot_id: "bot-c",
-        message: "A duplicate stage",
+        bot_id: "bot-b",
+        message: "The next stage",
       }),
     ).resolves.toMatchObject({ ok: true, botId: "bot-b", runId: "run-b" });
     expect(messageCreate).not.toHaveBeenCalled();
     expect(runCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a second, different handoff in the same turn instead of faking success", async () => {
+    for (const call of [
+      { bot_id: "bot-c", message: "The next stage" },
+      { bot_id: "bot-b", message: "Another stage" },
+    ]) {
+      const { deps, messageCreate, runCreate } = harness(
+        [],
+        recordedHandoff("bot-b", "The next stage"),
+      );
+      const result = await handoffToGroupBot(deps as never, run, "group-1", call);
+      expect(result).toEqual({
+        error:
+          "this turn already handed off to BOT-B; a turn hands off once, so this second handoff was not made. Do not say it was. End the turn; that member can hand the next stage on.",
+        reason: "one_handoff_per_turn",
+      });
+      expect(messageCreate).not.toHaveBeenCalled();
+      expect(runCreate).not.toHaveBeenCalled();
+    }
+  });
+
+  it("treats a recorded handoff without its block as incomplete", async () => {
+    const { deps } = harness([], { blocks: [], sourceRuns: [{ id: "run-b", botId: "bot-b" }] });
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", { bot_id: "bot-b", message: "x" }),
+    ).resolves.toEqual({ error: "recorded handoff is incomplete", reason: "source_inactive" });
   });
 
   it("rejects malformed source ancestry instead of restarting its hop count", async () => {
@@ -156,7 +191,10 @@ describe("group handoff ownership", () => {
         bot_id: "bot-b",
         message: "Continue",
       }),
-    ).resolves.toEqual({ error: "cannot verify the group handoff chain" });
+    ).resolves.toEqual({
+      error: "cannot verify the group handoff chain",
+      reason: "invalid_chain",
+    });
     expect(runCreate).not.toHaveBeenCalled();
   });
 });
@@ -316,6 +354,8 @@ describe("explicit group destinations", () => {
         ? null
         : {
             id: "message-1",
+            blocks: (h.messageCreate.mock.calls[index]?.[0] as { data: { blocks: unknown } }).data
+              .blocks,
             sourceRuns: [{ id: index === 0 ? "run-b" : "run-c", botId: "bot-b" }],
           };
     });
@@ -367,6 +407,7 @@ describe("explicit group destinations", () => {
     const h = privateTurn();
     h.tx.message.findUnique.mockResolvedValue({
       id: "message-1",
+      blocks: [{ kind: "handoff", fromBotId: "bot-a", toBotId: "bot-b", text: "Continue", hop: 1 }],
       sourceRuns: [{ id: "run-b", botId: "bot-b" }],
     });
     await expect(
