@@ -28,6 +28,7 @@ import {
   withDeadline,
 } from "./computer-health.js";
 import { toComputerRef } from "./computer-lifecycle.js";
+import { settleStaleClaimWithProvider } from "./computer-stale-claim.js";
 import { checkpointComputerWorkspace, deletedTeamBotFolders } from "./computer-workspace.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
@@ -696,8 +697,10 @@ async function announceSuspended(
 
 /**
  * A "suspending" claim that outlived both deadlines belongs to a sleep job that died or hung
- * (an older release had no deadline). Takes the computer back to "running" so it is usable and
- * sleeps on a later idle check, and counts it as a failed check. A fresh claim is left alone.
+ * (an older release had no deadline). When the provider confirms it already holds the sandbox
+ * stopped, the computer is marked asleep (computer-stale-claim.ts). Otherwise it takes the
+ * computer back to "running" so it is usable and sleeps on a later idle check, and counts it
+ * as a failed check. A fresh claim is left alone.
  */
 async function recoverStaleSuspendClaim(
   deps: {
@@ -719,6 +722,10 @@ async function recoverStaleSuspendClaim(
     }
     return;
   }
+  // Usually the provider has stopped it since the holder died: then it is asleep, not unresponsive.
+  const settled = await settleStaleClaimWithProvider(deps, computer);
+  if (settled === "suspended") await announceSuspended(deps, computer);
+  if (settled !== "unconfirmed") return;
   const recovered = await deps.prisma.computer.updateMany({
     where: {
       id: computer.id,
