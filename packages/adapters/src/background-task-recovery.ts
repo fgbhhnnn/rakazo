@@ -5,6 +5,8 @@ import {
   taskDeliveryKey,
   UNDELIVERED_GRACE_MS,
 } from "./background-task-rows.js";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { noticeUndeliveredWorkerResult } from "./group-return-thread.js";
 
 /**
  * Repairs task rows a crash or a lost delivery left behind:
@@ -14,7 +16,7 @@ import {
  *   delivered, is finalized so it no longer holds its slot.
  */
 export async function recoverBackgroundTasks(
-  deps: { prisma: PrismaClient },
+  deps: { prisma: PrismaClient; events?: Pick<ExecutorDeps["events"], "notify"> },
   scope: { botId?: string } = {},
   now = new Date(),
 ) {
@@ -102,6 +104,8 @@ export async function recoverBackgroundTasks(
       },
     });
     finalized += done.count;
+    if (done.count > 0 && workerRun && !workerRun.botOutcomeReturnedAt)
+      await noticeUndeliveredWorkerResult(deps, row);
   }
   return { requeued, finalized };
 }

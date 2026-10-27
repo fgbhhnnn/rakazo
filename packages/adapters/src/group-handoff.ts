@@ -3,9 +3,9 @@ import { MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   botMessageContext,
-  type HandoffFailureReason,
   botMessageHopExhausted,
   formatHandoffBrief,
+  type HandoffFailureReason,
   nextBotMessageHop,
   renderBotGroupDirectory,
   renderGroupMembersContext,
@@ -155,7 +155,8 @@ export async function handoffToGroupBot(
         orderBy: { seq: "desc" },
         select: { seq: true },
       });
-      if (!nextRun || !event) return { error: "recorded handoff is incomplete", reason: "source_inactive" } as const;
+      if (!nextRun || !event)
+        return { error: "recorded handoff is incomplete", reason: "source_inactive" } as const;
       // Only a replay of the same call reuses the record; a second, different handoff in one
       // turn must not report a success that never happened.
       const conflict = secondHandoffConflict(existing.blocks, group.members, input, text);

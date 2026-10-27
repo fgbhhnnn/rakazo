@@ -80,7 +80,9 @@ describe("handoff brief and notices", () => {
         acceptance: "e2e 通过",
         artifacts: ["page:abc", " ", "/docs/api.md"],
       }),
-    ).toBe("请实现登录页\n目标：用户能用邮箱登录\n验收标准：e2e 通过\n引用：page:abc，/docs/api.md");
+    ).toBe(
+      "请实现登录页\n目标：用户能用邮箱登录\n验收标准：e2e 通过\n引用：page:abc，/docs/api.md",
+    );
     expect(formatHandoffBrief({ message: " 看下 ", context: "  " })).toBe("看下");
   });
 

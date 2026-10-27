@@ -21,6 +21,7 @@ import { getLogger } from "@rakazo/logging";
 import { refreshTaskProgressForWorkerRun } from "./background-task-progress.js";
 import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { workerResultGroupThreadId } from "./group-return-thread.js";
 import { runPageBlocks } from "./pages.js";
 import { attachmentBlocks } from "./task-attachments.js";
 import {
@@ -119,7 +120,13 @@ export async function messageBot(
 
   const candidates = await deps.prisma.bot.findMany({
     where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
-    select: { id: true, name: true, title: true, thread: { select: { id: true } } },
+    select: {
+      id: true,
+      name: true,
+      title: true,
+      spawnKey: true,
+      thread: { select: { id: true } },
+    },
   });
   const target = resolveBotAddress(candidates, {
     botId: input.bot_id,
@@ -144,7 +151,14 @@ export async function messageBot(
     };
   }
 
-  const targetThreadId = target.thread.id;
+  // A worker's result for a task started in a group returns to that group thread.
+  const targetThreadId =
+    (await workerResultGroupThreadId(deps.prisma, {
+      run,
+      sender: candidates.find((bot) => bot.id === sender.id) ?? sender,
+      targetBotId: target.id,
+      intent,
+    })) ?? target.thread.id;
 
   // A tool call can be re-executed after a lease expiry, so a delivery has to be
   // replayable: without this the recipient is messaged twice and woken twice.

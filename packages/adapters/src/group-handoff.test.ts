@@ -112,7 +112,7 @@ describe("group handoff ownership", () => {
     ).resolves.toEqual({
       error:
         "do not hand this stage back to its sender; post the result in the shared thread instead",
-        reason: "hand_back",
+      reason: "hand_back",
     });
     expect(runCreate).not.toHaveBeenCalled();
   });
@@ -130,7 +130,7 @@ describe("group handoff ownership", () => {
     ).resolves.toEqual({
       error:
         "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
-        reason: "hop_limit",
+      reason: "hop_limit",
     });
     expect(runCreate).not.toHaveBeenCalled();
   });

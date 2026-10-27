@@ -74,7 +74,8 @@ export function formatHandoffBrief(brief: HandoffBrief): string {
 
 // A done-marker, then (within the sentence) a hand-over verb: "已交给@前端", "我已把需求转交给后端",
 // "刚通知了测试", "handed it off to UI". Plans ("接下来交给…") and questions are not claims.
-const ZH_CLAIM = /(?:已经?|刚刚?|已)[^。！？!?\n]{0,24}?(?:交给|转交|交接|移交|转给|派给|分配给|通知)/;
+const ZH_CLAIM =
+  /(?:已经?|刚刚?|已)[^。！？!?\n]{0,24}?(?:交给|转交|交接|移交|转给|派给|分配给|通知)/;
 const EN_CLAIM =
   /\b(?:I(?:'ve| have)?|we(?:'ve| have)?|just|already)\s+(?:handed|passed|assigned|notified|forwarded)\b/i;
 const QUESTION = /[？?]\s*$|吗[。！!]?\s*$|要不要|是否|需不需要/;
@@ -83,7 +84,10 @@ const SENTENCE = /[^。！？!?\n]+[。！？!?]*/g;
 /** The short role of a member name: "团队-前端" is also called "前端". */
 function shortNames(name: string): string[] {
   const full = name.trim();
-  const tail = full.split(/[-－·•|｜/]/).pop()?.trim();
+  const tail = full
+    .split(/[-－·•|｜/]/)
+    .pop()
+    ?.trim();
   return tail && tail !== full && tail.length >= 2 ? [full, tail] : [full];
 }
 

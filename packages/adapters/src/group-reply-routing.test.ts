@@ -39,9 +39,7 @@ function prisma(options: { existingNotice?: boolean } = {}) {
       chatGroup: {
         findFirst: vi.fn(async () => ({ members: members.map((bot) => ({ bot })) })),
       },
-      $transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) =>
-        callback(tx),
-      ),
+      $transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)),
     },
   };
 }
@@ -201,20 +199,32 @@ describe("group notices", () => {
   it("posts the hop-limit notice for a tool failure in a group only", async () => {
     const events = { notify: vi.fn(async () => undefined) };
     const inGroup = prisma();
-    await noticeHandoffToolFailure({ prisma: inGroup.prisma, events } as never, {
-      ...run,
-      groupId: "g",
-    }, "hop_limit");
+    await noticeHandoffToolFailure(
+      { prisma: inGroup.prisma, events } as never,
+      {
+        ...run,
+        groupId: "g",
+      },
+      "hop_limit",
+    );
     expect(inGroup.created).toHaveLength(1);
     const other = prisma();
-    await noticeHandoffToolFailure({ prisma: other.prisma, events } as never, {
-      ...run,
-      groupId: "g",
-    }, "self_target");
-    await noticeHandoffToolFailure({ prisma: other.prisma, events } as never, {
-      ...run,
-      groupId: null,
-    }, "hop_limit");
+    await noticeHandoffToolFailure(
+      { prisma: other.prisma, events } as never,
+      {
+        ...run,
+        groupId: "g",
+      },
+      "self_target",
+    );
+    await noticeHandoffToolFailure(
+      { prisma: other.prisma, events } as never,
+      {
+        ...run,
+        groupId: null,
+      },
+      "hop_limit",
+    );
     expect(other.created).toEqual([]);
   });
 });

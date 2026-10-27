@@ -94,9 +94,7 @@ export async function planGroupReply(
   if (!members) return { blocks };
   const others = members.filter((member) => member.id !== bot.id);
   // The tool already handed off this turn: a reply "@Name" is then only a mention.
-  const target = input.handoffTargets.length
-    ? undefined
-    : replyMentionTarget(text, others, bot.id);
+  const target = input.handoffTargets.length ? undefined : replyMentionTarget(text, others, bot.id);
   const note = unverifiedHandoffClaimNote(text, others, [
     ...input.handoffTargets,
     ...(target ? [target.id] : []),
@@ -168,7 +166,7 @@ export async function noticeHandoffToolFailure(
  * a chain never stops silently.
  */
 export async function postGroupNotice(
-  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  deps: Pick<ExecutorDeps, "prisma"> & { events?: Pick<ExecutorDeps["events"], "notify"> },
   run: GroupRun,
   text: string,
 ): Promise<void> {
@@ -197,7 +195,7 @@ export async function postGroupNotice(
     });
     return event.seq;
   });
-  if (seq === undefined) return;
+  if (seq === undefined || !deps.events) return;
   await deps.events.notify(run.threadId, seq).catch((error) => {
     getLogger().error("group notice realtime notification", error);
   });
