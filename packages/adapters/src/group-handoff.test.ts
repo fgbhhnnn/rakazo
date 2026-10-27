@@ -354,7 +354,7 @@ describe("explicit group destinations", () => {
         ? null
         : {
             id: "message-1",
-            blocks: (h.messageCreate.mock.calls[index]?.[0] as { data: { blocks: unknown } }).data
+            blocks: (h.messageCreate.mock.calls[index] as [{ data: { blocks: unknown } }])[0].data
               .blocks,
             sourceRuns: [{ id: index === 0 ? "run-b" : "run-c", botId: "bot-b" }],
           };

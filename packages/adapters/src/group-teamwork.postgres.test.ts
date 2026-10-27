@@ -163,7 +163,7 @@ postgres("group teamwork (PostgreSQL)", () => {
         }),
       );
       expect(notices).toHaveLength(1);
-      expect((notices[0]?.blocks as MessageBlock[])[0]).toMatchObject({
+      expect((notices[0]?.blocks as MessageBlock[] | undefined)?.[0]).toMatchObject({
         kind: "text",
         text: expect.stringContaining("「接口重构」已结束"),
       });

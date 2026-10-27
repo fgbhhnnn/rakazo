@@ -84,6 +84,40 @@ describe("planGroupReply", () => {
     );
   });
 
+  it("skips members the latest human message already @-addressed, and only those", async () => {
+    const db = prisma();
+    const findFirst = vi.fn(async (_args: unknown) => ({
+      blocks: text("@团队-前端 做登录页，@团队-后端 做接口"),
+    }));
+    const withHuman = { ...db.prisma, message: { findFirst } };
+    const before = new Date("2026-10-27T12:00:00Z");
+    const planWith = (reply: string) =>
+      planGroupReply({ prisma: withHuman } as never, {
+        groupId: "g",
+        bot: { id: "be", spawnKey: null },
+        handedOff: false,
+        handoffTargets: [],
+        blocks: text(reply),
+        humanTurn: { threadId: "group-thread", before },
+      });
+    // Quoting the human's "@团队-前端" does not hand the same work to it again...
+    expect((await planWith("收到：@团队-前端 做登录页")).plan).toBeUndefined();
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { threadId: "group-thread", role: "user", createdAt: { lte: before } },
+      }),
+    );
+    // ...but a member the human did not address is still the next stage.
+    expect((await planWith("@团队-前端 已知悉。@团队-产品 请验收")).plan?.target).toEqual({
+      id: "pm",
+      name: "团队-产品",
+    });
+    // A handoff claim stays honest: being addressed by the human is not a handoff by this bot.
+    expect((await planWith("已交给前端。")).blocks).toEqual(
+      text("已交给前端。\n（未实际交接给 团队-前端）"),
+    );
+  });
+
   it("leaves DMs and hidden workers alone", async () => {
     const dm = await planGroupReply({ prisma: prisma().prisma } as never, {
       groupId: null,

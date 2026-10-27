@@ -29,7 +29,6 @@ import { resolveBotWorkspacePath } from "./computer-support.js";
 import {
   DISPATCHER_RESTART_TRIGGERS,
   DispatcherTurnTimeout,
-  dispatcherTurnMaxMs,
   restartDispatcherTurn,
 } from "./dispatcher-mode.js";
 import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
@@ -693,6 +692,7 @@ export async function completeRun(ctx: RunContext) {
     handedOff: ctx.state.handedOff,
     handoffTargets: ctx.state.handoffTargets,
     blocks: draftBlocks,
+    humanTurn: { threadId: thread.id, before: run.createdAt },
   });
   const replyGuard = guardDispatcherReply(
     ctx.state.dispatcherTurn && !ctx.state.handedOff,

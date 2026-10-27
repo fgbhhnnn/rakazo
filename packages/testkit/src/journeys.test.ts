@@ -2404,7 +2404,10 @@ describeJourneys("required product journeys", () => {
         { bot_id: botC.id, message: "should be rejected" },
       ),
     );
-    expect(staleHandoff).toEqual({ error: "source run is no longer active" });
+    expect(staleHandoff).toEqual({
+      error: "source run is no longer active",
+      reason: "source_inactive",
+    });
 
     const crossThread = await rpc<{ runId: string }>(app, ada, "threads/send", {
       botId: botC.id,

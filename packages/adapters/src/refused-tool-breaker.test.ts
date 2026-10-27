@@ -29,9 +29,9 @@ describe("refused tool breaker", () => {
   });
 
   it("reads a configurable limit", () => {
-    vi.stubEnv("DISPATCHER_REFUSED_TOOL_LIMIT", "1");
+    vi.stubEnv("RAKAZO_DISPATCHER_REFUSED_TOOL_LIMIT", "1");
     expect(refusedTool({ dispatcherTurn: true }, refusal)).toMatchObject({ stop: true });
-    vi.stubEnv("DISPATCHER_REFUSED_TOOL_LIMIT", "nonsense");
+    vi.stubEnv("RAKAZO_DISPATCHER_REFUSED_TOOL_LIMIT", "nonsense");
     const state = { dispatcherTurn: true };
     refusedTool(state, refusal);
     expect(refusedTool(state, refusal)).toEqual(refusal);

@@ -5,6 +5,7 @@ import {
   HANDOFF_CHAIN_LIMIT_NOTICE,
   type HandoffFailureReason,
   handoffClaims,
+  mentionedMembersInOrder,
   replyMentionTarget,
   unverifiedHandoffClaimNote,
 } from "@rakazo/core";
@@ -68,6 +69,25 @@ async function activeGroupMembers(
 }
 
 /**
+ * Members the latest human message (at or before this run started) already addressed with
+ * its own "@": thread-target woke each of them with that message, so a bot's reply quoting
+ * or repeating those "@Name"s must not hand the same work to them again.
+ */
+async function humanAddressedIds(
+  prisma: Pick<PrismaClient, "message">,
+  humanTurn: { threadId: string; before: Date },
+  members: readonly Member[],
+): Promise<Set<string>> {
+  const latest = await prisma.message.findFirst({
+    where: { threadId: humanTurn.threadId, role: "user", createdAt: { lte: humanTurn.before } },
+    orderBy: { seq: "desc" },
+    select: { blocks: true },
+  });
+  const text = Array.isArray(latest?.blocks) ? replyText(latest.blocks as MessageBlock[]) : "";
+  return new Set(text ? mentionedMembersInOrder(text, members).map((member) => member.id) : []);
+}
+
+/**
  * Before the reply is saved: picks the reply's "@Name" handoff target and appends
  * "（未实际交接…）" to a reply claiming a handoff that neither the tool nor that "@Name" makes.
  */
@@ -79,6 +99,8 @@ export async function planGroupReply(
     handedOff: boolean;
     handoffTargets: readonly string[];
     blocks: MessageBlock[];
+    /** The group thread and run start: members its latest human message "@"ed are skipped. */
+    humanTurn?: { threadId: string; before: Date };
   },
 ): Promise<{
   blocks: MessageBlock[];
@@ -94,7 +116,16 @@ export async function planGroupReply(
   if (!members) return { blocks };
   const others = members.filter((member) => member.id !== bot.id);
   // The tool already handed off this turn: a reply "@Name" is then only a mention.
-  const target = input.handoffTargets.length ? undefined : replyMentionTarget(text, others, bot.id);
+  const addressed = input.humanTurn
+    ? await humanAddressedIds(deps.prisma, input.humanTurn, others)
+    : new Set<string>();
+  const target = input.handoffTargets.length
+    ? undefined
+    : replyMentionTarget(
+        text,
+        others.filter((member) => !addressed.has(member.id)),
+        bot.id,
+      );
   const note = unverifiedHandoffClaimNote(text, others, [
     ...input.handoffTargets,
     ...(target ? [target.id] : []),
