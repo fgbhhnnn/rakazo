@@ -2655,6 +2655,10 @@ describeJourneys("required product journeys", () => {
       text: "@Planner 写一份大纲，然后交给 Drafter",
     });
     await settled(stall.threadId, "paused");
+    // The status flips just before the notice is posted, so wait for the notice itself.
+    await waitForDatabase(
+      async () => (await texts(stall.threadId)).at(-1) === "团队任务已暂停，等你回复。",
+    );
     const stallTexts = await texts(stall.threadId);
     expect(stallTexts.filter((text) => text.startsWith("（系统提醒 Planner"))).toHaveLength(1);
     expect(stallTexts.at(-1)).toBe("团队任务已暂停，等你回复。");
@@ -2668,6 +2672,9 @@ describeJourneys("required product journeys", () => {
         text: "@Planner 写一份大纲，然后交给 Drafter",
       });
       await settled(capped.threadId, "stopped");
+      await waitForDatabase(
+        async () => (await texts(capped.threadId)).at(-1)?.startsWith("团队任务已达到") === true,
+      );
       expect((await texts(capped.threadId)).at(-1)).toBe(
         "团队任务已达到交接次数或时长上限，已暂停，等你回复。",
       );
