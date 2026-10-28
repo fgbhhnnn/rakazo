@@ -5,9 +5,11 @@ import {
   failedHandoffNotice,
   renderTeamRunContext,
   TEAM_RUN_PAUSED_NOTICE,
+  teamRunCloseOutcome,
+  teamRunClosingText,
   teamRunNudgeText,
   teamRunReturnText,
-  teamRunSummaryText,
+  teamRunSupersededNote,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -20,7 +22,13 @@ import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { handoffToGroupBot } from "./group-handoff.js";
 import { postGroupNotice } from "./group-reply-routing.js";
-import { endTeamRun, humanAnchor, newerHumanMessage } from "./group-team-run-gate.js";
+import { humanAnchorForRun } from "./group-team-run-anchor.js";
+import {
+  interruptedTeamRunGoal,
+  supersedeEarlierTeamRuns,
+  teamRunEndedForTurn,
+} from "./group-team-run-close.js";
+import { endTeamRun, newerHumanMessage } from "./group-team-run-gate.js";
 
 /**
  * Group team runs (see core group-team-run.ts): one human request to the group's leader runs to
@@ -29,7 +37,7 @@ import { endTeamRun, humanAnchor, newerHumanMessage } from "./group-team-run-gat
  * stopped, and closing the run with a summary. A newer human message always ends the run.
  */
 
-type Db = Pick<PrismaClient, "message" | "chatGroup" | "run" | "groupTeamRun">;
+type Db = PrismaClient;
 type Member = { id: string; name: string; title: string | null; description: string | null };
 export type TeamRunRow = {
   id: string;
@@ -53,6 +61,8 @@ export type TeamRunView = {
   members: Member[];
   /** A human message newer than the one that started the run: the human took over. */
   interrupted: boolean;
+  /** The request of an earlier team run this run's message interrupted (leader only). */
+  interruptedGoal?: string;
 };
 type SourceRun = {
   id: string;
@@ -101,8 +111,11 @@ export async function teamRunForRun(
   options: { start?: boolean } = {},
 ): Promise<TeamRunView | undefined> {
   if (!thread.groupId || isHiddenBot(bot)) return undefined;
-  const anchor = await humanAnchor(prisma, run.threadId, run.createdAt);
+  // A retried attempt answers its first attempt's request (group-team-run-anchor.ts).
+  const anchor = await humanAnchorForRun(prisma, run);
   if (!anchor) return undefined;
+  // This request is newer than any still-active team run's: those are over now.
+  await supersedeEarlierTeamRuns(prisma, run.threadId, anchor);
   const members = await visibleMembers(prisma, thread.groupId);
   const leader = members?.[0];
   if (!members || !leader || members.length < 2) return undefined;
@@ -139,12 +152,15 @@ export async function teamRunForRun(
   if (row?.status !== "active") return undefined;
   const runLeader = members.find((member) => member.id === row.leaderBotId);
   if (!runLeader || !members.some((member) => member.id === run.botId)) return undefined;
+  const role = run.botId === runLeader.id ? "leader" : "member";
   return {
     row,
-    role: run.botId === runLeader.id ? "leader" : "member",
+    role,
     leader: runLeader,
     members,
     interrupted: await newerHumanMessage(prisma, run.threadId, anchor.seq),
+    interruptedGoal:
+      role === "leader" ? await interruptedTeamRunGoal(prisma, run.threadId, anchor) : undefined,
   };
 }
 
@@ -158,12 +174,15 @@ export async function teamRunPromptContext(
     where: { id: view.row.originMessageId },
     select: { blocks: true },
   });
-  return renderTeamRunContext({
+  const context = renderTeamRunContext({
     role: view.role,
     leaderName: view.leader.name,
     goal: blocksText(origin?.blocks),
     members: view.members,
   });
+  return view.interruptedGoal === undefined
+    ? context
+    : `${context}\n${teamRunSupersededNote(view.interruptedGoal)}`;
 }
 
 async function handedOffThisTurn(prisma: Pick<PrismaClient, "message">, run: SourceRun) {
@@ -192,7 +211,9 @@ async function pendingBackgroundTasks(
 /**
  * After a group turn in an active team run completed: keep the run moving, in code. A member
  * that finished without handing on returns the stage to the leader; a leader that stopped gets
- * one nudge, then the run pauses with a visible line. Never throws.
+ * one nudge, then the run pauses with a visible line. Never throws. `suppressClaimRecheck` is
+ * set when a claim recheck of this turn would only repeat it: the run already queued the next
+ * turn for the leader, or the run already ended (closed, stopped, or overtaken).
  */
 export async function continueTeamRun(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
@@ -206,27 +227,39 @@ export async function continueTeamRun(
     /** The user steered the turn; the continuation run answers, not this one. */
     continued: boolean;
   },
-): Promise<void> {
+): Promise<{ suppressClaimRecheck: boolean }> {
   try {
-    const view = await teamRunForRun(deps.prisma, run, input.thread, input.bot);
-    if (!view) return;
-    if (view.interrupted) {
-      await endTeamRun(deps.prisma, view.row.id, "superseded", "human_message");
-      return;
-    }
-    if (input.continued) return;
-    if (await handedOffThisTurn(deps.prisma, run)) return;
-    // A started background task brings its result back to this bot; that turn continues.
-    if (await pendingBackgroundTasks(deps.prisma, run)) return;
-    if (view.role === "member") {
-      if (input.waitsOnUser) return;
-      await returnStageToLeader(deps, run, view, input.bot.name, input.replyText);
-      return;
-    }
-    await leaderStopped(deps, run, view, input.waitsOnUser);
+    const queued = await continueActiveTeamRun(deps, run, input);
+    return {
+      suppressClaimRecheck: queued || (await teamRunEndedForTurn(deps.prisma, run)),
+    };
   } catch (error) {
     getLogger().error("team run continue", error);
+    return { suppressClaimRecheck: false };
   }
+}
+
+/** The run's next step; true when it queued another turn (a nudge or the leader's stage). */
+async function continueActiveTeamRun(
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  run: SourceRun,
+  input: Parameters<typeof continueTeamRun>[2],
+): Promise<boolean> {
+  const view = await teamRunForRun(deps.prisma, run, input.thread, input.bot);
+  if (!view) return false;
+  if (view.interrupted) {
+    await endTeamRun(deps.prisma, view.row.id, "superseded", "human_message");
+    return false;
+  }
+  if (input.continued) return false;
+  if (await handedOffThisTurn(deps.prisma, run)) return false;
+  // A started background task brings its result back to this bot; that turn continues.
+  if (await pendingBackgroundTasks(deps.prisma, run)) return false;
+  if (view.role === "member") {
+    if (input.waitsOnUser) return false;
+    return returnStageToLeader(deps, run, view, input.bot.name, input.replyText);
+  }
+  return leaderStopped(deps, run, view, input.waitsOnUser);
 }
 
 async function returnStageToLeader(
@@ -247,12 +280,12 @@ async function returnStageToLeader(
     { bot_id: view.leader.id, message: text },
     { allowFinishedSource: true },
   );
-  if ("ok" in result) return;
+  if ("ok" in result) return true;
   getLogger().info("team run return to leader refused", { runId: run.id, reason: result.reason });
-  if (result.reason === "team_interrupted" || result.reason === "source_inactive") return;
+  if (result.reason === "team_interrupted" || result.reason === "source_inactive") return false;
   if (result.reason === "team_budget" || result.reason === "team_loop") {
     await postGroupNotice(deps, run, failedHandoffNotice(view.leader.name, result.reason));
-    return;
+    return false;
   }
   await endTeamRun(deps.prisma, view.row.id, "stopped", result.reason);
   await postGroupNotice(
@@ -260,6 +293,7 @@ async function returnStageToLeader(
     run,
     `${failedHandoffNotice(view.leader.name, result.reason)}${TEAM_RUN_PAUSED_NOTICE}`,
   );
+  return false;
 }
 
 async function leaderStopped(
@@ -267,23 +301,21 @@ async function leaderStopped(
   run: SourceRun,
   view: TeamRunView,
   waitsOnUser: boolean,
-) {
+): Promise<boolean> {
   // Nothing was handed out yet: the leader simply answered the user, which ends the run.
   if (view.row.hops === 0) {
     await endTeamRun(deps.prisma, view.row.id, "answered", "leader_answered");
-    return;
+    return false;
   }
   if (waitsOnUser) {
     await endTeamRun(deps.prisma, view.row.id, "paused", "waiting_user");
-    return;
+    return false;
   }
-  if (view.row.nudges === 0) {
-    await nudgeLeader(deps, run, view);
-    return;
-  }
+  if (view.row.nudges === 0) return nudgeLeader(deps, run, view);
   if (await endTeamRun(deps.prisma, view.row.id, "paused", "leader_stalled")) {
     await postGroupNotice(deps, run, TEAM_RUN_PAUSED_NOTICE);
   }
+  return false;
 }
 
 /** Posts the visible reminder and starts one more leader turn with it as the prompt. */
@@ -291,7 +323,7 @@ async function nudgeLeader(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
   run: SourceRun,
   view: TeamRunView,
-) {
+): Promise<boolean> {
   const text = teamRunNudgeText(view.leader.name);
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
@@ -339,16 +371,21 @@ async function nudgeLeader(
     });
     return { runId: nextRun.id, seq: event.seq };
   });
-  if (!committed) return;
+  if (!committed) return false;
   await deps.events.notify(run.threadId, committed.seq).catch((error) => {
     getLogger().error("team run nudge notification", error);
   });
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
     getLogger().error("team run nudge enqueue", error);
   });
+  return true;
 }
 
-/** complete_team_run: the leader closes its active team run and the summary is posted. */
+/**
+ * complete_team_run: the leader closes its active team run and the closing message is posted.
+ * `outcome: "stopped"` (the user asked to stop) records the run as stopped and says so; with no
+ * outcome, a run that only took over an interrupted one and handed nothing out closes as stopped.
+ */
 export async function completeTeamRun(
   deps: Pick<ExecutorDeps, "prisma" | "events">,
   run: SourceRun,
@@ -369,14 +406,25 @@ export async function completeTeamRun(
     await endTeamRun(deps.prisma, view.row.id, "superseded", "human_message");
     return { error: "the user sent a new message, so this team task already stopped" };
   }
-  const text = teamRunSummaryText({
+  const outcome =
+    args.outcome === undefined || args.outcome === null
+      ? view.row.hops === 0 && view.interruptedGoal !== undefined
+        ? "stopped"
+        : "completed"
+      : teamRunCloseOutcome(args.outcome);
+  const text = teamRunClosingText({
+    outcome,
     summary,
     deliverables: strings(args.deliverables),
     openIssues: strings(args.open_issues),
   }).slice(0, BOT_MESSAGE_MAX_LENGTH);
   const seq = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
-    if (!(await endTeamRun(tx, view.row.id, "completed", "leader_completed"))) return undefined;
+    const ended =
+      outcome === "stopped"
+        ? await endTeamRun(tx, view.row.id, "stopped", "leader_stopped")
+        : await endTeamRun(tx, view.row.id, "completed", "leader_completed");
+    if (!ended) return undefined;
     const blocks: MessageBlock[] = [{ kind: "text", text }];
     const message = await createThreadMessageInTransaction(tx, {
       threadId: run.threadId,
@@ -400,6 +448,9 @@ export async function completeTeamRun(
   });
   return {
     ok: true,
-    note: "Team task closed and its summary is posted for the user. End the turn without repeating it.",
+    note:
+      outcome === "stopped"
+        ? "Team task stopped and the closing note is posted for the user. End the turn without repeating it."
+        : "Team task closed and its summary is posted for the user. End the turn without repeating it.",
   };
 }

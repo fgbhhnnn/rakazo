@@ -7,7 +7,7 @@ import type { ToolHandler } from "./run-tool-gate.js";
 export const completeTeamRunTool: ConnectorTool = {
   name: COMPLETE_TEAM_RUN_TOOL_NAME,
   description:
-    "Close the group team task you lead once every stage is done and checked against the acceptance criteria. Posts the final summary for the user in the group. Only this closes the task; saying it is done does not.",
+    'Close the group team task you lead once every stage is done and checked against the acceptance criteria, or with outcome "stopped" when the user asked to stop or cancel it. Posts the closing message for the user in the group. Only this closes the task; saying it is done does not.',
   inputSchema: {
     type: "object",
     properties: {
@@ -24,6 +24,12 @@ export const completeTeamRunTool: ConnectorTool = {
         type: "array",
         items: { type: "string" },
         description: "Anything left open or for the user to decide.",
+      },
+      outcome: {
+        type: "string",
+        enum: ["completed", "stopped"],
+        description:
+          "completed (default): the work is done. stopped: the user asked to stop or cancel; summarize what was and was not done.",
       },
     },
     required: ["summary"],

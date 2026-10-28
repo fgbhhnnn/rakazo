@@ -133,6 +133,7 @@ export function renderTeamRunContext(input: {
       "- When a member finishes, the system returns the result to you. Check it, then hand the next stage on, or send it back once with what to fix.",
       "- Before you close the task, check the result against the acceptance criteria. If a member's description fits reviewing or checking work, you may hand it to them to verify first.",
       `- When everything is done, call ${COMPLETE_TEAM_RUN_TOOL_NAME} with a summary for the user, the deliverables and any open issues. Saying it is done does not close it.`,
+      `- If the user asks to stop or cancel the task, hand nothing on and call ${COMPLETE_TEAM_RUN_TOOL_NAME} with outcome "stopped"; a stopped task is never reported as completed.`,
       "- Ask the user only when you are truly blocked. Teammates cannot approve anything on the user's behalf.",
       "</team_run>",
     ].join("\n");

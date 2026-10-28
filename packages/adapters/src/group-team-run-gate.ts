@@ -6,6 +6,10 @@ import {
   teamRunWithinBudget,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { humanAnchorForRun } from "./group-team-run-anchor.js";
+import { cancelTeamRunFollowUps } from "./group-team-run-followups.js";
+
+export { humanAnchor } from "./group-team-run-anchor.js";
 
 /**
  * The code-enforced guards of a group team run (see group-team-run.ts) that the shared handoff
@@ -14,19 +18,6 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
  */
 
 type Tx = Prisma.TransactionClient;
-
-/** The human message a run answers: the latest one in its thread when the run was created. */
-export async function humanAnchor(
-  prisma: Pick<PrismaClient, "message">,
-  threadId: string,
-  at: Date,
-): Promise<{ id: string; seq: number } | null> {
-  return prisma.message.findFirst({
-    where: { threadId, role: "user", createdAt: { lte: at } },
-    orderBy: { seq: "desc" },
-    select: { id: true, seq: true },
-  });
-}
 
 export async function newerHumanMessage(
   prisma: Pick<PrismaClient, "message">,
@@ -41,17 +32,22 @@ export async function newerHumanMessage(
 }
 
 export async function endTeamRun(
-  prisma: Pick<PrismaClient, "groupTeamRun"> | Pick<Tx, "groupTeamRun">,
+  prisma: PrismaClient | Tx,
   id: string,
   status: Exclude<TeamRunStatus, "active">,
   endReason: string,
 ) {
   // Only an active run ends, so two racing decisions cannot both post their notice.
-  const ended = await prisma.groupTeamRun.updateMany({
+  const ended = await prisma.groupTeamRun.updateManyAndReturn({
     where: { id, status: "active" },
     data: { status, endReason, endedAt: new Date() },
+    select: { id: true, threadId: true, originMessageId: true },
   });
-  return ended.count === 1;
+  const row = ended[0];
+  if (!row) return false;
+  // A reminder or claim recheck still queued for it would post after the run ended.
+  await cancelTeamRunFollowUps(prisma, row, status);
+  return true;
 }
 
 export type TeamHandoffGate =
@@ -72,7 +68,12 @@ export async function teamRunHandoffGate(
 ): Promise<TeamHandoffGate> {
   const source = await tx.run.findUnique({ where: { id: run.id }, select: { createdAt: true } });
   if (!source) return { kind: "none" };
-  const anchor = await humanAnchor(tx, run.threadId, source.createdAt);
+  // A retried attempt answers the request its first attempt answered (group-team-run-anchor.ts).
+  const anchor = await humanAnchorForRun(tx, {
+    id: run.id,
+    threadId: run.threadId,
+    createdAt: source.createdAt,
+  });
   if (!anchor) return { kind: "none" };
   await tx.$queryRaw`SELECT id FROM group_team_runs WHERE "originMessageId" = ${anchor.id} FOR UPDATE`;
   const row = await tx.groupTeamRun.findUnique({ where: { originMessageId: anchor.id } });

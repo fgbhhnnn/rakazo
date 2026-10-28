@@ -550,9 +550,16 @@ export interface AgentRunRequest {
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
-  /** Called on any model stream activity (including reasoning deltas); must be cheap. */
-  onStreamActivity?: () => void;
+  /**
+   * Called on any model stream activity (including reasoning deltas); must be cheap. `kind`
+   * says whether a model call just started and the turn now waits on the model ("model_wait"),
+   * or the model or a tool produced output ("output"); without it the activity only counts.
+   */
+  onStreamActivity?: (kind?: StreamActivityKind) => void;
 }
+
+/** See AgentRunRequest.onStreamActivity. */
+export type StreamActivityKind = "model_wait" | "output";
 
 export interface ScriptedTurn {
   assistant?: string;

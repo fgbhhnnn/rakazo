@@ -9,12 +9,12 @@ import {
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { clampMidTurnNarration } from "./mid-turn-narration.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
 import { runPromotesMidTurnNarration } from "./run-replies.js";
 import { isExactNoResponse } from "./silent-reply.js";
 import {
-  clampUserProgressMessage,
   extractNarrationText,
   isUserProgressClientNonce,
   midTurnProgressBudgetAllows,
@@ -136,7 +136,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const narration = clampUserProgressMessage(
+  const narration = clampMidTurnNarration(
     slotFree(ctx.state.dispatcherTurn)(redactSecrets(extracted.text, ctx.secrets)),
   );
   const canPublish =

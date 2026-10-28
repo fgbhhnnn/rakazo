@@ -10,6 +10,7 @@ import {
   dispatcherTurnHardCapMs,
   startDispatcherIdleWatchdog,
 } from "./dispatcher-idle-watchdog.js";
+import { dispatcherModelWaitMs } from "./dispatcher-model-wait.js";
 import { DISPATCHER_OWNER_TOOL_NAMES } from "./dispatcher-owner-tools.js";
 import type { ExecutorDeps } from "./executor.js";
 import { withholdNestedAgentTools } from "./worker-nesting.js";
@@ -202,6 +203,7 @@ export function startDispatcherWatchdog(
   onFire: () => void,
   ms = dispatcherTurnMaxMs(),
   capMs = dispatcherTurnHardCapMs(ms),
+  modelWaitMs = dispatcherModelWaitMs(ms, capMs),
 ): DispatcherWatchdog {
   return startDispatcherIdleWatchdog(
     controller,
@@ -209,6 +211,7 @@ export function startDispatcherWatchdog(
     ms,
     capMs,
     (limit) => new DispatcherTurnTimeout(limit),
+    { modelWaitMs },
   );
 }
 

@@ -43,6 +43,7 @@ export * from "./group-handoff-request.js";
 export * from "./group-mentions.js";
 export * from "./group-team.js";
 export * from "./group-team-run.js";
+export * from "./group-team-run-close.js";
 export * from "./http-response.js";
 export * from "./identity-display.js";
 export { identitySource } from "./identity-source.js";

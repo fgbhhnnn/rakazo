@@ -7,7 +7,8 @@ import { continueTeamRun } from "./group-team-run.js";
 /**
  * After a group turn completed and its reply was saved: the handoff the human asked for, then
  * the team run's next step. Both run in code, so a model that forgets to call the tool cannot
- * stall the group. Never throws.
+ * stall the group. Never throws. Returns whether a claim recheck of this turn would be stale
+ * (see continueTeamRun).
  */
 export async function afterGroupTurn(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
@@ -29,8 +30,8 @@ export async function afterGroupTurn(
     /** The user steered the turn; its continuation run answers instead. */
     continued: boolean;
   },
-): Promise<void> {
-  if (!input.thread.groupId) return;
+): Promise<{ suppressClaimRecheck: boolean }> {
+  if (!input.thread.groupId) return { suppressClaimRecheck: false };
   const replyText = input.blocks
     .flatMap((block) => (block.kind === "text" ? [block.text] : []))
     .join("")
@@ -45,7 +46,7 @@ export async function afterGroupTurn(
     continued: input.continued,
     handoffTargets: input.handoffTargets,
   });
-  await continueTeamRun(deps, run, {
+  return continueTeamRun(deps, run, {
     thread: input.thread,
     bot: input.bot,
     replyText,

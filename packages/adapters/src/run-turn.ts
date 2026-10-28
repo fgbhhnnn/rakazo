@@ -41,6 +41,7 @@ import {
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { clampMidTurnNarration } from "./mid-turn-narration.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
@@ -83,7 +84,6 @@ import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
-  clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
   userProgressClientNonce,
@@ -117,7 +117,7 @@ async function publishDispatcherPreAskReply(ctx: RunContext) {
   const dispatcherVisible = slotFree(ctx.state.dispatcherTurn);
   const pending = reply.assembled.trim() ? reply.assembled.trim() : reply.preAskNarration;
   reply.preAskNarration = "";
-  const text = clampUserProgressMessage(dispatcherVisible(redactSecrets(pending, ctx.secrets)));
+  const text = clampMidTurnNarration(dispatcherVisible(redactSecrets(pending, ctx.secrets)));
   if (text && !reply.midTurnUserTexts.includes(text)) {
     const guarded = guardDispatcherReply(true, [{ kind: "text", text }], ctx.state.turnLedger, {
       wokenByWorker: Boolean(ctx.source.peerMessage),
@@ -356,7 +356,7 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
   // does not treat pre-takeover text as the delegated final result.
   await publishMidTurnNarration(ctx);
   if (reply.assembled.trim()) {
-    const narration = clampUserProgressMessage(
+    const narration = clampMidTurnNarration(
       slotFree(ctx.state.dispatcherTurn)(redactSecrets(reply.assembled, ctx.secrets)),
     );
     if (narration && canPublishDurableNarration(ctx)) {
@@ -766,14 +766,16 @@ export async function completeRun(ctx: RunContext) {
   await routeGroupReply(deps, run, groupReply.plan).catch((error) =>
     getLogger().error("group reply handoff", error),
   );
-  await afterGroupTurn(deps, run, {
+  const groupTurn = await afterGroupTurn(deps, run, {
     thread,
     bot,
     blocks,
     handoffTargets: ctx.state.handoffTargets,
     continued: Boolean(completed.continuationRunId),
   });
-  if (replyGuard.recheckClaim && !completed.continuationRunId) {
+  // A team run that already queued its leader's next turn, or already ended, makes a recheck
+  // of this turn post again after the run moved on (or after its closing summary).
+  if (replyGuard.recheckClaim && !completed.continuationRunId && !groupTurn.suppressClaimRecheck) {
     await queueClaimRecheck(deps, run, replyGuard.original ?? text).catch((error) =>
       getLogger().error("dispatcher claim recheck", error),
     );

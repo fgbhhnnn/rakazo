@@ -25,6 +25,7 @@ import { uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { toolImageLimit } from "./context-pruning.js";
+import { streamActivityKindOf } from "./dispatcher-model-wait.js";
 import { createInRunCompactor, IN_RUN_SUMMARY_INSTRUCTIONS } from "./in-run-compaction.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
@@ -593,8 +594,10 @@ export class PiAgentRuntime implements AgentRuntime {
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
         agent.subscribe(async (event) => {
-          // Reasoning deltas reach no runtime event, but they are progress for a watchdog.
-          request.onStreamActivity?.();
+          // Reasoning deltas reach no runtime event, but they are progress for a watchdog. A
+          // started model call (turn_start, message_start) may think silently before its first
+          // token; the dispatcher watchdog waits longer for it (dispatcher-model-wait.ts).
+          request.onStreamActivity?.(streamActivityKindOf(event.type));
           if (event.type === "tool_execution_end" && !event.result.terminate) {
             finishedCalls.set(event.toolCallId, {
               role: "toolResult",

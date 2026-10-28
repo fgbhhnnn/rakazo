@@ -1,3 +1,5 @@
+import type { StreamActivityKind } from "@rakazo/adapter-kit";
+
 /** Absolute ceiling of a dispatcher main turn that keeps making progress. */
 export const DISPATCHER_TURN_HARD_CAP_DEFAULT_MS = 5 * 60_000;
 
@@ -17,13 +19,20 @@ export function dispatcherTurnHardCapMs(
   return Math.max(cap, idleMs);
 }
 
-/** Clears the watchdog; `touch` records model progress and restarts the idle window. */
-export type DispatcherWatchdog = (() => void) & { touch: () => void };
+/**
+ * Clears the watchdog; `touch` records model progress and restarts the idle window. With
+ * `"model_wait"` a model call just started, so the longer model-wait window applies until the
+ * next `"output"` (see dispatcher-model-wait.ts); without a kind the current window restarts.
+ */
+export type DispatcherWatchdog = (() => void) & {
+  touch: (kind?: StreamActivityKind) => void;
+};
 
 /**
  * Stops a dispatcher main turn that made no progress (no streamed token, tool call or other
  * runtime activity) for `idleMs`, or that ran past `capMs` in total. A slow but live model
- * reply is no longer cut off at a fixed wall-clock limit; a hung one still is.
+ * reply is no longer cut off at a fixed wall-clock limit; a hung one still is. With
+ * `options.modelWaitMs`, a turn waiting on a model call may stay silent that long instead.
  */
 export function startDispatcherIdleWatchdog(
   controller: AbortController,
@@ -31,8 +40,11 @@ export function startDispatcherIdleWatchdog(
   idleMs: number,
   capMs: number,
   timeoutError: (ms: number) => Error,
+  options: { modelWaitMs?: number } = {},
 ): DispatcherWatchdog {
   let done = false;
+  const modelWaitMs = Math.max(options.modelWaitMs ?? idleMs, idleMs);
+  let windowMs = idleMs;
   const fire = (ms: number) => {
     if (done) return;
     done = true;
@@ -52,10 +64,12 @@ export function startDispatcherIdleWatchdog(
   };
   controller.signal.addEventListener("abort", clear);
   const watchdog = clear as DispatcherWatchdog;
-  watchdog.touch = () => {
+  watchdog.touch = (kind) => {
     if (done) return;
+    if (kind) windowMs = kind === "model_wait" ? modelWaitMs : idleMs;
+    const ms = windowMs;
     clearTimeout(idle);
-    idle = setTimeout(() => fire(idleMs), idleMs);
+    idle = setTimeout(() => fire(ms), ms);
     idle.unref?.();
   };
   return watchdog;
