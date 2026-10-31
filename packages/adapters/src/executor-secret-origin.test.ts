@@ -178,6 +178,7 @@ async function requestSecretWith(origin: string, extra: Record<string, unknown> 
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     sandbox: {
       describe: () => ({ id: "e2b", capabilities: { graphical: true } }),
+      pageBrowser: vi.fn(),
       releaseScreen: vi.fn(async () => undefined),
       async *exportWorkspace() {
         yield* [];

@@ -94,6 +94,7 @@ export type { ExecutorDeps } from "./executor-deps.js";
 import { isThinkWorker, THINK_WORKER_COMPUTER_REFUSAL } from "./background-task-lanes.js";
 import { startQueuedBackgroundTasks } from "./background-tasks.js";
 import { computerBusyWaitMs, provisionWhenNotBusy } from "./computer-busy-retry.js";
+import { workerPageBrowserAllowed } from "./dispatcher-computer-guidance.js";
 import { dispatcherImageNote, dispatcherWithholdsImages } from "./dispatcher-image-context.js";
 import type { DispatcherTurnTimeout } from "./dispatcher-mode.js";
 import {
@@ -1207,7 +1208,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const voiceCall = callEndRun || isCallClientNonce(sourceClientNonce);
         const graphicalToolsAllowed = graphical && acceptsImages && !heldForTakeover;
         const pageBrowserAllowed =
-          graphical && browser.describe().capabilities.page && !heldForTakeover;
+          (dispatcherTurn
+            ? workerPageBrowserAllowed(deps.sandbox, browser)
+            : graphical && browser.describe().capabilities.page) && !heldForTakeover;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
@@ -1367,6 +1370,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const dockerToolInstruction = dockerComputerToolInstruction(
           computerKind,
           disabledBuiltinTools,
+          pageBrowserAllowed,
         );
         const hostEnvironment =
           computerKind && usesNativeShell(computerKind)
@@ -1816,6 +1820,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(builtins),
                 dispatcherRun,
+                workerPageBrowserAllowed: dispatcherRun ? pageBrowserAllowed : undefined,
                 askUserOffered: tools.some((tool) => tool.name === "ask_user"),
                 userComputer,
               })

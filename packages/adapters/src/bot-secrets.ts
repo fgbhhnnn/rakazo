@@ -29,6 +29,7 @@ import { lockSpaceSettings, runLoginKind, settingsTarget, withTransactionRetry }
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
+import { websiteLoginUseError } from "./credential-page-capability.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
 import { generateSecretValue } from "./secret-generator.js";
@@ -707,6 +708,7 @@ export async function requestWithBotSecret(input: {
   signal: AbortSignal;
   remote?: RemoteTransportDependencies;
   registerRedactions?: (values: string[]) => void;
+  pageBrowserAllowed?: boolean;
 }): Promise<unknown> {
   const request = SecretHttpRequest.parse(input.request);
   const row = await input.prisma.vaultCredential.findFirst({
@@ -715,7 +717,7 @@ export async function requestWithBotSecret(input: {
   if (!row) return { error: "Credential is unavailable. Use request_secret to save it first." };
   const destination = normalizeSecretDestination(row);
   if (destination.auth.type === "login") {
-    return { error: "Website logins can only be filled into their site with browser_act." };
+    return { error: websiteLoginUseError(input.pageBrowserAllowed !== false) };
   }
   if (destination.auth.type === "command") {
     return {

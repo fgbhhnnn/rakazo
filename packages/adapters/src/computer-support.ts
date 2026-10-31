@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
+import {
+  expandWorkspaceHomePrefix,
+  normalizeWorkspacePath,
+} from "./workspace-path-normalization.js";
+
+export { normalizeWorkspacePath, workspacePath } from "./workspace-path-normalization.js";
 
 export function toComputerRef(computer: {
   homeKey: string;
@@ -60,20 +66,6 @@ export function boundedComputerActions(actions: readonly ComputerAction[]): Comp
 
 export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
-}
-
-export function normalizeWorkspacePath(value: string): string {
-  const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error("Path escapes the computer workspace");
-  }
-  return segments.join("/");
-}
-
-export function workspacePath(root: string, relative: string): string {
-  const normalized = normalizeWorkspacePath(relative);
-  return normalized ? path.posix.join(root, normalized) : root;
 }
 
 export function teamBotWorkspaceDirectory(botId: string): string {
@@ -157,10 +149,7 @@ function isTeamRootPath(value: string): boolean {
 
 // A leading ~ or /home/rakazo means the workspace root, the same as a leading /.
 function expandHomePrefix(value: string): string {
-  return value.replace(
-    /^(?:~|[\\/]home[\\/]rakazo)([\\/]|$)/,
-    (_, separator: string) => separator || "/",
-  );
+  return expandWorkspaceHomePrefix(value);
 }
 
 function stripVirtualWorkspaceRoot(value: string): string | null {

@@ -1,6 +1,8 @@
-import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
 import { isE2BSandboxPaused } from "./e2b-save-scope.js";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
+import { remoteDesktopPageBrowser } from "./remote-desktop-page-browser.js";
+import { pageBrowserDesktop } from "./remote-desktop-page-browser-command.js";
 import type { RemoteDesktopSdk } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
 
@@ -22,8 +24,9 @@ export interface E2BSandboxSdk extends RemoteDesktopSdk {
 }
 
 const e2bSdk: E2BSandboxSdk = {
-  create: async (template, options) => (await e2b()).create(template, options),
-  connect: async (id, options) => (await e2b()).connect(id, options),
+  create: async (template, options) =>
+    pageBrowserDesktop(await (await e2b()).create(template, options)),
+  connect: async (id, options) => pageBrowserDesktop(await (await e2b()).connect(id, options)),
   isRunning: async (id, options) => (await (await e2b()).getInfo(id, options)).state === "running",
   getInfo: async (id, options) => (await e2b()).getInfo(id, options),
   pause: async (id, options) => (await e2b()).pause(id, options),
@@ -31,6 +34,15 @@ const e2bSdk: E2BSandboxSdk = {
 };
 
 export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
+  async pageBrowser(computer: ComputerRef, request: PageBrowserCommand, context: AdapterContext) {
+    return remoteDesktopPageBrowser(
+      () => this.box(computer),
+      () => this.desktops.ensure(computer, context),
+      request,
+      context,
+    );
+  }
+
   constructor(
     private readonly apiKey: string,
     private readonly sdk: E2BSandboxSdk = e2bSdk,

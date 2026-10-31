@@ -25,6 +25,7 @@ import {
   resolveRequestSecretDestination,
   sameSecretDestination,
 } from "./bot-secrets.js";
+import { passwordSubmissionNote, WEBSITE_LOGIN_UNAVAILABLE } from "./credential-page-capability.js";
 import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
 import { recordEffect } from "./run-effects.js";
 import { renewRunLease } from "./run-lifecycle.js";
@@ -57,6 +58,9 @@ export const secretTools: ToolHandlers = {
   },
   async generate_secret(ctx, call) {
     const { deps, run } = ctx;
+    if (!ctx.computer.pageBrowserAllowed && call.args.type === "login") {
+      return call.finish({ error: WEBSITE_LOGIN_UNAVAILABLE });
+    }
     // Fills would type this run's unsaved login instead of the generated one.
     const held = await deps.prisma.secret.count({
       where: {
@@ -90,6 +94,7 @@ export const secretTools: ToolHandlers = {
         request: args,
         signal: context.signal,
         remote: deps.secretHttp,
+        pageBrowserAllowed: ctx.computer.pageBrowserAllowed,
         registerRedactions: (values) => addRunSecrets(ctx, values),
       });
       return call.finish(result);
@@ -104,6 +109,9 @@ export const secretTools: ToolHandlers = {
     const resolvedSecret = resolveRequestSecretDestination(args);
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
     const destination = resolvedSecret.destination;
+    if (!ctx.computer.pageBrowserAllowed && destination?.auth.type === "login") {
+      return call.finish({ error: WEBSITE_LOGIN_UNAVAILABLE });
+    }
     const connectionId = resolvedSecret.connectionId;
     const loginFields =
       destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
@@ -214,7 +222,7 @@ export const secretTools: ToolHandlers = {
             ? {
                 ok: true,
                 submitted: true,
-                note: "The secret was not typed onto the computer. To reuse a website login, save it with auth type login and fill it with browser_act fill_secret; otherwise use request_takeover.",
+                note: passwordSubmissionNote(ctx.computer.pageBrowserAllowed),
               }
             : {
                 ok: true,

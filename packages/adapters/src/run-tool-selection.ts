@@ -11,6 +11,7 @@ import {
 } from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
+import { credentialToolsForPageCapability } from "./credential-page-capability.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import { filterImageReturningComputerTools } from "./model-vision.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
@@ -101,7 +102,10 @@ export function selectBuiltinToolsForRun(options: {
       filterBuiltinToolsForRun(
         filterBuiltinToolsForThread(
           filterPageBrowserTools(
-            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+            credentialToolsForPageCapability(
+              filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+              options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+            ),
             options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
           ),
           options.groupId,
