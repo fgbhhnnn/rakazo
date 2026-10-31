@@ -35,7 +35,7 @@ type ExecuteTool = (
  */
 async function runAfterFill(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
-  options: { savedLogin?: boolean; reply?: string } = {},
+  options: { savedLogin?: boolean; reply?: string; userText?: string } = {},
 ) {
   const run = {
     id: "run-2",
@@ -45,7 +45,7 @@ async function runAfterFill(
     spaceId: "space-1",
     userId: "user-1",
     status: "queued",
-    trigger: "routine",
+    trigger: options.userText ? "user" : "routine",
     routineId: "routine-1",
     retryOfRunId: null,
     leaseFence: 0,
@@ -142,11 +142,28 @@ async function runAfterFill(
       })),
     },
     message: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async () =>
+        options.userText
+          ? [
+              {
+                id: "user-message",
+                role: "user",
+                seq: 1,
+                createdAt: new Date(),
+                blocks: [{ kind: "text", text: options.userText }],
+              },
+            ]
+          : [],
+      ),
       findUnique: vi.fn(async () => null),
       count: vi.fn(async () => 0),
     },
-    task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Check the site" })) },
+    task: {
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: run.taskId,
+        prompt: options.userText ?? "Check the site",
+      })),
+    },
     computer: {
       updateMany: vi.fn(async () => ({ count: 1 })),
       findFirst: vi.fn(async () => ({
@@ -222,7 +239,7 @@ async function runAfterFill(
   await executor.continueRun(run.id, "worker-1");
   const loginLoads = load.mock.calls.filter(([, recordId]) => recordId === "login-1").length;
   const published = JSON.stringify([events.append.mock.calls, events.finalizeRun.mock.calls]);
-  return { toolResults, loginLoads, published };
+  return { toolResults, loginLoads, published, runtimeRun };
 }
 
 afterEach(() => {
@@ -300,3 +317,30 @@ function withEmptyModels<T extends object>(prisma: T): T {
     get: (target, key) => (key in target ? target[key as keyof T] : empty),
   });
 }
+
+describe("pasted credentials in the initial user turn", () => {
+  it("keeps the task while warning and redacting prompt, history and resume text", async () => {
+    const { runtimeRun } = await runAfterFill([], {
+      savedLogin: false,
+      userText: "Upload the file. username=demo password=fake-chat-value",
+    });
+    const request = runtimeRun.mock.calls[0]?.[0] as unknown as {
+      prompt: string;
+      history: unknown;
+      resumeToolResult: unknown;
+    };
+    expect(request).toBeDefined();
+    expect(request.prompt).toContain("Upload the file");
+    expect(request.prompt).toContain("A user message in this turn appears to contain");
+    expect(
+      JSON.stringify([request.prompt, request.history, request.resumeToolResult]),
+    ).not.toContain("fake-chat-value");
+    expect(JSON.stringify(request.history)).toContain("[redacted]");
+  });
+
+  it("adds no warning for an ordinary user turn", async () => {
+    const { runtimeRun } = await runAfterFill([], { userText: "Upload the file." });
+    const request = runtimeRun.mock.calls[0]?.[0] as unknown as { prompt: string };
+    expect(request.prompt).not.toContain("A user message in this turn appears to contain");
+  });
+});

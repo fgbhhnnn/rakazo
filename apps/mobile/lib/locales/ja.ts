@@ -1,4 +1,10 @@
 export const JA_MESSAGES: Record<string, string> = {
+  Dictate: "音声入力",
+  "Stop dictation": "音声入力を停止",
+  "Nothing heard. Try again.": "音声が聞き取れませんでした。もう一度お試しください。",
+  "Could not dictate. Check microphone and speech recognition permissions.":
+    "音声入力できませんでした。マイクと音声認識の権限を確認してください。",
+  "Listening…": "聞き取り中…",
   "Can edit and organise bots it creates": "自分が作成したボットを編集・整理できます",
   "Edit label": "ラベルを編集",
   "Add a label": "ラベルを追加",

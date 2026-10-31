@@ -21,6 +21,7 @@ import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-su
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import { walkE2BWorkspaceConcurrently } from "./e2b-workspace-walk.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import type { PageBrowserCommandHandle } from "./remote-desktop-page-browser-command.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
@@ -56,6 +57,13 @@ export interface RemoteDesktop {
   setTimeout(timeoutMs: number): Promise<void>;
   getHost(port: number): string;
   commands: {
+    startPageBrowser?(
+      command: string,
+      options: CommandStartOpts & {
+        onStdout: (data: string) => void;
+        onStderr: (data: string) => void;
+      },
+    ): Promise<PageBrowserCommandHandle>;
     run(
       command: string,
       options: CommandStartOpts & { background?: false },
@@ -128,7 +136,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     return true;
   }
 
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: "/home/user",
       workspaceDir: REMOTE_WORKSPACE,
@@ -177,7 +185,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     };
   }
 
-  private async box(computer: ComputerRef, resume = false): Promise<RemoteDesktop> {
+  protected async box(computer: ComputerRef, resume = false): Promise<RemoteDesktop> {
     const id = sandboxId(computer);
     const existing = this.boxes.get(id);
     if (existing) {

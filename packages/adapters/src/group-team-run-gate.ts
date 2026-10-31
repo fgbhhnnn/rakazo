@@ -7,8 +7,9 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { humanAnchorForRun } from "./group-team-run-anchor.js";
-import { cancelTeamRunFollowUps } from "./group-team-run-followups.js";
 import { leaderSendIsRevision } from "./group-team-run-revisions.js";
+import { endTeamRunAndCancel, stoppedTeamRunForWork } from "./group-team-run-stop.js";
+import { findHumanAuthoredMessage } from "./human-message-query.js";
 
 export { humanAnchor } from "./group-team-run-anchor.js";
 
@@ -25,10 +26,7 @@ export async function newerHumanMessage(
   threadId: string,
   seq: number,
 ): Promise<boolean> {
-  const newer = await prisma.message.findFirst({
-    where: { threadId, role: "user", seq: { gt: seq } },
-    select: { id: true },
-  });
+  const newer = await findHumanAuthoredMessage(prisma, { threadId, seq: { gt: seq } });
   return Boolean(newer);
 }
 
@@ -37,18 +35,8 @@ export async function endTeamRun(
   id: string,
   status: Exclude<TeamRunStatus, "active">,
   endReason: string,
-) {
-  // Only an active run ends, so two racing decisions cannot both post their notice.
-  const ended = await prisma.groupTeamRun.updateManyAndReturn({
-    where: { id, status: "active" },
-    data: { status, endReason, endedAt: new Date() },
-    select: { id: true, threadId: true, originMessageId: true },
-  });
-  const row = ended[0];
-  if (!row) return false;
-  // A reminder or claim recheck still queued for it would post after the run ended.
-  await cancelTeamRunFollowUps(prisma, row, status);
-  return true;
+): Promise<boolean> {
+  return endTeamRunAndCancel(prisma, id, status, endReason);
 }
 
 export type TeamHandoffGate =
@@ -67,6 +55,13 @@ export async function teamRunHandoffGate(
   targetId: string,
   now = new Date(),
 ): Promise<TeamHandoffGate> {
+  if (await stoppedTeamRunForWork(tx, run.id)) {
+    return {
+      kind: "refused",
+      reason: "team_interrupted",
+      error: "this team task stopped; do not hand off",
+    };
+  }
   const source = await tx.run.findUnique({ where: { id: run.id }, select: { createdAt: true } });
   if (!source) return { kind: "none" };
   // A retried attempt answers the request its first attempt answered (group-team-run-anchor.ts).

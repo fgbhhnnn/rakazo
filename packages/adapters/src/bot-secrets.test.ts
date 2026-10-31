@@ -1006,6 +1006,7 @@ describe("saved website logins", () => {
       expect(result).toEqual({
         error:
           'This login has no field named "Email". Its fields: ID number, Phone number, PIN, Branch.',
+        reason: "field_not_found",
       });
     });
 
@@ -1060,7 +1061,7 @@ describe("saved website logins", () => {
         signal: new AbortController().signal,
         remote: { fetch, resolveHostname: publicResolver },
       }),
-    ).toEqual({ error: expect.stringContaining("browser_act") });
+    ).toEqual({ error: expect.stringContaining("browser_act"), reason: "unknown" });
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -1080,7 +1081,10 @@ describe("saved website logins", () => {
         name: "site_login",
         field: "password",
       }),
-    ).toEqual({ error: "Website logins can only be filled on an HTTPS origin." });
+    ).toEqual({
+      error: "Website logins can only be filled on an HTTPS origin.",
+      reason: "unknown",
+    });
   });
 
   it("refuses to fill a credential that is not a login", async () => {
@@ -1092,7 +1096,7 @@ describe("saved website logins", () => {
         name: destination.name,
         field: "password",
       }),
-    ).toEqual({ error: "This credential is not a website login." });
+    ).toEqual({ error: "This credential is not a website login.", reason: "unknown" });
   });
 });
 
@@ -1169,6 +1173,7 @@ describe("logins kept for one run", () => {
       }),
     ).toEqual({
       error: "Website logins can only be filled on an HTTPS origin.",
+      reason: "unknown",
     });
   });
 

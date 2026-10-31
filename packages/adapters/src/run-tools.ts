@@ -1,6 +1,7 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
 import { thinkWorkerToolRefusal } from "./background-task-lanes.js";
+import { loginFailure } from "./login-failure.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import { refusedTool } from "./refused-tool-breaker.js";
 import type { RunContext } from "./run-context.js";
@@ -104,7 +105,7 @@ async function dispatchTool(
     return refusedTool(ctx.state, { error: "This tool is disabled for this bot." });
   }
   if (PAGE_BROWSER_TOOL_NAMES.has(name) && !ctx.computer.pageBrowserAllowed) {
-    return { error: "Page browser is unavailable on this computer." };
+    return loginFailure("Page browser is unavailable on this computer.", "no_page_browser");
   }
   if (IMAGE_RETURNING_COMPUTER_TOOLS.has(name) && !ctx.computer.acceptsImages) {
     return { error: MODEL_CANNOT_SEE_MESSAGE };

@@ -153,6 +153,7 @@ describe("command variables stay out of HTTP and page fills", () => {
       }),
     ).toEqual({
       error: expect.stringMatching(/^Credential cannot be used with this authentication method/),
+      reason: "unknown",
     });
   });
 });

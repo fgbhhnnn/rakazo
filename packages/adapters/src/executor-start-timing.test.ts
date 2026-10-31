@@ -121,7 +121,7 @@ describe("execution start timing", () => {
     expect(enqueue).not.toHaveBeenCalled();
     expect(prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: "queued", wakeAt: null }),
+        data: expect.objectContaining({ status: "queued", wakeAt: new Date(0) }),
       }),
     );
   });

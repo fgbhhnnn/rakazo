@@ -84,7 +84,7 @@ export class LinuxDesktop {
     return result.stdout;
   }
 
-  private async ensure(computer: ComputerRef, context: AdapterContext) {
+  async ensure(computer: ComputerRef, context: AdapterContext) {
     const env = await this.host.environment(computer);
     const key = screenSessionKey(context);
     const output = await this.run(
