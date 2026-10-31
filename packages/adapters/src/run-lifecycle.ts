@@ -3,6 +3,10 @@ import { displayName } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import {
+  computerRequeueWakeAt,
+  wakeAfterComputerReleaseRace,
+} from "./computer-run-release-wakeup.js";
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notifyRun } from "./run-notifications.js";
@@ -314,9 +318,10 @@ export async function requeueComputerRun(
     resumeCheckpoint,
     heldForTakeover,
     null,
-    untilReleased ? null : retryAt,
+    computerRequeueWakeAt(untilReleased, retryAt),
   );
-  if (!released || untilReleased) return;
+  if (!released) return;
+  if (untilReleased) return wakeAfterComputerReleaseRace(deps, runId);
   await deps.jobs.enqueue({
     ...runContinueJob(runId),
     availableAt: retryAt,
