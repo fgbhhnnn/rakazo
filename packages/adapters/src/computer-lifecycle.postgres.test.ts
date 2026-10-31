@@ -78,7 +78,10 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home,
-        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: {
+          enqueue: vi.fn().mockResolvedValue(undefined),
+          cancel: vi.fn().mockResolvedValue(undefined),
+        } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -225,10 +228,17 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
           failRestore();
           await expect(provisionComputer(deps, computerId, context)).rejects.toThrow();
           expect(await row()).toMatchObject({ state: "error", restorePending: true });
-          // Idle sleep stops an abandoned claim on it without saving.
+          // Recover the abandoned claim first, then stop it on the next idle check without saving.
           await prisma.computer.update({
             where: { id: computerId },
             data: { state: "suspending", updatedAt: new Date(0) },
+          });
+          await sleepComputerIfIdle(deps, computerId);
+          expect(await homeFiles()).toEqual(expected);
+          expect(await row()).toMatchObject({
+            state: "running",
+            restorePending: true,
+            homeRevisionAt: savedAt,
           });
           await sleepComputerIfIdle(deps, computerId);
           expect(await homeFiles()).toEqual(expected);
@@ -280,7 +290,10 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
         prisma,
         sandbox,
         home,
-        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        jobs: {
+          enqueue: vi.fn().mockResolvedValue(undefined),
+          cancel: vi.fn().mockResolvedValue(undefined),
+        } as unknown as JobPublisher,
         events: { append: vi.fn() } as unknown as ThreadEvents,
         dataDir,
       };
@@ -381,7 +394,10 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       prisma,
       sandbox,
       home,
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      jobs: {
+        enqueue: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      } as unknown as JobPublisher,
       events: { append: vi.fn() } as unknown as ThreadEvents,
       dataDir,
     };

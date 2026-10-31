@@ -394,6 +394,12 @@ postgres("group team run polish (PostgreSQL)", () => {
       const recheck = await sys(() =>
         prisma.run.findFirstOrThrow({ where: { retryOfRunId: leader.id } }),
       );
+      await sys(() =>
+        prisma.run.updateMany({
+          where: { id: { in: [nudge.id, recheck.id] } },
+          data: { wakeAt: new Date(Date.now() + 60_000) },
+        }),
+      );
       // The leader closes the run from another turn (the nudge already ran in production).
       await sys(() =>
         completeTeamRun(deps, leader, thread(fx), bot(fx, leader.botId), { summary: "文章完成" }),
@@ -403,26 +409,32 @@ postgres("group team run polish (PostgreSQL)", () => {
         const row = await runStatus(id);
         expect(row.status).toBe("cancelled");
         expect(row.completedAt).toBeInstanceOf(Date);
+        expect(row.wakeAt).toBeNull();
+        expect(row.leaseOwner).toBeNull();
+        expect(row.leaseExpiresAt).toBeNull();
         expect(row.task.status).toBe("cancelled");
       }
       const summaries = (await texts(fx)).filter((text) => text.includes("团队任务完成"));
       expect(summaries).toHaveLength(1);
     });
 
-    it("never touches a follow-up that already started", async () => {
-      const { fx, leader } = await leaderStalled();
-      const nudge = await nudgeRun(fx);
-      await sys(() =>
-        prisma.run.update({
-          where: { id: nudge.id },
-          data: { status: "leased", leaseOwner: "worker-1" },
-        }),
-      );
-      await sys(() =>
-        completeTeamRun(deps, leader, thread(fx), bot(fx, leader.botId), { summary: "文章完成" }),
-      );
-      expect((await runStatus(nudge.id)).status).toBe("leased");
-    });
+    it.each(["queued", "leased", "running"])(
+      "never touches a %s follow-up with a lease owner",
+      async (status) => {
+        const { fx, leader } = await leaderStalled();
+        const nudge = await nudgeRun(fx);
+        await sys(() =>
+          prisma.run.update({
+            where: { id: nudge.id },
+            data: { status, leaseOwner: "worker-1" },
+          }),
+        );
+        await sys(() =>
+          completeTeamRun(deps, leader, thread(fx), bot(fx, leader.botId), { summary: "文章完成" }),
+        );
+        expect(await runStatus(nudge.id)).toMatchObject({ status, leaseOwner: "worker-1" });
+      },
+    );
 
     it("cancels the nudge when a newer human message ends the run", async () => {
       const { fx } = await leaderStalled();

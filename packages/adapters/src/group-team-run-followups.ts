@@ -31,8 +31,8 @@ export function teamRunEndMakesRecheckStale(status: string | null | undefined): 
 
 /**
  * Cancels the queued, never-started follow-up turns of an ended team run. Only rows still
- * `queued` without a lease flip, in the same conditional update the run claim uses, so a turn
- * that already started is never touched. Returns the cancelled run ids.
+ * `queued` without a lease are locked before cancellation, so a turn that already started is
+ * never touched. Returns the cancelled run ids.
  */
 export async function cancelTeamRunFollowUpsInTransaction(
   tx: Tx,
@@ -71,12 +71,14 @@ export async function cancelTeamRunFollowUpsInTransaction(
   const ids = [...new Set([...nudges, ...rechecks].map((run) => run.id))];
   if (!ids.length) return [];
   const now = new Date();
-  const cancelled = await tx.run.updateManyAndReturn({
+  // Lock only unclaimed turns while keeping them active for the shared cancellation helper,
+  // which also cancels their tasks and clears their saved state.
+  const pending = await tx.run.updateManyAndReturn({
     where: { id: { in: ids }, status: "queued", leaseOwner: null },
-    data: { status: "cancelled", completedAt: now, wakeAt: null },
+    data: { wakeAt: null },
     select: { id: true, taskId: true, userId: true, spaceId: true },
   });
-  await cancelRunsInTransaction(tx, cancelled, now);
+  const cancelled = await cancelRunsInTransaction(tx, pending, now);
   return cancelled.map((run) => run.id);
 }
 
