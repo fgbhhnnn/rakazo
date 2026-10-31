@@ -993,8 +993,15 @@ describe("Pi connector tool dispatch", () => {
     expect(modes.get("destination_write")).toBe("default");
   });
 
-  it("runs a turn's background_task calls in the order the model emitted them", async () => {
+  it.each([
+    { name: "background_task", args: { name: "Research", task: "Read the notes" } },
+    { name: "background_task_status", args: {} },
+    { name: "background_task_message", args: { task_id: "task-1", message: "Read all notes" } },
+    { name: "background_task_cancel", args: { task_id: "task-1" } },
+  ])("dispatches deferred $name sequentially", async ({ name, args }) => {
     const runtime = new PiAgentRuntime();
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    fakeAgentState.invoke = { name: "use_tool", args: { name, arguments: args } };
     const names = [
       "background_task",
       "background_task_status",
@@ -1014,7 +1021,7 @@ describe("Pi connector tool dispatch", () => {
           destinationTool,
         ],
         model: { provider: "test", id: "dispatch-test-model" },
-        executeTool: vi.fn(async () => ({ ok: true })),
+        executeTool,
       },
       {
         operationId: "1",
@@ -1029,9 +1036,17 @@ describe("Pi connector tool dispatch", () => {
     const modes = new Map(
       fakeAgentState.tools.map((tool) => [tool.name, tool.executionMode ?? "default"]),
     );
-    // Concurrent calls entered the queue as 1,2,4,5,3,6, so FIFO started the wrong tasks.
-    for (const name of names) expect(modes.get(name)).toBe("sequential");
+    // Upstream defers these tools. Its bridge must preserve the fork's dispatch order:
+    // concurrent calls entered the queue as 1,2,4,5,3,6 and started the wrong tasks.
+    expect(modes.get("use_tool")).toBe("sequential");
     expect(modes.get("destination_write")).toBe("default");
+    expect(executeTool).toHaveBeenCalledExactlyOnceWith(
+      name,
+      args,
+      JSON.stringify(["pi-tool", "main", "call-1"]),
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
+    );
   });
 
   it("does not claim a tool-only turn finished work the model never described", async () => {

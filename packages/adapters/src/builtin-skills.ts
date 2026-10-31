@@ -70,7 +70,7 @@ const SKILLS: Array<{ name: string; description: string; body: string }> = [
   },
   {
     name: "Gose Bot",
-    description: "How to use or set up Gose Bot: chat apps, your computer, billing, hosting",
+    description: "Use or set up Gose Bot: chat apps, your computer, billing, hosting",
     body: `Answer questions about Gose Bot itself from its docs. Fetch the matching page with web_fetch before answering, then answer briefly in your own words and link the page. If fetching fails or is unavailable, answer only what this index says and link the page. Never invent menus, buttons, or steps the page doesn't show. Account-specific facts (credit balance, plan, usage) aren't in the docs: point to the screen that shows them.
 
 ${RAKAZO_DOCS.map(([topics, url]) => `- ${topics}: ${url}`).join("\n")}`,

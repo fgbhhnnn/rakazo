@@ -60,6 +60,7 @@ function staleClaimHarness(answer: ProviderAnswer, options: { claimChanged?: boo
       }),
     },
     computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    $executeRaw: vi.fn(async (_sql: TemplateStringsArray, ..._values: unknown[]) => 1),
     bot: { findMany: vi.fn().mockResolvedValue([{ id: "main", thread: { id: "main-thread" } }]) },
     // The restart card itself is covered against PostgreSQL; here it is already gone.
     $transaction: vi.fn(async () => null),
@@ -115,6 +116,7 @@ describe("stale suspend claim settled with the provider", () => {
 
   it("marks a computer its provider already paused asleep and resets its health", async () => {
     const h = staleClaimHarness("paused");
+    const runningSince = h.computer.runningSince;
 
     await sleepComputerIfIdle(h.deps, h.computer.id);
 
@@ -134,9 +136,19 @@ describe("stale suspend claim settled with the provider", () => {
       restartThreadId: null,
     });
     expect(h.prisma.$transaction).toHaveBeenCalledOnce();
-    expect(h.prisma.computerRun.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ endReason: "gone" }) }),
+    // Upstream dates an unseen stop at lastSeenAt, preserving the fork's healed claim.
+    expect(h.prisma.$executeRaw).toHaveBeenCalledExactlyOnceWith(
+      expect.any(Array),
+      expect.any(Date),
+      "gone",
+      h.computer.id,
+      runningSince,
+      expect.any(Date),
+      runningSince,
     );
+    const sql = h.prisma.$executeRaw.mock.calls[0]![0];
+    expect(sql.join("?")).toContain('COALESCE("lastSeenAt",');
+    expect(sql.join("?")).toContain('ELSE "startedAt" =');
     // Nothing woke, saved or stopped it, and no further idle check is queued for it.
     expect(h.sandbox.keepAlive).not.toHaveBeenCalled();
     expect(h.sandbox.execute).not.toHaveBeenCalled();

@@ -93,9 +93,9 @@ postgres("hidden worker uses its main bot's data (PostgreSQL)", () => {
 
       await system(async () => {
         // Saved credentials live in the member's shared vault, also available to hidden workers.
-        expect(
-          (await listBotSecrets(prisma, { userId, spaceId })).map((s) => s.name),
-        ).toEqual(["github"]);
+        expect((await listBotSecrets(prisma, { userId, spaceId })).map((s) => s.name)).toEqual([
+          "github",
+        ]);
         expect(await listBotSecrets(prisma, { userId: `${id}-other`, spaceId })).toEqual([]);
 
         // MCP servers: the connector looks up assignments by the scoped id.

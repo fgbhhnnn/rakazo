@@ -22,7 +22,6 @@ export const WORKER_ALWAYS_DISABLED = [
   "call_user",
   "end_call",
   "create_space",
-  "propose_instructions_update",
   "list_fleet",
   "create_group",
   "update_group",

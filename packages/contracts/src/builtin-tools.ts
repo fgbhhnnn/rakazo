@@ -91,7 +91,6 @@ export const BUILTIN_TOOL_NAMES = [
   "report_progress",
   "background_task_message",
   "background_task_cancel",
-  "propose_instructions_update",
   "create_space",
   "spawn_bot",
   "update_bot",

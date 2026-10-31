@@ -67,6 +67,7 @@ const MEMBER_OPEN = [
   "mcp.servers.list",
   "mcp.servers.test",
   "approvalRules.list",
+  "approvalRules.preview",
   "autoReview.get",
 ] as const;
 
@@ -74,13 +75,7 @@ const MEMBER_OPEN = [
 const ADMIN_ONLY = ["deployment.get", "deployment.update"] as const;
 
 /** Agent import is refused unless RAKAZO_AGENT_IMPORT_ENABLED=true. */
-const AGENT_IMPORT = [
-  "bots.importPreview",
-  "bots.importCreate",
-  "bots.importInfo",
-  "bots.importSetupState",
-  "bots.importUndo",
-] as const;
+const AGENT_IMPORT = ["bots.importPreview", "bots.importCreate", "bots.importSetupState"] as const;
 
 /** No app account has authority over these. */
 const NOBODY = ["security.events"] as const;
@@ -229,6 +224,9 @@ describe("router owner/admin guards", () => {
 
   it("gates every agent import procedure on the server flag", () => {
     expect(paths.filter((path) => path.startsWith("bots.import"))).toEqual([...AGENT_IMPORT]);
+    // Upstream retired these with the move to importing a new bot in Settings.
+    expect(paths).not.toContain("bots.importInfo");
+    expect(paths).not.toContain("bots.importUndo");
   });
 
   it.each(AGENT_IMPORT)("%s is refused while agent import is off", async (path) => {

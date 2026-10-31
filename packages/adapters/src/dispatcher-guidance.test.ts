@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { DISPATCHER_ASK_GUIDANCE, dispatcherAskClause } from "./dispatcher-ask-guidance.js";
 import { applyDispatcherToolPolicy, DISPATCHER_TOOL_NAMES } from "./dispatcher-mode.js";
 import {
@@ -83,8 +84,11 @@ describe("dispatcher group teamwork", () => {
 
 describe("dispatcher owner tools", () => {
   it("keeps the quick owner tools on the main turn, never request_takeover", () => {
-    for (const name of DISPATCHER_OWNER_TOOL_NAMES)
+    const available = new Set(builtinAgentTools.map((tool) => tool.name));
+    for (const name of DISPATCHER_OWNER_TOOL_NAMES) {
+      expect(available.has(name), name).toBe(true);
       expect(DISPATCHER_TOOL_NAMES.has(name)).toBe(true);
+    }
     for (const name of [
       "spawn_bot",
       "update_bot",
@@ -96,7 +100,6 @@ describe("dispatcher owner tools", () => {
       "set_child_instructions",
       "set_child_bot_model",
       "create_child_routine",
-      "propose_instructions_update",
       "create_space",
       "schedule_create",
       "schedule_list",
