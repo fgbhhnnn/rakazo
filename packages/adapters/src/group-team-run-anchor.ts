@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { findHumanAuthoredMessage } from "./human-message-query.js";
 
 /**
  * Which human request a group run belongs to is the latest human message when its turn began.
@@ -46,10 +47,9 @@ export async function humanAnchor(
   threadId: string,
   at: Date,
 ): Promise<{ id: string; seq: number } | null> {
-  return prisma.message.findFirst({
-    where: { threadId, role: "user", createdAt: { lte: at } },
-    orderBy: { seq: "desc" },
-    select: { id: true, seq: true },
+  return findHumanAuthoredMessage(prisma, {
+    threadId,
+    createdAt: { lte: at },
   });
 }
 

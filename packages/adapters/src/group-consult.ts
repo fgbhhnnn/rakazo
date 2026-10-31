@@ -28,6 +28,7 @@ import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { holdWhileBusy } from "./group-held-runs.js";
 import { humanAnchorForRun } from "./group-team-run-anchor.js";
+import { findHumanAuthoredMessage } from "./human-message-query.js";
 
 /**
  * ask_teammate (see core group-consult.ts). The question is a visible card in the group
@@ -391,9 +392,9 @@ export async function wakeAsker(
       select: { spaceId: true, userId: true, botId: true },
     });
     if (!askerRun || askerRun.botId !== block.fromBotId) return undefined;
-    const newerHuman = await tx.message.findFirst({
-      where: { threadId: question.threadId, role: "user", seq: { gt: question.seq } },
-      select: { id: true },
+    const newerHuman = await findHumanAuthoredMessage(tx, {
+      threadId: question.threadId,
+      seq: { gt: question.seq },
     });
     if (newerHuman) {
       getLogger().info("teammate answer not routed: the user wrote since", {

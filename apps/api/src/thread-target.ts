@@ -21,6 +21,7 @@ import {
   callIdFromClientNonce,
   deferredHandoffTargetId,
   isConversationalRun,
+  isHumanAuthoredMessage,
   messageBypassesTakeoverWait,
   messageReaction,
   projectMessages,
@@ -257,7 +258,7 @@ export async function cancelSupersededQueuedRuns(
   tx: Prisma.TransactionClient,
   input: { threadId: string; botIds: string[]; keepRunIds: string[] },
 ) {
-  const superseded = await tx.run.findMany({
+  const candidates = await tx.run.findMany({
     where: {
       threadId: input.threadId,
       botId: { in: input.botIds },
@@ -265,8 +266,16 @@ export async function cancelSupersededQueuedRuns(
       OR: [{ trigger: "user", sourceMessage: { role: "user" } }, { trigger: "reaction" }],
       id: { notIn: input.keepRunIds },
     },
-    select: { id: true, taskId: true },
+    select: {
+      id: true,
+      taskId: true,
+      trigger: true,
+      sourceMessage: { select: { role: true, botId: true, blocks: true } },
+    },
   });
+  const superseded = candidates.filter(
+    (run) => run.trigger === "reaction" || isHumanAuthoredMessage(run.sourceMessage),
+  );
   if (superseded.length === 0) return;
   const now = new Date();
   await tx.run.updateMany({

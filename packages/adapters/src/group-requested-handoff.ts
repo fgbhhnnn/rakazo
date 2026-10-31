@@ -3,6 +3,7 @@ import {
   BOT_MESSAGE_MAX_LENGTH,
   failedHandoffNotice,
   formatHandoffBrief,
+  isHumanAuthoredMessage,
   replyBlocksRequestedHandoff,
   requestedHandoffTarget,
   systemHandoffMarker,
@@ -62,10 +63,10 @@ export async function handoffRequestedByHuman(
   try {
     const source = await deps.prisma.message.findUnique({
       where: { id: run.sourceMessageId },
-      select: { id: true, role: true, threadId: true, blocks: true },
+      select: { id: true, role: true, botId: true, threadId: true, blocks: true },
     });
     // Only a human's own words count; a bot's message never asks for a system handoff.
-    if (source?.role !== "user" || source.threadId !== run.threadId) return;
+    if (!source || !isHumanAuthoredMessage(source) || source.threadId !== run.threadId) return;
     const request = blocksText(source.blocks);
     if (!request) return;
     const group = await deps.prisma.chatGroup.findFirst({
