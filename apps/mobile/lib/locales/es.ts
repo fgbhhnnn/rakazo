@@ -1,4 +1,10 @@
 export const ES_MESSAGES: Record<string, string> = {
+  Dictate: "Dictar",
+  "Stop dictation": "Detener dictado",
+  "Nothing heard. Try again.": "No se ha oído nada. Inténtalo de nuevo.",
+  "Could not dictate. Check microphone and speech recognition permissions.":
+    "No se pudo dictar. Revisa los permisos del micrófono y del reconocimiento de voz.",
+  "Listening…": "Escuchando…",
   "A page can't be empty.": "Una página no puede estar vacía.",
   "Background tasks": "Tareas en segundo plano",
   "Background tasks finished": "Tareas en segundo plano finalizadas",

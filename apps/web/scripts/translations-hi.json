@@ -497,7 +497,7 @@
   "Starting…": "शुरू हो रहा है…",
   "Steps": "चरण",
   "Stop": "रोकें",
-  "Stop dictation": "श्रुतलेखन रोकें",
+  "Stop dictation": "बोलकर लिखना रोकें",
   "Stop speaking": "बोलना रोकें",
   "Stop teaching": "सिखाना रोकें",
   "Stop the bot first": "पहले बॉट रोकें",
@@ -582,5 +582,8 @@
   "Credentials are encrypted and never sent to the model.": "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।",
   "Rename section": "अनुभाग का नाम बदलें",
   "Could not rename section": "अनुभाग का नाम नहीं बदला जा सका",
-  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {{peer} के साथ # संदेश} other {{peer} के साथ # संदेश}}"
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {{peer} के साथ # संदेश} other {{peer} के साथ # संदेश}}",
+  "Nothing heard. Try again.": "कुछ सुनाई नहीं दिया। फिर कोशिश करें।",
+  "Allow microphone and speech recognition access to dictate.": "बोलकर लिखने के लिए माइक्रोफ़ोन और वाक् पहचान की अनुमति दें।",
+  "Dictation failed. Try again.": "बोलकर लिखना विफल रहा। फिर कोशिश करें।"
 }

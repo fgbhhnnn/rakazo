@@ -579,5 +579,8 @@
   "Credentials are encrypted and never sent to the model.": "인증 정보는 암호화되며 모델에 전송되지 않습니다.",
   "Rename section": "섹션 이름 바꾸기",
   "Could not rename section": "섹션 이름을 바꿀 수 없습니다",
-  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, other {{peer}님과 메시지 #개}}"
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, other {{peer}님과 메시지 #개}}",
+  "Nothing heard. Try again.": "음성이 들리지 않았습니다. 다시 시도하세요.",
+  "Allow microphone and speech recognition access to dictate.": "음성 입력을 위해 마이크와 음성 인식 접근을 허용하세요.",
+  "Dictation failed. Try again.": "음성 입력에 실패했습니다. 다시 시도하세요."
 }

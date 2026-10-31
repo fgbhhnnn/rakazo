@@ -21,6 +21,7 @@ import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Plus, Settings, X } from "lucide-react";
 import type { ClipboardEvent, DragEvent, RefObject } from "react";
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { DictateButton } from "../../components/composer/DictateButton";
 import {
   HoldToTalkControls,
   HoldToTalkStrip,
@@ -889,6 +890,12 @@ export const Composer = memo(function Composer({
             <HoldToTalkControls talk={talk} />
           ) : (
             <>
+              <DictateButton
+                key={draftKey}
+                transcribe={dictationTranscribe}
+                disabled={disabled || onCall || talk.recording !== null}
+                onText={appendDictation}
+              />
               {phoneCallsEnabled && draft.trim().length === 0 ? (
                 <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
               ) : null}

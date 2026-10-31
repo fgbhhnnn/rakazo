@@ -698,6 +698,10 @@ msgstr ""
 msgid "Allow for this chat"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Allow microphone and speech recognition access to dictate."
+msgstr "יש לאפשר גישה למיקרופון ולזיהוי דיבור כדי להכתיב."
+
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "אישור חד-פעמי"
@@ -2618,6 +2622,10 @@ msgstr "פרטים"
 msgid "Developer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Dictate"
+msgstr "הכתבה"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -2629,6 +2637,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/components/composer/DictateButton.tsx
+msgid "Dictation failed. Try again."
+msgstr "ההכתבה נכשלה. נסו שוב."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3516,6 +3528,7 @@ msgstr "האזנה"
 msgid "Listening"
 msgstr "מאזין"
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Listening…"
 msgstr ""
@@ -4251,6 +4264,10 @@ msgstr "לא בשימוש ב-{PRODUCT_NAME}"
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
 msgstr "לא עובד"
+
+#: src/components/composer/DictateButton.tsx
+msgid "Nothing heard. Try again."
+msgstr "לא נקלט דיבור. נסו שוב."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
@@ -5735,6 +5752,10 @@ msgstr "עצירה"
 msgid "Stop computer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Stop dictation"
+msgstr "עצירת ההכתבה"
+
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "הפסקת ההקראה"
@@ -6161,6 +6182,7 @@ msgstr "שם הכלי"
 msgid "Tools"
 msgstr "כלים"
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr ""

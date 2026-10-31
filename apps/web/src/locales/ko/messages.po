@@ -698,6 +698,10 @@ msgstr ""
 msgid "Allow for this chat"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Allow microphone and speech recognition access to dictate."
+msgstr "음성 입력을 위해 마이크와 음성 인식 접근을 허용하세요."
+
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "한 번 허용"
@@ -2618,6 +2622,10 @@ msgstr "세부 정보"
 msgid "Developer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Dictate"
+msgstr "음성 입력"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -2629,6 +2637,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/components/composer/DictateButton.tsx
+msgid "Dictation failed. Try again."
+msgstr "음성 입력에 실패했습니다. 다시 시도하세요."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3516,6 +3528,7 @@ msgstr ""
 msgid "Listening"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Listening…"
 msgstr ""
@@ -4251,6 +4264,10 @@ msgstr "{PRODUCT_NAME}에서 사용하지 않음"
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
 msgstr "작동하지 않음"
+
+#: src/components/composer/DictateButton.tsx
+msgid "Nothing heard. Try again."
+msgstr "음성이 들리지 않았습니다. 다시 시도하세요."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
@@ -5735,6 +5752,10 @@ msgstr "중지"
 msgid "Stop computer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Stop dictation"
+msgstr "음성 입력 중지"
+
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "읽기 중지"
@@ -6161,6 +6182,7 @@ msgstr "도구 이름"
 msgid "Tools"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr ""

@@ -698,6 +698,10 @@ msgstr ""
 msgid "Allow for this chat"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Allow microphone and speech recognition access to dictate."
+msgstr "Dikte etmek için mikrofon ve konuşma tanıma erişimine izin verin."
+
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Bir kez izin ver"
@@ -2618,6 +2622,10 @@ msgstr "Ayrıntılar"
 msgid "Developer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Dictate"
+msgstr "Dikte et"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -2629,6 +2637,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/components/composer/DictateButton.tsx
+msgid "Dictation failed. Try again."
+msgstr "Dikte başarısız oldu. Tekrar deneyin."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3516,6 +3528,7 @@ msgstr ""
 msgid "Listening"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Listening…"
 msgstr ""
@@ -4251,6 +4264,10 @@ msgstr "{PRODUCT_NAME} tarafından kullanılmıyor"
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
 msgstr "Çalışmıyor"
+
+#: src/components/composer/DictateButton.tsx
+msgid "Nothing heard. Try again."
+msgstr "Ses duyulmadı. Tekrar deneyin."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
@@ -5735,6 +5752,10 @@ msgstr "Durdur"
 msgid "Stop computer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Stop dictation"
+msgstr "Dikteyi durdur"
+
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "Seslendirmeyi durdur"
@@ -6161,6 +6182,7 @@ msgstr "Araç adı"
 msgid "Tools"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr ""

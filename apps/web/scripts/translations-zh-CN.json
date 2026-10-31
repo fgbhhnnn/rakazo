@@ -240,7 +240,7 @@
   "Deployment default": "部署默认",
   "Describe what this bot does": "描述这个 Bot 做什么",
   "Description": "描述",
-  "Dictate": "口述",
+  "Dictate": "语音输入",
   "Disconnect": "断开",
   "Disconnecting…": "正在断开…",
   "Dismissed. Reconnect anytime from MCP settings.": "已关闭，可随时在 MCP 设置中重新连接。",
@@ -495,7 +495,7 @@
   "Starting…": "正在开始…",
   "Steps": "步骤",
   "Stop": "停止",
-  "Stop dictation": "停止口述",
+  "Stop dictation": "停止语音输入",
   "Stop speaking": "停止朗读",
   "Stop teaching": "停止示范",
   "Stop the bot first": "请先停止 Bot",
@@ -725,5 +725,8 @@
   "Credentials are encrypted and never sent to the model.": "凭据已加密，不会发送给模型。",
   "Rename section": "重命名分组",
   "Could not rename section": "无法重命名分组",
-  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, other {与 {peer} 的 # 条消息}}"
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, other {与 {peer} 的 # 条消息}}",
+  "Nothing heard. Try again.": "未听到语音，请重试。",
+  "Allow microphone and speech recognition access to dictate.": "请允许使用麦克风和语音识别以进行语音输入。",
+  "Dictation failed. Try again.": "语音输入失败，请重试。"
 }

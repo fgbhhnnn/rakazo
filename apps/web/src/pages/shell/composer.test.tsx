@@ -16,7 +16,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 
-import { dictation } from "../../lib/dictation";
+import { Dictation, dictation } from "../../lib/dictation";
 import { Composer } from "./composer";
 
 let root: Root | null = null;
@@ -1061,6 +1061,33 @@ it.each([false, true])(
     }
   },
 );
+
+it("dictates into the saved draft with phone calls disabled and never sends", () => {
+  vi.stubGlobal("SpeechRecognition", class {});
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(Dictation.prototype, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    const onSend = vi.fn(async () => true);
+    const textarea = renderComposer(onSend, { phoneCallsEnabled: false });
+    type(textarea, "Review");
+    act(() => container?.querySelector<HTMLButtonElement>('button[aria-label="Dictate"]')?.click());
+    expect(listen).toHaveBeenCalledOnce();
+    act(() => onFinal("你好世界"));
+    expect(textarea.value).toBe("Review 你好世界");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("Review 你好世界");
+    expect(onSend).not.toHaveBeenCalled();
+    rerenderComposer({ draftKey: "bot:bot-2" });
+    act(() => onFinal("late words"));
+    expect(textarea.value).toBe("Review 你好世界");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-2")).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  } finally {
+    listen.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
 
 it.each([
   [false, false],

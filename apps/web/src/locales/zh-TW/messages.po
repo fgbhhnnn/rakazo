@@ -699,6 +699,10 @@ msgstr "允許跨空間機器人通訊"
 msgid "Allow for this chat"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Allow microphone and speech recognition access to dictate."
+msgstr "請允許使用麥克風和語音辨識以進行語音輸入。"
+
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "允許一次"
@@ -2619,6 +2623,10 @@ msgstr "詳細資訊"
 msgid "Developer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Dictate"
+msgstr "語音輸入"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -2630,6 +2638,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/components/composer/DictateButton.tsx
+msgid "Dictation failed. Try again."
+msgstr "語音輸入失敗，請重試。"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3517,6 +3529,7 @@ msgstr "聆聽"
 msgid "Listening"
 msgstr "聆聽中"
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Listening…"
 msgstr "聆聽中…"
@@ -4252,6 +4265,10 @@ msgstr "{PRODUCT_NAME} 不使用"
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
 msgstr "無法正常工作"
+
+#: src/components/composer/DictateButton.tsx
+msgid "Nothing heard. Try again."
+msgstr "未聽到語音，請重試。"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
@@ -5736,6 +5753,10 @@ msgstr "停止"
 msgid "Stop computer"
 msgstr "停止電腦"
 
+#: src/components/composer/DictateButton.tsx
+msgid "Stop dictation"
+msgstr "停止語音輸入"
+
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "停止朗讀"
@@ -6162,6 +6183,7 @@ msgstr "工具名稱"
 msgid "Tools"
 msgstr "工具"
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr "轉錄中…"
