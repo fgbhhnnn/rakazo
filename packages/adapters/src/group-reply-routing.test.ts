@@ -87,6 +87,8 @@ describe("planGroupReply", () => {
   it("skips members the latest human message already @-addressed, and only those", async () => {
     const db = prisma();
     const findFirst = vi.fn(async (_args: unknown) => ({
+      role: "user",
+      botId: null,
       blocks: text("@团队-前端 做登录页，@团队-后端 做接口"),
     }));
     const withHuman = { ...db.prisma, message: { findFirst } };

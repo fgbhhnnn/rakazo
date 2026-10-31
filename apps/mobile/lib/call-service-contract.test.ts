@@ -41,7 +41,8 @@ describe("Android call foreground service", () => {
       de: "values-de",
       nl: "values-nl",
       ja: "values-ja",
-      es: "values-es",
+      // OTA cannot add native resources to the installed 1.0.8 binaries.
+      es: "values",
     } as const satisfies Record<(typeof UI_LOCALES)[number], string>;
     const keys = ["rakazo_call_channel", "rakazo_call_title", "rakazo_call_text"];
     for (const locale of UI_LOCALES) {

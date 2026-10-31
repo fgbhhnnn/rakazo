@@ -48,6 +48,7 @@ export * from "./group-team.js";
 export * from "./group-team-run.js";
 export * from "./group-team-run-close.js";
 export * from "./http-response.js";
+export * from "./human-message.js";
 export * from "./identity-display.js";
 export { identitySource } from "./identity-source.js";
 export * from "./inbound-routine.js";
