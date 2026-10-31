@@ -2725,7 +2725,8 @@ describeJourneys("required product journeys", () => {
         })) === 1,
     );
     await rpc(app, ada, "threads/send", { groupId: interrupted.id, text: "@Planner 先停一下" });
-    await settled(interrupted.threadId, "superseded");
+    await settled(interrupted.threadId, "stopped");
+    expect(await teamRun(interrupted.threadId)).toMatchObject({ endReason: "leader_stopped" });
     expect(
       (await texts(interrupted.threadId)).some((text) => text.startsWith("Drafter 已完成，交回")),
     ).toBe(false);

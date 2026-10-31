@@ -205,7 +205,7 @@ export type FinalizeRunInput = FinalizeRunBase &
   );
 
 export interface PauseRunForInput {
-  secretRequest?: { userId: string; failureReason?: LoginFailureReason };
+  secretRequest?: { userId: string; failureReason?: LoginFailureReason; replace?: boolean };
   spaceId: string;
   threadId: string;
   botId: string;

@@ -1,6 +1,7 @@
 import type { LoginFailureReason, MessageBlock } from "@rakazo/contracts";
 import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
+import { isExplicitApiKeyRotation } from "./secret-request-rotation.js";
 
 /** Shared policy knob; callers/tests can supply another interval without provider settings. */
 export const SECRET_REQUEST_REASK_WINDOW_MS = 30 * 60 * 1000;
@@ -14,6 +15,7 @@ export type SecretRequestPolicyInput = {
   userId: string;
   ask: SecretAsk;
   failureReason?: LoginFailureReason;
+  replace?: boolean;
   now?: Date;
   windowMs?: number;
 };
@@ -84,6 +86,7 @@ export async function checkSecretRequestPolicy(
       if (ask.status !== "answered" || ask.superseded || !sameSecretRequest(ask, input.ask))
         continue;
       if (ask.dismissed) throw new SecretRequestBlockedError("dismissed");
+      if (!input.failureReason && isExplicitApiKeyRotation(ask, input.ask, input.replace)) continue;
       if (input.failureReason !== "password_rejected")
         throw new SecretRequestBlockedError("recently_answered");
     }

@@ -33,6 +33,7 @@ export async function newSecretRequestPolicyError(
         purpose: normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
       },
       failureReason,
+      replace: args.replace === true,
     });
   } catch (error) {
     if (error instanceof SecretRequestBlockedError)

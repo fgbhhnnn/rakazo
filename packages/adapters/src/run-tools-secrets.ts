@@ -320,7 +320,11 @@ export const secretTools: ToolHandlers = {
     await persistTurnCheckpoint(ctx, executionId);
     await ctx.settleRunningHelpers();
     const paused = await pauseSecretRequest(deps.events, {
-      secretRequest: { userId: run.userId, failureReason: failureReason.data },
+      secretRequest: {
+        userId: run.userId,
+        failureReason: failureReason.data,
+        replace: args.replace === true,
+      },
       spaceId: run.spaceId,
       threadId: run.threadId,
       botId: run.botId,
