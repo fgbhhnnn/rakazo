@@ -6,6 +6,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor.js";
+import { stoppedTeamRunForWork } from "./group-team-run-stop.js";
 
 /** The chat card for a started background task: its title and #ref. Clients never open the worker from it. */
 export function backgroundTaskCard(
@@ -46,6 +47,8 @@ export async function postDispatcherTaskMessage(
   try {
     const event = await withTransactionRetry(() =>
       deps.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
+        if (await stoppedTeamRunForWork(tx, run.id)) return undefined;
         const message = await createThreadMessageInTransaction(tx, {
           threadId: run.threadId,
           role: "bot",
@@ -65,7 +68,7 @@ export async function postDispatcherTaskMessage(
         });
       }),
     );
-    await deps.events.notify(run.threadId, event.seq).catch(() => undefined);
+    if (event) await deps.events.notify(run.threadId, event.seq).catch(() => undefined);
   } catch (error) {
     getLogger().error("background task card", error);
   }

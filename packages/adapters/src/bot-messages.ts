@@ -22,6 +22,7 @@ import { refreshTaskProgressForWorkerRun } from "./background-task-progress.js";
 import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { workerResultGroupThreadId } from "./group-return-thread.js";
+import { stoppedTeamRunForWork, teamBackgroundDeliveryStopped } from "./group-team-run-stop.js";
 import { runPageBlocks } from "./pages.js";
 import { runLeaseFor } from "./run-messages.js";
 import { attachmentBlocks } from "./task-attachments.js";
@@ -210,6 +211,11 @@ export async function messageBot(
         for (const threadId of [run.threadId, targetThreadId].sort()) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         }
+        if (
+          (await stoppedTeamRunForWork(tx, run.id)) ||
+          (await teamBackgroundDeliveryStopped(tx, input.deliveryKey))
+        )
+          return { ok: false as const, error: "this team task stopped" };
         // Claim the delivery key inside the transaction so a concurrent retry
         // either sees the winner or loses on the unique (threadId, clientNonce).
         if (deliveryKey) {

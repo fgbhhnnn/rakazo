@@ -53,31 +53,7 @@
           "microphonePermission": "Rakazo uses the microphone for voice calls with your bots."
         }
       ],
-      [
-        "expo-sharing",
-        {
-          "android": {
-            "enabled": true,
-            "singleShareMimeTypes": [
-              "text/*",
-              "image/*",
-              "audio/*",
-              "video/mp4",
-              "application/pdf",
-              "application/json",
-              "application/zip"
-            ],
-            "multipleShareMimeTypes": [
-              "image/*",
-              "audio/*",
-              "video/mp4",
-              "application/pdf",
-              "application/json",
-              "application/zip"
-            ]
-          }
-        }
-      ],
+      "expo-sharing",
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
       "./plugins/with-lan-cleartext"
@@ -85,7 +61,7 @@
     "ios": {
       "bundleIdentifier": "com.ccxxyy.rakazo",
       "buildNumber": "1",
-      "supportsTablet": true,
+      "supportsTablet": false,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "config": {
         "usesNonExemptEncryption": false

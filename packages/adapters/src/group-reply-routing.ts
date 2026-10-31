@@ -21,6 +21,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { handoffToGroupBot } from "./group-handoff.js";
+import { findHumanAuthoredMessage } from "./human-message-query.js";
 
 /**
  * Group teamwork after a bot's group reply. One routing order, no model picking speakers:
@@ -80,10 +81,9 @@ async function humanAddressedIds(
   humanTurn: { threadId: string; before: Date },
   members: readonly Member[],
 ): Promise<Set<string>> {
-  const latest = await prisma.message.findFirst({
-    where: { threadId: humanTurn.threadId, role: "user", createdAt: { lte: humanTurn.before } },
-    orderBy: { seq: "desc" },
-    select: { blocks: true },
+  const latest = await findHumanAuthoredMessage(prisma, {
+    threadId: humanTurn.threadId,
+    createdAt: { lte: humanTurn.before },
   });
   const text = Array.isArray(latest?.blocks) ? replyText(latest.blocks as MessageBlock[]) : "";
   return new Set(text ? mentionedMembersInOrder(text, members).map((member) => member.id) : []);

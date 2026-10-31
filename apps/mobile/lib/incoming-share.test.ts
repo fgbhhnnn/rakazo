@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   os: "android",
+  nativeAvailable: true,
   payloads: [] as Array<{ value: string; shareType: string; mimeType?: string }>,
   clear: vi.fn(),
   copy: vi.fn(),
@@ -15,12 +16,17 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("expo-sharing", () => ({
-  getSharedPayloads: () => state.payloads,
-  clearSharedPayloads: () => {
-    state.clear();
-    state.payloads = [];
-  },
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: () =>
+    state.nativeAvailable
+      ? {
+          getSharedPayloads: () => state.payloads,
+          clearSharedPayloads: () => {
+            state.clear();
+            state.payloads = [];
+          },
+        }
+      : null,
 }));
 vi.mock("expo-file-system", () => ({
   Paths: { cache: "file:///cache/" },
@@ -56,6 +62,7 @@ const {
 beforeEach(() => {
   vi.useFakeTimers();
   state.os = "android";
+  state.nativeAvailable = true;
   cancelIncomingShare();
   state.payloads = [];
   vi.clearAllMocks();
@@ -70,6 +77,18 @@ function receive() {
   receiveIncomingShare(true, false);
 }
 describe("incoming share", () => {
+  it("ignores incoming-share links and navigation safely without native support", () => {
+    state.nativeAvailable = false;
+    expect(() => {
+      receiveIncomingShare(false, true);
+      receive();
+      cancelIncomingShare();
+    }).not.toThrow();
+    expect(hasIncomingShare()).toBe(false);
+    expect(takeIncomingShare()).toBeNull();
+    expect(state.clear).not.toHaveBeenCalled();
+    expect(state.copy).not.toHaveBeenCalled();
+  });
   it("takes text once without copying files", () => {
     receive();
     expect(takeIncomingShare()?.text).toBe("https://example.com/a");

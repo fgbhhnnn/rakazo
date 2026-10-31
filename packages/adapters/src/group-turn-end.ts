@@ -6,6 +6,7 @@ import { stageOriginOfRun, teammateQuestionAfterTurn } from "./group-consult.js"
 import { releaseHeldGroupRun } from "./group-held-runs.js";
 import { handoffRequestedByHuman } from "./group-requested-handoff.js";
 import { continueTeamRun } from "./group-team-run.js";
+import { refuseStoppedTeamRunWork } from "./group-team-run-stop.js";
 
 /**
  * After a group turn completed and its reply was saved: the handoff the human asked for, then
@@ -35,6 +36,10 @@ export async function afterGroupTurn(
   },
 ): Promise<{ suppressClaimRecheck: boolean }> {
   if (!input.thread.groupId) return { suppressClaimRecheck: false };
+  if (
+    await refuseStoppedTeamRunWork(deps.prisma, run.id, { ...run, groupId: input.thread.groupId })
+  )
+    return { suppressClaimRecheck: true };
   try {
     return await groupTurnSteps(deps, run, input);
   } finally {
