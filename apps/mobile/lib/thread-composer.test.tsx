@@ -192,6 +192,14 @@ vi.mock("../components/glass-surface", () => ({
     createElement("div", { "data-glass": shape, "data-style": JSON.stringify(style) }, children),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/composer-dictate-button", () => ({
+  ComposerDictateButton: ({ onText }: { onText: (text: string) => void }) =>
+    createElement("button", {
+      type: "button",
+      "aria-label": "Dictate",
+      onClick: () => onText("你好世界"),
+    }),
+}));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}), useResolvedAppearance: () => "light" }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 
@@ -281,6 +289,15 @@ describe("thread composer isolation", () => {
     expect(button).not.toBeNull();
     act(() => button.click());
   }
+  it("appends dictated text to the editable draft without sending or calling", () => {
+    render();
+    type("Review");
+    press("Dictate");
+    expect(composer.current?.snapshot().promptText).toBe("Review 你好世界");
+    expect(container.querySelector("input")?.value).toBe("Review 你好世界");
+    expect(props.send).not.toHaveBeenCalled();
+    expect(props.startVoiceCall).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.clearAllMocks();
@@ -325,6 +342,16 @@ describe("thread composer isolation", () => {
     expect(JSON.parse(field().dataset.mentions!)).toEqual(["@Helper"]);
     expect(container.querySelector('[data-testid="mention-chip"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Remove mention {name}"]')).toBeNull();
+  });
+
+  it("keeps mention bindings when dictation appends to the draft", () => {
+    type("ask @He");
+    press("@{name}");
+    select(0);
+    press("Dictate");
+    expect(composer.current!.snapshot().promptText).toBe("ask @Helper  你好世界");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("colors a bot mention with the bot's identity color", () => {

@@ -1,4 +1,10 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Dictate: "Diktieren",
+  "Stop dictation": "Diktat beenden",
+  "Nothing heard. Try again.": "Nichts gehört. Erneut versuchen.",
+  "Could not dictate. Check microphone and speech recognition permissions.":
+    "Diktieren nicht möglich. Prüfe die Berechtigungen für Mikrofon und Spracherkennung.",
+  "Listening…": "Höre zu…",
   "Can edit and organise bots it creates": "Kann erstellte Bots bearbeiten und organisieren",
   "Edit label": "Label bearbeiten",
   "Add a label": "Label hinzufügen",

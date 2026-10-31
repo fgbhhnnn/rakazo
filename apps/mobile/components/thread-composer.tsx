@@ -40,6 +40,7 @@ import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
+import { ComposerDictateButton } from "./composer-dictate-button";
 import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
 
@@ -639,6 +640,13 @@ export function ThreadComposer({
               </TextInput>
             </Pressable>
           </View>
+          <ComposerDictateButton
+            disabled={onCall}
+            onText={(text) => {
+              const current = draftRef.current;
+              updateDraft(current ? `${current} ${text}` : text);
+            }}
+          />
           {!canSend && botId && !onCall ? (
             <Pressable
               accessibilityRole="button"
