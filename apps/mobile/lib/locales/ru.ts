@@ -1,4 +1,10 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Dictate: "Диктовать",
+  "Stop dictation": "Остановить диктовку",
+  "Nothing heard. Try again.": "Речь не распознана. Попробуйте ещё раз.",
+  "Could not dictate. Check microphone and speech recognition permissions.":
+    "Не удалось выполнить диктовку. Проверьте разрешения микрофона и распознавания речи.",
+  "Listening…": "Слушаю…",
   "Can edit and organise bots it creates": "Может редактировать и упорядочивать созданных ботов",
   "Edit label": "Изменить метку",
   "Add a label": "Добавить метку",

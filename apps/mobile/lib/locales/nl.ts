@@ -1,4 +1,10 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Dictate: "Dicteren",
+  "Stop dictation": "Dicteren stoppen",
+  "Nothing heard. Try again.": "Niets gehoord. Probeer het opnieuw.",
+  "Could not dictate. Check microphone and speech recognition permissions.":
+    "Dicteren niet mogelijk. Controleer de machtigingen voor microfoon en spraakherkenning.",
+  "Listening…": "Luisteren…",
   "Can edit and organise bots it creates": "Kan gemaakte bots bewerken en ordenen",
   "Edit label": "Label bewerken",
   "Add a label": "Label toevoegen",

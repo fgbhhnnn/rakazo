@@ -496,7 +496,7 @@
   "Starting…": "Wird gestartet…",
   "Steps": "Schritte",
   "Stop": "Stoppen",
-  "Stop dictation": "Diktat stoppen",
+  "Stop dictation": "Diktat beenden",
   "Stop speaking": "Vorlesen stoppen",
   "Stop teaching": "Anlernen beenden",
   "Stop the bot first": "Zuerst den Bot stoppen",
@@ -579,5 +579,8 @@
   "Credentials are encrypted and never sent to the model.": "Zugangsdaten werden verschlüsselt und dem Modell nie gesendet.",
   "Rename section": "Abschnitt umbenennen",
   "Could not rename section": "Abschnitt konnte nicht umbenannt werden",
-  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {# Nachricht mit {peer}} other {# Nachrichten mit {peer}}}"
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {# Nachricht mit {peer}} other {# Nachrichten mit {peer}}}",
+  "Nothing heard. Try again.": "Nichts gehört. Erneut versuchen.",
+  "Allow microphone and speech recognition access to dictate.": "Erlaube den Zugriff auf Mikrofon und Spracherkennung zum Diktieren.",
+  "Dictation failed. Try again.": "Diktat fehlgeschlagen. Erneut versuchen."
 }

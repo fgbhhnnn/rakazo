@@ -720,5 +720,8 @@
   "Credentials are encrypted and never sent to the model.": "Las credenciales se cifran y nunca se envían al modelo.",
   "Rename section": "Renombrar sección",
   "Could not rename section": "No se pudo renombrar la sección",
-  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {# mensaje con {peer}} other {# mensajes con {peer}}}"
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {# mensaje con {peer}} other {# mensajes con {peer}}}",
+  "Nothing heard. Try again.": "No se ha oído nada. Inténtalo de nuevo.",
+  "Allow microphone and speech recognition access to dictate.": "Permite el acceso al micrófono y al reconocimiento de voz para dictar.",
+  "Dictation failed. Try again.": "El dictado ha fallado. Inténtalo de nuevo."
 }

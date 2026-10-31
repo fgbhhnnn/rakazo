@@ -57,7 +57,18 @@ describe("queued run supersession", () => {
       run: {
         findMany: vi
           .fn()
-          .mockResolvedValueOnce([{ id: "run-old", taskId: "task-old" }])
+          .mockResolvedValueOnce([
+            {
+              id: "run-old",
+              taskId: "task-old",
+              trigger: "user",
+              sourceMessage: {
+                role: "user",
+                botId: null,
+                blocks: [{ kind: "text", text: "hello" }],
+              },
+            },
+          ])
           .mockResolvedValueOnce([{ id: "run-old", userId: "user-1", spaceId: "space-1" }]),
         updateMany: vi.fn(),
       },

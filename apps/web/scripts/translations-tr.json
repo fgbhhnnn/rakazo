@@ -576,5 +576,8 @@
   "Credentials are encrypted and never sent to the model.": "Kimlik bilgileri şifrelenir ve modele asla gönderilmez.",
   "Rename section": "Bölümü yeniden adlandır",
   "Could not rename section": "Bölüm yeniden adlandırılamadı",
-  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {{peer} ile # mesaj} other {{peer} ile # mesaj}}"
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {{peer} ile # mesaj} other {{peer} ile # mesaj}}",
+  "Nothing heard. Try again.": "Ses duyulmadı. Tekrar deneyin.",
+  "Allow microphone and speech recognition access to dictate.": "Dikte etmek için mikrofon ve konuşma tanıma erişimine izin verin.",
+  "Dictation failed. Try again.": "Dikte başarısız oldu. Tekrar deneyin."
 }

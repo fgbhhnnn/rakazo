@@ -119,6 +119,7 @@ import type { FleetRun } from "./fleet-tools.js";
 import { answersTeammateQuestion } from "./group-consult.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
 import { teamRunForRun, teamRunPromptContext } from "./group-team-run.js";
+import { refuseStoppedTeamRunWork } from "./group-team-run-stop.js";
 import {
   formatCompactedSummary,
   formatRecalledMemory,
@@ -608,6 +609,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
+        if (
+          await refuseStoppedTeamRunWork(deps.prisma, run.id, { ...run, groupId: thread.groupId })
+        )
+          return;
         // Messages another live turn of this bot already owns are its to answer, not this one's.
         const messages = await withoutMessagesOwnedByOtherLiveRuns(
           deps.prisma,

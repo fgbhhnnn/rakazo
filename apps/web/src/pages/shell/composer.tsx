@@ -21,6 +21,7 @@ import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Plus, Settings, X } from "lucide-react";
 import type { ClipboardEvent, DragEvent, RefObject } from "react";
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { DictateButton } from "../../components/composer/DictateButton";
 import {
   HoldToTalkControls,
   HoldToTalkStrip,
@@ -889,18 +890,25 @@ export const Composer = memo(function Composer({
             <HoldToTalkControls talk={talk} />
           ) : (
             <>
-              {phoneCallsEnabled && draft.trim().length === 0 ? (
-                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
-              ) : null}
+              {/* Keep Send next in tab order after the field and last visually. */}
               <Button
                 size="icon"
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+                className="order-last size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>
+              <DictateButton
+                key={draftKey}
+                transcribe={dictationTranscribe}
+                disabled={disabled || onCall || talk.recording !== null}
+                onText={appendDictation}
+              />
+              {phoneCallsEnabled && draft.trim().length === 0 ? (
+                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
+              ) : null}
             </>
           )}
         </div>

@@ -698,6 +698,10 @@ msgstr ""
 msgid "Allow for this chat"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Allow microphone and speech recognition access to dictate."
+msgstr "Autorisez le microphone et la reconnaissance vocale pour dicter."
+
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Autoriser une fois"
@@ -2618,6 +2622,10 @@ msgstr "Détails"
 msgid "Developer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Dictate"
+msgstr "Dicter"
+
 #: src/lib/dictation.ts
 msgid "Dictation ended unexpectedly."
 msgstr ""
@@ -2629,6 +2637,10 @@ msgstr ""
 #: src/lib/dictation.ts
 msgid "Dictation failed."
 msgstr ""
+
+#: src/components/composer/DictateButton.tsx
+msgid "Dictation failed. Try again."
+msgstr "Échec de la dictée. Réessayez."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3516,6 +3528,7 @@ msgstr "Écouter"
 msgid "Listening"
 msgstr "Écoute"
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Listening…"
 msgstr "À l’écoute…"
@@ -4251,6 +4264,10 @@ msgstr "Non utilisé par {PRODUCT_NAME}"
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
 msgstr "Ne fonctionne pas"
+
+#: src/components/composer/DictateButton.tsx
+msgid "Nothing heard. Try again."
+msgstr "Aucune parole détectée. Réessayez."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
@@ -5735,6 +5752,10 @@ msgstr "Arrêter"
 msgid "Stop computer"
 msgstr ""
 
+#: src/components/composer/DictateButton.tsx
+msgid "Stop dictation"
+msgstr "Arrêter la dictée"
+
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "Arrêter la lecture"
@@ -6161,6 +6182,7 @@ msgstr "Nom de l’outil"
 msgid "Tools"
 msgstr "Outils"
 
+#: src/components/composer/DictateButton.tsx
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr "Transcription…"

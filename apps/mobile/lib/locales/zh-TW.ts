@@ -1,4 +1,10 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  Dictate: "語音輸入",
+  "Stop dictation": "停止語音輸入",
+  "Nothing heard. Try again.": "未聽到語音，請重試。",
+  "Could not dictate. Check microphone and speech recognition permissions.":
+    "無法進行語音輸入，請檢查麥克風和語音辨識權限。",
+  "Listening…": "正在聆聽…",
   "Can edit and organise bots it creates": "可編輯和整理它建立的機器人",
   "Edit label": "編輯標籤",
   "Add a label": "新增標籤",

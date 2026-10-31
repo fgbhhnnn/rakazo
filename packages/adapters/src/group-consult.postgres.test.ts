@@ -333,6 +333,37 @@ postgres("teammate questions (PostgreSQL)", () => {
     expect(await followUps(fx, "前端")).toHaveLength(2);
   });
 
+  it("routes an answer back across a user-role worker relay", async () => {
+    const fx = await team(["前端", "后端"]);
+    const origin = await say(fx, "@前端 做登录页");
+    const fe = await wake(fx, origin.id, "前端");
+    const asked = await ask(fx, fe, "后端");
+    if (!("ok" in asked)) throw new Error("not asked");
+    await finish(fx, fe, "");
+    await sys(() =>
+      prisma.$transaction((tx) =>
+        createThreadMessageInTransaction(tx, {
+          threadId: fx.thread.id,
+          role: "user",
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "worker",
+              fromBotName: "后台工作者",
+              text: "结果已就绪",
+              intent: "result",
+            },
+          ],
+        }),
+      ),
+    );
+    const be = await nextRun(fx, "后端");
+    await finish(fx, be, "字段：email");
+    const resumed = await followUps(fx, "前端");
+    expect(resumed).toHaveLength(1);
+    expect(resumed[0]!.clientNonce).toBe(`group-answer:${asked.questionMessageId}`);
+  });
+
   it("does not route an answer back after the user wrote again", async () => {
     const fx = await team(["前端", "后端"]);
     const origin = await say(fx, "@前端 做登录页");
