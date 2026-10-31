@@ -6,12 +6,20 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const COMPOSE = "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml";
+const APP_IMAGE = "ghcr.example.test/rakazo/app:local";
 // Each rolled service gains a new container, which must pass its health check before the old
 // one stops; the rest of the stack is reconciled afterwards.
 const rolloutSteps = (revision: string) => [
+  // The image the running API uses, restored if the deploy fails.
+  `${COMPOSE} ps --quiet api`,
+  "docker inspect --format {{.Image}} api-old",
   `${COMPOSE} config --quiet`,
+  `${COMPOSE} config`,
   `${COMPOSE} build --build-arg GIT_SHA=${revision}`,
-  ...["api", "web"].flatMap((service) => [
+  // Only this container gets the database owner login; the old API keeps serving meanwhile.
+  `${COMPOSE} config --services`,
+  `${COMPOSE} run --rm -T migrate`,
+  ...["api", "web", "worker"].flatMap((service) => [
     `${COMPOSE} ps --all --quiet ${service}`,
     `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
     `${COMPOSE} ps --all --quiet ${service}`,
@@ -60,7 +68,9 @@ function rollout(commands: string[]) {
     .map((line) => line.split(" @ ")[0] ?? line)
     .filter(
       (line) =>
-        / (config|build|up|ps) /.test(`${line} `) || /^docker (inspect|stop|rm) /.test(line),
+        / (config|build|up|ps) /.test(`${line} `) ||
+        line.endsWith(" run --rm -T migrate") ||
+        /^docker (inspect|stop|rm) /.test(line),
     );
 }
 
@@ -89,6 +99,22 @@ function fixture() {
 echo "docker $* @ $(git rev-parse --short HEAD)" >> "$COMMAND_LOG"
 if [[ "$*" == *" build "* && "$(cat revision.txt)" == "\${FAIL_BUILD:-}" ]]; then exit 1; fi
 if [[ "$1" == info ]]; then echo /var/lib/docker; fi
+if [[ "$*" == *" config" ]]; then printf "services:\\n  api:\\n    image: ${APP_IMAGE}\\n"; fi
+if [[ "$1" == inspect && "$*" == *"{{.Image}}"* ]]; then
+  [[ -n "\${PREVIOUS_IMAGE-sha256:previous}" ]] || exit 1
+  echo "\${PREVIOUS_IMAGE-sha256:previous}"
+  exit 0
+fi
+if [[ "$*" == *" ps --quiet api" && -z "\${FRESH:-}" ]]; then echo api-old; fi
+if [[ "$*" == *" run --rm --no-deps -T --entrypoint sh postgres "* && -n "\${POSTGRES_16:-}" ]]; then
+  echo upgrade
+fi
+if [[ "$*" == *" config --services" ]]; then
+  echo api
+  [[ "$(cat revision.txt)" == "\${NO_MIGRATE_REVISION:-}" ]] || echo migrate
+fi
+if [[ "$*" == *" run --rm -T migrate" && ( -n "\${FAIL_MIGRATE:-}" || "$(cat revision.txt)" == "\${NO_MIGRATE_REVISION:-}" ) ]]; then exit 1; fi
+if [[ "$1" == pull && -n "\${FAIL_PULL:-}" ]]; then exit 1; fi
 if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
 if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
 # One running container per rolled service; --scale adds a second until the old one is removed.
@@ -101,6 +127,28 @@ if [[ "$*" == *" --scale "* ]]; then touch "$COMMAND_LOG.$service"; fi
 if [[ "$1" == rm && "$2" == *-old ]]; then rm -f "$COMMAND_LOG.\${2%-old}"; fi
 if [[ "$1" == inspect ]]; then echo "\${CONTAINER_HEALTH:-running healthy}"; fi
 if [[ "$*" == "image ls "* ]]; then echo rakazo-rollback:old; fi
+# Deploy wait queries background_task_queue and runs via psql inside postgres.
+if [[ "$*" == *" exec -T postgres "* && "$*" == *" psql "* ]]; then
+  sql="$*"
+  if [[ "$sql" == *"background_task_queue"* && "$sql" == *"count(*)"* && "$sql" == *"queued"* ]]; then
+    echo "\${ACTIVE_BG_COUNT:-0}"
+    exit 0
+  fi
+  if [[ "$sql" == *"runs"* && "$sql" == *"count(*)"* && "$sql" == *"waiting_takeover"* ]]; then
+    echo "\${ACTIVE_RUN_COUNT:-0}"
+    exit 0
+  fi
+  if [[ "$sql" == *"finishedAt"* ]]; then
+    [[ -n "\${FINISHED_BG_LINE:-}" ]] && echo "\${FINISHED_BG_LINE}"
+    exit 0
+  fi
+  if [[ "$sql" == *"background_task_queue"* ]]; then
+    [[ -n "\${ACTIVE_BG_LINE:-}" ]] && echo "\${ACTIVE_BG_LINE}"
+    exit 0
+  fi
+  echo 0
+  exit 0
+fi
 exit 0
 `,
     0o755,
@@ -219,7 +267,7 @@ describe("production deploy script", () => {
     const deploy = fixture();
     commit(deploy.upstream, "next");
     expect(deploy.run().status).toBe(0);
-    const commands = deploy.commands().map((line) => line.split(" @ ")[0]);
+    const commands = deploy.commands().map((line) => line.split(" @ ")[0]!);
     expect(
       commands.slice(commands.findIndex((line) => line.endsWith(" up -d --remove-orphans")) + 1),
     ).toEqual([
@@ -277,10 +325,38 @@ describe("production deploy script", () => {
     expect(deploy.commands().some((line) => line.includes(" build"))).toBe(false);
   });
 
-  it("rolls back to the previous revision when the build fails", () => {
+  it("replaces nothing while the database still needs its upgrade to Postgres 18", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    const result = deploy.run({ POSTGRES_16: "1" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("one-time upgrade to 18");
+    expect(deploy.head()).toBe(deploy.first);
+    expect(rollout(deploy.commands()).filter((line) => / (build|up) /.test(`${line} `))).toEqual(
+      [],
+    );
+  });
+
+  it("rolls back to the image the previous containers ran when the build fails", () => {
     const deploy = fixture();
     const broken = commit(deploy.upstream, "broken");
     const result = deploy.run({ FAIL_BUILD: "broken" });
+    expect(result.status).toBe(1);
+    expect(deploy.head()).toBe(deploy.first);
+    const commands = deploy.commands().map((line) => line.split(" @ ")[0]!);
+    expect(commands.filter((line) => line.startsWith(`${COMPOSE} build`))).toEqual([
+      `${COMPOSE} build --build-arg GIT_SHA=${broken}`,
+    ]);
+    expect(commands).toContain(`docker tag sha256:previous ${APP_IMAGE}`);
+    expect(deploy.commands().at(-1)).toMatch(
+      new RegExp(`up -d --remove-orphans @ ${deploy.first.slice(0, 7)}`),
+    );
+  });
+
+  it("rebuilds the previous revision when the running image is unknown", () => {
+    const deploy = fixture();
+    const broken = commit(deploy.upstream, "broken");
+    const result = deploy.run({ FAIL_BUILD: "broken", PREVIOUS_IMAGE: "" });
     expect(result.status).toBe(1);
     expect(deploy.head()).toBe(deploy.first);
     expect(
@@ -289,9 +365,105 @@ describe("production deploy script", () => {
       `${COMPOSE} build --build-arg GIT_SHA=${broken}`,
       `${COMPOSE} build --build-arg GIT_SHA=${deploy.first}`,
     ]);
-    expect(deploy.commands().at(-1)).toMatch(
-      new RegExp(`up -d --remove-orphans @ ${deploy.first.slice(0, 7)}`),
-    );
+  });
+
+  describe("with published images", () => {
+    const REGISTRY = "registry.example.test/rakazo/app";
+    const published = (revision: string) => `${REGISTRY}:sha-${revision}`;
+    const commandsOf = (deploy: ReturnType<typeof fixture>) =>
+      deploy.commands().map((line) => line.split(" @ ")[0]!);
+
+    it("pulls the image published for the commit instead of building", () => {
+      const deploy = fixture();
+      const next = commit(deploy.upstream, "next");
+      const result = deploy.run({ RAKAZO_DEPLOY_IMAGE: REGISTRY });
+      expect(result.status).toBe(0);
+      expect(deploy.deployed()).toBe(next);
+      const commands = commandsOf(deploy);
+      expect(commands.some((line) => line.startsWith(`${COMPOSE} build`))).toBe(false);
+      const pull = commands.indexOf(`docker pull --quiet ${published(next)}`);
+      expect(pull).toBeGreaterThan(-1);
+      // Tagged as the image Compose runs, and the sha- tag dropped so they cannot pile up.
+      expect(commands.slice(pull + 1, pull + 3)).toEqual([
+        `docker tag ${published(next)} ${APP_IMAGE}`,
+        `docker rmi ${published(next)}`,
+      ]);
+      expect(commands.indexOf(`${COMPOSE} up -d --remove-orphans`)).toBeGreaterThan(pull);
+    });
+
+    it("uses the GHCR image of the GitHub repository the checkout tracks by default", () => {
+      const deploy = fixture();
+      const next = commit(deploy.upstream, "next");
+      const github = "https://github.com/Example/Rakazo.git";
+      git(deploy.checkout, "remote", "set-url", "origin", github);
+      // The deploy runs with HOME set to the fixture root, so fetches still reach the local upstream.
+      write(
+        path.join(path.dirname(deploy.checkout), ".gitconfig"),
+        `[url "${deploy.upstream}"]\n\tinsteadOf = ${github}\n`,
+      );
+      expect(deploy.run().status).toBe(0);
+      expect(commandsOf(deploy)).toContain(
+        `docker pull --quiet ghcr.io/example/rakazo/app:sha-${next}`,
+      );
+    });
+
+    it("builds on the host, loudly, when the image cannot be pulled", () => {
+      const deploy = fixture();
+      const next = commit(deploy.upstream, "next");
+      const result = deploy.run({ RAKAZO_DEPLOY_IMAGE: REGISTRY, FAIL_PULL: "1" });
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain(`::warning::Could not pull ${published(next)}`);
+      expect(deploy.deployed()).toBe(next);
+      const commands = commandsOf(deploy);
+      expect(commands).toContain(`${COMPOSE} build --build-arg GIT_SHA=${next}`);
+      expect(commands).not.toContain(`docker tag ${published(next)} ${APP_IMAGE}`);
+    });
+
+    it("rolls back by retagging the previous image without the registry", () => {
+      const deploy = fixture();
+      commit(deploy.upstream, "unhealthy");
+      const result = deploy.run({ RAKAZO_DEPLOY_IMAGE: REGISTRY, FAIL_HEALTH: "1" });
+      expect(result.status).toBe(1);
+      expect(deploy.head()).toBe(deploy.first);
+      const commands = commandsOf(deploy);
+      expect(commands.filter((line) => line.startsWith("docker pull"))).toHaveLength(1);
+      expect(commands).toContain(`docker tag sha256:previous ${APP_IMAGE}`);
+    });
+
+    it("pulls the previous commit image to roll back when the running image is unknown", () => {
+      const deploy = fixture();
+      const next = commit(deploy.upstream, "unhealthy");
+      const result = deploy.run({
+        RAKAZO_DEPLOY_IMAGE: REGISTRY,
+        FAIL_HEALTH: "1",
+        PREVIOUS_IMAGE: "",
+      });
+      expect(result.status).toBe(1);
+      const commands = commandsOf(deploy);
+      expect(commands.filter((line) => line.startsWith("docker pull"))).toEqual([
+        `docker pull --quiet ${published(next)}`,
+        `docker pull --quiet ${published(deploy.first)}`,
+      ]);
+      expect(commands.some((line) => line.startsWith(`${COMPOSE} build`))).toBe(false);
+    });
+
+    it("keeps only the current and previous app images", () => {
+      const deploy = fixture();
+      const next = commit(deploy.upstream, "next");
+      expect(deploy.run({ RAKAZO_DEPLOY_IMAGE: REGISTRY }).status).toBe(0);
+      const commands = commandsOf(deploy);
+      expect(commands).toContain(`docker rmi ${published(next)}`);
+      expect(
+        commands.slice(commands.findIndex((line) => line.endsWith(" up -d --remove-orphans")) + 1),
+      ).toEqual([
+        "curl https://app.example.test/health",
+        "docker image ls --format {{.Repository}}:{{.Tag}} rakazo-rollback",
+        "docker rmi rakazo-rollback:old",
+        "docker tag sha256:running rakazo-rollback:running",
+        "docker image prune --force",
+        "docker builder prune --force --keep-storage 8GB",
+      ]);
+    });
   });
 
   it("starts the first containers directly when none are running", () => {
@@ -302,6 +474,29 @@ describe("production deploy script", () => {
     expect(commands).toContain(`${COMPOSE} up -d --wait api`);
     expect(commands).toContain(`${COMPOSE} up -d --wait web`);
     expect(commands.some((line) => line.includes("--scale"))).toBe(false);
+  });
+
+  it("starts no new container and keeps the old one serving when migrations fail", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ FAIL_MIGRATE: "1" }).status).toBe(1);
+    const commands = rollout(deploy.commands());
+    expect(commands).toContain(`${COMPOSE} run --rm -T migrate`);
+    expect(commands.some((line) => line.includes(" up "))).toBe(false);
+    expect(commands.some((line) => line.startsWith("docker stop"))).toBe(false);
+    expect(deploy.head()).toBe(deploy.first);
+  });
+
+  it("rolls back to a release whose API still migrates on start", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "unhealthy");
+    const result = deploy.run({ FAIL_HEALTH: "1", NO_MIGRATE_REVISION: "first" });
+    expect(result.status).toBe(1);
+    expect(deploy.head()).toBe(deploy.first);
+    const commands = rollout(deploy.commands());
+    expect(commands.filter((line) => line.endsWith(" run --rm -T migrate"))).toHaveLength(1);
+    // The rollback still replaces the failed release's containers.
+    expect(commands.filter((line) => line === "docker stop --time 30 api-old")).toHaveLength(2);
   });
 
   it("keeps the old container serving when the new one fails its health check", () => {
@@ -353,6 +548,37 @@ describe("production deploy script", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("did not recover");
     expect(deploy.head()).toBe(deploy.first);
+  });
+
+  it("waits for background tasks and active worker runs before rollout", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    const result = deploy.run({
+      ACTIVE_BG_COUNT: "1",
+      ACTIVE_RUN_COUNT: "0",
+      ACTIVE_BG_LINE: "TIZS60WO status=started started=2026-10-26",
+      RAKAZO_DEPLOY_ACTIVE_WAIT_SEC: "1",
+      RAKAZO_DEPLOY_ACTIVE_POLL_SEC: "1",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("refusing to deploy mid-task");
+    expect(result.stdout).toContain("Waiting for background tasks");
+    expect(result.stdout).toContain("Active background work");
+  });
+
+  it("continues deploy when background queue and runs are quiet", () => {
+    const deploy = fixture();
+    const next = commit(deploy.upstream, "next");
+    const result = deploy.run({
+      ACTIVE_BG_COUNT: "0",
+      ACTIVE_RUN_COUNT: "0",
+      FINISHED_BG_LINE: "TIZS60WO status=completed finishedAt=2026-10-26 error=-",
+      RAKAZO_DEPLOY_ACTIVE_WAIT_SEC: "5",
+      RAKAZO_DEPLOY_ACTIVE_POLL_SEC: "1",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("No active background tasks or worker runs");
+    expect(result.stdout).toContain(`Deployed ${next} successfully`);
   });
 });
 

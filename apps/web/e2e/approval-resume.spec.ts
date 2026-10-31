@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, signup, stopActiveWork } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -28,7 +28,7 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
 
   await expect(prompt).toHaveCount(2, { timeout: 30_000 });
   await expect(
-    page.getByText("Answered: ask me which city to use again", { exact: true }),
+    page.getByTestId("ask-answer").filter({ hasText: "ask me which city to use again" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Send it" })).toHaveCount(1);
   await captureScreenshot(page, testInfo, "22-second-approval-prompt");
@@ -45,18 +45,18 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await expect(resumed).toBeVisible({ timeout: 30_000 });
   const handledAnswer = page.getByText("done. i handled: Paris", { exact: true });
   await expect(handledAnswer).toBeVisible();
-  await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible();
 
   await page.reload();
   await expect(resumed).toBeVisible({ timeout: 20_000 });
   await expect(handledAnswer).toBeVisible();
-  await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible();
   await captureScreenshot(page, testInfo, "24-approval-resumed-after-reload");
 
   await composer.fill("ask me which city to use");
   await page.keyboard.press("Enter");
   await expect(prompt).toHaveCount(3, { timeout: 30_000 });
-  await page.getByRole("button", { name: "Stop" }).click();
+  await stopActiveWork(page);
   await expect(page.getByText("No longer active", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send it" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "25-stopped-approval-prompt");

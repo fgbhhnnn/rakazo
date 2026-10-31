@@ -1,4 +1,5 @@
 import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import {
   displayName,
   escapeJsonSearchWildcards,
@@ -8,7 +9,14 @@ import {
   snippetAroundMatch,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { contentEncryptionOf, INDEXED_MESSAGE, Prisma, UNINDEXED_MESSAGE } from "@rakazo/db";
+import {
+  contentEncryptionOf,
+  HIDDEN_BOT_SPAWN_PREFIX,
+  INDEXED_MESSAGE,
+  Prisma,
+  UNINDEXED_MESSAGE,
+  VISIBLE_BOT_WHERE,
+} from "@rakazo/db";
 
 const SEARCH_LIMIT = 25;
 /** Cap name matches so content hits (messages/files/links/routines) keep most of the budget. */
@@ -117,9 +125,9 @@ export async function querySpaceSearch(
       spaceId: actor.spaceId,
       userId: actor.userId,
       archivedAt: null,
+      AND: [VISIBLE_BOT_WHERE],
       OR: [
         { name: { contains: likeQuery, mode: "insensitive" } },
-        { title: { contains: likeQuery, mode: "insensitive" } },
         { description: { contains: likeQuery, mode: "insensitive" } },
       ],
     },
@@ -133,16 +141,34 @@ export async function querySpaceSearch(
         botId: bot.id,
         botName: bot.name,
         title: bot.name,
-        snippet: displayName(bot.title, "") || bot.description || displayName(bot.name, ""),
+        snippet: bot.description || displayName(bot.name, ""),
       },
       CONVERSATION_HIT_LIMIT * 2,
     );
   }
 
+  // Only groups that can actually be opened: not archived, and still holding
+  // enough active-member bots (archiving bots can empty a group below the
+  // minimum — those land on the Archived list instead of opening).
+  const openableGroups = await prisma.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`
+      SELECT g.id FROM chat_groups g
+      WHERE g."spaceId" = ${actor.spaceId}
+        AND g."userId" = ${actor.userId}
+        AND g."archivedAt" IS NULL
+        AND (
+          SELECT COUNT(*) FROM chat_group_members gm
+          INNER JOIN bots gb ON gb.id = gm."botId"
+          WHERE gm."groupId" = g.id AND gb."archivedAt" IS NULL
+        ) >= ${GROUP_MEMBER_MIN}
+    `,
+  );
+  const openableGroupIds = openableGroups.map(({ id }) => id);
   const groups = await prisma.chatGroup.findMany({
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
+      id: { in: openableGroupIds },
       name: { contains: likeQuery, mode: "insensitive" },
     },
     take: CONVERSATION_HIT_LIMIT,
@@ -162,6 +188,7 @@ export async function querySpaceSearch(
   }
 
   const contentBudget = Math.max(0, SEARCH_LIMIT - conversationHits.length);
+  const full = () => contentHits.length >= contentBudget;
 
   const artifacts = await prisma.artifact.findMany({
     where: {
@@ -170,7 +197,7 @@ export async function querySpaceSearch(
       groupId: null,
       botId: { not: null },
       name: { contains: likeQuery, mode: "insensitive" },
-      bot: { archivedAt: null },
+      bot: { archivedAt: null, AND: [VISIBLE_BOT_WHERE] },
     },
     include: { bot: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -194,7 +221,7 @@ export async function querySpaceSearch(
         botId: artifact.botId,
         botName: artifact.bot.name,
         title: artifact.name,
-        snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
+        snippet: `${artifact.mimeType}, ${artifact.size} bytes`,
         artifactId: artifact.id,
         messageId: message.id,
         seq: message.seq,
@@ -203,11 +230,13 @@ export async function querySpaceSearch(
     );
   }
 
+  if (full()) return [...conversationHits, ...contentHits];
+
   const groupArtifacts = await prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
-      groupId: { not: null },
+      groupId: { in: openableGroupIds },
       name: { contains: likeQuery, mode: "insensitive" },
     },
     include: { group: { select: { name: true } } },
@@ -232,7 +261,7 @@ export async function querySpaceSearch(
         groupId: artifact.groupId,
         groupName: artifact.group.name,
         title: artifact.name,
-        snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
+        snippet: `${artifact.mimeType}, ${artifact.size} bytes`,
         artifactId: artifact.id,
         messageId: message.id,
         seq: message.seq,
@@ -240,6 +269,8 @@ export async function querySpaceSearch(
       contentBudget,
     );
   }
+
+  if (full()) return [...conversationHits, ...contentHits];
 
   const routines = await prisma.routine.findMany({
     where: {
@@ -249,7 +280,7 @@ export async function querySpaceSearch(
         { name: { contains: likeQuery, mode: "insensitive" } },
         { prompt: { contains: likeQuery, mode: "insensitive" } },
       ],
-      bot: { archivedAt: null },
+      bot: { archivedAt: null, AND: [VISIBLE_BOT_WHERE] },
     },
     include: { bot: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -269,8 +300,9 @@ export async function querySpaceSearch(
     );
   }
 
+  if (full()) return [...conversationHits, ...contentHits];
+
   const match = await messageMatch(prisma, actor.spaceId, query);
-  const full = () => contentHits.length >= contentBudget;
   for (let page = 0; page < match.pages && !full(); page += 1) {
     const messageRows = await openMessages(
       prisma,
@@ -291,6 +323,7 @@ export async function querySpaceSearch(
       WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND b."archivedAt" IS NULL
+        AND (b."spawnKey" IS NULL OR b."spawnKey" NOT LIKE ${`${HIDDEN_BOT_SPAWN_PREFIX}%`})
         AND ${match.sql}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}
@@ -329,6 +362,7 @@ export async function querySpaceSearch(
       WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND t."groupId" IS NOT NULL
+        AND g.id IN (${Prisma.join(openableGroupIds.length ? openableGroupIds : [null])})
         AND ${match.sql}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}

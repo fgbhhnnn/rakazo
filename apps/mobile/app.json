@@ -1,10 +1,10 @@
 {
   "expo": {
     "name": "Rakazo",
-    "slug": "rakazo",
-    "owner": "inbox-zero",
+    "slug": "bot",
+    "owner": "ccxxyys-team",
     "scheme": "rakazo",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -53,15 +53,39 @@
           "microphonePermission": "Rakazo uses the microphone for voice calls with your bots."
         }
       ],
-      "expo-sharing",
+      [
+        "expo-sharing",
+        {
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": [
+              "text/*",
+              "image/*",
+              "audio/*",
+              "video/mp4",
+              "application/pdf",
+              "application/json",
+              "application/zip"
+            ],
+            "multipleShareMimeTypes": [
+              "image/*",
+              "audio/*",
+              "video/mp4",
+              "application/pdf",
+              "application/json",
+              "application/zip"
+            ]
+          }
+        }
+      ],
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
       "./plugins/with-lan-cleartext"
     ],
     "ios": {
-      "bundleIdentifier": "com.rakazo.app",
+      "bundleIdentifier": "com.ccxxyy.rakazo",
       "buildNumber": "1",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "config": {
         "usesNonExemptEncryption": false
@@ -76,7 +100,7 @@
       }
     },
     "android": {
-      "package": "com.rakazo.app",
+      "package": "com.ccxxyy.rakazo",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",
       "icon": "./assets/icon.png",
@@ -93,14 +117,14 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
+        "projectId": "817666eb-4d1b-4269-a429-ce6e129f8dd8"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/07f7eb04-45e3-47fe-9374-99a2f991131e"
+      "url": "https://u.expo.dev/817666eb-4d1b-4269-a429-ce6e129f8dd8"
     }
   }
 }

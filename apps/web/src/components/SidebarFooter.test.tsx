@@ -53,6 +53,7 @@ async function render(
           open
           onOpenChange={() => {}}
           onIntegrations={onIntegrations}
+          onSkills={vi.fn()}
           onBoard={onBoard}
           onArtifacts={() => {}}
           onSettings={() => {}}
@@ -140,12 +141,11 @@ it("opens integrations and keeps the existing account actions and links", async 
   expect(onIntegrations).toHaveBeenCalledOnce();
   const menu = document.querySelector('[data-slot="popover-content"]')!;
   expect([...menu.querySelectorAll("button, a")].map((row) => row.textContent)).toEqual([
-    "Usage",
-    "Get the mobile app",
-    "Docs",
-    "Board",
-    "Artifacts",
     "Settings",
+    "Skills",
+    "Artifacts",
+    "Board",
+    "Usage",
     "Log out",
   ]);
   expect(host.querySelector('[data-testid="user-menu-trigger"]')?.getAttribute("aria-label")).toBe(
@@ -159,16 +159,24 @@ it("omits Board when unavailable", async () => {
   );
 });
 
-it("offers the existing Android download on Android", async () => {
-  vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android");
-  await render();
-  const mobile = [...document.querySelectorAll("a")].find(
-    (link) => link.textContent === "Get the mobile app",
-  )!;
-  expect(mobile.href).toBe(
-    "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk",
-  );
-});
+it.each(["Android", "iPhone", "Mozilla/5.0 (Macintosh)"])(
+  "leaves the mobile app and docs links out of the account menu on %s",
+  async (userAgent) => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
+    await render();
+    const menu = document.querySelector('[data-slot="popover-content"]')!;
+    expect(menu.textContent).not.toContain("Get the mobile app");
+    expect(menu.textContent).not.toContain("Docs");
+    expect(menu.querySelectorAll("a")).toHaveLength(0);
+    expect([...menu.querySelectorAll("button")].map((row) => row.textContent)).toEqual([
+      "Settings",
+      "Skills",
+      "Artifacts",
+      "Usage",
+      "Log out",
+    ]);
+  },
+);
 
 it("falls back when app artwork fails and accepts replacement artwork", async () => {
   await render("Demo User", undefined, undefined, undefined, [

@@ -1,23 +1,41 @@
+import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
-import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
+import {
+  ComposioConnector,
+  IntegrationProviderSettings,
+  releaseWorkerRunLeases,
+  workerProcessId,
+} from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { startWorkerHealth } from "./health.js";
+import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
+import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
 
 import {
+  auditLogConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  contentKeyProviderFromEnv,
+  createAgentHomeStore,
+  createArtifactStore,
+  createAuditLogReconciler,
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
+  createDeadJobPruner,
+  createIdleComputerSweeper,
   createJobReconciler,
   createMessagingContextLoader,
   createModelCreditReconciler,
+  createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
+  createReservedGraphileJobWorkerHost,
   createRoutineRetryNoticeReconciler,
   createRunExecutor,
   createRunSandbox,
@@ -26,16 +44,16 @@ import {
   createWebProvider,
   databaseCapacityBackoffMs,
   deploymentModelUsageLookup,
+  dispatcherModeEnabled,
   ExpoPushProvider,
   GraphileJobPublisher,
-  GraphileJobWorkerHost,
+  homeStorageSweeper,
   InMemoryJobQueue,
   InstalledConnectorProvider,
+  installedMessaging,
   isComposioEnabled,
   isMessagingSurfaceEnabled,
   isPipedreamEnabled,
-  LocalAgentHomeStore,
-  LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
   mcpStdioOptionsFromEnv,
@@ -44,9 +62,15 @@ import {
   PiAgentRuntime,
   PipedreamConnector,
   PostgresRealtimeFanout,
+  PrismaPushTokenStore,
   pipedreamConfigFromEnv,
+  RunJobPublisher,
+  RunStarter,
+  RunWorkerHost,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcilePurchases,
+  reconcileTeammateQuestions,
   resolveDeploymentModel,
   resolvePiSessionRoot,
   resolveSandboxProvider,
@@ -54,17 +78,21 @@ import {
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
   shutdownPiTelemetry,
+  UserDevices,
+  userDeviceForwardSecret,
+  withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken, uploadSizeFromEnv } from "@rakazo/core";
 import {
-  contentEncryptionOf,
   createBoardEvents,
   createDb,
   createSecurityEventPruner,
   createThreadEvents,
   describeRowSecurity,
+  installAuditEventStore,
   installSecurityEventStore,
+  isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
   pushSessionExpiresAt,
@@ -80,16 +108,21 @@ import { MarkdownMemoryStore } from "@rakazo/memory";
 const logger = createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
+  const stopStallWatch = watchEventLoopStalls();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  // Shared by Prisma, the reconciliation leadership lock, and both graphile-worker
-  // components (see GraphileJobPublisher/GraphileJobWorkerHost) — one pool instead
-  // of four separate ones. Keep this modest: graphile holds a LISTEN client and
-  // leadership holds an advisory-lock client for the process lifetime, and a
-  // larger max just competes for Postgres max_connections (53300).
+  const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 20);
+  // Three queue listeners and reconciliation leadership hold connections. Leave
+  // room for job queries and transactions instead of starting a stalled worker.
+  if (process.env.WAKEUP_DRIVER !== "memory" && poolMax < 6)
+    throw new Error("DB_POOL_MAX must be at least 6 for the Graphile worker");
+  // Prisma, queue publishing, the three queue listeners and reconciliation
+  // leadership share one bounded pool rather than opening a pool per component.
+  // A larger max competes for Postgres max_connections (53300).
   const created = createDb(databaseUrl, {
-    poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 8),
+    poolMax,
     applicationName: "rakazo-worker",
+    keyProvider: contentKeyProviderFromEnv(),
   });
   const { pool } = created;
   let { prisma } = created;
@@ -104,6 +137,7 @@ async function main() {
     logger.warn("Secret storage degraded; encrypted credentials remain available");
   prisma = withSecretPersistence(prisma, secrets);
   installSecurityEventStore(prisma);
+  installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
   if (unreadableMasterKeys.length)
     logger.error("Stored space keys need master keys that are not configured", undefined, {
@@ -125,7 +159,7 @@ async function main() {
   const { key: deploymentModelKey, configured: deploymentModelConfigured } =
     resolveDeploymentModel();
   const sandboxProvider = resolveSandboxProvider(process.env);
-  const sandbox = createRunSandbox(sandboxProvider, {
+  const sandbox = await createRunSandbox(sandboxProvider, {
     ...sandboxProviderOptionsFromEnv(process.env),
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
@@ -134,15 +168,18 @@ async function main() {
   });
   const allowPrivateEndpoint = process.env.MCP_ALLOW_PRIVATE_ENDPOINT === "true";
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, {}, allowPrivateEndpoint);
+  const mcpStdio = {
+    stdioEnabled: process.env.MCP_STDIO_ENABLED === "true",
+    allowedCommands: (process.env.MCP_STDIO_ALLOWED_COMMANDS ?? "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean),
+  };
   const mcp = new McpConnector(
     prisma,
     secrets,
     {
-      stdioEnabled: process.env.MCP_STDIO_ENABLED === "true",
-      allowedCommands: (process.env.MCP_STDIO_ALLOWED_COMMANDS ?? "")
-        .split(",")
-        .map((v) => v.trim())
-        .filter(Boolean),
+      ...mcpStdio,
       ...mcpStdioOptionsFromEnv(process.env),
       events,
       allowPrivateEndpoint,
@@ -159,12 +196,12 @@ async function main() {
   const pipedream = isPipedreamEnabled(pipedreamConfig)
     ? new PipedreamConnector(pipedreamConfig)
     : undefined;
-  // pollInboundMessages stays false (the default) here: this process
-  // only ever sends outbound (messaging.deliver jobs). It must never poll
-  // Telegram — that would steal the single getUpdates slot away from the
-  // API process, which is the one with the inbound sink actually wired up.
-  const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env));
-  const messaging = isMessagingSurfaceEnabled(messagingPlatforms, {
+  // Never poll inbound here: Telegram allows a single getUpdates consumer,
+  // and that is the API process, which owns the inbound sink.
+  const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
+    (platform) => platform.provider !== "slack" || !process.env.SLACK_CLIENT_ID,
+  );
+  const legacyMessaging = isMessagingSurfaceEnabled(messagingPlatforms, {
     deploymentModelConfigured,
     openSignup: process.env.MESSAGING_OPEN_SIGNUP === "true",
   })
@@ -188,10 +225,26 @@ async function main() {
   ]);
   integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const home = new LocalAgentHomeStore(dataDir);
-  const artifacts = new LocalArtifactStore(dataDir, contentEncryptionOf(prisma)?.ring);
+  const home = createAgentHomeStore(dataDir, prisma);
+  void home.removeStaleStaging().catch((error) => logger.error("home staging cleanup", error));
+  const artifacts = createArtifactStore(dataDir, prisma);
+  const shutdown = new AbortController();
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
-  const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(pool);
+  const runs = new RunStarter(realtime, { signal: shutdown.signal });
+  const jobs: JobPublisher =
+    inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
+  const { messaging } = installedMessaging(
+    prisma,
+    secrets,
+    {
+      slackClientId: process.env.SLACK_CLIENT_ID,
+      slackClientSecret: process.env.SLACK_CLIENT_SECRET,
+      slackSigningSecret: process.env.SLACK_SIGNING_SECRET,
+      apiUrl: process.env.API_URL,
+    },
+    legacyMessaging,
+    jobs,
+  );
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,
@@ -200,13 +253,16 @@ async function main() {
   });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
+  const paymentWallet = await createPaymentWalletProvider();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
-  const notifications = new ExpoPushProvider(dataDir, {
+  const pushTokens = new PrismaPushTokenStore(prisma, resolveEncryptionKey(process.env));
+  const notifications = new ExpoPushProvider(pushTokens, {
     sessionExpiresAt: (sessionId) => pushSessionExpiresAt(prisma, sessionId),
     jobs,
     accessToken: process.env.EXPO_ACCESS_TOKEN,
   });
   const executor = createRunExecutor({
+    dispatcherMode: dispatcherModeEnabled(process.env),
     maxUploadSizeBytes: uploadSizeFromEnv(process.env),
     prisma,
     runtime,
@@ -250,14 +306,28 @@ async function main() {
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,
+    // Device sockets live in an API process; the worker forwards to whichever one holds it.
+    userDevices:
+      process.env.USER_DEVICES_ENABLED === "false"
+        ? undefined
+        : new UserDevices({
+            prisma,
+            forwardSecret: userDeviceForwardSecret(resolveEncryptionKey(process.env)),
+          }),
+    paymentWallet,
+    shutdownSignal: shutdown.signal,
   });
 
   const jobHost: JobWorkerHost =
     inMemoryJobs ??
-    new GraphileJobWorkerHost(pool, {
-      concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
-    });
+    withRunWorker(
+      new RunWorkerHost(prisma, realtime, runs, { pool }),
+      createReservedGraphileJobWorkerHost(pool, {
+        concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
+      }),
+    );
 
+  const workerId = workerProcessId(hostname(), process.pid, randomUUID().slice(0, 8));
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
@@ -266,7 +336,7 @@ async function main() {
     artifacts,
     jobs,
     events,
-    workerId: process.pid.toString(),
+    workerId,
     runtime,
     secretStore: secrets,
     memoryProviders,
@@ -274,27 +344,9 @@ async function main() {
     deploymentModelConfigured,
     messaging,
     cloudAgent,
+    paymentWallet,
     notifications,
   });
-  // graphile-worker run() connects through the shared pool. createPool already
-  // retries connect() on 53300 a finite number of times. Keep retrying start
-  // until Postgres has capacity: exhausting then returning from main().catch
-  // left a live process that held connections but never ran jobs or registered
-  // signal handlers, even after capacity returned. Do not exit(1) here; that
-  // crash-loops into the same saturated Postgres. GraphileJobWorkerHost also
-  // observes runner.promise after start and restarts with the same backoff if
-  // the runner dies later on 53300 (unhandledRejection still swallows that
-  // code so we do not Docker crash-loop on transient completeJob failures).
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await jobHost.start(jobHandlers);
-      break;
-    } catch (error) {
-      if (!isTooManyDatabaseConnections(error)) throw error;
-      logger.error("worker job host start waiting on database capacity", error);
-      await new Promise((resolve) => setTimeout(resolve, databaseCapacityBackoffMs(attempt)));
-    }
-  }
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -306,6 +358,7 @@ async function main() {
       lookup: deploymentModelUsageLookup(),
     }),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
+    reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
     reconcileRoutineRetryNotices: inMemoryJobs
       ? undefined
@@ -316,18 +369,31 @@ async function main() {
       prisma,
       securityEventRetentionDays(),
     ),
+    reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
+    reconcileHomeStorage: homeStorageSweeper(home),
+    reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+    reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
+    reconcileTeammateQuestions: () => reconcileTeammateQuestions({ prisma, jobs, events }),
   });
-  reconciler.start();
-  const stopHealth = startWorkerHealth(reconciler.lastCompletedAt);
-
+  let stopHealth: (() => Promise<void>) | undefined;
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;
+    shutdown.abort();
+    stopStallWatch();
     try {
-      await stopHealth();
+      await stopHealth?.();
       await reconciler.stop();
-      await jobHost.stop();
+      // Stop taking jobs first, then hand held runs back so the next worker resumes them at
+      // once instead of after the 5-minute lease. In-flight jobs may outlive the grace period.
+      const hostStopped = jobHost.stop();
+      await releaseWorkerRunLeases({ prisma, jobs }, workerId)
+        .then((released) => {
+          if (released.length) logger.info(`released ${released.length} run lease(s) on shutdown`);
+        })
+        .catch((error) => logger.error("release run leases on shutdown", error));
+      await hostStopped;
       await jobs.close();
       await secrets.close();
       await realtime.close();
@@ -340,23 +406,45 @@ async function main() {
       await logger.flush({ timeoutMs: 2_000 });
     }
   };
-  process.once("SIGTERM", () => void stop());
-  process.once("SIGINT", () => void stop());
-  // graphile-worker fires completeJob() without awaiting it. When pool.connect()
-  // then hits Postgres 53300, that rejection is unhandled. Exiting here is the
-  // crash loop: Docker restarts the process before Postgres has reaped the old
-  // backends, so the next boot cannot connect either. Stay up on that rejection
-  // only — do not resume after uncaughtException (Node leaves the process in an
-  // undefined state).
+  stopOnShutdownSignals(stop);
+  // graphile-worker fires completeJob()/failJobs() without awaiting them. When
+  // pool.connect() then hits Postgres 53300 or a saturated pool's checkout timeout,
+  // that rejection is unhandled. Exiting on 53300 is a crash loop: Docker restarts
+  // the process before Postgres has reaped the old backends. Exiting on a checkout
+  // timeout aborts every active run over one transient stall. Stay up on those
+  // rejections only — do not resume after uncaughtException (Node leaves the
+  // process in an undefined state).
   process.on("uncaughtException", (error) => {
     logger.error("uncaughtException", error);
     void stop().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {
     logger.error("unhandledRejection", reason);
-    if (isTooManyDatabaseConnections(reason)) return;
+    if (isTooManyDatabaseConnections(reason) || isPoolCheckoutTimeout(reason)) return;
     void stop().finally(() => process.exit(1));
   });
+
+  // Direct runs may already be active while the scheduler waits for capacity.
+  // Keep retrying without exiting; the handlers above drain them on shutdown.
+  for (let attempt = 0; !stopping; attempt += 1) {
+    try {
+      await jobHost.start(jobHandlers);
+      break;
+    } catch (error) {
+      if (stopping) return;
+      if (!isTooManyDatabaseConnections(error)) {
+        await stop();
+        throw error;
+      }
+      logger.error("worker job host start waiting on database capacity", error);
+      await sleep(databaseCapacityBackoffMs(attempt), undefined, { signal: shutdown.signal }).catch(
+        () => undefined,
+      );
+    }
+  }
+  if (stopping) return;
+  reconciler.start();
+  stopHealth = startWorkerHealth(reconciler.lastCompletedAt);
 
   logger.info("worker ready", { degraded: secrets.describe().capabilities.degraded ?? false });
 }

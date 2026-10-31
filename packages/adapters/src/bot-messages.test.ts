@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
+import { RunHistoryWriteError } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   currentBotMessageHop,
@@ -6,7 +7,7 @@ import {
   messageBot,
   returnBotMessageOutcome,
 } from "./bot-messages.js";
-import type { ExecutorDeps } from "./executor.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 
 const run = {
   id: "run-1",
@@ -25,6 +26,7 @@ function deps(
     senderRunning?: boolean;
     alreadyDelivered?: unknown;
     targetArchived?: boolean;
+    requesterArchived?: boolean;
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
@@ -63,6 +65,7 @@ function deps(
   let transactionAttempts = 0;
   const prisma = {
     bot: {
+      findFirst: vi.fn().mockResolvedValue(options.requesterArchived ? null : { id: "bot-target" }),
       findMany: vi
         .fn()
         .mockResolvedValue(
@@ -135,6 +138,26 @@ describe("messaging another bot", () => {
       ),
     ).toHaveLength(0);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a background worker's slot name from what it sends, not another bot's text", async () => {
+    const delivered = async (name: string) => {
+      const harness = deps();
+      const sent = await messageBot(
+        harness.deps,
+        run,
+        { id: "bot-sender", name },
+        {
+          bot_id: "bot-target",
+          message: "π 任务已完成（#TIZXV4ZQ，由后台4执行），共 4 轮。",
+          intent: "status",
+        },
+      );
+      expect(sent).toMatchObject({ ok: true });
+      return (sent as { delivered: string }).delivered;
+    };
+    expect(await delivered("调度测试 · 后台4")).toBe("π 任务已完成（#TIZXV4ZQ），共 4 轮。");
+    expect(await delivered("Researcher")).toContain("由后台4执行");
   });
 
   it("marks a forced failure return unread on both sides", async () => {
@@ -224,6 +247,26 @@ describe("messaging another bot", () => {
       message: "hello",
     });
     expect(sent).toMatchObject({ ok: false });
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not deliver from an attempt a newer claim superseded", async () => {
+    const harness = deps();
+    harness.tx.run.findUnique.mockResolvedValue({
+      status: "running",
+      leaseOwner: "worker-2",
+      leaseFence: 2,
+    });
+    await expect(
+      messageBot(
+        { ...harness.deps, runLease: { runId: run.id, owner: "worker-1", fence: 1 } },
+        run,
+        sender,
+        { bot_id: "bot-target", message: "hello" },
+      ),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
     expect(harness.enqueue).not.toHaveBeenCalled();
   });
 
@@ -702,6 +745,227 @@ describe("automatic outcome return", () => {
     expect(harness.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("always returns a hidden background worker's outcome, even for fyi", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "patch it",
+          hop: 1,
+          intent: "fyi",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1" });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Patched.",
+    );
+    expect(returned).toBe(true);
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("labels a hidden worker's result with its task title and #ref, not the slot name", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "make a cover",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "newer task #ZZ99ZZ99" });
+    // The slot already shows a newer task; the result is credited to the task row of this run.
+    (harness.deps.prisma as unknown as { backgroundTaskQueue: unknown }).backgroundTaskQueue = {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "q1",
+        name: "生成封面",
+        ref: "AB12CD34",
+        status: "started",
+      }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    };
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Done.",
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("【后台任务：生成封面 #AB12CD34】\\nDone.");
+    // The dispatcher's wake names the task, never the worker slot ("Worker · 后台1") that also
+    // ran the previous task, so the relay cannot credit the result to that task.
+    const prompt = JSON.stringify(vi.mocked(harness.tx.task.create).mock.calls);
+    expect(prompt).toContain("后台任务「生成封面 #AB12CD34」");
+    expect(prompt).not.toContain("后台1");
+  });
+
+  function hiddenWorkerHarness(args: Record<string, unknown> = {}) {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "write the summary",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "项目总结 #TZ5P9D3Y" });
+    const row = {
+      id: "q1",
+      name: "项目总结",
+      ref: "TZ5P9D3Y",
+      status: "started",
+      args: { lane: "computer", ...args },
+      workerBotId: run.botId,
+      workerRunId: run.id,
+    };
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    (harness.deps.prisma as unknown as { backgroundTaskQueue: unknown }).backgroundTaskQueue = {
+      findFirst: vi.fn().mockResolvedValue(row),
+      findUnique: vi.fn().mockResolvedValue(row),
+      updateMany,
+    };
+    return { ...harness, updateMany };
+  }
+
+  it("relays a worker summary with a 未完成事项 heading as a normal result", async () => {
+    const harness = hiddenWorkerHarness();
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "摘要已完成。\n\n## 5. 进行中或未完成事项\n- 支付重试尚未完成\n\n## 6. 下一步\n1. 确认范围。",
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("## 5. 进行中或未完成事项");
+    expect(texts).not.toContain("系统自动继续");
+    expect(texts).not.toContain("未确认完成");
+  });
+
+  it("auto-continues a worker final cut at the output limit instead of relaying it", async () => {
+    const harness = hiddenWorkerHarness();
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "## 4. 版本计划\n- 当前测试服版本为 v1.",
+      "result",
+      { truncatedOutput: true },
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("原样接着往下写");
+    expect(texts).not.toContain("【后台任务：");
+    const argsUpdate = harness.updateMany.mock.calls
+      .map(([input]) => (input as { data: { args?: Record<string, unknown> } }).data.args)
+      .find((args) => args?.incompleteContinues === 1);
+    expect(argsUpdate?.incompleteTruncatedPrefix).toBe("## 4. 版本计划\n- 当前测试服版本为 v1.");
+  });
+
+  it("relays a cut-off result joined with the text written before the cut", async () => {
+    const harness = hiddenWorkerHarness({
+      incompleteContinues: 1,
+      incompleteContinuing: true,
+      incompleteTruncatedPrefix: "前半部分，当前版本为 v1.",
+    });
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "2.0。全文完。",
+    );
+    const texts = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(texts).toContain("前半部分，当前版本为 v1.2.0。全文完。");
+  });
+
+  it("returns the pages a hidden worker wrote with its result", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "write the plan",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    (harness.deps.prisma.bot as unknown as { findUnique: unknown }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ spawnKey: "bg-worker:bot-target:1", title: "plan #AB12CD34" });
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "page-1",
+        rootArtifactId: null,
+        name: "Launch plan",
+        description: "Ship pages.",
+        mimeType: "text/markdown",
+        size: 20,
+        version: 1,
+      },
+      {
+        id: "page-1-v2",
+        rootArtifactId: "page-1",
+        name: "Launch plan",
+        description: "Ship pages today.",
+        mimeType: "text/markdown",
+        size: 26,
+        version: 2,
+      },
+    ]);
+    (harness.deps.prisma as unknown as { artifact: unknown }).artifact = { findMany };
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Plan is ready.",
+    );
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { spaceId: run.spaceId, runId: run.id, kind: "page" },
+      }),
+    );
+    const created = JSON.stringify(vi.mocked(harness.tx.message.create).mock.calls);
+    expect(created).toContain('"artifactId":"page-1-v2"');
+    expect(created).toContain('"page":{"pageId":"page-1","snippet":"Ship pages today."}');
+    expect(created).not.toContain('"artifactId":"page-1",');
+  });
+
+  it("never shows a worker slot name in a wake prompt", async () => {
+    const harness = deps();
+    await messageBot(
+      harness.deps,
+      run,
+      { id: "bot-sender", name: "调度测试 · 后台2" },
+      { bot_id: "bot-target", message: "status", intent: "status" },
+    );
+    const prompt = JSON.stringify(vi.mocked(harness.tx.task.create).mock.calls);
+    expect(prompt).toContain("调度测试 · 后台任务");
+    expect(prompt).not.toMatch(/后台\d/);
+  });
+
   it("skips the automatic return when a result was already sent", async () => {
     const harness = deps({
       hopBlocks: [
@@ -741,5 +1005,44 @@ describe("automatic outcome return", () => {
     expect(returned).toBe(true);
     expect(harness.enqueue).not.toHaveBeenCalled();
     expect(harness.deps.prisma.run.updateMany).toHaveBeenCalled();
+  });
+
+  it("counts the outcome as returned once the requesting bot is archived", async () => {
+    const harness = deps({
+      requesterArchived: true,
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "research this",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "The answer is 42.",
+    );
+
+    expect(returned).toBe(true);
+    expect(harness.deps.prisma.bot.findFirst).toHaveBeenCalledWith({
+      where: { id: "bot-target", spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      select: { id: true },
+    });
+    expect(harness.enqueue).not.toHaveBeenCalled();
+    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: run.id,
+        status: { in: ["completed", "failed", "cancelled"] },
+        botOutcomeReturnedAt: null,
+      },
+      data: { botOutcomeReturnedAt: expect.any(Date) },
+    });
   });
 });

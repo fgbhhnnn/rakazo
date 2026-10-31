@@ -1,4 +1,6 @@
-import type { BotColorDef } from "@rakazo/core";
+import type { BotAvatarSet } from "@rakazo/contracts";
+import { PRODUCT_NAME } from "@rakazo/contracts";
+import type { BotColorDef, LogoAvatarActivity } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   avatarIdentitySeed,
@@ -12,14 +14,13 @@ import {
   SHIPPED_BOT_AVATAR_SHAPES,
   SHIPPED_BOT_AVATAR_VIEWBOX,
   shippedBotAvatarShapePath,
-  shippedHash,
 } from "@rakazo/core";
 import { tokens } from "@rakazo/ui-tokens";
-import type { CSSProperties } from "react";
+import type { ComponentProps, CSSProperties } from "react";
 import { memo, useId, useMemo, useSyncExternalStore } from "react";
-import type { AvatarStyle } from "./avatar-style.js";
-import { useAvatarStyle } from "./avatar-style.js";
+import { useBotAvatarActivity } from "./bot-avatar-activity.js";
 import { cn } from "./lib/utils.js";
+import { LogoAvatar } from "./logo-avatar.js";
 import "./styles.css";
 
 export type { BotColorDef };
@@ -35,19 +36,6 @@ export const BOT_MASCOT_SHAPES = SHIPPED_SHAPE_KEYS.map(
 );
 
 const FALLBACK_SHAPE_PATH = BOT_SHAPES.hex ?? "";
-
-export function resolvePersonaShape(identity: string, explicitShape?: string | null): string {
-  if (explicitShape) {
-    const explicit = BOT_SHAPES[explicitShape];
-    if (explicit) return explicit;
-  }
-  let hash = shippedHash(identity);
-  hash = Math.imul(hash ^ (hash >>> 16), 73244475);
-  hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
-  const shapeIndex = ((hash ^ (hash >>> 16)) >>> 0) % SHIPPED_SHAPE_KEYS.length;
-  const key = SHIPPED_SHAPE_KEYS[shapeIndex] ?? "hex";
-  return BOT_SHAPES[key] ?? FALLBACK_SHAPE_PATH;
-}
 
 export function parseBotAvatar(
   rawColor: string,
@@ -88,24 +76,25 @@ export function defaultBotAvatarValue(rawColor: string): string {
 
 export interface BotAvatarProps {
   color: string;
+  avatarSet?: BotAvatarSet;
+  activity?: LogoAvatarActivity;
   size?: number;
   status?: string;
   identity?: string;
   className?: string;
-  variant?: AvatarStyle;
 }
 
 export const BotAvatar = memo(function BotAvatar({
   color,
+  avatarSet,
+  activity,
   size = 36,
   status,
   identity = "",
   className,
-  variant,
 }: BotAvatarProps) {
   const id = useId().replace(/[^a-zA-Z0-9-_]/g, "");
   const isWorking = ACTIVE_RUN_STATUSES.some((s) => s === status);
-  const preferredVariant = useAvatarStyle();
 
   const parsed = useMemo(() => parseBotAvatar(color, identity), [color, identity]);
   const effectiveId = identity || parsed.color || "agent";
@@ -114,13 +103,6 @@ export const BotAvatar = memo(function BotAvatar({
     () => resolvePersonaColorDef(effectiveId, parsed.color),
     [effectiveId, parsed.color],
   );
-
-  const shapePath = useMemo(() => {
-    if (parsed.shapeIndex !== undefined) {
-      return shippedBotAvatarShapePath(parsed.shapeIndex);
-    }
-    return resolvePersonaShape(effectiveId);
-  }, [parsed.shapeIndex, effectiveId]);
 
   if (parsed.isImage && parsed.imageUrl) {
     return (
@@ -134,7 +116,7 @@ export const BotAvatar = memo(function BotAvatar({
         </div>
         {isWorking ? (
           <svg
-            className="rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute z-10 pointer-events-none"
+            className="rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute pointer-events-none"
             style={{
               inset: -4,
               width: size + 8,
@@ -159,7 +141,20 @@ export const BotAvatar = memo(function BotAvatar({
     );
   }
 
-  if (parsed.shapeIndex === undefined && (variant ?? preferredVariant) === "organic") {
+  if (parsed.shapeIndex === undefined && avatarSet === "rakazo") {
+    const Avatar = activity === undefined ? LiveLogoAvatar : LogoAvatar;
+    return (
+      <Avatar
+        avatarValue={color ? colorDef.hex : undefined}
+        identity={effectiveId}
+        size={size}
+        activity={activity}
+        status={status}
+        className={className}
+      />
+    );
+  }
+  if (parsed.shapeIndex === undefined) {
     return (
       <OrganicAvatar
         color={colorDef.hex}
@@ -167,19 +162,6 @@ export const BotAvatar = memo(function BotAvatar({
         size={size}
         isWorking={isWorking}
         className={className}
-      />
-    );
-  }
-
-  if (parsed.shapeIndex === undefined) {
-    return (
-      <RobotAvatar
-        colorDef={colorDef}
-        size={size}
-        isWorking={isWorking}
-        className={className}
-        identity={effectiveId}
-        gradientId={id}
       />
     );
   }
@@ -228,8 +210,6 @@ export const BotAvatar = memo(function BotAvatar({
       </svg>
       <svg
         viewBox={VIEWBOX}
-        width={size}
-        height={size}
         aria-hidden="true"
         className={cn(
           "overflow-visible transition-transform duration-300",
@@ -237,7 +217,10 @@ export const BotAvatar = memo(function BotAvatar({
             ? "animate-pulse scale-[1.04] motion-reduce:animate-none"
             : "hover:scale-[1.03] motion-reduce:hover:scale-100",
         )}
+        // Inline size so a parent's icon sizing (Button sizes bare SVGs) cannot shrink it.
         style={{
+          width: size,
+          height: size,
           filter: isWorking
             ? `drop-shadow(0 0 8px ${colorDef.light}) drop-shadow(0 0 2px #ffffff)`
             : "drop-shadow(0 2px 4px rgba(0,0,0,0.45))",
@@ -250,7 +233,7 @@ export const BotAvatar = memo(function BotAvatar({
           </linearGradient>
         </defs>
         <g>
-          <path d={shapePath} fill={`url(#bot-ink-${id})`} />
+          <path d={shippedBotAvatarShapePath(parsed.shapeIndex)} fill={`url(#bot-ink-${id})`} />
           <g fill={colorDef.eyeColor} className="bot-character-eyes">
             <ellipse cx={CENTER - 29} cy={CENTER - 8} rx={10} ry={7} />
             <ellipse cx={CENTER + 29} cy={CENTER - 8} rx={10} ry={7} />
@@ -261,144 +244,13 @@ export const BotAvatar = memo(function BotAvatar({
   );
 });
 
-const VISOR_BORDER_PX = 1;
-
-function robotFaceLayout(size: number) {
-  const visorW = Math.round(size * 0.68);
-  const visorH = Math.round(size * 0.44);
-  const visorInnerW = Math.max(0, visorW - VISOR_BORDER_PX * 2);
-  const visorInnerH = Math.max(0, visorH - VISOR_BORDER_PX * 2);
-  const preferredEyeW = Math.max(4, Math.round(size * 0.14));
-  const preferredEyeH = Math.max(7, Math.round(size * 0.22));
-  const preferredEyeGap = Math.max(3, Math.round(size * 0.1));
-  const preferredSpan = preferredEyeW * 2 + preferredEyeGap;
-  const scale = Math.min(1, visorInnerW / preferredSpan, visorInnerH / preferredEyeH);
-  const eyeW = Math.floor(preferredEyeW * scale);
-  const eyeH = Math.floor(preferredEyeH * scale);
-  const eyeGap = Math.floor(preferredEyeGap * scale);
-  const eyeRadius = Math.max(2, Math.round(eyeW * 0.5));
-  return { visorW, visorH, eyeW, eyeH, eyeGap, eyeRadius };
-}
-
-function RobotAvatar({
-  colorDef,
-  size,
-  isWorking,
-  className,
-  identity,
-  gradientId,
-}: {
-  colorDef: BotColorDef;
-  size: number;
-  isWorking: boolean;
-  className?: string;
-  identity: string;
-  gradientId: string;
-}) {
-  const seed = avatarIdentitySeed(identity || colorDef.hex);
-  const eyeVariant = seed % 4;
-  const idleDuration = (4.2 + ((seed * 7) % 28) / 10).toFixed(2);
-  const idleDelay = (-(((seed * 13) % 45) / 10)).toFixed(2);
-  const { visorW, visorH, eyeW, eyeH, eyeGap, eyeRadius } = robotFaceLayout(size);
-  const eyeGlow = `0 0 4px #fff, 0 0 8px #fff, 0 0 14px ${colorDef.light}`;
-  const idleEyeAnimation = {
-    "--rakazo-eye-animation-name": `rakazo-eyes-idle-${eyeVariant}`,
-    "--rakazo-eye-animation-duration": `${idleDuration}s`,
-    "--rakazo-eye-animation-easing": "cubic-bezier(0.4, 0, 0.2, 1)",
-    "--rakazo-eye-animation-delay": `${idleDelay}s`,
-  } as CSSProperties;
-  const workingEyeAnimation = {
-    "--rakazo-eye-animation-name": "rakazo-eyes-working",
-    "--rakazo-eye-animation-duration": "1.4s",
-    "--rakazo-eye-animation-easing": "ease-in-out",
-    "--rakazo-eye-animation-delay": "0s",
-  } as CSSProperties;
-
-  return (
-    <div
-      className={cn(
-        "rakazo-bot-avatar relative inline-flex shrink-0 items-center justify-center rounded-full select-none",
-        className,
-      )}
-      data-working={isWorking}
-      style={{
-        width: size,
-        height: size,
-        background: `radial-gradient(circle at 35% 26%, ${colorDef.light}, ${colorDef.hex} 55%, ${colorDef.dark} 100%)`,
-        boxShadow: isWorking
-          ? `0 0 0 2px rgba(255,255,255,0.25), 0 0 ${Math.round(size * 0.45)}px ${colorDef.hex}`
-          : `0 2px ${Math.max(4, Math.round(size * 0.15))}px rgba(0,0,0,0.4)`,
-      }}
-    >
-      <svg
-        className="rakazo-bot-avatar-ring pointer-events-none absolute"
-        style={{
-          inset: -4,
-          width: size + 8,
-          height: size + 8,
-          filter: `drop-shadow(0 0 6px ${colorDef.light}) drop-shadow(0 0 10px #ffffff)`,
-        }}
-        viewBox="0 0 48 48"
-        fill="none"
-        aria-hidden="true"
-      >
-        <circle
-          cx="24"
-          cy="24"
-          r="22"
-          stroke={`url(#${gradientId}-ring)`}
-          strokeWidth="3.2"
-          strokeLinecap="round"
-          strokeDasharray="45 80"
-        />
-        <circle cx="43" cy="24" r="2.8" fill="#ffffff" />
-        <defs>
-          <linearGradient id={`${gradientId}-ring`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
-            <stop offset="60%" stopColor={colorDef.light} stopOpacity="0.9" />
-            <stop offset="100%" stopColor={colorDef.light} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div
-        className="rakazo-bot-avatar-visor relative flex items-center justify-center overflow-hidden"
-        style={{
-          width: visorW,
-          height: visorH,
-          boxSizing: "border-box",
-          borderRadius: Math.round(visorH * 0.52),
-          background: "linear-gradient(180deg, #101014 0%, #030305 100%)",
-          boxShadow: "inset 0 1.5px 3px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.18)",
-          border: "1px solid rgba(255,255,255,0.14)",
-        }}
-      >
-        {(["idle", "working"] as const).map((mode) => (
-          <div
-            key={mode}
-            className={`rakazo-bot-avatar-eyes rakazo-bot-avatar-eyes-${mode} absolute inset-0 z-10 flex items-center justify-center`}
-            style={{
-              gap: eyeGap,
-              ...(mode === "idle" ? idleEyeAnimation : workingEyeAnimation),
-            }}
-          >
-            {[0, 1].map((eye) => (
-              <span
-                key={eye}
-                className="block"
-                style={{
-                  width: eyeW,
-                  height: eyeH,
-                  borderRadius: eyeRadius,
-                  backgroundColor: "#fff",
-                  boxShadow: eyeGlow,
-                }}
-              />
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+/** Only live Rakazo consumers subscribe to public activity updates. */
+function LiveLogoAvatar({
+  status,
+  ...props
+}: ComponentProps<typeof LogoAvatar> & { status?: string }) {
+  const activity = useBotAvatarActivity(props.identity ?? "", status);
+  return <LogoAvatar {...props} activity={activity} />;
 }
 
 function OrganicAvatar({
@@ -494,24 +346,31 @@ function subscribeToReducedMotion(onChange: () => void): () => void {
 
 export function BotShapePreview({
   shapeIndex,
+  identity,
+  label,
   color,
   selected,
   onClick,
 }: {
-  shapeIndex: number;
+  /** An Avatar Studio shape; omit it to draw the organic body `identity` gets. */
+  shapeIndex?: number;
+  identity?: string;
+  label?: string;
   color: string;
   selected?: boolean;
   onClick?: () => void;
 }) {
-  const key = SHIPPED_SHAPE_KEYS[shapeIndex % SHIPPED_SHAPE_KEYS.length] ?? "hex";
-  const path = shippedBotAvatarShapePath(shapeIndex);
+  const key =
+    shapeIndex === undefined
+      ? undefined
+      : (SHIPPED_SHAPE_KEYS[shapeIndex % SHIPPED_SHAPE_KEYS.length] ?? "hex");
   const colorDef = resolvePersonaColorDef("preview", color);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={key}
+      aria-label={label ?? key}
       aria-pressed={selected ?? false}
       className={cn(
         "relative flex size-11 items-center justify-center rounded-xl transition-transform hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
@@ -520,13 +379,17 @@ export function BotShapePreview({
           : "hover:bg-white/5",
       )}
     >
-      <svg viewBox={VIEWBOX} className="size-8 overflow-visible" aria-hidden="true">
-        <path d={path} fill={colorDef.light} />
-        <g fill={colorDef.eyeColor}>
-          <ellipse cx={CENTER - 29} cy={CENTER - 8} rx={10} ry={7} />
-          <ellipse cx={CENTER + 29} cy={CENTER - 8} rx={10} ry={7} />
-        </g>
-      </svg>
+      {shapeIndex === undefined ? (
+        <BotAvatar color={color} identity={identity} size={32} />
+      ) : (
+        <svg viewBox={VIEWBOX} className="size-8 overflow-visible" aria-hidden="true">
+          <path d={shippedBotAvatarShapePath(shapeIndex)} fill={colorDef.light} />
+          <g fill={colorDef.eyeColor}>
+            <ellipse cx={CENTER - 29} cy={CENTER - 8} rx={10} ry={7} />
+            <ellipse cx={CENTER + 29} cy={CENTER - 8} rx={10} ry={7} />
+          </g>
+        </svg>
+      )}
     </button>
   );
 }
@@ -539,7 +402,7 @@ export function Wordmark({ className }: { className?: string }) {
         <span className="h-4 w-[7px] rounded-full bg-primary" />
       </div>
       <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-foreground">
-        Rakazo
+        {PRODUCT_NAME}
       </span>
     </div>
   );

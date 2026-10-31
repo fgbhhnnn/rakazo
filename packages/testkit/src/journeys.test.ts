@@ -10,9 +10,11 @@ import {
   FakeComposioClient,
   FakeSandboxProvider,
   handoffToGroupBot,
+  listPiCatalog,
   organizeBot,
   toComputerRef,
 } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import {
@@ -23,13 +25,13 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { createModelConnectionFixtureFetch } from "./model-connection-fixture.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";
@@ -50,9 +52,14 @@ describeJourneys("required product journeys", () => {
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 
+  /** Runs every action without a card, for journeys about something other than approvals. */
+  async function runWithoutAsking(cookie: string) {
+    await rpc(app, cookie, "autoReview/set", { mode: "never" });
+  }
+
   async function sendAndWait(app: App, cookie: string, botId: string, text: string) {
     const { runId } = await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text });
-    let terminal: { status: string; error: string | null } | null = null;
+    let terminal = null as { status: string; error: string | null } | null;
     await waitForDatabase(async () => {
       terminal = await prisma.run.findUnique({
         where: { id: runId },
@@ -100,7 +107,7 @@ describeJourneys("required product journeys", () => {
       }
     }
     for (const runId of targets) {
-      let terminal: { status: string; error: string | null } | null = null;
+      let terminal = null as { status: string; error: string | null } | null;
       await waitForDatabase(async () => {
         terminal = await prisma.run.findUnique({
           where: { id: runId },
@@ -119,8 +126,9 @@ describeJourneys("required product journeys", () => {
   }
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
+      modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
       sandboxProvider: "fake",
@@ -408,8 +416,8 @@ describeJourneys("required product journeys", () => {
     );
     expect(chief.computerMode).toBe("team");
     expect(coder.computerMode).toBe("team");
-    expect(chiefRecord.computerId).toBe(coderRecord.computerId);
-    expect(chiefRecord.computerId).not.toBe(bobRecord.computerId);
+    expect(chiefRecord!.computerId).toBe(coderRecord!.computerId);
+    expect(chiefRecord!.computerId).not.toBe(bobRecord!.computerId);
 
     const bobList = await rpc<Bot[]>(app, bob, "bots/list");
     expect(bobList.map((b) => b.id)).not.toContain(chief.id);
@@ -543,10 +551,10 @@ describeJourneys("required product journeys", () => {
       where: { id: coder.id },
       include: { computer: true },
     });
-    expect(dedicatedRecord.computerId).not.toBe(chiefRecord.computerId);
+    expect(dedicatedRecord.computerId).not.toBe(chiefRecord!.computerId);
     await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "team" });
     const backOnTeam = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
-    expect(backOnTeam.computerId).toBe(chiefRecord.computerId);
+    expect(backOnTeam.computerId).toBe(chiefRecord!.computerId);
     await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "dedicated" });
     const reusedDedicated = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
     expect(reusedDedicated.computerId).toBe(dedicatedRecord.computerId);
@@ -1528,6 +1536,7 @@ describeJourneys("required product journeys", () => {
       label: "test",
       modelId: "scripted",
     });
+    await runWithoutAsking(cookie);
     await sendAndWait(app, cookie, bot.id, "write this to the destination crm as a note");
     expect(connector.records.length).toBeGreaterThan(before);
     const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
@@ -1536,6 +1545,7 @@ describeJourneys("required product journeys", () => {
 
   it("8: retrying a completed effect does not duplicate the destination write", async () => {
     const cookie = await signup(app, `crash-j-${stamp}@rakazo.test`, "Crash");
+    await runWithoutAsking(cookie);
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
       title: "",
@@ -1756,6 +1766,7 @@ describeJourneys("required product journeys", () => {
 
   it("12: a bot can spawn a regular bot and must confirm the name to delete it", async () => {
     const cookie = await signup(app, `spawn-j-${stamp}@rakazo.test`, "Spawn");
+    await runWithoutAsking(cookie);
     const parent = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
       title: "",
@@ -1791,7 +1802,7 @@ describeJourneys("required product journeys", () => {
 
     await sendAndWait(app, cookie, parent.id, "delete the bot named Nested");
     expect((await rpc<Bot[]>(app, cookie, "bots/list")).some((bot) => bot.id === nested!.id)).toBe(
-      true,
+      false,
     );
 
     await sendAndWait(app, cookie, parent.id, "delete the bot named WrongName");
@@ -1802,10 +1813,10 @@ describeJourneys("required product journeys", () => {
     await sendAndWait(app, cookie, parent.id, "delete the bot named Scout");
     const afterScout = await rpc<Bot[]>(app, cookie, "bots/list");
     expect(afterScout.some((bot) => bot.id === scout!.id)).toBe(false);
-    expect(afterScout.some((bot) => bot.id === nested!.id)).toBe(true);
+    expect(afterScout.some((bot) => bot.id === nested!.id)).toBe(false);
 
     await rpc(app, cookie, "bots/remove", { botId: parent.id });
-    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.name)).toEqual(["Nested"]);
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.name)).toEqual([]);
   });
 
   it("duplicating a bot uses the new-bot management default", async () => {
@@ -1933,7 +1944,8 @@ describeJourneys("required product journeys", () => {
     const res = await raw(app, cookie, "deployment/update", { computerHost: "this-mac" });
     const text = await res.text();
     expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(text).toMatch(/This Mac mode is only available/i);
+    expect(res.status).toBe(403);
+    expect(text).toMatch(/FORBIDDEN/);
   });
 
   it("15: ask, answer, stop, follow-up, and clientNonce stay consistent", async () => {
@@ -1945,8 +1957,8 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    await rpc(app, cookie, "bots/update", { botId: bot.id, title: "Updated chief" });
-    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).title).toBe(
+    await rpc(app, cookie, "bots/update", { botId: bot.id, description: "Updated chief" });
+    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).description).toBe(
       "Updated chief",
     );
 
@@ -2392,7 +2404,10 @@ describeJourneys("required product journeys", () => {
         { bot_id: botC.id, message: "should be rejected" },
       ),
     );
-    expect(staleHandoff).toEqual({ error: "source run is no longer active" });
+    expect(staleHandoff).toEqual({
+      error: "source run is no longer active",
+      reason: "source_inactive",
+    });
 
     const crossThread = await rpc<{ runId: string }>(app, ada, "threads/send", {
       botId: botC.id,
@@ -2578,6 +2593,144 @@ describeJourneys("required product journeys", () => {
     expect(remainingBotIds).not.toContain(artifactOwnerId);
   });
 
+  it("54b: a group team carries a request to the end on its own, for any kind of team", async () => {
+    const ada = await signup(app, `ada-team-${stamp}@rakazo.test`, "Ada Team");
+    const bot = (name: string, description: string) =>
+      rpc<Bot>(app, ada, "bots/create", {
+        name,
+        title: "",
+        description,
+        instructions: "",
+        notifyOnFinish: false,
+      });
+    // A writing desk, not a dev team; one member has no description at all.
+    const planner = await bot("Planner", "Plans the piece and checks it against the brief");
+    const drafter = await bot("Drafter", "");
+    const desk = async (name: string) =>
+      rpc<{ id: string; threadId: string }>(app, ada, "groups/create", {
+        name,
+        botIds: [planner.id, drafter.id],
+      });
+    const texts = async (threadId: string) =>
+      (await prisma.message.findMany({ where: { threadId }, orderBy: { seq: "asc" } })).map(
+        (message) =>
+          (message.blocks as MessageBlock[])
+            .map((block) => (block.kind === "text" || block.kind === "handoff" ? block.text : ""))
+            .join(""),
+      );
+    // The run the group's first request started.
+    const teamRun = (threadId: string) =>
+      prisma.groupTeamRun.findFirst({ where: { threadId }, orderBy: { createdAt: "asc" } });
+    const settled = async (threadId: string, status: string) => {
+      await waitForDatabase(async () => (await teamRun(threadId))?.status === status);
+      await waitForDatabase(
+        async () =>
+          (await prisma.run.count({
+            where: { threadId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+          })) === 0,
+      );
+    };
+
+    // Asked to pass the work on, the leader's turn ends without the tool: the system hands it
+    // to Drafter, Drafter's finished stage returns to Planner, and Planner closes the run.
+    const done = await desk("Writing desk");
+    await rpc(app, ada, "threads/send", {
+      groupId: done.id,
+      text: "@Planner 写一份大纲，然后交给 Drafter。ship it",
+    });
+    await settled(done.threadId, "completed");
+    const doneTexts = await texts(done.threadId);
+    expect(doneTexts.some((text) => text.includes("（系统按你的要求交给 Drafter）"))).toBe(true);
+    expect(doneTexts.some((text) => text.startsWith("Drafter 已完成，交回 Planner。"))).toBe(true);
+    // The summary is posted by the tool; the leader's own short reply may follow it.
+    expect(doneTexts.slice(-2)).toContain(
+      "✅ 团队任务完成\nscripted team task done\n交付物：\n- scripted-result",
+    );
+    expect(await teamRun(done.threadId)).toMatchObject({ hops: 2, endReason: "leader_completed" });
+
+    // A leader that stops without closing gets one nudge, then the run pauses visibly.
+    const stall = await desk("Writing desk 2");
+    await rpc(app, ada, "threads/send", {
+      groupId: stall.id,
+      text: "@Planner 写一份大纲，然后交给 Drafter",
+    });
+    await settled(stall.threadId, "paused");
+    // The status flips just before the notice is posted, so wait for the notice itself.
+    await waitForDatabase(
+      async () => (await texts(stall.threadId)).at(-1) === "团队任务已暂停，等你回复。",
+    );
+    const stallTexts = await texts(stall.threadId);
+    // The nudge is a hidden follow-up turn: exactly one, and nothing posted for it.
+    expect(
+      await prisma.run.count({
+        where: { threadId: stall.threadId, clientNonce: { startsWith: "team-nudge:" } },
+      }),
+    ).toBe(1);
+    // (The scripted bot echoes its prompt, so only a posted reminder card would start with it.)
+    expect(stallTexts.filter((text) => text.startsWith("（系统提醒"))).toEqual([]);
+    expect(stallTexts.at(-1)).toBe("团队任务已暂停，等你回复。");
+
+    // The hop budget stops the run with a visible notice.
+    vi.stubEnv("RAKAZO_GROUP_TEAM_RUN_MAX_HOPS", "1");
+    try {
+      const capped = await desk("Writing desk 3");
+      await rpc(app, ada, "threads/send", {
+        groupId: capped.id,
+        text: "@Planner 写一份大纲，然后交给 Drafter",
+      });
+      await settled(capped.threadId, "stopped");
+      await waitForDatabase(
+        async () => (await texts(capped.threadId)).at(-1)?.startsWith("团队任务已达到") === true,
+      );
+      expect((await texts(capped.threadId)).at(-1)).toBe(
+        "团队任务已达到交接次数或时长上限，已暂停，等你回复。",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    // An @ of a bot that is not in the group (typed or as a chip) never wakes it there.
+    const outsider = await bot("Chief", "Not in the group");
+    const mentionDesk = await desk("Writing desk 5");
+    const sent = await rpc<{ runId: string; runIds?: string[] }>(app, ada, "threads/send", {
+      groupId: mentionDesk.id,
+      text: "@Chief @Drafter 看一下",
+      mentions: [{ kind: "bot", id: outsider.id }],
+    });
+    const woken = await prisma.run.findMany({
+      where: { id: { in: sent.runIds ?? [sent.runId] } },
+      select: { botId: true },
+    });
+    expect(woken.map((run) => run.botId)).toEqual([drafter.id]);
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { threadId: mentionDesk.threadId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    expect(
+      await prisma.run.count({ where: { botId: outsider.id, threadId: mentionDesk.threadId } }),
+    ).toBe(0);
+
+    // A human message while a stage is running wins: the old run stops and nothing returns.
+    const interrupted = await desk("Writing desk 4");
+    await rpc(app, ada, "threads/send", {
+      groupId: interrupted.id,
+      text: "@Planner 写一份大纲，然后交给 Drafter。work for 2 seconds",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { threadId: interrupted.threadId, botId: drafter.id, status: "running" },
+        })) === 1,
+    );
+    await rpc(app, ada, "threads/send", { groupId: interrupted.id, text: "@Planner 先停一下" });
+    await settled(interrupted.threadId, "superseded");
+    expect(
+      (await texts(interrupted.threadId)).some((text) => text.startsWith("Drafter 已完成，交回")),
+    ).toBe(false);
+  });
+
   it("17: teach a task end to end", async () => {
     const cookie = await signup(app, `teach-j-${stamp}@rakazo.test`, "Teach Ada");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
@@ -2695,7 +2848,7 @@ describeJourneys("required product journeys", () => {
     }
   });
 
-  it("19: destination writes pause for approval before side effects", async () => {
+  it("19: in Ask mode, destination writes pause for approval before side effects", async () => {
     const cookie = await signup(app, `approval-j-${stamp}@rakazo.test`, "Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -2705,11 +2858,6 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: true,
     });
     const recordsBefore = connector.records.length;
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "tool",
-      matchValue: "destination.write",
-    });
 
     const sent = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
@@ -2763,7 +2911,37 @@ describeJourneys("required product journeys", () => {
     expect(deniedEffect?.status).toBe("denied");
   });
 
-  it("20: actions run by default and specific exceptions override broad review rules", async () => {
+  it("19b: stopping a run with an open approval card settles its effect", async () => {
+    const cookie = await signup(app, `approval-stop-j-${stamp}@rakazo.test`, "ApprovalStop");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const sent = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "write this to the destination crm as a note",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_input");
+    expect(
+      (
+        await prisma.externalEffect.findFirstOrThrow({
+          where: { runId: sent.runId, kind: "destination.write" },
+        })
+      ).status,
+    ).toBe("intended");
+
+    await rpc(app, cookie, "threads/stop", { botId: bot.id });
+
+    const effect = await prisma.externalEffect.findFirstOrThrow({
+      where: { runId: sent.runId, kind: "destination.write" },
+    });
+    expect(effect.status).toBe("denied");
+  });
+
+  it("20: always allow runs a tool without a card, and a block refuses it in every mode", async () => {
     const cookie = await signup(app, `always-j-${stamp}@rakazo.test`, "Always");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -2772,21 +2950,11 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    const prompt = "write this to the destination crm as a note";
     const recordsBefore = connector.records.length;
 
-    await sendAndWait(app, cookie, bot.id, prompt);
-    expect(connector.records.length).toBeGreaterThan(recordsBefore);
-    const recordsAfterDefault = connector.records.length;
-
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "connector",
-      matchValue: "destination.write",
-    });
-    const second = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+    const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
-      text: "write this to the destination crm as a note again",
+      text: "write this to the destination crm as a note",
     });
     const waiting = await waitFor(
       app,
@@ -2794,46 +2962,38 @@ describeJourneys("required product journeys", () => {
       bot.id,
       (snap) => snap.run?.status === "waiting_input",
     );
-    await answerPendingApproval(app, cookie, bot.id, second.runId, "always", waiting);
+    await answerPendingApproval(app, cookie, bot.id, first.runId, "always", waiting);
     await waitFor(
       app,
       cookie,
       bot.id,
       (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
     );
-    expect(connector.records.length).toBe(recordsAfterDefault + 1);
+    expect(connector.records.length).toBe(recordsBefore + 1);
 
     await sendAndWait(app, cookie, bot.id, "write this to the destination crm once more");
-    expect(connector.records.length).toBe(recordsAfterDefault + 2);
+    expect(connector.records.length).toBe(recordsBefore + 2);
 
     await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
+      effect: "deny",
       matchKind: "tool",
       matchValue: "destination.write",
     });
-    const fourth = await rpc<{ runId: string }>(app, cookie, "threads/send", {
-      botId: bot.id,
-      text: "write this to the destination crm one final time",
-    });
-    const waitingAgain = await waitFor(
-      app,
-      cookie,
-      bot.id,
-      (snap) => snap.run?.status === "waiting_input",
-    );
-    expect(connector.records.length).toBe(recordsAfterDefault + 2);
-    await answerPendingApproval(app, cookie, bot.id, fourth.runId, "allow", waitingAgain);
-    await waitFor(
-      app,
-      cookie,
-      bot.id,
-      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
-    );
-    expect(connector.records.length).toBe(recordsAfterDefault + 3);
+    for (const mode of ["ask", "never"]) {
+      await rpc(app, cookie, "autoReview/set", { mode });
+      const blocked = await sendAndWait(
+        app,
+        cookie,
+        bot.id,
+        `write this to the destination crm while it is blocked in ${mode}`,
+      );
+      expect(blocked.run.status).toBe("completed");
+      expect(connector.records.length).toBe(recordsBefore + 2);
+    }
   });
 
-  it("21: routine destination writes pause on the same approval card", async () => {
-    const cookie = await signup(app, `routine-approval-j-${stamp}@rakazo.test`, "Routine Approval");
+  it("20b: allowing a tool replaces its block, and the other way around", async () => {
+    const cookie = await signup(app, `always-replaces-j-${stamp}@rakazo.test`, "Always Replaces");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
       title: "",
@@ -2841,10 +3001,73 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
+    const rule = { matchKind: "tool", matchValue: "destination.write" };
+    const effects = async () =>
+      (await rpc<Array<{ effect: string; matchValue: string }>>(app, cookie, "approvalRules/list"))
+        .filter((row) => row.matchValue.toLowerCase() === rule.matchValue)
+        .map((row) => row.effect);
+    // Rules match tool names whatever their case, so the replacement must too.
     await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
+      effect: "deny",
       matchKind: "tool",
-      matchValue: "destination.write",
+      matchValue: "Destination.Write",
+    });
+    await rpc(app, cookie, "approvalRules/set", { effect: "always_allow", ...rule });
+    expect(await effects()).toEqual(["always_allow"]);
+
+    const recordsBefore = connector.records.length;
+    await sendAndWait(app, cookie, bot.id, "write this to the destination crm once more");
+    expect(connector.records.length).toBe(recordsBefore + 1);
+
+    await rpc(app, cookie, "approvalRules/set", { effect: "deny", ...rule });
+    expect(await effects()).toEqual(["deny"]);
+  });
+
+  it("20c: allow and block saved at once leave one rule per match", async () => {
+    const cookie = await signup(app, `rule-race-j-${stamp}@rakazo.test`, "Rule Race");
+    const values = Array.from({ length: 8 }, (_, index) => `race.tool.${index}`);
+    await Promise.all(
+      values.flatMap((matchValue) =>
+        ["always_allow", "deny"].map((effect) =>
+          rpc(app, cookie, "approvalRules/set", { effect, matchKind: "tool", matchValue }),
+        ),
+      ),
+    );
+    const rows = await rpc<Array<{ matchValue: string }>>(app, cookie, "approvalRules/list");
+    expect(rows.map((row) => row.matchValue).sort()).toEqual(values);
+  });
+
+  it("20d: replacing a rule leaves tools with similar names alone", async () => {
+    const cookie = await signup(app, `rule-literal-j-${stamp}@rakazo.test`, "Rule Literal");
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "toolXa",
+    });
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "deny",
+      matchKind: "tool",
+      matchValue: "tool_a",
+    });
+    const rows = await rpc<Array<{ effect: string; matchValue: string }>>(
+      app,
+      cookie,
+      "approvalRules/list",
+    );
+    expect(rows.map((row) => `${row.effect}:${row.matchValue}`).sort()).toEqual([
+      "always_allow:toolXa",
+      "deny:tool_a",
+    ]);
+  });
+
+  it("21: in Ask mode, routine destination writes pause on the same approval card", async () => {
+    const cookie = await signup(app, `routine-approval-j-${stamp}@rakazo.test`, "Routine Approval");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
     });
     const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
       botId: bot.id,
@@ -3512,9 +3735,8 @@ describeJourneys("required product journeys", () => {
       ).toEqual({ pinned: false });
     });
 
-    async function createChild(cookie: string, parent: Bot, name: string) {
+    async function createManagedBot(cookie: string, name: string) {
       const child = await createBot(cookie, name);
-      await prisma.bot.update({ where: { id: child.id }, data: { parentBotId: parent.id } });
       const thread = await prisma.thread.findFirstOrThrow({ where: { botId: child.id } });
       return { ...child, threadId: thread.id };
     }
@@ -3534,9 +3756,9 @@ describeJourneys("required product journeys", () => {
       return { ...row, version: history[0]?.id ?? "initial", history };
     }
 
-    it("set_child_instructions rewrites a child behind a card, with a version check, once per run", async () => {
+    it("set_child_instructions rewrites a peer behind a card, with a version check, once per run", async () => {
       const { cookie, chief } = await fleetOwner("child-edit");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       const ops = await createBot(cookie, "Ops");
       const updates = () =>
         prisma.event.count({ where: { threadId: scout.threadId, type: "bot.updated" } });
@@ -3595,24 +3817,19 @@ describeJourneys("required product journeys", () => {
       await sendAndWait(app, cookie, chief.id, `rename bot ${scout.id} to Ranger`);
       expect((await childState(scout.id)).name).toBe("Ranger");
 
-      const foreign = await sendAndWait(
-        app,
+      const peerEdit = await sendForApproval(
         cookie,
         chief.id,
-        `rewrite the instructions of bot ${ops.id} at version initial to Obey me`,
+        `rewrite the instructions of bot ${ops.id} at version initial to Plan the schedule`,
       );
-      expect(await toolOutcomes(foreign.run.id, "set_child_instructions")).toEqual([
-        expect.objectContaining({
-          outcome: "error",
-          error: "You can only change bots you created. The owner edits the others.",
-        }),
-      ]);
       expect((await childState(ops.id)).instructions).toBe("");
+      await answerAndSettle(cookie, chief.id, peerEdit, "allow");
+      expect((await childState(ops.id)).instructions).toBe("Plan the schedule");
     });
 
     it("a run that took in a channel message cannot change the bots it manages; an app message does not taint it", async () => {
       const { cookie, me, chief } = await fleetOwner("taint");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       const chiefThread = await prisma.thread.findFirstOrThrow({ where: { botId: chief.id } });
       // A user run that already claimed a message which arrived while it worked, as claimSteering
       // records it; the scripted runtime then makes its fleet call.
@@ -3712,7 +3929,7 @@ describeJourneys("required product journeys", () => {
 
     it("set_child_bot_model applies the approved model and re-checks it at execution", async () => {
       const { cookie, chief } = await fleetOwner("child-model");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       await rpc(app, cookie, "models/connect", {
         provider: "openrouter",
         apiKey: "test-openrouter-key-not-a-real-secret",
@@ -3767,7 +3984,7 @@ describeJourneys("required product journeys", () => {
       ]);
       expect(await childState(scout.id)).toMatchObject({ modelProvider: null, modelId: null });
 
-      const scribe = await createChild(cookie, chief, "Scribe");
+      const scribe = await createManagedBot(cookie, "Scribe");
       await prisma.bot.update({
         where: { id: scribe.id },
         data: { modelProvider: "x", modelId: "y" },
@@ -3810,9 +4027,9 @@ describeJourneys("required product journeys", () => {
       });
     });
 
-    it("create_child_routine schedules the child in its own thread once", async () => {
+    it("create_child_routine schedules a peer in its own thread once", async () => {
       const { cookie, chief } = await fleetOwner("child-routine");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       const prompt = `schedule bot ${scout.id} routine Brief every 1 days saying Summarize the news`;
 
       const pending = await sendForApproval(cookie, chief.id, prompt);
@@ -3871,7 +4088,7 @@ describeJourneys("required product journeys", () => {
 
     it("turning the switch off during the pause refuses the approved child change", async () => {
       const { cookie, chief } = await fleetOwner("switch-pause");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       await prisma.bot.update({
         where: { id: scout.id },
         data: { modelProvider: "x", modelId: "y" },
@@ -3914,6 +4131,7 @@ type Bot = {
   sectionId: string | null;
   unread: boolean;
   computerMode: "team" | "dedicated";
+  fleetManagement: boolean;
   parentBotId?: string | null;
 };
 type Snap = {

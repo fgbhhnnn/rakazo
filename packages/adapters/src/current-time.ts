@@ -33,7 +33,7 @@ function weekdayIn(now: Date, timeZone: string) {
 }
 
 /** "Saturday, 2026-10-17 22:15 (UTC+13:00)", or undefined for an unusable timezone. */
-function localDateTime(now: Date, timeZone: string): string | undefined {
+export function localDateTime(now: Date, timeZone: string): string | undefined {
   let parts: Intl.DateTimeFormatPart[];
   try {
     parts = new Intl.DateTimeFormat("en-US", {
@@ -55,4 +55,92 @@ function localDateTime(now: Date, timeZone: string): string | undefined {
   // "GMT+13:00" / "GMT" from longOffset, shown as UTC to match the instant beside it.
   const offset = part("timeZoneName").replace(/^GMT/, "UTC") || "UTC";
   return `${part("weekday")}, ${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")} (${offset === "UTC" ? "UTC+00:00" : offset})`;
+}
+
+function usableTimeZone(zone: string | null | undefined): string | undefined {
+  if (!zone?.trim()) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return zone;
+  } catch {
+    return undefined;
+  }
+}
+
+type TimeZonePrisma = {
+  user: {
+    findUnique(args: {
+      where: { id: string };
+      select: { timezone: true };
+    }): Promise<{ timezone: string | null } | null>;
+  };
+  space: {
+    findUnique(args: {
+      where: { id: string };
+      select: { createdByUser: { select: { timezone: true } } };
+    }): Promise<{ createdByUser: { timezone: string | null } | null } | null>;
+  };
+};
+
+/**
+ * The zone to speak in for a run: the user's own timezone, else the Space owner's, else the
+ * deployment default (RAKAZO_DEFAULT_TIMEZONE), else undefined (UTC). Lookups never fail a run.
+ */
+export async function resolveRunTimeZone(
+  prisma: TimeZonePrisma,
+  run: { userId?: string | null; spaceId?: string | null },
+  env: Record<string, string | undefined> = process.env,
+): Promise<string | undefined> {
+  try {
+    if (run.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: run.userId },
+        select: { timezone: true },
+      });
+      const zone = usableTimeZone(user?.timezone);
+      if (zone) return zone;
+    }
+  } catch {}
+  try {
+    if (run.spaceId) {
+      const space = await prisma.space.findUnique({
+        where: { id: run.spaceId },
+        select: { createdByUser: { select: { timezone: true } } },
+      });
+      const zone = usableTimeZone(space?.createdByUser?.timezone);
+      if (zone) return zone;
+    }
+  } catch {}
+  return deploymentTimeZone(env);
+}
+
+/** The deployment default zone (RAKAZO_DEFAULT_TIMEZONE), or undefined when unset or invalid. */
+export function deploymentTimeZone(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  return usableTimeZone(env.RAKAZO_DEFAULT_TIMEZONE);
+}
+
+/** "2026-10-24 02:15 (UTC+08:00)" in `timeZone`, or the ISO instant with "(UTC)" without one. */
+export function formatInstantForUser(date: Date, timeZone?: string): string {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+        timeZoneName: "longOffset",
+      }).formatToParts(date);
+      const part = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((entry) => entry.type === type)?.value ?? "";
+      const offset = part("timeZoneName").replace(/^GMT/, "UTC");
+      return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}:${part("second")} (${offset === "UTC" ? "UTC+00:00" : offset})`;
+    } catch {}
+  }
+  return `${date.toISOString().replace(/\.\d{3}Z$/, "")} (UTC)`;
 }

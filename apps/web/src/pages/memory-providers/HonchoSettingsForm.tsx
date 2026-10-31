@@ -1,4 +1,5 @@
 import { Trans } from "@lingui/react/macro";
+import { PRODUCT_NAME } from "@rakazo/contracts";
 import { Button, Field, FieldError, FieldLabel, Input } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import type { ConnectionMode } from "./ConnectionModeFields";
@@ -10,14 +11,13 @@ const RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{0,512}$/;
 function isReservedPeerId(value: string): boolean {
   return value === "rakazo-shared" || value.startsWith("bot-");
 }
-const DEFAULT_LOCAL_BASE_URL = "http://localhost:8000";
 
 export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
   const apiKeyId = useId();
   const workspaceId = useId();
   const workspaceErrorId = useId();
   const [mode, setMode] = useState<ConnectionMode>("cloud");
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_LOCAL_BASE_URL);
+  const [baseUrl, setBaseUrl] = useState("");
   const userPeerId = useId();
   const userPeerErrorId = useId();
   const userPeerDescriptionId = useId();
@@ -56,7 +56,6 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
         onModeChange={setMode}
         baseUrl={baseUrl}
         onBaseUrlChange={setBaseUrl}
-        baseUrlPlaceholder={DEFAULT_LOCAL_BASE_URL}
       />
 
       <Field className="mt-4">
@@ -115,12 +114,14 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
             autoComplete="off"
           />
           <p id={userPeerDescriptionId} className="mt-2 text-[13px] text-muted-foreground">
-            <Trans>An existing Honcho peer to read from. Rakazo never writes to it.</Trans>
+            <Trans>An existing Honcho peer to read from. {PRODUCT_NAME} never writes to it.</Trans>
           </p>
           {!userPeerValid ? (
             <FieldError id={userPeerErrorId}>
               {userPeerFormatValid ? (
-                <Trans>rakazo-shared and IDs starting with bot- are reserved for Rakazo.</Trans>
+                <Trans>
+                  rakazo-shared and IDs starting with bot- are reserved for {PRODUCT_NAME}.
+                </Trans>
               ) : (
                 <Trans>Use up to 512 letters, digits, _ or -.</Trans>
               )}
@@ -132,7 +133,7 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
       <Button
         type="button"
         variant="secondary"
-        className="mt-5 rounded-full"
+        className="mt-5"
         disabled={busy || !ready}
         onClick={() => void connect()}
       >

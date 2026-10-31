@@ -1,7 +1,8 @@
 import { createHash, createHmac, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
+import type * as Db from "@rakazo/db";
 import { bootstrapUserSpace, recordSecurityEvent } from "@rakazo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_IP_HEADER, createAuth } from "./index.js";
 
 // Exercise Better Auth's real routing, password hashing, verification and
@@ -9,11 +10,26 @@ import { CLIENT_IP_HEADER, createAuth } from "./index.js";
 vi.mock("better-auth/adapters/prisma", async () => {
   const { memoryAdapter } = await import("better-auth/adapters/memory");
   return {
-    prismaAdapter: (prisma: { authData: Record<string, unknown[]> }) =>
-      memoryAdapter(prisma.authData),
+    prismaAdapter: (prisma: { authData: Record<string, { id?: unknown }[]> }) => {
+      const factory = memoryAdapter(prisma.authData);
+      // Postgres rejects a duplicate primary key, which first-writer-wins reservations rely on.
+      return (options: Parameters<typeof factory>[0]) => {
+        const adapter = factory(options);
+        return {
+          ...adapter,
+          create: (async (input: { model: string; data: { id?: unknown } }) => {
+            const id = input.data.id;
+            if (id !== undefined && prisma.authData[input.model]?.some((row) => row.id === id))
+              throw new Error("duplicate key");
+            return adapter.create(input as never);
+          }) as typeof adapter.create,
+        };
+      };
+    },
   };
 });
-vi.mock("@rakazo/db", () => ({
+vi.mock("@rakazo/db", async (original) => ({
+  ...(await original<typeof Db>()),
   bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
   recordSecurityEvent: vi.fn(async () => undefined),
 }));
@@ -24,7 +40,6 @@ function fixture({
   baseURL = "http://auth.example.test",
   webOrigin = "http://web.example.test",
   requestOrigin,
-  expireAdmissionGate,
   stalledDelivery = false,
 }: {
   allowlist?: string;
@@ -32,7 +47,6 @@ function fixture({
   baseURL?: string;
   webOrigin?: string;
   requestOrigin?: string;
-  expireAdmissionGate?: "before" | "after";
   /** The provider accepts the message but never settles, like a hung SMTP connection. */
   stalledDelivery?: boolean;
 } = {}) {
@@ -60,18 +74,8 @@ function fixture({
     authData: data,
     $executeRaw: vi.fn(async () => 0),
     $transaction: vi.fn(
-      async (
-        run: ((tx: typeof prisma) => Promise<unknown>) | Promise<unknown>[],
-        options?: { timeout?: number },
-      ) => {
-        if (Array.isArray(run)) return Promise.all(run);
-        if (!expireAdmissionGate || options?.timeout === undefined) return run(prisma);
-        if (expireAdmissionGate === "before") throw new Error("admission gate timeout");
-        const pending = run(prisma);
-        void pending.catch(() => undefined);
-        for (let step = 0; step < 5; step += 1) await Promise.resolve();
-        throw new Error("admission gate timeout");
-      },
+      async (run: ((tx: typeof prisma) => Promise<unknown>) | Promise<unknown>[]) =>
+        Array.isArray(run) ? Promise.all(run) : run(prisma),
     ),
     deploymentSettings: {
       findUnique: vi.fn(async () => policy),
@@ -114,6 +118,8 @@ function fixture({
     },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    userDevice: { updateMany: vi.fn(async () => ({ count: 0 })) },
     passkey: {
       deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
         const rows = data.passkey!;
@@ -139,8 +145,12 @@ function fixture({
     secret,
     baseURL,
     webOrigin,
-    signupsEnabled: "true",
-    signupAllowlist: "",
+    get signupsEnabled() {
+      return String(policy.signupsEnabled);
+    },
+    get signupAllowlist() {
+      return policy.signupAllowlist;
+    },
     email: delivery
       ? {
           describe: () => ({
@@ -238,6 +248,7 @@ function fixture({
     codeSignIn,
     legacyAccount,
     sessionFor,
+    prisma,
     data,
     policy,
     messages,
@@ -371,7 +382,7 @@ describe("identity trust through auth endpoints", () => {
     });
   });
 
-  it("keeps first-owner bootstrap and password signup available without email for open deployments", async () => {
+  it("permits ordinary unverified signup without granting admin or mailbox proof on open deployments", async () => {
     const f = fixture({ delivery: false });
     const response = await f.signup();
     expect(response.status).toBe(200);
@@ -387,130 +398,16 @@ describe("identity trust through auth endpoints", () => {
     expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
   });
 
-  it("admits the first allowlisted account without email delivery and still blocks everyone else", async () => {
+  it("never lets a first allowlisted account skip mailbox proof without delivery", async () => {
     const f = fixture({ allowlist: "@example.test", delivery: false });
-    const disallowed = await f.signup("outsider@other.test");
-    expect(disallowed.status).toBe(400);
-    expect(await disallowed.json()).toMatchObject({
-      code: "EMAIL_NOT_ALLOWED",
-      message: "Email is not allowed to register",
-    });
+    const results = await Promise.all([f.signup(), f.signup("second@example.test")]);
+    for (const response of results) {
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain("Registration requires email delivery");
+    }
     expect(f.data.user).toHaveLength(0);
-    const response = await f.signup();
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as { token: string; user: { emailVerified: boolean } };
-    expect(body.token).toEqual(expect.any(String));
-    expect(f.data.user).toHaveLength(1);
-    expect(f.data.user![0]!.emailVerified).toBe(true);
-    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
-    expect(
-      await f.auth.api.getSession({
-        headers: new Headers({ authorization: `Bearer ${body.token}` }),
-      }),
-    ).toMatchObject({ user: { emailVerified: true } });
-    expect((await f.signin()).status).toBe(200);
-    const second = await f.signup("second@example.test");
-    expect(second.status).toBe(400);
-    expect(await second.text()).toContain("Registration requires email delivery");
-    expect(f.data.user).toHaveLength(1);
-    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
-    expect(f.messages).toHaveLength(0);
-  });
-
-  it("admits only one of two overlapping allowlisted signups without delivery", async () => {
-    const f = fixture({ allowlist: "@example.test", delivery: false });
-    const [first, second] = await Promise.all([
-      f.signup("one@example.test"),
-      f.signup("two@example.test"),
-    ]);
-    const admitted = [first, second].filter((response) => response.status === 200);
-    const denied = [first, second].filter((response) => response.status === 400);
-    expect(admitted).toHaveLength(1);
-    expect(denied).toHaveLength(1);
-    expect(await denied[0]!.text()).toContain("Registration requires email delivery");
-    expect(f.data.user).toHaveLength(1);
-    expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
-  });
-
-  it("keeps a completed signup when the admission gate expires after admission", async () => {
-    const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => {
-      unhandled.push(reason);
-    };
-    process.on("unhandledRejection", onUnhandled);
-    try {
-      const f = fixture({
-        allowlist: "@example.test",
-        delivery: false,
-        expireAdmissionGate: "after",
-      });
-      const response = await f.signup();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(unhandled).toEqual([]);
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { token: string };
-      expect(body.token).toEqual(expect.any(String));
-      expect(f.data.user).toHaveLength(1);
-      expect(f.data.user![0]!.emailVerified).toBe(true);
-      expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
-      expect((await f.signin()).status).toBe(200);
-    } finally {
-      process.off("unhandledRejection", onUnhandled);
-    }
-  });
-
-  it("fails signup when the admission gate expires before an account exists", async () => {
-    const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => {
-      unhandled.push(reason);
-    };
-    process.on("unhandledRejection", onUnhandled);
-    try {
-      const f = fixture({
-        allowlist: "@example.test",
-        delivery: false,
-        expireAdmissionGate: "before",
-      });
-      const response = await f.signup();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(unhandled).toEqual([]);
-      expect(response.status).toBe(500);
-      expect(f.data.user).toHaveLength(0);
-    } finally {
-      process.off("unhandledRejection", onUnhandled);
-    }
-  });
-
-  it("does not let an unverified account claim the owner seat while another human exists", async () => {
-    const f = fixture({ allowlist: "@example.test", delivery: false });
-    expect((await f.signup()).status).toBe(200);
-    f.data.user![0]!.emailVerified = false;
-    f.data.user!.push({
-      id: "human-2",
-      name: "Other",
-      email: "other@example.test",
-      emailVerified: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    expect((await f.signin()).status).toBe(403);
-    expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
-  });
-
-  it("does not treat a messaging identity as the first account", async () => {
-    const f = fixture({ allowlist: "approved@example.test", delivery: false });
-    f.data.user!.push({
-      id: "msg-1",
-      name: "Messaging",
-      email: "msg-sendblue15550001111@messaging.invalid",
-      emailVerified: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    const response = await f.signup();
-    expect(response.status).toBe(200);
-    expect(f.data.user!.filter((user) => user.email === "approved@example.test")).toHaveLength(1);
-    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
+    expect(f.policy.ownerUserId).toBeNull();
+    expect(bootstrapUserSpace).not.toHaveBeenCalled();
   });
 
   it("keeps allowlisted signup closed without delivery once a human account exists", async () => {
@@ -702,6 +599,154 @@ describe("session credentials", () => {
   });
 });
 
+describe("identity confirmation", () => {
+  afterEach(() => vi.useRealTimers());
+  const confirmed = async (f: ReturnType<typeof fixture>, token: string) => {
+    const current = await f.sessionFor(token);
+    return f.auth.hasRecentIdentityConfirmation({
+      sessionId: current!.session.id,
+      userId: current!.user.id,
+    });
+  };
+  const codeAccount = async (f: ReturnType<typeof fixture>) => {
+    await f.sendCode();
+    return ((await (await f.codeSignIn(f.lastCode())).json()) as { token: string }).token;
+  };
+  const wrongCode = (code: string) => (code === "000000" ? "111111" : "000000");
+
+  it("confirms a password session for five minutes, and only that session", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const other = ((await (await f.signin()).json()) as { token: string }).token;
+    expect(await confirmed(f, token)).toBe(false);
+    for (const body of [{}, { password: "" }, { password: "wrong-password12" }]) {
+      const response = await f.request("/confirm-identity", body, token);
+      expect(response.status, JSON.stringify(body)).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "INVALID_PASSWORD" });
+    }
+    expect(await confirmed(f, token)).toBe(false);
+    expect(
+      (await f.request("/confirm-identity", { password: "offline-password12" }, token)).status,
+    ).toBe(200);
+    expect(await confirmed(f, token)).toBe(true);
+    expect(await confirmed(f, other)).toBe(false);
+    expect(recordSecurityEvent).toHaveBeenCalledWith({
+      type: "auth.identity.confirmed",
+      userId: f.data.user![0]!.id,
+      metadata: { method: "password" },
+    });
+    vi.setSystemTime(Date.now() + 5 * 60_000);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+
+  it("refuses a session that is not signed in", async () => {
+    const f = fixture({ delivery: false });
+    expect((await f.request("/confirm-identity", { password: "offline-password12" })).status).toBe(
+      401,
+    );
+  });
+
+  it("locks password confirmation after five wrong passwords", async () => {
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const wrong = { password: "wrong-password12" };
+      expect((await f.request("/confirm-identity", wrong, token)).status).toBe(400);
+    }
+    const locked = await f.request("/confirm-identity", { password: "offline-password12" }, token);
+    expect(locked.status).toBe(429);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+
+  it("counts every parallel password guess toward the limit", async () => {
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const statuses = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        f
+          .request("/confirm-identity", { password: "wrong-password12" }, token)
+          .then((response) => response.status),
+      ),
+    );
+    expect(statuses.filter((status) => status === 400)).toHaveLength(5);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(7);
+    const locked = await f.request("/confirm-identity", { password: "offline-password12" }, token);
+    expect(locked.status).toBe(429);
+  });
+
+  it("frees password attempts once the lockout window passes, and clears them on success", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const attempt = (password: string) =>
+      f.request("/confirm-identity", { password }, token).then((response) => response.status);
+    for (let index = 0; index < 5; index += 1) await attempt("wrong-password12");
+    expect(await attempt("offline-password12")).toBe(429);
+    vi.setSystemTime(Date.now() + 15 * 60_000 + 1);
+    for (let index = 0; index < 4; index += 1) await attempt("wrong-password12");
+    expect(await attempt("offline-password12")).toBe(200);
+    expect(await attempt("wrong-password12")).toBe(400);
+    expect(await attempt("offline-password12")).toBe(200);
+  });
+
+  it("confirms an account without a password by a single-use emailed code", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    expect((await f.request("/request-identity-code", {}, token)).status).toBe(200);
+    expect(f.messages.at(-1)).toMatchObject({
+      to: "approved@example.test",
+      subject: "Your Rakazo confirmation code",
+    });
+    const code = f.lastCode();
+    expect(JSON.stringify(f.data.verification)).not.toContain(code);
+    const wrong = await f.request("/confirm-identity", { code: wrongCode(code) }, token);
+    expect(await wrong.json()).toMatchObject({ code: "INVALID_OTP" });
+    expect(await confirmed(f, token)).toBe(false);
+    expect((await f.request("/confirm-identity", { code }, token)).status).toBe(200);
+    expect(await confirmed(f, token)).toBe(true);
+    expect(recordSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "auth.identity.confirmed", metadata: { method: "email" } }),
+    );
+    const reused = await f.request("/confirm-identity", { code }, token);
+    expect(await reused.json()).toMatchObject({ code: "OTP_EXPIRED" });
+  });
+
+  it("binds an emailed code to the session that requested it", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    await f.sendCode();
+    const other = ((await (await f.codeSignIn(f.lastCode())).json()) as { token: string }).token;
+    await f.request("/request-identity-code", {}, token);
+    const code = f.lastCode();
+    expect((await f.request("/confirm-identity", { code }, other)).status).toBe(400);
+    expect((await f.request("/confirm-identity", { code }, token)).status).toBe(200);
+    expect(await confirmed(f, other)).toBe(false);
+  });
+
+  it("locks an emailed code after three wrong attempts", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    await f.request("/request-identity-code", {}, token);
+    const code = f.lastCode();
+    for (const expected of ["INVALID_OTP", "INVALID_OTP", "TOO_MANY_ATTEMPTS"]) {
+      const response = await f.request("/confirm-identity", { code: wrongCode(code) }, token);
+      expect(await response.json()).toMatchObject({ code: expected });
+    }
+    expect((await f.request("/confirm-identity", { code }, token)).status).toBe(400);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+
+  it("keeps password accounts on their password", async () => {
+    const f = fixture();
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const requested = await f.request("/request-identity-code", {}, token);
+    expect(await requested.json()).toMatchObject({ code: "EMAIL_CODE_UNAVAILABLE" });
+    expect((await f.request("/confirm-identity", { code: "123456" }, token)).status).toBe(400);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+});
+
 describe("verification email without blocking", () => {
   it("signs an open password signup in at once and lets the emailed link mark it verified", async () => {
     const f = fixture();
@@ -711,7 +756,7 @@ describe("verification email without blocking", () => {
     expect(await f.sessionFor(token)).toMatchObject({ user: { emailVerified: false } });
     expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
     expect(f.messages).toHaveLength(1);
-    expect(f.messages[0]).toMatchObject({ subject: "Verify your Rakazo email" });
+    expect(f.messages[0]).toMatchObject({ subject: "Verify your Gose Bot email" });
     expect((await f.signin()).status).toBe(200);
     expect(f.messages).toHaveLength(1);
     await f.verify();
@@ -735,7 +780,7 @@ describe("email code sign-in", () => {
     expect(f.messages).toHaveLength(1);
     expect(f.messages[0]).toMatchObject({
       to: "approved@example.test",
-      subject: "Your Rakazo sign-in code",
+      subject: "Your Gose Bot sign-in code",
     });
     const code = f.lastCode();
     expect(JSON.stringify(f.data.verification)).not.toContain(code);
@@ -988,10 +1033,64 @@ describe("passkeys", () => {
     expect((await f.signInWithPasskey()).status).toBe(401);
   });
 
+  it("drops credentials an unverified account added before its mailbox owner signed in", async () => {
+    const f = passkeyFixture();
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    expect((await f.register(token)).status).toBe(200);
+    const userId = f.data.user![0]!.id;
+    await f.sendCode();
+    expect((await f.codeSignIn(f.lastCode())).status).toBe(200);
+    expect(f.data.user![0]).toMatchObject({ id: userId, emailVerified: true });
+    expect(f.data.passkey).toHaveLength(0);
+    expect((await f.signInWithPasskey()).status).toBe(401);
+    expect(f.prisma.messagingIdentity.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+    expect(f.prisma.messagingLinkCode.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+    expect(f.prisma.userDevice.updateMany).toHaveBeenCalledWith({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it("keeps a verified account's passkeys on code sign-in", async () => {
+    const f = passkeyFixture();
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    expect((await f.register(token)).status).toBe(200);
+    f.data.user![0]!.emailVerified = true;
+    await f.sendCode();
+    expect((await f.codeSignIn(f.lastCode())).status).toBe(200);
+    expect(f.data.passkey).toHaveLength(1);
+    expect(f.prisma.userDevice.updateMany).not.toHaveBeenCalled();
+    expect((await f.signInWithPasskey()).status).toBe(200);
+  });
+
   it("does not offer passkeys where a browser cannot create them", async () => {
     const f = fixture({ webOrigin: "http://web.example.test" });
     expect(f.auth.passkeyRpId).toBeNull();
     expect((await f.request("/passkey/generate-authenticate-options")).status).toBe(404);
+  });
+});
+
+describe("account export tokens", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("names the issuing user once, and stores only a hash", async () => {
+    const f = fixture({ delivery: false });
+    const token = await f.auth.issueAccountExportToken("user-a");
+    const other = await f.auth.issueAccountExportToken("user-b");
+    expect(JSON.stringify(f.data.verification)).not.toContain(token);
+    expect(await f.auth.consumeAccountExportToken(token)).toBe("user-a");
+    expect(await f.auth.consumeAccountExportToken(token)).toBeNull();
+    expect(await f.auth.consumeAccountExportToken(other)).toBe("user-b");
+    expect(await f.auth.consumeAccountExportToken("")).toBeNull();
+    expect(await f.auth.consumeAccountExportToken("made-up")).toBeNull();
+  });
+
+  it("expires after a minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = fixture({ delivery: false });
+    const token = await f.auth.issueAccountExportToken("user-a");
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(await f.auth.consumeAccountExportToken(token)).toBeNull();
   });
 });
 

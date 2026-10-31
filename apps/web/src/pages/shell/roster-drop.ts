@@ -14,7 +14,8 @@ export type RosterDropAction =
 
 /**
  * Decide what dropping a dragged bot on a sidebar target does. Dropping on a
- * sibling row reorders; dropping on another section (its header or one of its
+ * pinned sibling reorders the Pinned list (the only hand-ordered list; the rest
+ * sort newest first); dropping on another section (its header or one of its
  * rows) moves the bot there; dropping on a group chat adds the bot as a member.
  * Pinned bots live in the Pinned list, so they only reorder. Returns null when
  * the drop should be refused.
@@ -22,17 +23,19 @@ export type RosterDropAction =
 export function resolveRosterDrop(input: {
   dragged: DraggedBot;
   target: RosterDropTarget;
-  /** True when the target row renders under the same parent as the dragged row. */
-  sameParent: boolean;
+  /** True when the target and dragged rows belong to the same visible list. */
+  sameList: boolean;
 }): RosterDropAction | null {
   const { dragged, target } = input;
   switch (target.kind) {
     case "bot": {
       if (target.chat.id === dragged.id) return null;
       if (dragged.pinned !== target.chat.pinned) return null;
-      if (dragged.pinned || target.chat.sectionId === dragged.sectionId) {
-        return input.sameParent ? { action: "reorder", targetBotId: target.chat.id } : null;
+      if (dragged.pinned) {
+        return input.sameList ? { action: "reorder", targetBotId: target.chat.id } : null;
       }
+      // Unpinned lists sort newest reply or working bot first, so a hand-placed row would not hold.
+      if (target.chat.sectionId === dragged.sectionId) return null;
       return { action: "move", sectionId: target.chat.sectionId };
     }
     case "section": {

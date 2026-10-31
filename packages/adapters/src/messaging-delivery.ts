@@ -12,7 +12,9 @@ import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  CrossSpaceCommunicationBlockedError,
   createThreadMessageInTransaction,
+  crossSpaceCommunicationAllowed,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -46,14 +48,9 @@ type IdentityRow = {
 };
 
 /**
- * Automatic mirror, not a send tool: every text-bearing bot message of a
- * messaging run is copied into the uniform outbox and sent (with its images
- * and files on DM platforms that can send them), so delivery does
- * not depend on prompt compliance. DM runs go to the owner's conversation;
- * channel runs go to the group with an attribution prefix and are fanned
- * out internally to peer approved bots (agent-to-agent traffic never
- * transits the messaging provider). Also drains pending outbox rows (invites
- * and intros are enqueued by the channels slice).
+ * Automatic mirror, not a send tool, so delivery does not depend on prompt
+ * compliance. Agent-to-agent fan-out stays internal and never transits the
+ * messaging provider. Also drains outbox rows the channels slice enqueued.
  */
 export async function deliverMessagingOutbound(
   deps: MessagingDeliveryDeps,
@@ -229,7 +226,7 @@ async function fanOutToPeers(
     peers,
     messages,
   }: {
-    identity: { provider: string; address: string };
+    identity: { provider: string; address: string; botId: string };
     channel: { id: string; name: string | null };
     channelBlock: Extract<MessageBlock, { kind: "channel_message" }>;
     fromLabel: string;
@@ -244,6 +241,8 @@ async function fanOutToPeers(
         where: { id: peer.identityId! },
       });
       if (!peerIdentity) continue;
+      if (!(await crossSpaceCommunicationAllowed(deps.prisma, identity.botId, peerIdentity.botId)))
+        continue;
       const peerThread = await deps.prisma.thread.findFirst({
         where: { botId: peerIdentity.botId },
       });
@@ -267,17 +266,23 @@ async function fanOutToPeers(
         ? new RegExp(`@${escapeRegExp(peerBot.name)}\\b`, "i").test(text)
         : false;
       if (mentioned && !botMessageHopExhausted(hop)) {
-        const sent = await deps.events.sendUserMessage({
-          spaceId: peerIdentity.spaceId,
-          threadId: peerThread.id,
-          botId: peerIdentity.botId,
-          userId: peerIdentity.userId,
-          blocks: [block],
-          prompt: `[Group "${channel.name ?? "group"}" — ${fromLabel}]: ${text}`,
-          trigger: "messaging",
-          clientNonce,
-        });
-        if (sent.runId) {
+        const sent = await deps.events
+          .sendUserMessage({
+            spaceId: peerIdentity.spaceId,
+            threadId: peerThread.id,
+            botId: peerIdentity.botId,
+            userId: peerIdentity.userId,
+            blocks: [block],
+            prompt: `[Group "${channel.name ?? "group"}" — ${fromLabel}]: ${text}`,
+            trigger: "messaging",
+            clientNonce,
+            crossSpaceSenderBotId: identity.botId,
+          })
+          .catch((error: unknown) => {
+            if (error instanceof CrossSpaceCommunicationBlockedError) return null;
+            throw error;
+          });
+        if (sent?.runId) {
           await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
             getLogger().error("messaging peer wake enqueue error", error);
           });
@@ -289,22 +294,29 @@ async function fanOutToPeers(
         where: { threadId_clientNonce: { threadId: peerThread.id, clientNonce } },
       });
       if (existing) continue;
-      const event = await deps.prisma.$transaction(async (tx) => {
-        const created = await createThreadMessageInTransaction(tx, {
-          threadId: peerThread.id,
-          role: "user",
-          blocks: [block],
-          clientNonce,
+      const event = await deps.prisma
+        .$transaction(async (tx) => {
+          const created = await createThreadMessageInTransaction(tx, {
+            threadId: peerThread.id,
+            role: "user",
+            blocks: [block],
+            clientNonce,
+          });
+          if (!(await crossSpaceCommunicationAllowed(tx, identity.botId, peerIdentity.botId)))
+            throw new CrossSpaceCommunicationBlockedError();
+          return appendEventInTransaction(tx, {
+            spaceId: peerIdentity.spaceId,
+            threadId: peerThread.id,
+            botId: peerIdentity.botId,
+            type: "thread.message.created",
+            payload: { messageId: created.id, role: "user", blocks: [block] },
+          });
+        })
+        .catch((error: unknown) => {
+          if (error instanceof CrossSpaceCommunicationBlockedError) return null;
+          throw error;
         });
-        return appendEventInTransaction(tx, {
-          spaceId: peerIdentity.spaceId,
-          threadId: peerThread.id,
-          botId: peerIdentity.botId,
-          type: "thread.message.created",
-          payload: { messageId: created.id, role: "user", blocks: [block] },
-        });
-      });
-      await deps.events.notify(peerThread.id, event.seq).catch(() => undefined);
+      if (event) await deps.events.notify(peerThread.id, event.seq).catch(() => undefined);
     }
   }
 }
@@ -343,13 +355,18 @@ async function sendConnectInvite(
   try {
     return await deps.prisma.$transaction(
       async (tx) => {
+        const communicationAllowed = await crossSpaceCommunicationAllowed(
+          tx,
+          pair.requesterBotId,
+          pair.targetBotId,
+        );
         const locked = await tx.$queryRaw<Array<{ status: string }>>`
           SELECT status FROM agent_connections
           WHERE "requesterBotId" = ${pair.requesterBotId}
             AND "targetBotId" = ${pair.targetBotId}
           FOR UPDATE
         `;
-        if (locked[0]?.status !== "pending") {
+        if (locked[0]?.status !== "pending" || !communicationAllowed) {
           await tx.messagingOutbound.updateMany({
             where: { id: row.id },
             data: { status: "failed" },
@@ -412,6 +429,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
     });
     if (claim.count === 0) continue;
     let attachmentName: string | null = null;
+    let accepted = false;
     try {
       if (row.kind === "group" || row.kind === "intro") {
         if (!row.threadId) {
@@ -425,6 +443,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
           { threadId: row.threadId, body: row.body },
           context,
         );
+        accepted = true;
         await deps.prisma.messagingOutbound.update({
           where: { id: row.id },
           data: { providerHandle: sent.handle },
@@ -466,6 +485,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
           context,
         );
         if (result === "delivered") {
+          accepted = true;
           await deps.prisma.messagingIdentity.update({
             where: { id: identity.id },
             data: { outboundSinceInbound: { increment: 1 } },
@@ -501,6 +521,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
         { threadId, body: row.body, ...(attachment ? { attachment } : {}) },
         context,
       );
+      accepted = true;
       await deps.prisma.messagingOutbound.updateMany({
         where: { id: row.id },
         data: { providerHandle: sent.handle },
@@ -510,6 +531,11 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
         data: { outboundSinceInbound: { increment: 1 } },
       });
     } catch (error) {
+      if (accepted) {
+        // Keep the sent claim even if saving the handle or counter fails.
+        getLogger().error("messaging outbound bookkeeping error", error);
+        continue;
+      }
       // Transient provider errors go back to pending with a backed-off
       // retry (no sooner than the provider's retry-after); a permanent error
       // or an exhausted budget is terminal.
@@ -616,7 +642,6 @@ async function resolveDirectThread(
   return threadId;
 }
 
-/** Exponential backoff per attempt, capped at one minute. */
 function messagingOutboundRetryDelayMs(attempts: number): number {
   return Math.min(2 ** attempts * 1000, 60_000);
 }

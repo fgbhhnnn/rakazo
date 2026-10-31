@@ -36,7 +36,7 @@ function file(artifactId: string): SearchHit {
     botId: "bot-1",
     botName: "Scout",
     title: `${artifactId}.png`,
-    snippet: "image/png · 10 bytes",
+    snippet: "image/png, 10 bytes",
     messageId: "message-1",
     seq: 4,
     artifactId,
@@ -56,4 +56,5 @@ it("renders every file sent in one message without duplicate-key errors", async 
   );
   expect(error).not.toHaveBeenCalled();
   expect(container.querySelectorAll("button")).toHaveLength(2);
+  expect(container.querySelector("button")?.textContent).toContain("File");
 });

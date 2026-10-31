@@ -14,11 +14,12 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(),
 }));
 
+vi.mock("./material-icons", () => ({ materialIcons: {} }));
+
 vi.mock("./ui-direction", () => ({
   applyMobileUiDirection: vi.fn(),
 }));
 
-/** Recursively collect source files used to validate mobile translation coverage. */
 function collectSourceFiles(dir: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -61,47 +62,76 @@ describe("mobile i18n", () => {
     const { resetI18nForTests, t } = await import("./i18n");
     resetI18nForTests("zh-CN");
     expect(t("Account")).toBe("账户");
-    expect(t("Sign in to Rakazo")).toBe("登录 Rakazo");
+    expect(t("Sign in to {PRODUCT_NAME}")).toBe("登录 Gose Bot");
     expect(t("New bot")).toBe("新建 Bot");
-    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 次运行 · 12 个 token",
+    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3 次运行，12 个 token",
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("要删除 Scout 吗？");
 
     resetI18nForTests("ru");
     expect(t("Account")).toBe("Аккаунт");
-    expect(t("Sign in to Rakazo")).toBe("Войти в Rakazo");
+    expect(t("Sign in to {PRODUCT_NAME}")).toBe("Войти в Gose Bot");
     expect(t("New bot")).toBe("Новый бот");
-    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "Запусков: 3 · токенов: 12",
+    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "Запусков: 3, токенов: 12",
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("Удалить Scout?");
 
     resetI18nForTests("nl");
     expect(t("Account")).toBe("Account");
-    expect(t("Sign in to Rakazo")).toBe("Aanmelden bij Rakazo");
+    expect(t("Sign in to {PRODUCT_NAME}")).toBe("Aanmelden bij Gose Bot");
     expect(t("New bot")).toBe("Nieuwe bot");
-    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 uitvoeringen · 12 tokens",
+    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3 uitvoeringen, 12 tokens",
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("Scout verwijderen?");
 
+    resetI18nForTests("ja");
+    expect(t("Account")).toBe("アカウント");
+    expect(t("Sign in to {PRODUCT_NAME}")).toBe("Gose Botにログイン");
+    expect(t("New bot")).toBe("新しいボット");
+    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3回の実行、12トークン",
+    );
+    expect(t("Delete {name}?", { name: "Scout" })).toBe("Scoutを削除しますか？");
+
     resetI18nForTests("de");
     expect(t("Account")).toBe("Konto");
-    expect(t("Sign in to Rakazo")).toBe("Bei Rakazo anmelden");
+    expect(t("Sign in to {PRODUCT_NAME}")).toBe("Bei Gose Bot anmelden");
     expect(t("New bot")).toBe("Neuer Bot");
-    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 Ausführungen · 12 Token",
+    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3 Ausführungen, 12 Token",
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("Scout löschen?");
+
+    resetI18nForTests("es");
+    expect(t("Account")).toBe("Cuenta");
+    expect(t("Sign in to Rakazo")).toBe("Inicia sesión en Rakazo");
+    expect(t("New bot")).toBe("Nuevo bot");
+    expect(t("{runs} runs, {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3 ejecuciones, 12 tokens",
+    );
+    expect(t("Delete {name}?", { name: "Scout" })).toBe("¿Eliminar Scout?");
   });
 
   it("preserves interpolations in every non-English catalog", async () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
+    const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
     const { NL_MESSAGES } = await import("./locales/nl");
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
+    const { JA_MESSAGES } = await import("./locales/ja");
+    const { ES_MESSAGES } = await import("./locales/es");
+    for (const messages of [
+      ZH_MESSAGES,
+      ZH_TW_MESSAGES,
+      RU_MESSAGES,
+      DE_MESSAGES,
+      NL_MESSAGES,
+      JA_MESSAGES,
+      ES_MESSAGES,
+    ]) {
       const empty = Object.entries(messages).filter(([, value]) => !value.trim());
       const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
         const tokens = (message: string) =>
@@ -115,33 +145,51 @@ describe("mobile i18n", () => {
 
   it("translates every mobile chrome t() id in every non-English catalog", async () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
+    const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
     const { NL_MESSAGES } = await import("./locales/nl");
+    const { JA_MESSAGES } = await import("./locales/ja");
+    const { ES_MESSAGES } = await import("./locales/es");
     const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS, RUN_ERROR_LIMIT_MESSAGES } = await import(
       "@rakazo/core"
     );
     const { AI_DATA_DISCLOSURES, OPENAI_COMPATIBLE_BASE_URL_HINT } = await import(
       "@rakazo/contracts"
     );
+    const { createMenuItems } = await import("./create-chooser");
     const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
     const ids = new Set<string>([
       ...Object.values(AI_DATA_DISCLOSURES),
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "{summary} Your backup models also failed.",
+      "{summary} No backup model was usable for this request.",
+      "{summary} Backup models failed or were unavailable for this request.",
       "Your OpenRouter",
       "Your OpenAI",
       "Your Anthropic",
       "Your model provider",
       "The model provider returned an error.",
+      "Connect a model in Settings before running bots.",
+      "Connect your own API key in Models or choose Rakazo credits in Billing.",
       "{provider} is rate limiting requests. Try again shortly.",
       "{summary} Resets {date}.",
       "{provider} rejected the API key. Check your connection settings.",
-      "{provider} could not find the requested model.",
+      "{provider} can't run this model.",
+      "{provider} denied access to this model.",
+      "The model returned an unusable response. Try again.",
+      "The model hit its output limit before finishing its reply.",
+      "This model's context window is too small. Choose another model.",
+      "This connection's request limit is too small. Choose another model.",
       "{provider} took too long to respond. Try again.",
+      "{provider} is overloaded right now. Try again in a moment.",
+      "{provider} couldn't be reached. Check that it's running.",
+      "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
 
       EMPTY_PLUGIN_CATALOG_MESSAGE,
       OPENAI_COMPATIBLE_BASE_URL_HINT,
       ...SLASH_ACTIONS.map((action) => action.label),
+      ...createMenuItems.map((item) => item.label),
       "Sign-in did not return a session",
       "Sign-up did not return a session",
       "{count} model",
@@ -158,7 +206,15 @@ describe("mobile i18n", () => {
       const source = readFileSync(file, "utf8");
       for (const id of translationIds(source)) ids.add(id);
     }
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
+    for (const messages of [
+      ZH_MESSAGES,
+      ZH_TW_MESSAGES,
+      RU_MESSAGES,
+      DE_MESSAGES,
+      NL_MESSAGES,
+      JA_MESSAGES,
+      ES_MESSAGES,
+    ]) {
       const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
       expect(missing).toEqual([]);
     }
@@ -175,6 +231,8 @@ describe("mobile i18n", () => {
   it.each([
     ["de", "Dein Modellanbieter hat zu lange zum Antworten gebraucht. Versuche es erneut."],
     ["nl", "Jouw modelaanbieder deed er te lang over om te antwoorden. Probeer het opnieuw."],
+    ["ja", "お使いのモデルプロバイダーの応答に時間がかかりすぎました。もう一度お試しください。"],
+    ["es", "Tu proveedor de modelos tardó demasiado en responder. Vuelve a intentarlo."],
     ["ru", "Ваш поставщик моделей не ответил вовремя. Повторите попытку."],
     ["zh-CN", "你的模型提供商响应超时。请重试。"],
   ] as const)("renders provider errors in %s", async (locale, expected) => {
@@ -253,4 +311,24 @@ describe("mobile i18n", () => {
     expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "zh-CN");
     expect(applyMobileUiDirection).toHaveBeenLastCalledWith("zh-CN");
   });
+});
+
+it("restores Traditional Chinese after saving the language choice", async () => {
+  const { getItemAsync, setItemAsync } = await import("expo-secure-store");
+  const { applyMobileUiDirection } = await import("./ui-direction");
+  const { bootstrapI18n, dateLocaleForUi, resetI18nForTests, setUiLocale, t } = await import(
+    "./i18n"
+  );
+  const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
+  await setUiLocale("zh-TW");
+  expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "zh-TW");
+  resetI18nForTests();
+  vi.mocked(getItemAsync).mockResolvedValue("zh-TW");
+  await expect(bootstrapI18n()).resolves.toBe("zh-TW");
+  expect(dateLocaleForUi()).toBe("zh-TW");
+  expect(applyMobileUiDirection).toHaveBeenLastCalledWith("zh-TW");
+  expect(t("Language")).toBe(ZH_TW_MESSAGES.Language);
+  expect(t("Delete {name}?", { name: "Scout" })).toBe(
+    ZH_TW_MESSAGES["Delete {name}?"]?.replace("{name}", "Scout"),
+  );
 });

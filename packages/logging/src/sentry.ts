@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import { CORRELATION_TAG_KEYS } from "./monitoring.js";
 import { isMonitoringUserId, monitoringPseudonymSecret, monitoringUserId } from "./pseudonym.js";
 import { redactSensitiveText } from "./redaction.js";
+import { errorSummary } from "./serialize-error.js";
 import { reportSinkError } from "./sink-guard.js";
 import type { LogEvent, LogSink, SerializedError } from "./types.js";
 
@@ -17,6 +18,8 @@ export interface SentryConfig {
 }
 
 const FLUSH_TIMEOUT_MS = 2_000;
+// Model fields let issues be filtered by the provider and model that failed.
+const TAG_KEYS = [...CORRELATION_TAG_KEYS, "model.provider", "model.id"] as const;
 
 export function sentryConfigFromEnv(source: NodeJS.ProcessEnv = process.env): {
   config?: SentryConfig;
@@ -114,7 +117,7 @@ export function createSentrySink(
       const message = redactSensitiveText(event.message);
       Sentry.withScope((scope) => {
         scope.setTag("service", service);
-        for (const key of CORRELATION_TAG_KEYS) {
+        for (const key of TAG_KEYS) {
           const value = event[key];
           if (typeof value === "string" && value.length > 0 && value.length <= 200)
             scope.setTag(key, redactSensitiveText(value));
@@ -155,7 +158,7 @@ function releaseFromGitSha(sha: string | undefined): string | undefined {
 
 /** The logger hands sinks a serialized error; rebuild one Sentry can parse, cause chain included. */
 function rebuildError(serialized: SerializedError): Error {
-  const message = redactSensitiveText(serialized.message);
+  const message = errorSummary(redactSensitiveText(serialized.message), serialized.code);
   const error = new Error(message);
   error.name = redactSensitiveText(serialized.name);
   error.stack = serialized.stack

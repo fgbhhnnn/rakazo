@@ -96,19 +96,18 @@ beforeEach(() => {
 describe("artifact preview caches", () => {
   it("keeps the large-payload download timeout and captured auth context", async () => {
     const api = await load();
-    await api.readMobileArtifactText(target, "art-1", "text/plain");
+    await api.artifactFileUri(target, "art-1", "text/plain");
     expect(state.rpc).toHaveBeenCalledWith(
       "artifacts/get",
       { ...target, artifactId: "art-1" },
       {
-        timeoutMs: api.ARTIFACT_DOWNLOAD_TIMEOUT_MS,
+        timeoutMs: 120_000,
         requestContext: {
           apiBase: state.apiBase,
           headers: { authorization: "Bearer fake-token-a" },
         },
       },
     );
-    expect(api.ARTIFACT_DOWNLOAD_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
   });
 
   it("shares concurrent dimensions and downloads and reuses disk after restart", async () => {
@@ -136,7 +135,7 @@ describe("artifact preview caches", () => {
     const fresh = await api.imageArtifactPreview(target, "art-1", "image/png");
     expect(fresh.uri).not.toBe(stored.uri);
     expect(fresh.size).toEqual(stored.size);
-    expect(await api.readMobileArtifactText(target, "art-2", "text/plain")).toBe("aGk=");
+    expect(await api.artifactFileUri(target, "art-2", "text/plain")).toMatch(/art-2/);
     vi.mocked(Sharing.isAvailableAsync).mockResolvedValueOnce(true);
     await api.openMobileArtifact(target, "art-3", "attachment.pdf", "application/pdf");
     expect(Sharing.shareAsync).toHaveBeenCalledWith(expect.any(String), {

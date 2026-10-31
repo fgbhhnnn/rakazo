@@ -1,11 +1,58 @@
 import { describe, expect, it } from "vitest";
+import { automated } from "./automated-messages.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 import {
   deliverFinishedShells,
   formatFinishedShellCommand,
   isRunningShellCommand,
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
+  shellForegroundMaxMs,
 } from "./shell-command-stream.js";
+
+describe("shell foreground cap", () => {
+  it("reads RAKAZO_SHELL_FOREGROUND_MAX_MS", () => {
+    expect(shellForegroundMaxMs({})).toBe(60_000);
+    expect(shellForegroundMaxMs({ RAKAZO_SHELL_FOREGROUND_MAX_MS: "5000" })).toBe(5000);
+    expect(shellForegroundMaxMs({ RAKAZO_SHELL_FOREGROUND_MAX_MS: "0" })).toBe(0);
+    expect(shellForegroundMaxMs({ RAKAZO_SHELL_FOREGROUND_MAX_MS: "x" })).toBe(60_000);
+  });
+
+  it("returns a silent long command as running after maxWaitMs", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const observed = await observeShellCommand(
+      (async function* () {
+        await gate;
+        yield { type: "stdout" as const, data: "late\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [], idleMs: 10_000, maxWaitMs: 30 },
+    );
+    expect(observed.result).toMatchObject({ code: null, running: true });
+    release();
+    await expect(observed.completion).resolves.toMatchObject({ stdout: "late\n", code: 0 });
+  });
+
+  it("returns a continuously chatty command as running after maxWaitMs", async () => {
+    let stop = false;
+    const observed = await observeShellCommand(
+      (async function* () {
+        while (!stop) {
+          yield { type: "stdout" as const, data: "." };
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [], idleMs: 1000, maxWaitMs: 40 },
+    );
+    expect(observed.result).toMatchObject({ running: true });
+    stop = true;
+    await observed.completion;
+  });
+});
 
 describe("observeShellCommand", () => {
   it("redacts provider errors before they reach the runtime", async () => {
@@ -252,6 +299,18 @@ describe("deliverFinishedShells", () => {
     expect(followUps[0]).toContain("logged in");
   });
 
+  it("hands the bot the end of long output, where failures are printed", async () => {
+    const followUps: string[] = [];
+    await deliverFinishedShells(
+      (text) => followUps.push(text),
+      [Promise.resolve({ stdout: LONG_OUTPUT, stderr: "", code: 1 })],
+      { toolResults: [] },
+    );
+    expect(followUps).toHaveLength(1);
+    expect(followUps[0]).toContain("START\n");
+    expect(followUps[0]).toContain("ERROR: build failed\n");
+  });
+
   it("does not wait on the turn that first received the live output", async () => {
     let release: (result: { stdout: string; stderr: string; code: number }) => void = () =>
       undefined;
@@ -281,5 +340,75 @@ describe("deliverFinishedShells", () => {
     await deliverFinishedShells((text) => followUps.push(text), pending, { toolResults: [] });
     expect(followUps).toHaveLength(1);
     expect(followUps[0]).toContain("exit code: 0");
+  });
+});
+
+describe("worker shell foreground cap", () => {
+  it("defaults to 15 minutes for hidden workers", async () => {
+    const { workerShellForegroundMaxMs, SHELL_STILL_RUNNING_NOTICE } = await import(
+      "./shell-command-stream.js"
+    );
+    expect(workerShellForegroundMaxMs({})).toBe(900_000);
+    expect(workerShellForegroundMaxMs({ RAKAZO_WORKER_SHELL_FOREGROUND_MAX_MS: "1000" })).toBe(
+      1000,
+    );
+    expect(SHELL_STILL_RUNNING_NOTICE).toContain("Do not run the same command again");
+  });
+});
+
+const LONG_OUTPUT = `START\n${"compiling step\n".repeat(3_000)}ERROR: build failed\n`;
+// The omission marker, the newlines around it and one surrogate kept whole.
+const MARKER_OVERHEAD = 200;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+function finishedBody(stream: "stdout" | "stderr", output: string): string {
+  const text = formatFinishedShellCommand({
+    stdout: stream === "stdout" ? output : "",
+    stderr: stream === "stderr" ? output : "",
+    code: 1,
+  });
+  const prefix = `${automated("Shell command finished.")}\nexit code: 1\n${stream}:\n`;
+  expect(text.startsWith(prefix)).toBe(true);
+  return text.slice(prefix.length);
+}
+
+describe("formatFinishedShellCommand", () => {
+  it.each(["stdout", "stderr"] as const)(
+    "keeps the head and tail of long %s verbatim",
+    (stream) => {
+      const body = finishedBody(stream, LONG_OUTPUT);
+      expect(body.startsWith(LONG_OUTPUT.slice(0, 6_000))).toBe(true);
+      expect(body.endsWith(LONG_OUTPUT.slice(-6_000))).toBe(true);
+      expect(body).toContain("[Tool result truncated");
+      expect(body.length).toBeLessThanOrEqual(TOOL_RESULT_TEXT_LIMIT + MARKER_OVERHEAD);
+    },
+  );
+
+  it("leaves output at the limit unchanged and shortens anything longer", () => {
+    const atLimit = "x".repeat(TOOL_RESULT_TEXT_LIMIT);
+    expect(finishedBody("stdout", atLimit)).toBe(atLimit);
+    const overLimit = finishedBody("stdout", `${atLimit}y`);
+    expect(overLimit).toContain("[Tool result truncated");
+    expect(overLimit.endsWith("y")).toBe(true);
+  });
+
+  it("shortens JSON output as plain text", () => {
+    const json = JSON.stringify(
+      { packages: Object.fromEntries(Array.from({ length: 2_000 }, (_, i) => [`pkg-${i}`, i])) },
+      null,
+      2,
+    );
+    const body = finishedBody("stdout", json);
+    expect(body.startsWith(json.slice(0, 6_000))).toBe(true);
+    expect(body.endsWith(json.slice(-6_000))).toBe(true);
+    expect(body).not.toContain("contextTruncated");
+    expect(body.length).toBeLessThanOrEqual(TOOL_RESULT_TEXT_LIMIT + MARKER_OVERHEAD);
+  });
+
+  it("does not split a surrogate pair at either cut", () => {
+    const body = finishedBody("stdout", `a${"😀".repeat(10_000)}b`);
+    expect(body).not.toMatch(LONE_SURROGATE);
+    expect(body.startsWith("a😀")).toBe(true);
+    expect(body.endsWith("😀b")).toBe(true);
   });
 });

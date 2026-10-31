@@ -24,12 +24,26 @@ export function currentDbContext(): DbContext | undefined {
   return storage.getStore();
 }
 
-/** Run `fn` with row-level security scoped to one Space and user. */
 export function runAsTenant<T>(
   tenant: { spaceId: string; userId: string },
   fn: () => T | PromiseLike<T>,
 ): Promise<T> {
   return within({ kind: "tenant", spaceId: tenant.spaceId, userId: tenant.userId }, fn);
+}
+
+/**
+ * Run `fn` as the tenant that owns `scope` when the current tenant is a different user.
+ * Shared-model lookups use this: a member running on the deployment owner's models
+ * reads the owner's credential and secret rows as the owner, server-side only.
+ * Outside a tenant context (system work, tests without a context) `fn` runs unchanged.
+ */
+export function withinScope<T>(
+  scope: { spaceId: string; userId: string },
+  fn: () => T | PromiseLike<T>,
+): Promise<T> {
+  const current = storage.getStore();
+  if (current?.kind === "tenant" && current.userId !== scope.userId) return runAsTenant(scope, fn);
+  return (async () => await fn())();
 }
 
 /**
@@ -94,9 +108,10 @@ function within<T>(context: DbContext, fn: () => T | PromiseLike<T>): Promise<T>
   return storage.run(context, async () => await fn());
 }
 
-/** Prisma models whose tables have row-level security enabled. */
 export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "BillingAuditEvent",
+  "PushToken",
+  "EmailSend",
   "Thread",
   "Message",
   "Event",
@@ -105,32 +120,55 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "Artifact",
   "Secret",
   "BotSecret",
+  "VaultCredential",
   "AgentSecret",
   "UserModelCredential",
   "UserVoiceCredential",
+  "TrustedLinkSite",
+  "PaymentWallet",
+  "Purchase",
   "TaughtSkill",
   "AgentSkill",
+  "AgentSkillSpace",
+  "CapabilityInstallSpace",
+  "AgentImport",
   "Bot",
   "Run",
   "Task",
   "Routine",
   "Connection",
   "McpServer",
+  "McpServerSpace",
   "McpOAuthSession",
+  "ModelOAuthSession",
   "BotMcpServer",
   "Computer",
+  "ComputerRun",
   "Board",
   "Ticket",
   "TicketComment",
   "MessagingIdentity",
+  "MessagingInstallation",
+  "MessagingInstallSession",
   "MessagingOutbound",
   "ExternalConversation",
   "ExternalMessage",
   "SteeringMessage",
+  "BackgroundTaskQueue",
   "UsageRecord",
   "ScratchpadItem",
   "ActionApprovalRule",
+  "SpaceModelRoleChoice",
+  "SpaceSettingOverride",
+  "UserModelRoleChoice",
+  "UserModelPreference",
+  "UserVoicePreference",
+  "UserActionApprovalRule",
+  "UserActionAutoReviewPreference",
   "SecurityEvent",
+  "ComputerHealth",
+  "GroupTeamRun",
+  "AuditEvent",
 ]);
 
 /**

@@ -5,18 +5,34 @@ import {
   botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
-  clampBotMessage,
+  isBackgroundWorkerName,
   nextBotMessageHop,
   resolveBotAddress,
+  withoutWorkerSlot,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
-  type PrismaClient,
+  isHiddenBot,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ExecutorDeps } from "./executor.js";
+import { refreshTaskProgressForWorkerRun } from "./background-task-progress.js";
+import { backgroundTaskLabel, finalizeBackgroundTaskAfterReturn } from "./background-task-rows.js";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { workerResultGroupThreadId } from "./group-return-thread.js";
+import { runPageBlocks } from "./pages.js";
+import { runLeaseFor } from "./run-messages.js";
+import { attachmentBlocks } from "./task-attachments.js";
+import {
+  handleIncompleteWorkerResult,
+  incompleteFailedRelay,
+  withTruncatedOutputPrefix,
+} from "./worker-incomplete-continue.js";
+import { incompleteResultReason } from "./worker-incomplete-result.js";
+import { workerOutcomeRelay } from "./worker-outcome-relay.js";
+import { slotFree } from "./worker-slot-mentions.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -63,7 +79,7 @@ export async function loadBotMessageContext(
 }
 
 export async function messageBot(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
   run: {
     id: string;
     spaceId: string;
@@ -79,10 +95,18 @@ export async function messageBot(
     message: string;
     intent?: BotMessageIntent;
     deliveryKey?: string;
+    /** File/image blocks (artifacts of this space and user) delivered with the message. */
+    attachments?: readonly MessageBlock[];
   },
-  options?: { allowTerminalSource?: boolean; forceUnread?: boolean },
+  options?: {
+    allowTerminalSource?: boolean;
+    forceUnread?: boolean;
+    /** How the recipient's wake prompt names the sender (a worker's task label, not its slot). */
+    wakeFromName?: string;
+  },
 ) {
-  const message = String(input.message ?? "").trim();
+  // A background worker's results and status updates name tasks, never its own slot.
+  const message = slotFree(isBackgroundWorkerName(sender.name))(String(input.message ?? "")).trim();
   if (!message) return { ok: false as const, error: "message is required" };
   if (message.length > BOT_MESSAGE_MAX_LENGTH) {
     return {
@@ -97,7 +121,13 @@ export async function messageBot(
 
   const candidates = await deps.prisma.bot.findMany({
     where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
-    select: { id: true, name: true, title: true, thread: { select: { id: true } } },
+    select: {
+      id: true,
+      name: true,
+      title: true,
+      spawnKey: true,
+      thread: { select: { id: true } },
+    },
   });
   const target = resolveBotAddress(candidates, {
     botId: input.bot_id,
@@ -122,14 +152,22 @@ export async function messageBot(
     };
   }
 
-  const targetThreadId = target.thread.id;
+  // A worker's result for a task started in a group returns to that group thread.
+  const targetThreadId =
+    (await workerResultGroupThreadId(deps.prisma, {
+      run,
+      sender: candidates.find((bot) => bot.id === sender.id) ?? sender,
+      targetBotId: target.id,
+      intent,
+    })) ?? target.thread.id;
 
   // A tool call can be re-executed after a lease expiry, so a delivery has to be
   // replayable: without this the recipient is messaged twice and woken twice.
   const deliveryKey = input.deliveryKey ? `bot-message:${input.deliveryKey}` : undefined;
-  const replayed = () =>
+  const replayed = (runId?: string | null) =>
     ({
       ok: true as const,
+      runId: runId ?? undefined,
       botId: target.id,
       name: target.name,
       delivered: message,
@@ -137,7 +175,11 @@ export async function messageBot(
       note: `Already sent to ${target.name} in this turn; it was not sent again.`,
     }) as const;
 
-  const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message, intent });
+  const wakePrompt = buildBotMessageWakePrompt({
+    from: { ...sender, name: options?.wakeFromName ?? withoutWorkerSlot(sender.name) },
+    text: message,
+    intent,
+  });
   const outboundBlock: MessageBlock = {
     kind: "bot_message_sent",
     toBotId: target.id,
@@ -160,6 +202,7 @@ export async function messageBot(
     | {
         ok: true;
         replayed: true;
+        runId: string | null;
       };
   try {
     committed = await withTransactionRetry(() =>
@@ -172,9 +215,9 @@ export async function messageBot(
         if (deliveryKey) {
           const already = await tx.message.findUnique({
             where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
-            select: { id: true },
+            select: { id: true, runId: true },
           });
-          if (already) return { ok: true as const, replayed: true as const };
+          if (already) return { ok: true as const, replayed: true as const, runId: already.runId };
         }
 
         const senderStillRunning = await tx.run.findFirst({
@@ -217,6 +260,7 @@ export async function messageBot(
           runId: run.id,
           markUnread: options?.forceUnread === true,
           allowCancelledRun: options?.allowTerminalSource === true,
+          lease: runLeaseFor(deps, run.id),
         });
         const inboundBlock: MessageBlock = {
           kind: "bot_message_received",
@@ -230,7 +274,7 @@ export async function messageBot(
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
           role: "user",
-          blocks: [inboundBlock],
+          blocks: [inboundBlock, ...attachmentBlocks(input.attachments ?? [])],
           replyToMessageId:
             sourceContext?.fromBotId === target.id && intent !== "fyi"
               ? sourceContext.returnToMessageId
@@ -268,7 +312,7 @@ export async function messageBot(
           botId: target.id,
           type: "thread.message.created",
           runId: nextRun.id,
-          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock] },
+          payload: { messageId: inbound.id, role: "user", blocks: inbound.blocks },
         });
         const outboundEvent = await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
@@ -277,6 +321,7 @@ export async function messageBot(
           type: "thread.message.created",
           runId: run.id,
           allowCancelledRun: options?.allowTerminalSource === true,
+          lease: runLeaseFor(deps, run.id),
           payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
         });
         return {
@@ -293,13 +338,13 @@ export async function messageBot(
     if (deliveryKey && isUniqueConstraintError(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
-        select: { id: true },
+        select: { id: true, runId: true },
       });
-      if (winner) return replayed();
+      if (winner) return replayed(winner.runId);
     }
     throw error;
   }
-  if ("replayed" in committed) return replayed();
+  if ("replayed" in committed) return replayed(committed.runId);
   if (!committed.ok) return committed;
 
   await deps.events.notify(targetThreadId, committed.targetEventSeq).catch((error) => {
@@ -314,6 +359,7 @@ export async function messageBot(
   });
   return {
     ok: true as const,
+    runId: committed.runId,
     botId: target.id,
     name: target.name,
     delivered: message,
@@ -335,17 +381,24 @@ export async function returnBotMessageOutcome(
   sender: { id: string; name: string },
   text: string,
   intent: "result" | "status" = "result",
-  options?: { forceUnread?: boolean },
+  options?: {
+    forceUnread?: boolean;
+    /** The runtime reported the final stopped at the output-token limit after writing text. */
+    truncatedOutput?: boolean;
+  },
 ) {
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   if (!source) {
-    await markBotOutcomeReturned(deps.prisma, run.id);
+    await markBotOutcomeReturned(deps, run.id);
     // Handled: nothing to deliver. Return true so callers do not release a reservation.
     return true;
   }
   const sourceIntent = source.intent ?? "request";
-  if (sourceIntent !== "request" && sourceIntent !== "question") {
-    await markBotOutcomeReturned(deps.prisma, run.id);
+  // A hidden background worker always reports back to its dispatcher, whatever the intent of
+  // the message that woke it: the dispatcher is the only way its result reaches the user.
+  const workerTitle = await hiddenWorkerTitle(deps.prisma, run);
+  if (sourceIntent !== "request" && sourceIntent !== "question" && workerTitle === undefined) {
+    await markBotOutcomeReturned(deps, run.id);
     return true;
   }
   const sent = await deps.prisma.message.findMany({
@@ -363,16 +416,69 @@ export async function returnBotMessageOutcome(
     ),
   );
   if (alreadyReturned) {
-    await markBotOutcomeReturned(deps.prisma, run.id);
+    await markBotOutcomeReturned(deps, run.id);
     return true;
   }
+  // messageBot reaches only active bots of this space and user, so an archived or deleted
+  // requester can never take the outcome. Handled: nothing is left to deliver.
+  const requester = await deps.prisma.bot.findFirst({
+    where: { id: source.fromBotId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+    select: { id: true },
+  });
+  if (!requester) {
+    await markBotOutcomeReturned(deps, run.id);
+    return true;
+  }
+  // A hidden worker's final text that is truncated or clearly unfinished must not close the
+  // task as completed: auto-continue the same worker (capped) or fail honestly.
+  let outcomeText = text;
+  let failed: { cleanedText: string; note: string; lead: string } | undefined;
+  if (workerTitle !== undefined && intent === "result") {
+    const reason = incompleteResultReason(text, { cutAtOutputLimit: options?.truncatedOutput });
+    if (reason) {
+      const decision = await handleIncompleteWorkerResult(deps, {
+        run,
+        dispatcher: { id: source.fromBotId, name: source.fromBotName },
+        text,
+        reason,
+      });
+      if (decision.action === "continue") {
+        await markBotOutcomeReturned(deps, run.id);
+        // Task.workerRunId already points at the new run; refresh that so the card shows continuing.
+        await refreshTaskProgressForWorkerRun(deps, decision.runId);
+        return true;
+      }
+      if (decision.action === "fail") {
+        failed = decision;
+      }
+    } else {
+      // A result after an output-limit cut-off carries the text written before the cut.
+      outcomeText = await withTruncatedOutputPrefix(deps.prisma, run, text);
+    }
+  }
+  // The dispatcher names the task by its title and #ref; an over-long result travels as a file.
+  // An unconfirmed result still goes in full, led by a note that it is unconfirmed.
+  const relay = failed
+    ? await incompleteFailedRelay(deps, run, workerTitle, failed, source.fromBotId)
+    : await workerOutcomeRelay(deps, run, workerTitle, outcomeText, source.fromBotId);
+  // Pages the worker wrote or edited go back with its result, so they show in the main chat.
+  const pages =
+    workerTitle === undefined || intent !== "result"
+      ? []
+      : await runPageBlocks(deps.prisma, run).catch((error: unknown) => {
+          getLogger().warn("worker pages not relayed", {
+            reason: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        });
   const outcome = await messageBot(
     deps,
     run,
     sender,
     {
       bot_id: source.fromBotId,
-      message: clampBotMessage(text),
+      message: relay.message,
+      attachments: pages.length ? [...pages, ...(relay.attachments ?? [])] : relay.attachments,
       intent,
       // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
       deliveryKey: `auto-outcome:${run.id}`,
@@ -380,13 +486,19 @@ export async function returnBotMessageOutcome(
     {
       allowTerminalSource: true,
       forceUnread: options?.forceUnread,
+      // Name the result by its own task: the slot that ran it also ran the previous task.
+      ...(workerTitle ? { wakeFromName: `后台任务「${workerTitle}」` } : {}),
     },
   );
-  if (outcome.ok) await markBotOutcomeReturned(deps.prisma, run.id);
+  if (outcome.ok) await markBotOutcomeReturned(deps, run.id);
   return outcome.ok;
 }
 
-async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
+async function markBotOutcomeReturned(
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  runId: string,
+) {
+  const { prisma } = deps;
   await prisma.run.updateMany({
     where: {
       id: runId,
@@ -395,8 +507,29 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
     },
     data: { botOutcomeReturnedAt: new Date() },
   });
+  await finalizeBackgroundTaskAfterReturn(prisma, runId, (threadId, seq) =>
+    deps.events.notify(threadId, seq),
+  );
+  await refreshTaskProgressForWorkerRun(deps, runId);
 }
 
 function isUniqueConstraintError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+/** A hidden worker run's task label (from its task row, not the mutable title); undefined for other bots. */
+async function hiddenWorkerTitle(
+  prisma: PrismaClient,
+  run: { id: string; botId: string },
+): Promise<string | undefined> {
+  try {
+    const bot = await prisma.bot.findUnique({
+      where: { id: run.botId },
+      select: { spawnKey: true, title: true },
+    });
+    if (!isHiddenBot({ spawnKey: bot?.spawnKey ?? null })) return undefined;
+    return (await backgroundTaskLabel(prisma, run)) ?? bot?.title?.trim() ?? "";
+  } catch {
+    return undefined;
+  }
 }

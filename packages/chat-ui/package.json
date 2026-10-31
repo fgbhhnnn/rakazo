@@ -4,8 +4,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
+    "./file-kinds": "./src/file-kinds.ts",
     "./mermaid": "./src/mermaid.ts",
     "./native": "./src/markdown.native.tsx",
+    "./office-preview": "./src/office-preview.ts",
+    "./pdf-pages": "./src/pdf-pages.ts",
     "./web": "./src/markdown.web.tsx"
   },
   "scripts": {
@@ -14,6 +17,7 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
+    "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@ronradtke/react-native-markdown-display": "9.0.3",
@@ -39,10 +43,12 @@
   "devDependencies": {
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
+    "mammoth": "1.13.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "4.1.12",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

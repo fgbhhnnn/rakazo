@@ -1,7 +1,10 @@
 import * as z from "zod";
-import { botSecretDestinationSchema } from "./bot-secrets.js";
-import { Id } from "./ids.js";
+import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
+import { botSecretDestinationSchema, LoginFieldLabels } from "./bot-secrets.js";
+import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
+import { PageBlockMetaSchema } from "./pages.js";
+import { TaskProgressBlockSchema } from "./task-progress.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -93,6 +96,42 @@ const ChartBlock = z
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
+/**
+ * Links a main-chat copy of an approval card to the hidden worker run that raised it. The server
+ * writes it; answering the copy answers the worker's own card. closed: the worker ended first.
+ */
+export const WorkerApprovalMirror = z.object({
+  runId: Id,
+  messageId: Id,
+  /** Which background task asked, e.g. "任务 #AB12CD34（报表）". */
+  label: z.string().max(400),
+  closed: z.enum(["cancelled", "expired"]).optional(),
+});
+export type WorkerApprovalMirror = z.infer<typeof WorkerApprovalMirror>;
+
+/**
+ * A card in the owner's main chat asking whether to restart a computer that stopped answering.
+ * It has no run: answering it restarts the computer from its last checkpoint, or leaves it.
+ */
+export const ComputerRestartPrompt = z.object({
+  computerId: Id,
+  botId: Id,
+  closed: z.enum(["expired", "recovered"]).optional(),
+  /** What happened after a "restart" answer. */
+  outcome: z.enum(["restarted", "failed"]).optional(),
+});
+export type ComputerRestartPrompt = z.infer<typeof ComputerRestartPrompt>;
+
+/** The settings a bot can change on itself from chat. */
+export const BotSettingsValuesSchema = z.object({
+  modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
+  modelId: z.string().trim().min(1).max(200).nullable().optional(),
+  thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+  autoSpeak: z.boolean().optional(),
+  voiceId: z.string().max(120).nullable().optional(),
+});
+export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -112,6 +151,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
         undoVersionId: Id.optional(),
       })
       .optional(),
+    /** A settings change made from chat; undo writes `before` back while `after` still holds. */
+    settingsUpdate: z
+      .object({ botId: Id, before: BotSettingsValuesSchema, after: BotSettingsValuesSchema })
+      .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
     input: z.enum(["text", "secret"]).optional(),
@@ -121,12 +164,20 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     // an ask persisted before an owner toggles the private-HTTP flag still
     // validates on replay.
     credential: botSecretDestinationSchema({ allowPrivateHttpOrigin: true }).optional(),
+    /** The fields a login card asks for, by label; absent means DEFAULT_LOGIN_FIELD_LABELS. */
+    loginFields: LoginFieldLabels.optional(),
     /** On a fetch approval, the site an "always" answer allows. */
     site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** A hidden background worker's approval, mirrored into the main chat and answered there. */
+    workerApproval: WorkerApprovalMirror.optional(),
+    /** A system card asking whether to restart an unresponsive computer; answered in place. */
+    computerRestart: ComputerRestartPrompt.optional(),
+    /** A login the user used for this run only instead of saving it. */
+    remembered: z.literal(false).optional(),
     actions: z
       .array(
         z.object({
@@ -201,7 +252,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("steps"),
-    steps: z.array(z.object({ label: z.string(), count: z.number().int().positive() })),
+    steps: z.array(
+      z.object({
+        label: z.string(),
+        count: z.number().int().positive(),
+        /** What the bot wrote just before this step, kept out of its reply. */
+        note: z.string().optional(),
+      }),
+    ),
     durationMs: z.number().int().nonnegative().optional(),
   }),
   z.object({
@@ -213,6 +271,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     progress: z.string().optional(),
     result: z.string().optional(),
   }),
+  /** Live progress of a bot's background tasks, rewritten in place by the server. */
+  TaskProgressBlockSchema,
   z.object({
     kind: z.literal("child_bot"),
     botId: z.string(),
@@ -261,7 +321,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     status: z.enum(["pending", "connected", "dismissed"]).default("pending"),
   }),
   z.object({
+    kind: z.literal("import_setup"),
+    items: z.array(AgentImportSetupItemSchema),
+    /** Set on checklists an earlier Undo retired, with `items` emptied; it is then hidden. */
+    undone: z.boolean().optional(),
+  }),
+  z.object({
     kind: z.literal("image"),
+    /** Explicit visual input requested by a confirmation-aware client. */
+    imageHandling: z.literal("confirm").optional(),
     artifactId: Id,
     mimeType: z.string(),
     name: z.string(),
@@ -272,6 +340,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     mimeType: z.string(),
     name: z.string(),
     size: z.number().int().nonnegative(),
+    /** Set when the file is a Page; clients that know Pages open the reader. */
+    page: PageBlockMetaSchema.optional(),
   }),
   z.object({
     kind: z.literal("handoff"),
@@ -356,17 +426,40 @@ export function foldComputerCommands<T extends ComputerCommand>(events: T[]): T[
   return [...byId.values()];
 }
 
-export const ProductEventSchema = z.object({
-  id: Id,
-  spaceId: Id,
-  threadId: Id,
-  botId: Id,
-  seq: z.number().int().nonnegative(),
-  type: ProductEventType,
-  runId: Id.optional(),
-  createdAt: z.string(),
-  payload: z.record(z.string(), z.unknown()),
-});
+/** Coarse live run state. Never accepts provider reasoning content or partial messages. */
+export const ThreadActivityPayloadSchema = z
+  .object({
+    activity: z.object({ thinking: z.boolean() }).strict(),
+  })
+  .strict();
+
+/** Distinguish this live lifecycle subtype from unrelated thread metadata. */
+export function hasThinkingActivityMarker(payload: Record<string, unknown>): payload is {
+  activity: { thinking: unknown };
+} {
+  const activity = payload.activity;
+  return activity !== null && typeof activity === "object" && "thinking" in activity;
+}
+export type ThreadActivityPayload = z.infer<typeof ThreadActivityPayloadSchema>;
+
+export const ProductEventSchema = z
+  .object({
+    id: Id,
+    spaceId: Id,
+    threadId: Id,
+    botId: Id,
+    seq: z.number().int().nonnegative(),
+    type: ProductEventType,
+    runId: Id.optional(),
+    createdAt: z.string(),
+    payload: z.record(z.string(), z.unknown()),
+  })
+  .superRefine((event, ctx) => {
+    if (event.type !== "thread.meta" || !hasThinkingActivityMarker(event.payload)) return;
+    if (!event.runId || !ThreadActivityPayloadSchema.safeParse(event.payload).success) {
+      ctx.addIssue({ code: "custom", path: ["payload"], message: "Invalid run activity" });
+    }
+  });
 export type ProductEvent = z.infer<typeof ProductEventSchema>;
 
 export const ReplyPreviewSchema = z.object({

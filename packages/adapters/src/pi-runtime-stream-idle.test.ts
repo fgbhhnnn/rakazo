@@ -10,12 +10,12 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import {
   MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
   modelStreamIdleWatchdog,
   reliableModelStream,
-} from "./pi-runtime.js";
-import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
+} from "./pi-runtime-stream.js";
 
 function assistantMessage(overrides: Partial<AssistantMessage> = {}): AssistantMessage {
   return {
@@ -53,6 +53,29 @@ const context = { messages: [] } as Context;
 describe("Model stream idle watchdog", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("allows an active stream to continue for an hour", async () => {
+    vi.useFakeTimers();
+    const watchdog = modelStreamIdleWatchdog(undefined);
+    const inner = new AssistantMessageEventStream();
+    const stream = watchdog.wrap(inner);
+    const iterator = stream[Symbol.asyncIterator]();
+    let pending = iterator.next();
+    inner.push({ type: "start", partial: assistantMessage() });
+    await pending;
+    for (let minute = 0; minute < 60; minute++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      pending = iterator.next();
+      inner.push({ type: "text_delta", contentIndex: 0, delta: "x", partial: assistantMessage() });
+      await pending;
+      expect(watchdog.signal.aborted).toBe(false);
+    }
+    pending = iterator.next();
+    inner.push({ type: "done", reason: "stop", message: assistantMessage() });
+    inner.end();
+    await pending;
+    await expect(stream.result()).resolves.toMatchObject({ stopReason: "stop" });
+  });
+
   it("aborts the composed signal after the idle bound and relabels the terminal error", async () => {
     vi.useFakeTimers();
     const watchdog = modelStreamIdleWatchdog(undefined);
@@ -60,9 +83,7 @@ describe("Model stream idle watchdog", () => {
     const stream = watchdog.wrap(inner);
     const iterator = stream[Symbol.asyncIterator]();
 
-    // No idle budget burns before response headers land: the pre-headers
-    // window is bounded per attempt by timeoutMs, so this wait must never
-    // abort.
+    // No idle budget burns before response headers land.
     const pending = iterator.next();
     await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS * 2);
     expect(watchdog.signal.aborted).toBe(false);

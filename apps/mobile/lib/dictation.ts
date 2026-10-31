@@ -4,6 +4,10 @@
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
  */
 
+import { supportedSpeechTag } from "@rakazo/core";
+import { Platform } from "react-native";
+import { reportMobileError } from "./monitoring";
+
 /** Quiet gap that ends an utterance. A natural breath is well under it, a finished turn well over. */
 export const ENDPOINT_SILENCE_MS = 1_200;
 const RESTART_MIN_MS = 250;
@@ -11,7 +15,45 @@ const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
 const MAX_DEAD_RESTARTS = 5;
 /** Errors that mean this turn cannot recover; the rest are routine and `end` restarts. */
-const FATAL_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
+const FATAL_ERRORS = new Set([
+  "not-allowed",
+  "service-not-allowed",
+  "audio-capture",
+  "language-not-supported",
+  "bad-grammar",
+]);
+/** Recoverable errors that indicate failure if the last empty attempt still has one. */
+const TRANSIENT_ERRORS = new Set(["client", "busy", "network", "unknown", "too-many-requests"]);
+
+export type DictationGiveUp = "idle" | "failed";
+
+/**
+ * iOS: the call plays the reply while this session listens, so both share one audio
+ * session. The module's default (`measurement` mode) is set again on every restart and
+ * flips the session out from under the player, which on iOS cuts or silences the reply.
+ * Keep the same `playAndRecord` + speaker route the player uses, and let voice
+ * processing cancel the speaker so the reply is not transcribed as the caller.
+ */
+export const IOS_CALL_AUDIO = {
+  iosCategory: {
+    category: "playAndRecord",
+    categoryOptions: ["defaultToSpeaker", "allowBluetooth", "mixWithOthers"],
+    mode: "voiceChat",
+  },
+  iosVoiceProcessingEnabled: true,
+} as const;
+
+export type DictationStartOptions = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  iosCategory?: {
+    category: string;
+    categoryOptions: readonly string[];
+    mode?: string;
+  };
+  iosVoiceProcessingEnabled?: boolean;
+};
 
 type ResultEvent = { isFinal: boolean; results: { transcript: string }[] };
 type ErrorEvent = { error?: string };
@@ -19,11 +61,12 @@ type DictationEventMap = { result: ResultEvent; end: null; error: ErrorEvent };
 
 /** The slice of `expo-speech-recognition` this module needs, so tests can drive the events. */
 export type SpeechRecognizer = {
-  start(options: { lang: string; interimResults: boolean; continuous: boolean }): void;
+  start(options: DictationStartOptions): void;
   stop(): void;
   abort(): void;
   isRecognitionAvailable(): boolean;
   requestPermissionsAsync(): Promise<{ granted: boolean }>;
+  getSupportedLocales(options: Record<string, never>): Promise<{ locales: string[] }>;
   addListener<Event extends keyof DictationEventMap>(
     event: Event,
     listener: (payload: DictationEventMap[Event]) => void,
@@ -35,6 +78,7 @@ type Session = {
   lang: string;
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp?: (reason: DictationGiveUp) => void;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -44,18 +88,37 @@ type Session = {
   restart?: ReturnType<typeof setTimeout>;
   backoff: number;
   deadRestarts: number;
+  /** Reset on each native start: only the last attempt classifies empty exhaustion. */
+  transientError: boolean;
 };
 
 let injected: SpeechRecognizer | null = null;
 /** Test seam: an injected recognizer replaces the native module. */
 export function setSpeechRecognizer(recognizer: SpeechRecognizer | null): void {
   injected = recognizer;
+  supported = null;
 }
 
 async function load(): Promise<SpeechRecognizer> {
   if (injected) return injected;
+  // The native recognizer loads on first dictation, not with every screen that imports this.
   const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
   return ExpoSpeechRecognitionModule as unknown as SpeechRecognizer;
+}
+
+let supported: Promise<string[]> | null = null;
+
+/**
+ * iOS starts a recognizer only for a tag it lists exactly. Android takes any regional tag, and
+ * asking it would start its recognition service first, so it lists nothing here.
+ */
+function supportedLocales(recognizer: SpeechRecognizer): Promise<string[]> {
+  if (Platform.OS !== "ios") return Promise.resolve([]);
+  supported ??= recognizer.getSupportedLocales({}).then(
+    (result) => result.locales,
+    () => [],
+  );
+  return supported;
 }
 
 /** A session older than this one can never deliver a final. */
@@ -92,25 +155,32 @@ export function stop(): void {
 export async function listen(opts: {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp?: (reason: DictationGiveUp) => void;
   signal?: AbortSignal;
   lang?: string;
 }): Promise<void> {
+  // A cancelled request can arrive after a newer session started; it must not stop that one.
+  if (opts.signal?.aborted) return;
   stop();
   const mine = token;
-  if (opts.signal?.aborted) return;
   const recognizer = await load();
+  const lang = supportedSpeechTag(opts.lang || "en-US", await supportedLocales(recognizer));
   // A hang-up or a newer session landed while the native module was loading.
   if (token !== mine) return;
+  // A signal aborted during loading never fires the listener added below, so check it here.
+  if (opts.signal?.aborted) return;
   const session: Session = {
     recognizer,
-    lang: opts.lang || "en-US",
+    lang,
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
+    onGiveUp: opts.onGiveUp,
     subs: [],
     carried: "",
     heard: "",
     backoff: RESTART_MIN_MS,
     deadRestarts: 0,
+    transientError: false,
   };
   active = session;
   opts.signal?.addEventListener(
@@ -125,12 +195,22 @@ export async function listen(opts: {
     recognizer.addListener("end", () => onEnd(session)),
     recognizer.addListener("error", (event) => onError(session, event)),
   ];
-  start(session);
+  try {
+    start(session);
+  } catch {
+    giveUp(session, "failed", "start-failed");
+  }
 }
 
 function start(session: Session): void {
   if (active !== session) return;
-  session.recognizer.start({ lang: session.lang, interimResults: true, continuous: true });
+  session.transientError = false;
+  session.recognizer.start({
+    lang: session.lang,
+    interimResults: true,
+    continuous: true,
+    ...IOS_CALL_AUDIO,
+  });
 }
 
 function onResult(session: Session, event: ResultEvent): void {
@@ -163,9 +243,8 @@ function onEnd(session: Session): void {
   session.heard = "";
   session.deadRestarts += 1;
   if (session.deadRestarts > MAX_DEAD_RESTARTS) {
-    // ponytail: a wedged recognizer just ends the turn; the call opens the mic again next
-    // turn. Surface it as an error if callers ever need to tell it from a real endpoint.
-    finish(session);
+    const failed = session.transientError && !session.carried;
+    giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
     return;
   }
   clearTimeout(session.restart);
@@ -176,23 +255,35 @@ function onEnd(session: Session): void {
     try {
       start(session);
     } catch {
-      finish(session);
+      giveUp(session, "failed", "start-failed");
     }
   }, delay);
 }
 
 function onError(session: Session, event: ErrorEvent): void {
   if (active !== session) return;
-  if (!event?.error || !FATAL_ERRORS.has(event.error)) return;
-  finish(session);
+  if (!event?.error) return;
+  if (TRANSIENT_ERRORS.has(event.error)) session.transientError = true;
+  if (FATAL_ERRORS.has(event.error)) giveUp(session, "failed", event.error);
 }
 
-function finish(session: Session): void {
+function giveUp(session: Session, reason: DictationGiveUp, code: string): void {
+  if (active !== session) return;
+  if (reason === "failed") {
+    reportMobileError(new Error(`Speech recognition stopped: ${code}`), "voice.microphone", {
+      source: "dictation",
+    });
+  }
+  finish(session, reason);
+}
+
+function finish(session: Session, reason?: DictationGiveUp): void {
   if (active !== session) return;
   const text = join(session.carried, session.heard).trim();
   const { onFinal } = session;
   stop();
   if (text) onFinal(text);
+  else if (reason) session.onGiveUp?.(reason);
 }
 
 function join(left: string, right: string): string {

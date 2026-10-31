@@ -1,28 +1,21 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentRunModel,
-  AgentRuntime,
-  ModelCredentialFailedState,
-  ModelCredentialRetireReason,
-  SecretStore,
-} from "@rakazo/adapter-kit";
+import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
 import {
-  actorMayUsePrivateEndpoint,
+  deploymentModelRole,
   formatCurrentTimeInstruction,
   hasHostedModelCredits,
   hostedModelCreditObserver,
-  matchesFailedOAuthSecret,
+  parseModelSecret,
+  resolveMemberMainModel,
   resolveModelAuth,
+  retireToReconnectMarker,
+  secretValuesToRedact,
   serializeModelSecret,
   toOAuthCredential,
 } from "@rakazo/adapters";
+import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import {
-  findDefaultModelCredential,
-  findModelCredential,
-  recordUsage,
-  retireModelCredential,
-} from "@rakazo/db";
+import { findModelCredential, recordUsage, sharedModelScope, withinScope } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 const MAX_RULES_CHARS = 4_000;
@@ -134,9 +127,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
   constructor(private readonly deps: ModelTeamChatEngagementJudgeDeps) {}
 
   async decide(input: TeamChatEngagementInput): Promise<TeamChatEngagementDecision> {
+    let secretsToRedact: string[] = [];
     try {
       const resolved = await this.resolveModel(input.bot);
       if (!resolved) return { act: false };
+      secretsToRedact = secretValuesToRedact({
+        kind: "openai_compatible",
+        baseUrl: resolved.model.baseUrl ?? "",
+        apiKey: resolved.model.apiKey,
+        headers: resolved.model.headers,
+      });
       // Standing rules can be time-based ("only during work hours"): judge them in the owner's zone.
       let ownerTimeZone: string | null | undefined;
       try {
@@ -207,7 +207,10 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       }
       return parseTeamChatEngagementDecision(text);
     } catch (error) {
-      getLogger().error("team chat engagement judge failed", safeError(error));
+      getLogger().error(
+        "team chat engagement judge failed",
+        redactSecrets(safeError(error), secretsToRedact),
+      );
       return { act: false };
     }
   }
@@ -218,8 +221,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const settings = await this.deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
     });
-    const scope = { userId: bot.userId, spaceId: bot.spaceId };
-    const defaultCredential = await findDefaultModelCredential(this.deps.prisma, scope);
+    const scope = await sharedModelScope(this.deps.prisma, {
+      userId: bot.userId,
+      spaceId: bot.spaceId,
+    });
+    const member = await resolveMemberMainModel(
+      { prisma: this.deps.prisma, secretStore: this.deps.secrets },
+      scope,
+    );
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
     const overrideCredential = requestedProvider
@@ -229,17 +238,21 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const useOverride = Boolean(
       requestedProvider && requestedModel && (explicitJudgeOverride || overrideCredential),
     );
-    const credential = useOverride ? overrideCredential : defaultCredential;
-    const provider =
-      (useOverride ? requestedProvider : null) ??
-      credential?.provider ??
-      settings?.defaultModelProvider ??
-      this.deps.deploymentProvider;
-    const modelId =
-      (useOverride ? requestedModel : null) ??
-      credential?.defaultModel ??
-      settings?.defaultModelId ??
-      this.deps.deploymentModel;
+    // The member's main model runs on its connection, or on funded deployment credits.
+    const main =
+      member &&
+      (member.credential ||
+        (settings?.modelCreditsEnabled &&
+          (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
+        ? member
+        : null;
+    const fallback = deploymentModelRole("main", {
+      settings,
+      deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
+    }).primary;
+    const credential = useOverride ? overrideCredential : (main?.credential ?? null);
+    const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
+    const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
 
     const hosted =
@@ -254,18 +267,22 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       return { model: { provider, id: modelId, ...(apiKey ? { apiKey } : {}), callObserver } };
     }
 
-    const secret = await this.deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: bot.userId, spaceId: null },
-    });
+    // A shared model's key is row-secured to the owner; every read and write of it runs as the owner.
+    const secret = await withinScope(scope, () =>
+      this.deps.prisma.secret.findFirst({
+        where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+      }),
+    );
     if (!secret) return null;
-    const persist = async (plaintext: string) => {
+    const persist = (plaintext: string) => withinScope(scope, () => persistAsOwner(plaintext));
+    const persistAsOwner = async (plaintext: string) => {
       const stored = await this.deps.secrets.put(
         plaintext,
         {
           operationId: "team-chat-judge-credential",
           traceId: "team-chat-judge-credential",
-          spaceId: bot.spaceId,
-          userId: bot.userId,
+          spaceId: scope.spaceId,
+          userId: scope.userId,
           botId: bot.id,
           signal: new AbortController().signal,
         },
@@ -276,25 +293,18 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         data: { ciphertext: stored.ciphertext },
       });
     };
-    // Same fences as the run path: a stale failure must not delete material a
-    // concurrent refresh or reconnect already persisted.
-    const retire = (
-      _reason: ModelCredentialRetireReason,
-      _detail: string | undefined,
-      failed?: ModelCredentialFailedState,
-    ) =>
-      retireModelCredential(this.deps.prisma, {
-        userId: bot.userId,
-        credentialId: credential.id,
-        secretId: credential.secretId,
-        matchesFailedSecret: failed
-          ? matchesFailedOAuthSecret(
-              (ciphertext, secretId) => this.deps.secrets.load(ciphertext, secretId),
-              failed,
-            )
-          : undefined,
-      });
-    const plaintext = await this.deps.secrets.load(secret.ciphertext, secret.id);
+    const plaintext = await withinScope(scope, () =>
+      this.deps.secrets.load(secret.ciphertext, secret.id),
+    );
+    const retireAsOwner = retireToReconnectMarker(
+      this.deps.prisma,
+      this.deps.secrets,
+      scope,
+      credential,
+      parseModelSecret(plaintext).maxTokens,
+    );
+    const retire: ReturnType<typeof retireToReconnectMarker> = (...args) =>
+      withinScope(scope, () => retireAsOwner(...args));
     const auth = await resolveModelAuth(plaintext, provider, { persist, retire });
     const parsed = auth.secret;
     const limit = parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {};
@@ -334,11 +344,9 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           id: modelId,
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
-          allowPrivateEndpoint: await actorMayUsePrivateEndpoint(
-            this.deps.prisma,
-            bot.userId,
-            this.deps.allowPrivateEndpoint === true,
-          ),
+          headers: parsed.headers,
+          allowPrivateEndpoint: this.deps.allowPrivateEndpoint === true,
+
           ...limit,
           ...context,
         },

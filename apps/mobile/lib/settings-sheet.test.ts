@@ -10,6 +10,8 @@ import {
   settingsSheetCloser,
 } from "./settings-sheet";
 
+vi.mock("./incoming-share", () => ({ receiveIncomingShare: vi.fn() }));
+
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("settings sheet", () => {
@@ -58,9 +60,12 @@ describe("settings sheet", () => {
 });
 
 describe("settings links", () => {
+  it.each([true, false])("opens the share target for cold/warm arrivals (%s)", (initial) => {
+    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial })).toBe("/share");
+  });
   it("knows every public page in the settings group", () => {
     const pages = readdirSync(resolve(mobileRoot, "app/(settings)"))
-      .filter((file) => file !== "_layout.tsx" && file !== "model-picker.tsx")
+      .filter((file) => !["_layout.tsx", "model-picker.tsx", "model-connection.tsx"].includes(file))
       .map((file) => file.replace(/\.tsx$/, ""));
 
     for (const page of pages) expect(isSettingsLink(`/${page}`), page).toBe(true);
@@ -70,6 +75,7 @@ describe("settings links", () => {
     expect(isSettingsLink("rakazo:///models")).toBe(true);
     // Picker sessions only exist after an in-sheet push, never from a link.
     expect(isSettingsLink("rakazo:///model-picker")).toBe(false);
+    expect(isSettingsLink("rakazo:///model-connection")).toBe(false);
     expect(isSettingsLink("rakazo://voice")).toBe(true);
     expect(isSettingsLink("rakazo:///account?focus=usage")).toBe(true);
     expect(isSettingsLink("rakazo://integrations/")).toBe(true);
@@ -97,10 +103,12 @@ describe("settings links", () => {
       "rakazo:///thread?botId=bot-1",
     );
     expect(close).toHaveBeenCalledTimes(1);
+    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial: true })).toBe("/share");
+    expect(close).toHaveBeenCalledTimes(2);
     expect(redirectSystemPath({ path: "rakazo:///artifacts", initial: false })).toBe(
       "rakazo:///artifacts",
     );
-    expect(close).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(3);
     unregister();
   });
 });

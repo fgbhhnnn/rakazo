@@ -1,9 +1,8 @@
 import type { ModelCallObserver } from "@rakazo/adapter-kit";
+import { HOSTED_MODEL_CREDITS_REQUIRED_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
-  billingAccountForOrganization,
   creditAccount,
-  hasBillingAccess,
   organizationForMember,
   recordModelCreditReceipt,
   reserveModelCredits,
@@ -15,22 +14,12 @@ export class HostedModelCreditsRequiredError extends Error {}
 export async function hostedModelCreditObserver(
   prisma: PrismaClient,
   scope: { userId: string; spaceId: string },
-): Promise<ModelCallObserver | undefined> {
-  const settings = await prisma.deploymentSettings.findUnique({
-    where: { id: "default" },
-    select: { ownerUserId: true },
-  });
-  if (settings?.ownerUserId === scope.userId) return undefined;
+): Promise<ModelCallObserver> {
   const membership = await organizationForMember(prisma, scope);
   if (!membership) throw new Error("Model credit account is unavailable");
-  const legacy = await billingAccountForOrganization(prisma, membership.organizationId);
-  if (legacy && legacy.creditAmountCents == null && hasBillingAccess(legacy.status))
-    return undefined;
   const account = await creditAccount(prisma, membership.organizationId);
   if (account.mode !== "credits")
-    throw new HostedModelCreditsRequiredError(
-      "Connect your own API key in Models or choose Rakazo credits in Billing.",
-    );
+    throw new HostedModelCreditsRequiredError(HOSTED_MODEL_CREDITS_REQUIRED_ERROR);
   return {
     beforeCall: (call) =>
       reserveModelCredits(prisma, membership.organizationId, call.maxCostUsd ?? Number.NaN, {

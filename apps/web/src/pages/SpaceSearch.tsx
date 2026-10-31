@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { SearchHit } from "@rakazo/contracts";
 import { searchHitListKey } from "@rakazo/core";
@@ -32,21 +33,39 @@ export function SpaceSearchResults({
           key={searchHitListKey(hit)}
           type="button"
           onClick={() => onSelect(hit)}
-          className="rounded-xl px-2.5 py-[11px] text-start hover:bg-background"
+          className="rounded-xl px-2.5 py-[11px] text-start hover:bg-sidebar-accent"
         >
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[15px] font-medium text-foreground" dir="auto">
               {hit.title}
             </span>
             <span className="shrink-0 text-[12px] uppercase tracking-wide text-muted-foreground/80">
-              {hit.kind}
+              {searchKindLabel(hit)}
             </span>
           </div>
-          <div className="mt-0.5 truncate text-[13px] text-muted-foreground" dir="auto">
-            {hit.groupName ?? hit.botName} · {hit.snippet}
+          <div className="mt-0.5 flex min-w-0 gap-2 text-[13px] text-muted-foreground" dir="auto">
+            <span className="max-w-[40%] shrink-0 truncate text-foreground/75">
+              {hit.groupName ?? hit.botName}
+            </span>
+            <span className="truncate">{hit.snippet}</span>
           </div>
         </button>
       ))}
     </div>
   );
+}
+
+function searchKindLabel(hit: SearchHit): string {
+  switch (hit.kind) {
+    case "conversation":
+      return hit.groupId ? t`Group` : t`Bot`;
+    case "message":
+      return t`Message`;
+    case "file":
+      return t`File`;
+    case "link":
+      return t`Link`;
+    case "routine":
+      return t`Routine`;
+  }
 }

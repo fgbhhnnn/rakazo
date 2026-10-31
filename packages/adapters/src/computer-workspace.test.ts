@@ -1,18 +1,35 @@
 import { execFileSync } from "node:child_process";
-import { access, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  checkpointAndStopComputer,
   checkpointComputerWorkspace,
+  checkpointRunComputerWorkspace,
+  deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
   removeComputerWorkspaceDirectories,
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
   shouldSkipPortableWorkspaceFile,
   teamBrowserProfileName,
+  WORKSPACE_SAVE_LIMITS,
 } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
@@ -58,6 +75,36 @@ describe("provider-neutral computer workspace", () => {
     expect(shouldSkipPortableWorkspaceFile("project/WidevineCdm/notes.txt")).toBe(false);
   });
 
+  it("limits saves to 5 GiB and one million files", () => {
+    expect(WORKSPACE_SAVE_LIMITS).toEqual({ maxBytes: 5 * 1024 ** 3, maxFiles: 1_000_000 });
+  });
+
+  it("skips dependencies and caches before counting a remote export", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision(
+      { botId: "cache-test", homePath: "/ignored" },
+      context,
+    );
+    for (const file of [
+      "project/node_modules/lib/data",
+      ".cache/uv/data",
+      "run.log",
+      "packages/core/keep.txt",
+    ]) {
+      await provider.writeFile(computer, { path: file, content: Buffer.from("ok") }, context);
+    }
+    await checkpointComputerWorkspace(home, provider, "cache-test", computer, context, undefined, {
+      maxBytes: 2,
+      maxFiles: 1,
+    });
+    const files = [];
+    for await (const file of home.exportHome("cache-test", context)) files.push(file.path);
+    expect(files).toEqual(["packages/core/keep.txt"]);
+  });
+
   it("prepares shared and bot folders for a Team Computer", async () => {
     const provider = new FakeSandboxProvider();
     const computer = await provider.provision(
@@ -74,6 +121,116 @@ describe("provider-neutral computer workspace", () => {
       context,
     );
   });
+
+  it("leaves deleted bots' folders and browser profiles out of a Team Computer checkpoint", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision({ botId: "team", homePath: "/ignored" }, context);
+    for (const file of [
+      "bots/gone/notes.txt",
+      `.browser-profiles/${teamBrowserProfileName("gone")}/Cookies`,
+      "bots/gone-too/notes.txt",
+      "bots/kept/notes.txt",
+      `.browser-profiles/${teamBrowserProfileName("kept")}/Cookies`,
+      "shared/bots/gone/plan.txt",
+    ]) {
+      await provider.writeFile(
+        computer,
+        { path: file, content: new TextEncoder().encode(file) },
+        context,
+      );
+    }
+    const deleted = [{ id: "gone" }];
+    const findMany = vi.fn(async () => deleted);
+    // A bot deleted while the export is in flight is left out too.
+    const exportWorkspace = provider.exportWorkspace.bind(provider);
+    vi.spyOn(provider, "exportWorkspace").mockImplementation(async function* (...args) {
+      yield* exportWorkspace(...args);
+      deleted.push({ id: "gone-too" });
+    });
+
+    await checkpointComputerWorkspace(home, provider, "team", computer, context, {
+      prisma: {
+        botDeletion: { findMany },
+        computer: {
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      } as never,
+      computer: { id: "computer-1", scope: "team", spaceId: "workspace" },
+    });
+
+    const saved: string[] = [];
+    for await (const file of home.exportHome("team", context)) saved.push(file.path);
+    expect(saved.sort()).toEqual(
+      [
+        `.browser-profiles/${teamBrowserProfileName("kept")}/Cookies`,
+        "bots/kept/notes.txt",
+        "shared/bots/gone/plan.txt",
+      ].sort(),
+    );
+    expect(findMany).toHaveBeenCalledWith({
+      where: { spaceId: "workspace" },
+      select: { id: true },
+    });
+    await expect(
+      deletedTeamBotFolders({ botDeletion: { findMany } } as never, {
+        scope: "dedicated",
+        spaceId: "workspace",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    { when: "marked before", first: { restorePending: true }, exported: false },
+    { when: "starting before", first: { state: "booting" }, exported: false },
+    { when: "started during", second: { screenGeneration: 1 }, exported: true },
+    { when: "marked before", first: { restorePending: true }, exported: false, kind: "docker" },
+  ])(
+    "saves nothing from a run's $kind computer $when the export",
+    async ({ first, second, exported, kind = "fake" }) => {
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-restoring-"));
+      roots.push(root);
+      const home = new LocalAgentHomeStore(root);
+      const provider = new FakeSandboxProvider();
+      const computer = {
+        ...(await provider.provision({ botId: "bot-1", homePath: "/ignored" }, context)),
+        // A Docker computer mounts the home, so its save only records a new revision.
+        kind: kind as ComputerRef["kind"],
+      };
+      await provider.writeFile(computer, { path: "a.txt", content: Buffer.from("a") }, context);
+      const exportWorkspace = vi.spyOn(provider, "exportWorkspace");
+      const commit = vi.spyOn(home, "commit");
+      const revise = vi.spyOn(home, "revise");
+      const running = { state: "running", restorePending: false, screenGeneration: 0 };
+      const findFirst = vi
+        .fn()
+        .mockResolvedValueOnce({ ...running, ...first })
+        .mockResolvedValue({ ...running, ...second });
+      const updateMany = vi.fn();
+
+      await expect(
+        checkpointRunComputerWorkspace(
+          {
+            sandbox: provider,
+            home,
+            prisma: {
+              botDeletion: { findMany: async () => [] },
+              computer: { findFirst, updateMany },
+            } as never,
+          },
+          { id: "computer-1", homeKey: "bot-1", scope: "dedicated", spaceId: "workspace" },
+          computer,
+          context,
+        ),
+      ).resolves.toBeUndefined();
+      expect(exportWorkspace).toHaveBeenCalledTimes(exported ? 1 : 0);
+      expect(commit).not.toHaveBeenCalled();
+      expect(revise).not.toHaveBeenCalled();
+      expect(updateMany).not.toHaveBeenCalled();
+    },
+  );
 
   it("restores a checkpoint into a replacement provider machine", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
@@ -116,10 +273,20 @@ describe("Team run checkpoints", () => {
     const { checkpointRunComputerWorkspace } = await import("./computer-workspace.js");
     const exportWorkspace = vi.fn();
     const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const deps = { sandbox: { exportWorkspace }, home: {}, prisma: { computer: { updateMany } } };
+    const deps = {
+      sandbox: { exportWorkspace },
+      home: {},
+      prisma: {
+        computer: {
+          updateMany,
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+        botDeletion: { findMany: async () => [] },
+      },
+    };
     const result = await checkpointRunComputerWorkspace(
       deps as never,
-      { id: "team", homeKey: "team", scope: "team" },
+      { id: "team", homeKey: "team", scope: "team", spaceId: "workspace-1" },
       { id: "remote", providerRef: "remote", kind: "e2b", botId: "team" },
       { ...context, botId: "writer", screenLeaseId: "run-a:2" },
     );
@@ -145,11 +312,21 @@ describe("Team run checkpoints", () => {
       await Promise.reject(new Error("export failed"));
       yield { path: "unreachable", content: new Uint8Array() };
     });
-    const deps = { sandbox: { exportWorkspace }, home: {}, prisma: { computer: { updateMany } } };
+    const deps = {
+      sandbox: { exportWorkspace },
+      home: {},
+      prisma: {
+        computer: {
+          updateMany,
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+        botDeletion: { findMany: async () => [] },
+      },
+    };
     await expect(
       checkpointRunComputerWorkspace(
         deps as never,
-        { id: "team", homeKey: "team", scope: "team" },
+        { id: "team", homeKey: "team", scope: "team", spaceId: "workspace-1" },
         { id: "remote", providerRef: "remote", kind: "boat", botId: "team" },
         { ...context, botId: "writer", screenLeaseId: "run-a:2" },
       ),
@@ -161,6 +338,83 @@ describe("Team run checkpoints", () => {
       where: { id: "team", providerRef: "remote", state: "suspending" },
       data: { state: "running" },
     });
+  });
+});
+
+describe("checkpointAndStopComputer", () => {
+  const record = { id: "computer-1", homeKey: "home-1", scope: "dedicated", spaceId: "space-1" };
+  const ref: ComputerRef = { id: "boat-1", providerRef: "boat-1", kind: "boat", botId: "home-1" };
+
+  function sandboxFailingWith(error: Error) {
+    return {
+      // biome-ignore lint/correctness/useYield: the export fails before its first file
+      exportWorkspace: async function* () {
+        throw error;
+      },
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("saves a healthy computer, then stops it as before", async () => {
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const sandbox = { exportWorkspace: async function* () {}, stop };
+    const commit = vi.fn().mockResolvedValue("revision-1");
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const deps = {
+      sandbox,
+      home: { commit },
+      prisma: {
+        computer: {
+          updateMany,
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      },
+    };
+
+    await checkpointAndStopComputer(deps as never, record, ref, context);
+
+    expect(commit).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1" },
+      data: { homeRevision: "revision-1", homeRevisionAt: expect.any(Date) },
+    });
+    expect(stop.mock.calls).toEqual([[ref, context]]);
+    expect(stop.mock.calls[0]).toHaveLength(2);
+  });
+
+  it("stops a damaged computer without its save", async () => {
+    const sandbox = sandboxFailingWith(new SandboxDamagedError());
+    const deps = {
+      sandbox,
+      home: {},
+      prisma: {
+        computer: {
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      },
+    };
+
+    await checkpointAndStopComputer(deps as never, record, ref, context);
+
+    expect(sandbox.stop).toHaveBeenCalledWith(ref, context, { discardUnsaved: true });
+  });
+
+  it("leaves a computer whose save fails for another reason running", async () => {
+    const sandbox = sandboxFailingWith(new Error("export failed"));
+    const deps = {
+      sandbox,
+      home: {},
+      prisma: {
+        computer: {
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      },
+    };
+
+    await expect(checkpointAndStopComputer(deps as never, record, ref, context)).rejects.toThrow(
+      "export failed",
+    );
+    expect(sandbox.stop).not.toHaveBeenCalled();
   });
 });
 
@@ -269,6 +523,51 @@ describe("Team bot folder cleanup", () => {
       "not a folder",
     );
     await expect(access(path.join(workspace, "bots", "deleted-b"))).rejects.toThrow();
+  });
+
+  it("removes a deleted bot's folder that holds Go's read-only module cache", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "rakazo-team-wake-readonly-"));
+    roots.push(workspace);
+    const module = path.join(workspace, "bots/deleted-bot/go/pkg/mod/example.com/m@v1.0.0");
+    await mkdir(path.join(workspace, "outside"), { mode: 0o555 });
+    await seedFile(module, "go.mod", "module example.com/m\n");
+    await symlink(path.join(workspace, "outside"), path.join(module, "outside"));
+    await chmod(module, 0o555);
+    await chmod(path.dirname(module), 0o555);
+
+    await removeComputerWorkspaceDirectories(
+      localWorkspaceSandbox(workspace),
+      computer,
+      "bots",
+      ["deleted-bot"],
+      context,
+    );
+
+    await expect(access(path.join(workspace, "bots", "deleted-bot"))).rejects.toThrow();
+    expect((await stat(path.join(workspace, "outside"))).mode & 0o777).toBe(0o555);
+  });
+
+  it("leaves the mode of a file the deleted bot's folder links to", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "rakazo-team-wake-hardlink-"));
+    roots.push(workspace);
+    await seedFile(workspace, "shared/keep.txt", "keep");
+    await chmod(path.join(workspace, "shared/keep.txt"), 0o444);
+    await mkdir(path.join(workspace, "bots/deleted-bot"), { recursive: true });
+    await link(
+      path.join(workspace, "shared/keep.txt"),
+      path.join(workspace, "bots/deleted-bot/keep.txt"),
+    );
+
+    await removeComputerWorkspaceDirectories(
+      localWorkspaceSandbox(workspace),
+      computer,
+      "bots",
+      ["deleted-bot"],
+      context,
+    );
+
+    await expect(access(path.join(workspace, "bots", "deleted-bot"))).rejects.toThrow();
+    expect((await stat(path.join(workspace, "shared/keep.txt"))).mode & 0o777).toBe(0o444);
   });
 
   it("does not look up deletions when the Team Computer has no bot folders", async () => {

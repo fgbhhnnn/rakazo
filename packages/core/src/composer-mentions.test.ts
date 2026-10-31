@@ -5,6 +5,7 @@ import {
   buildComposerMentionOptions,
   connectorIntentLine,
   mentionChipKey,
+  mentionConnectorsFrom,
   partitionComposerMentions,
   resolveComposerSendPlan,
   routineScheduleSubtitle,
@@ -58,6 +59,38 @@ describe("buildComposerMentionOptions", () => {
     expect(options[1]?.subtitle).toContain("Writer");
     expect(mentionChipKey(options[0]!)).toBe("routine:r1");
     expect(mentionChipKey(options[1]!)).toBe("routine:r2");
+  });
+
+  it("offers only the group's own members as bots in a group chat", () => {
+    const bots = [
+      { id: "chief", name: "Chief" },
+      { id: "new", name: "New Bot" },
+      { id: "site", name: "wp建站" },
+      { id: "wa", name: "大道出海whatsapp" },
+    ];
+    const base = { query: "", bots, groups: [], routines: [], connectors: [] };
+    const inGroup = buildComposerMentionOptions({
+      ...base,
+      includeEveryone: true,
+      currentGroupId: "g1",
+      groupMemberBotIds: ["site", "wa"],
+    });
+    expect(inGroup.map((option) => option.id)).toEqual(["everyone", "site", "wa"]);
+    // Before the roster is known, no outside bot is offered.
+    const unknown = buildComposerMentionOptions({
+      ...base,
+      includeEveryone: true,
+      currentGroupId: "g1",
+      groupMemberBotIds: [],
+    });
+    expect(unknown.map((option) => option.id)).toEqual(["everyone"]);
+    // A direct chat is unchanged: every bot can be mentioned.
+    expect(buildComposerMentionOptions(base).map((option) => option.id)).toEqual([
+      "chief",
+      "new",
+      "site",
+      "wa",
+    ]);
   });
 
   it("skips the current group", () => {
@@ -255,4 +288,28 @@ it("searches the readable fallback when a mention name is opaque", () => {
       connectors: [],
     }),
   ).toEqual([{ kind: "bot", id: "bot-1", name: "Bot", subtitle: "Bot", color: undefined }]);
+});
+
+describe("mentionConnectorsFrom", () => {
+  it("lists connected apps, then catalog apps not yet covered by a connection", () => {
+    const catalogItem = { connected: false, noAuth: false };
+    expect(
+      mentionConnectorsFrom(
+        [
+          { id: "c1", displayName: "Gmail", provider: "gmail", status: "connected" },
+          { id: "c2", displayName: "Notion", provider: "notion", status: "revoked" },
+        ],
+        [
+          { ...catalogItem, connectorId: "k", slug: "GMAIL", name: "Google Mail" },
+          { ...catalogItem, connectorId: "k", slug: "gmail-work", name: "gmail" },
+          { ...catalogItem, connectorId: "k", slug: "notion", name: "Notion" },
+          { ...catalogItem, connectorId: "k", slug: "slack", name: "Slack", connected: true },
+          { ...catalogItem, connectorId: "k", slug: "weather", name: "Weather", noAuth: true },
+        ],
+      ),
+    ).toEqual([
+      { id: "c1", name: "Gmail", authStatus: "connected", connectionId: "c1" },
+      { id: "catalog:k:notion", name: "Notion", authStatus: "needs_auth" },
+    ]);
+  });
 });
