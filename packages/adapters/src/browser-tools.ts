@@ -6,10 +6,11 @@ import type {
   ComputerRef,
 } from "@rakazo/adapter-kit";
 import { MAX_BROWSER_UPLOAD_FILES } from "@rakazo/adapter-kit";
-import type { PurchaseCardField } from "@rakazo/contracts";
+import type { LoginFailureReason, PurchaseCardField } from "@rakazo/contracts";
 import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { redactConnectorPayload } from "./connector-safety.js";
+import { loginFillFailure } from "./login-failure.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 
 const MAX_BROWSER_ACTIONS = 24;
@@ -46,7 +47,9 @@ export type BrowserActInput = BrowserActStep | SecretFillStep | CardFillStep | P
 export type PageToolOptions = { desktopTools?: boolean };
 export type ResolveSecretFill = (
   step: SecretFillStep,
-) => Promise<{ text: string; origin: string; hidden: boolean } | { error: string }>;
+) => Promise<
+  { text: string; origin: string; hidden: boolean } | { error: string; reason?: LoginFailureReason }
+>;
 
 export type ResolveCardFill = (
   step: CardFillStep,
@@ -127,6 +130,19 @@ export async function browserActFromTool(
     uploadRoots?: string[];
   } = {},
 ) {
+  const secretFill =
+    Array.isArray(args.actions) && args.actions.some((step) => step?.kind === "fill_secret");
+  if (secretFill && browser.describe().capabilities.page === false)
+    return {
+      ...refusedInput("This computer has no page browser."),
+      reason: "no_page_browser",
+      completed: 0,
+    };
+  const resultForModel = <T extends { error?: string }>(result: T) =>
+    redactBrowserResult(
+      secretFill ? loginFillFailure(result) : result,
+      options.redactions?.() ?? [],
+    );
   try {
     const actions: BrowserActStep[] = [];
     // Resolve every saved login and card before acting, so a missing one cannot leave a
@@ -171,7 +187,9 @@ export async function browserActFromTool(
         continue;
       }
       const card = step.kind === "fill_card";
-      let resolved: { text: string; origin: string; hidden?: boolean } | { error: string };
+      let resolved:
+        | { text: string; origin: string; hidden?: boolean }
+        | { error: string; reason?: LoginFailureReason };
       try {
         resolved = card
           ? options.resolveCardFill
@@ -195,9 +213,15 @@ export async function browserActFromTool(
             card ? "This card could not be loaded." : "This saved login could not be loaded.",
           ),
           completed: 0,
+          ...(!card ? { reason: "unknown" } : {}),
         };
       }
-      if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
+      if ("error" in resolved)
+        return {
+          ...refusedInput(resolved.error),
+          completed: 0,
+          ...(!card ? { reason: resolved.reason ?? "unknown" } : {}),
+        };
       const { text, origin } = resolved;
       if (step.ref === undefined) {
         actions.push({ kind: "fill", text, origin, field: "card", cardField: step.field });
@@ -214,20 +238,18 @@ export async function browserActFromTool(
       }
     }
     const result = await browser.act(computer, { actions, signal: context.signal }, context);
-    return redactBrowserResult(formatBrowserResult(result, options), options.redactions?.() ?? []);
+    return resultForModel(formatBrowserResult(result, options));
   } catch (error) {
     context.signal.throwIfAborted();
     if (error instanceof BrowserToolInputError)
-      return { ...refusedInput(error.message), completed: 0 };
-    return formatBrowserResult(
-      {
-        ok: false,
-        uncertain: true,
-        error: error instanceof Error ? error.message : String(error),
-        fallback: "computer_act",
-      },
-      options,
-    );
+      return resultForModel({ ...refusedInput(error.message), completed: 0 });
+    const failure = {
+      ok: false,
+      uncertain: true,
+      error: error instanceof Error ? error.message : String(error),
+      fallback: "computer_act" as const,
+    };
+    return resultForModel(formatBrowserResult(failure, options));
   }
 }
 

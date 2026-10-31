@@ -1,7 +1,7 @@
 import { File, Paths } from "expo-file-system";
 import type { SharePayload } from "expo-sharing";
-import { clearSharedPayloads, getSharedPayloads } from "expo-sharing";
 import { Platform } from "react-native";
+import { clearSharedPayloads, getSharedPayloads } from "./native-incoming-share";
 
 export type IncomingShare = {
   text: string;

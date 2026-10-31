@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { JobPublisher, ProductAnalytics, SandboxProvider } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { stopThreadRunsForBots } from "@rakazo/adapters";
+import { consumeGroupTeamRunStop, stopThreadRunsForBots } from "@rakazo/adapters";
 import type {
   Actor,
   GroupMember,
@@ -21,6 +21,7 @@ import {
   callIdFromClientNonce,
   deferredHandoffTargetId,
   isConversationalRun,
+  isHumanAuthoredMessage,
   messageBypassesTakeoverWait,
   messageReaction,
   projectMessages,
@@ -257,7 +258,7 @@ export async function cancelSupersededQueuedRuns(
   tx: Prisma.TransactionClient,
   input: { threadId: string; botIds: string[]; keepRunIds: string[] },
 ) {
-  const superseded = await tx.run.findMany({
+  const candidates = await tx.run.findMany({
     where: {
       threadId: input.threadId,
       botId: { in: input.botIds },
@@ -265,8 +266,16 @@ export async function cancelSupersededQueuedRuns(
       OR: [{ trigger: "user", sourceMessage: { role: "user" } }, { trigger: "reaction" }],
       id: { notIn: input.keepRunIds },
     },
-    select: { id: true, taskId: true },
+    select: {
+      id: true,
+      taskId: true,
+      trigger: true,
+      sourceMessage: { select: { role: true, botId: true, blocks: true } },
+    },
   });
+  const superseded = candidates.filter(
+    (run) => run.trigger === "reaction" || isHumanAuthoredMessage(run.sourceMessage),
+  );
   if (superseded.length === 0) return;
   const now = new Date();
   await tx.run.updateMany({
@@ -1068,6 +1077,13 @@ export async function sendThreadMessage(
         clientNonce: input.clientNonce,
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
+      const stopped = await consumeGroupTeamRunStop(tx, {
+        spaceId: actor.spaceId,
+        groupId: target.groupId,
+        message,
+        eventPayload: { callId, replyToMessageId, replyQuote, replyPreview },
+      });
+      if (stopped) return { ...stopped, routineRuns };
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {

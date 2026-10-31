@@ -1,8 +1,8 @@
-import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { humanAnchorForRun } from "./group-team-run-anchor.js";
 import { teamRunEndMakesRecheckStale } from "./group-team-run-followups.js";
 import { endTeamRun } from "./group-team-run-gate.js";
+import { interruptedTeamRun } from "./group-team-run-interrupted.js";
 
 /**
  * Closing a group team run the moment the human writes again, not only when one of its own turns
@@ -10,15 +10,6 @@ import { endTeamRun } from "./group-team-run-gate.js";
  * over ("a newer human message always ends the run"). Without this a run interrupted while a
  * member's turn was being retried stayed active forever.
  */
-
-function blocksText(blocks: unknown): string {
-  return Array.isArray(blocks)
-    ? (blocks as MessageBlock[])
-        .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-        .join("")
-        .trim()
-    : "";
-}
 
 /** Ends the thread's active team runs started by a human message older than `anchor`. */
 export async function supersedeEarlierTeamRuns(
@@ -53,36 +44,7 @@ export async function interruptedTeamRunGoal(
   threadId: string,
   anchor: { id: string; seq: number },
 ): Promise<string | undefined> {
-  const message = await prisma.message.findUnique({
-    where: { id: anchor.id },
-    select: { createdAt: true },
-  });
-  if (!message) return undefined;
-  const ended = await prisma.groupTeamRun.findMany({
-    where: {
-      threadId,
-      status: "superseded",
-      originMessageId: { not: anchor.id },
-      endedAt: { gte: message.createdAt },
-    },
-    orderBy: { endedAt: "desc" },
-    select: { originMessageId: true },
-    take: 5,
-  });
-  for (const row of ended) {
-    const origin = await prisma.message.findUnique({
-      where: { id: row.originMessageId },
-      select: { seq: true, blocks: true },
-    });
-    // Only a run whose request came before this message, and only the one this message ended:
-    // a later human message would have ended it, and that message is the newer anchor.
-    if (!origin || origin.seq >= anchor.seq) continue;
-    const between = await prisma.message.count({
-      where: { threadId, role: "user", seq: { gt: origin.seq, lt: anchor.seq } },
-    });
-    if (between === 0) return blocksText(origin.blocks) || " ";
-  }
-  return undefined;
+  return (await interruptedTeamRun(prisma, threadId, anchor))?.goal;
 }
 
 /**

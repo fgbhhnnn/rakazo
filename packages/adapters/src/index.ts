@@ -78,6 +78,7 @@ export * from "./github-webhook-emulator.js";
 export * from "./graphql-connectors.js";
 export { reconcileTeammateQuestions } from "./group-consult.js";
 export * from "./group-handoff.js";
+export { consumeGroupTeamRunStop } from "./group-team-run-stop-intent.js";
 export * from "./home.js";
 export * from "./home-object-store.js";
 export { HonchoMemoryProvider } from "./honcho-memory-provider.js";

@@ -19,6 +19,7 @@ import { getLogger } from "@rakazo/logging";
 import { laneOfTask, laneQueueOrder } from "./background-task-lanes.js";
 import { ACTIVE_TASK_STATUSES } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
+import { teamTaskProgressIsCurrent } from "./group-team-run-stop.js";
 import { activitySummary, summarizeWorkerActivity } from "./worker-activity.js";
 import { isIncompleteContinuing } from "./worker-incomplete-result.js";
 import { workerPending } from "./worker-needs-user.js";
@@ -426,6 +427,13 @@ async function refreshNow(
   const events = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+      if (
+        !(await teamTaskProgressIsCurrent(
+          tx,
+          [...snapshots.values()].map((snapshot) => snapshot.row),
+        ))
+      )
+        return [];
       // Someone else rewrote the card since we read it: their write wins, the next pass redoes ours.
       const current = await latestCard(tx as never, threadId, botId, since);
       if (

@@ -234,6 +234,7 @@ async function runTool(
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     sandbox: {
       describe: () => ({ id: "e2b", capabilities: { graphical: true } }),
+      pageBrowser: vi.fn(),
       releaseScreen: vi.fn(async () => undefined),
       execute: vi.fn(async function* () {
         if (options.printed) yield { type: "stdout" as const, data: options.printed };
@@ -252,7 +253,7 @@ async function runTool(
       append: vi.fn(async () => undefined),
       finalizeRun: vi.fn(async () => ({ continuationRunId: null })),
       pauseRunForTakeover: vi.fn(async () => false),
-      pauseRunForInput: vi.fn(async () => true),
+      pauseRunForInput: vi.fn(async () => ({ continuationRunId: null })),
       notify: vi.fn(async () => undefined),
     },
     jobs: { enqueue: vi.fn(async () => undefined) },

@@ -45,6 +45,7 @@ export * from "./run-timing.js";
 export * from "./run-turn-checkpoint.js";
 export * from "./sandbox-allowance.js";
 export * from "./scope.js";
+export * from "./secret-request-policy.js";
 export * from "./security-events.js";
 export * from "./sessions.js";
 export * from "./space-settings.js";

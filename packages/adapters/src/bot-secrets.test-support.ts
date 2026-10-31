@@ -57,6 +57,7 @@ export function fakeDatabase() {
   };
   const client: Record<string, unknown> = {
     vaultCredential,
+    run: { findMany: vi.fn(async () => []) },
     spaceSettingOverride: {
       findUnique: vi.fn(
         async ({ where }: { where: { spaceId_userId_setting: { spaceId: string } } }) =>

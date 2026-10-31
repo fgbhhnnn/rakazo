@@ -354,6 +354,7 @@ describe("browser tools", () => {
     it("tells every page browser a hidden field is a password and a visible one a username", async () => {
       const acts: unknown[] = [];
       const recorder = {
+        describe: () => new FakeBrowserProvider().describe(),
         act: async (_computer: unknown, input: { actions: unknown[] }) => {
           acts.push(...input.actions);
           return { ok: true, completed: input.actions.length };
@@ -588,6 +589,7 @@ describe("browser tools", () => {
         completed: 0,
         uncertain: false,
         error: "Saved logins are unavailable here.",
+        reason: "unknown",
       });
       const snap = await browserSnapshotFromTool(browser, computer, context, {});
       expect(JSON.stringify(snap)).not.toContain("typed-before");
@@ -705,6 +707,7 @@ describe("browser tools", () => {
         completed: 0,
         uncertain: false,
         error: "This saved login could not be loaded.",
+        reason: "unknown",
       });
       expect(JSON.stringify(result)).not.toContain("canary");
       expect(act).not.toHaveBeenCalled();
@@ -837,7 +840,13 @@ describe("browser tools", () => {
           { actions },
           { desktopTools, resolveSecretFill },
         );
-        expect(result).toEqual({ ok: false, completed: 0, uncertain: false, error });
+        expect(result).toEqual({
+          ok: false,
+          completed: 0,
+          uncertain: false,
+          error,
+          ...(actions.some((action) => action.kind === "fill_secret") ? { reason: "unknown" } : {}),
+        });
       }
       expect(act).not.toHaveBeenCalled();
       expect(resolveSecretFill).not.toHaveBeenCalled();
