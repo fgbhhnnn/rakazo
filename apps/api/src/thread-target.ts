@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { JobPublisher, ProductAnalytics, SandboxProvider } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { stopThreadRunsForBots } from "@rakazo/adapters";
+import { consumeGroupTeamRunStop, stopThreadRunsForBots } from "@rakazo/adapters";
 import type {
   Actor,
   GroupMember,
@@ -1077,6 +1077,13 @@ export async function sendThreadMessage(
         clientNonce: input.clientNonce,
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
+      const stopped = await consumeGroupTeamRunStop(tx, {
+        spaceId: actor.spaceId,
+        groupId: target.groupId,
+        message,
+        eventPayload: { callId, replyToMessageId, replyQuote, replyPreview },
+      });
+      if (stopped) return { ...stopped, routineRuns };
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
