@@ -135,9 +135,6 @@ async function runHelper(
           HOME: screen.env.workspaceDir,
           RAKAZO_BROWSER_ARGS_STDIN: "1",
           RAKAZO_BROWSER_WATCH_STDIN: "1",
-          ...(process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES !== undefined
-            ? { RAKAZO_BROWSER_UPLOAD_MAX_BYTES: process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES }
-            : {}),
         },
         onStdout: countOutput,
         onStderr: countOutput,

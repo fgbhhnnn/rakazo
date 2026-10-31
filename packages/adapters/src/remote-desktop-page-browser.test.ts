@@ -324,32 +324,23 @@ describe("remote page browser", () => {
     expect(f.start).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps upload paths relative to the portable workspace and forwards its limit", async () => {
+  it("keeps upload paths relative to the portable workspace and uses the helper's default limit", async () => {
     const f = fixture();
-    const previous = process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES;
-    process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES = "12345";
-    try {
-      const body: PageBrowserCommand = {
-        command: "act",
-        actions: [
-          {
-            kind: "upload",
-            ref: "e1",
-            paths: ["bots/bot/file.txt"],
-            roots: ["bots/bot", "shared"],
-          },
-        ],
-      };
-      await f.call(body);
-      expect(f.handle.sendStdin.mock.calls[0]![0]).toBe(`${JSON.stringify(body)}\n`);
-      expect(f.start.mock.calls[0]![1].envs).toMatchObject({
-        HOME: "/home/user/rakazo-home",
-        RAKAZO_BROWSER_UPLOAD_MAX_BYTES: "12345",
-      });
-    } finally {
-      if (previous === undefined) delete process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES;
-      else process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES = previous;
-    }
+    const body: PageBrowserCommand = {
+      command: "act",
+      actions: [
+        {
+          kind: "upload",
+          ref: "e1",
+          paths: ["bots/bot/file.txt"],
+          roots: ["bots/bot", "shared"],
+        },
+      ],
+    };
+    await f.call(body);
+    expect(f.handle.sendStdin.mock.calls[0]![0]).toBe(`${JSON.stringify(body)}\n`);
+    expect(f.start.mock.calls[0]![1].envs).toMatchObject({ HOME: "/home/user/rakazo-home" });
+    expect(f.start.mock.calls[0]![1].envs).not.toHaveProperty("RAKAZO_BROWSER_UPLOAD_MAX_BYTES");
   });
 
   it("kills the helper if EOF cannot be delivered", async () => {
