@@ -23,11 +23,18 @@ test("dictation previews Chinese and leaves the message in the draft", async ({
   await completeOnboarding(page);
   const composer = page.getByRole("combobox", { name: /Message/ });
   await composer.fill("Review");
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  const dictate = page.getByRole("button", { name: "Dictate", exact: true });
+  await expect(send).toBeEnabled();
+  await composer.press("Tab");
+  await expect(send).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dictate).toBeFocused();
   let sends = 0;
   page.on("request", (request) => {
     if (request.url().includes("/rpc/threads/send")) sends += 1;
   });
-  await page.getByRole("button", { name: "Dictate", exact: true }).click();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("status").filter({ hasText: "你好世界" })).toBeVisible();
   await expect(composer).toHaveValue("Review");
   const path = testInfo.outputPath("composer-dictation.png");

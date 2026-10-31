@@ -890,6 +890,16 @@ export const Composer = memo(function Composer({
             <HoldToTalkControls talk={talk} />
           ) : (
             <>
+              {/* Keep Send next in tab order after the field and last visually. */}
+              <Button
+                size="icon"
+                aria-label={t`Send`}
+                disabled={sending || !canSend || disabled}
+                onClick={() => void send()}
+                className="order-last size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
+              >
+                <ArrowUp size={16} strokeWidth={2.2} />
+              </Button>
               <DictateButton
                 key={draftKey}
                 transcribe={dictationTranscribe}
@@ -899,15 +909,6 @@ export const Composer = memo(function Composer({
               {phoneCallsEnabled && draft.trim().length === 0 ? (
                 <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
               ) : null}
-              <Button
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || !canSend || disabled}
-                onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
             </>
           )}
         </div>
