@@ -63,6 +63,12 @@ import {
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
+import {
+  chatPasswordRunRedactions,
+  chatPasswordTurnNote,
+  protectChatPasswordTurn,
+  protectSteeringPasswords,
+} from "./chat-password-hygiene.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -88,6 +94,7 @@ import {
 import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { addRunSecrets } from "./run-context.js";
 
 export type { ExecutorDeps } from "./executor-deps.js";
 
@@ -641,6 +648,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ...purchaseRedactions,
           ...runLoginRedactions,
         );
+        runSecrets.push(...chatPasswordRunRedactions(task.prompt, messages));
+        const protectedTaskPrompt = redactSecrets(task.prompt, runSecrets);
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(
           initialBotCommandEnvironment,
         );
@@ -745,9 +754,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 | "user"
                 | "assistant"
                 | "system",
-              content: isPartialReplyClientNonce(m.clientNonce)
-                ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
-                : messageToAgentHistoryText(m),
+              content: redactSecrets(
+                isPartialReplyClientNonce(m.clientNonce)
+                  ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
+                  : messageToAgentHistoryText(m),
+                runSecrets,
+              ),
             })),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -824,7 +836,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? recallForRun(
                 semanticMemory,
                 {
-                  query: task.prompt,
+                  query: protectedTaskPrompt,
                   scope: memoryScope,
                   botId: bot.id,
                   historyGeneration: thread.historyCompactionGeneration,
@@ -860,7 +872,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? Promise.resolve(undefined)
             : loadAgentTicketContext(deps, {
                 spaceId: run.spaceId,
-                text: task.prompt,
+                text: protectedTaskPrompt,
               }),
           recallPromise,
         ]);
@@ -1289,7 +1301,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           modelScope,
           runId,
           botId: bot.id,
-          taskPrompt: task.prompt,
+          taskPrompt: protectedTaskPrompt,
           ownerStartedRun,
           messagingChannelRun,
           sourceMessage,
@@ -1411,7 +1423,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
 
         const reply = await createReplyState(deps, run, runSecrets);
-        const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
+        const script = scripted
+          ? inferScript(protectedTaskPrompt, takeoverResume?.checkpoint)
+          : undefined;
         const state: RunState = {
           lease,
           computerUse,
@@ -1561,7 +1575,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             )
           : missingTurnImagesInstruction(turnBlocks, currentTurnImages);
         const taskPrompt = expandSkillReferencesInPrompt(
-          [task.prompt, attachedFilesPrompt, missingImagesInstruction].filter(Boolean).join("\n\n"),
+          [protectedTaskPrompt, attachedFilesPrompt, missingImagesInstruction]
+            .filter(Boolean)
+            .join("\n\n"),
           agentSkills,
         );
         const invokedSkill = savedSkills.find((skill) =>
@@ -1623,6 +1639,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
+          chatPasswordTurnNote(task.prompt, turnBlocks),
           workerFilesNote,
           takeoverResume?.promptNote,
           approvalContinuation,
@@ -1670,6 +1687,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 pinned: historicalContext.length,
               })
             : [...historicalContext, ...historyWithImages];
+        const protectedTurn = protectChatPasswordTurn(
+          prompt,
+          runtimeHistory,
+          takeoverResume?.promptNote ?? taskPrompt,
+          runSecrets,
+        );
         // Without a roster a bot only knows the bots it spawned itself.
         const [teammates, groupDirectory] = await Promise.all([
           thread.groupId
@@ -1786,7 +1809,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   operationId: runId,
                 });
               },
-              prompt,
+              prompt: protectedTurn.prompt,
               // Keep an explicit executor override, but let the runtime select
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
@@ -1826,7 +1849,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               })
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),
-              history: runtimeHistory,
+              history: protectedTurn.history,
               currentTurnImages,
               currentRunRequiresImageInput,
               currentTurnImageFileFallback: Boolean(
@@ -1917,9 +1940,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               onCheckpoint: async (capture, executionId) => {
                 effects.pendingTurnCheckpoints.set(executionId, capture);
               },
-              resumeToolResult: {
-                content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
-              },
+              resumeToolResult: protectedTurn.resumeToolResult,
               script,
               allowSilentEmpty: allowSilentEmptyRun,
               emptyResponseText,
@@ -1951,27 +1972,30 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 );
               },
               onStreamActivity: dispatcherWatchdogClear?.touch,
-              claimSteering: (seenIds) =>
-                claimRunSteering(
-                  deps,
-                  {
-                    threadId: thread.id,
-                    botId: bot.id,
-                    runId,
-                    leaseOwner: workerId,
-                    leaseFence: fence,
-                  },
-                  seenIds,
-                  context,
-                  pendingTurnFiles,
-                  {
-                    messageId: currentTurnMessage?.id,
-                    hasImages: Boolean(currentTurnImages?.length),
-                  },
-                  {
-                    withholdImages: dispatcherWithholdsImages(dispatcherTurn),
-                    turnAttachmentBlocks,
-                  },
+              claimSteering: async (seenIds) =>
+                protectSteeringPasswords(
+                  await claimRunSteering(
+                    deps,
+                    {
+                      threadId: thread.id,
+                      botId: bot.id,
+                      runId,
+                      leaseOwner: workerId,
+                      leaseFence: fence,
+                    },
+                    seenIds,
+                    context,
+                    pendingTurnFiles,
+                    {
+                      messageId: currentTurnMessage?.id,
+                      hasImages: Boolean(currentTurnImages?.length),
+                    },
+                    {
+                      withholdImages: dispatcherWithholdsImages(dispatcherTurn),
+                      turnAttachmentBlocks,
+                    },
+                  ),
+                  (values) => addRunSecrets(ctx, values),
                 ),
             },
             context,

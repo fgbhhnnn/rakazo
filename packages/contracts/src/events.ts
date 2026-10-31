@@ -172,6 +172,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answer: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** Closed in favor of the newer secure card; dismissed keeps older clients safe. */
+    superseded: z.literal(true).optional(),
     /** A hidden background worker's approval, mirrored into the main chat and answered there. */
     workerApproval: WorkerApprovalMirror.optional(),
     /** A system card asking whether to restart an unresponsive computer; answered in place. */

@@ -1,6 +1,7 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
 import type {
   BotSecretDestination,
+  LoginFailureReason,
   LoginFieldInput,
   MessageBlock,
   ProductEvent,
@@ -55,6 +56,7 @@ import {
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
+import { supersedeSecretRequests } from "./secret-request-policy.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 import {
@@ -173,6 +175,7 @@ export interface ClaimedSteeringMessage {
 
 export interface FinalizeRunResult {
   continuationRunId: string | null;
+  supersededSecretRunIds?: string[];
 }
 
 interface FinalizeRunBase {
@@ -202,6 +205,7 @@ export type FinalizeRunInput = FinalizeRunBase &
   );
 
 export interface PauseRunForInput {
+  secretRequest?: { userId: string; failureReason?: LoginFailureReason };
   spaceId: string;
   threadId: string;
   botId: string;
@@ -1314,6 +1318,20 @@ export async function pauseRunForInput(
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
+    const ask = input.blocks.find((block) => block.kind === "ask" && block.input === "secret");
+    const supersededSecretRunIds =
+      input.secretRequest && ask?.kind === "ask"
+        ? await supersedeSecretRequests(
+            tx,
+            { ...input, ...input.secretRequest, ask },
+            (messageId, blocks) =>
+              appendEventInTransaction(tx, {
+                ...input,
+                type: "thread.message.updated",
+                payload: { messageId, role: "bot", blocks },
+              }),
+          )
+        : [];
     const message = await createThreadMessageInTransaction(tx, {
       threadId: input.threadId,
       role: "bot",
@@ -1346,6 +1364,7 @@ export async function pauseRunForInput(
     });
     const continuationRunId = await createPendingSteeringRun(tx, input);
     return {
+      supersededSecretRunIds,
       threadId: waitingEvent.threadId,
       seq: waitingEvent.seq,
       continuationRunId,
@@ -1361,7 +1380,12 @@ export async function pauseRunForInput(
     committed.seq,
     committed.firstResponseRunId,
   );
-  return { continuationRunId: committed.continuationRunId };
+  return {
+    continuationRunId: committed.continuationRunId,
+    ...(committed.supersededSecretRunIds.length
+      ? { supersededSecretRunIds: committed.supersededSecretRunIds }
+      : {}),
+  };
 }
 
 export async function pauseRunForTakeover(

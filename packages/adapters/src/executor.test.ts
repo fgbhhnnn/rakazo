@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { BACKGROUND_DISPATCH_GUIDANCE, STEERING_REPLY_GUIDANCE } from "./dispatcher-mode.js";
 import { createRunExecutor as createExecutor } from "./executor.js";
+import { WORKER_LOGIN_FAILURE_GUIDANCE } from "./login-failure.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
@@ -1338,6 +1339,7 @@ describe("userTurnInstructions", () => {
     "update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; when you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
     BACKGROUND_DISPATCH_GUIDANCE,
+    WORKER_LOGIN_FAILURE_GUIDANCE,
     STEERING_REPLY_GUIDANCE,
   ];
   const archiveBot =

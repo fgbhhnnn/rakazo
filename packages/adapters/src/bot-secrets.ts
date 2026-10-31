@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type {
   BotSecretDestination,
+  LoginFailureReason,
   LoginField,
   LoginSecretValue,
   SettingsScope,
@@ -30,6 +31,7 @@ import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import { websiteLoginUseError } from "./credential-page-capability.js";
+import { loginFailure } from "./login-failure.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
 import { generateSecretValue } from "./secret-generator.js";
@@ -717,7 +719,10 @@ export async function requestWithBotSecret(input: {
   if (!row) return { error: "Credential is unavailable. Use request_secret to save it first." };
   const destination = normalizeSecretDestination(row);
   if (destination.auth.type === "login") {
-    return { error: websiteLoginUseError(input.pageBrowserAllowed !== false) };
+    return loginFailure(
+      websiteLoginUseError(input.pageBrowserAllowed !== false),
+      input.pageBrowserAllowed === false ? "no_page_browser" : "unknown",
+    );
   }
   if (destination.auth.type === "command") {
     return {
@@ -940,7 +945,8 @@ export async function resolveLoginFill(input: {
   name: string;
   field: string;
 }): Promise<
-  { text: string; hidden: boolean; origin: string; redactions: string[] } | { error: string }
+  | { text: string; hidden: boolean; origin: string; redactions: string[] }
+  | { error: string; reason: LoginFailureReason }
 > {
   const runLogin = await findRunLogin(
     input.prisma,
@@ -957,10 +963,11 @@ export async function resolveLoginFill(input: {
   const stored = runLogin
     ? { name: input.name, origin: runLogin.origin, auth: { type: "login" } }
     : row;
-  if (!stored) return { error: "Login is unavailable. Use request_secret to save it first." };
+  if (!stored) return loginFailure("Login is unavailable. Use request_secret to save it first.");
   if (isCommandCredential(stored.auth)) {
     return {
       error: `${UNUSABLE_CREDENTIAL}. Command variables are only available to shell commands.`,
+      reason: "unknown",
     };
   }
   // Checked on the stored origin itself, so the private-LAN HTTP allowance cannot widen a login.
@@ -968,19 +975,20 @@ export async function resolveLoginFill(input: {
   try {
     storedOrigin = new URL(stored.origin);
   } catch {
-    return { error: HTTPS_ONLY };
+    return loginFailure(HTTPS_ONLY);
   }
-  if (storedOrigin.protocol !== "https:") return { error: HTTPS_ONLY };
+  if (storedOrigin.protocol !== "https:") return loginFailure(HTTPS_ONLY);
   const destination = normalizeSecretDestination(stored);
   if (destination.auth.type !== "login") {
-    return { error: "This credential is not a website login." };
+    return loginFailure("This credential is not a website login.");
   }
-  if (destination.origin !== storedOrigin.origin) return { error: HTTPS_ONLY };
+  if (destination.origin !== storedOrigin.origin) return loginFailure(HTTPS_ONLY);
   const { fields } =
     runLogin ?? decodeLoginSecret(await input.secretStore.load(row!.ciphertext, row!.id));
   const field = findLoginField(fields, input.field);
   if (!field) {
     return {
+      reason: "field_not_found",
       error: `This login has no field named ${JSON.stringify(input.field)}. Its fields: ${fields.map((entry) => entry.label).join(", ")}.`,
     };
   }

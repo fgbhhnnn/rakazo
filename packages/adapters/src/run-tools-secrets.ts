@@ -1,5 +1,9 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
+import {
+  BotSecretName,
+  botSecretSubmissionSchema,
+  LoginFailureReasonSchema,
+} from "@rakazo/contracts";
 import { createStreamingRedactor, displayName } from "@rakazo/core";
 import { runLoginKind, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -26,6 +30,7 @@ import {
   sameSecretDestination,
 } from "./bot-secrets.js";
 import { passwordSubmissionNote, WEBSITE_LOGIN_UNAVAILABLE } from "./credential-page-capability.js";
+import { loginFailure } from "./login-failure.js";
 import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
 import { recordEffect } from "./run-effects.js";
 import { renewRunLease } from "./run-lifecycle.js";
@@ -38,6 +43,7 @@ import {
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
+import { newSecretRequestPolicyError, pauseSecretRequest } from "./secret-request-policy.js";
 
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
@@ -59,7 +65,7 @@ export const secretTools: ToolHandlers = {
   async generate_secret(ctx, call) {
     const { deps, run } = ctx;
     if (!ctx.computer.pageBrowserAllowed && call.args.type === "login") {
-      return call.finish({ error: WEBSITE_LOGIN_UNAVAILABLE });
+      return call.finish(loginFailure(WEBSITE_LOGIN_UNAVAILABLE, "no_page_browser"));
     }
     // Fills would type this run's unsaved login instead of the generated one.
     const held = await deps.prisma.secret.count({
@@ -110,8 +116,11 @@ export const secretTools: ToolHandlers = {
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
     const destination = resolvedSecret.destination;
     if (!ctx.computer.pageBrowserAllowed && destination?.auth.type === "login") {
-      return call.finish({ error: WEBSITE_LOGIN_UNAVAILABLE });
+      return call.finish(loginFailure(WEBSITE_LOGIN_UNAVAILABLE, "no_page_browser"));
     }
+    const failureReason = LoginFailureReasonSchema.safeParse(args.failureReason);
+    if (args.failureReason !== undefined && !failureReason.success)
+      return call.finish(loginFailure("Invalid login failure reason."));
     const connectionId = resolvedSecret.connectionId;
     const loginFields =
       destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
@@ -244,6 +253,13 @@ export const secretTools: ToolHandlers = {
         onPersistFailed: uncertainEffectResult(name),
       });
     }
+    const policyError = await newSecretRequestPolicyError(
+      ctx,
+      args,
+      destination,
+      failureReason.data,
+    );
+    if (policyError) return call.finish(policyError);
     const recordedForAsk = await recordEffect(deps, run, name, effectKey, args);
     const missingSecretAction = resolveMissingRunSecretAction(recordedForAsk.effect);
     if (missingSecretAction.action === "return") return missingSecretAction.result;
@@ -302,7 +318,8 @@ export const secretTools: ToolHandlers = {
     await ctx.computer.checkpoint.flush();
     await persistTurnCheckpoint(ctx, executionId);
     await ctx.settleRunningHelpers();
-    const paused = await deps.events.pauseRunForInput({
+    const paused = await pauseSecretRequest(deps.events, {
+      secretRequest: { userId: run.userId, failureReason: failureReason.data },
       spaceId: run.spaceId,
       threadId: run.threadId,
       botId: run.botId,
@@ -322,8 +339,12 @@ export const secretTools: ToolHandlers = {
         },
       ],
     });
+    if (paused && "error" in paused) return call.finish(paused);
     if (!paused) {
       throw new Error("Could not pause this run for protected input; try sending again.");
+    }
+    for (const resumedRunId of paused.supersededSecretRunIds ?? []) {
+      await deps.jobs.enqueue(runContinueJob(resumedRunId));
     }
     if (paused.continuationRunId) {
       await deps.jobs

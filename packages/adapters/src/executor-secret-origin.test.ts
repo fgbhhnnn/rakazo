@@ -159,7 +159,7 @@ async function requestSecretWith(origin: string, extra: Record<string, unknown> 
     append: vi.fn(async () => undefined),
     finalizeRun: vi.fn(async () => ({ continuationRunId: null })),
     pauseRunForTakeover: vi.fn(async () => false),
-    pauseRunForInput: vi.fn(async () => true),
+    pauseRunForInput: vi.fn(async () => ({ continuationRunId: null })),
   };
   const logged: unknown[] = [];
   const logger = new Proxy(

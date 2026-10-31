@@ -94,7 +94,7 @@ describe("credential tools without a page browser", () => {
           finish: async (result: unknown) => result,
         } as never,
       );
-      expect(result).toEqual({ error: WEBSITE_LOGIN_UNAVAILABLE });
+      expect(result).toEqual({ error: WEBSITE_LOGIN_UNAVAILABLE, reason: "no_page_browser" });
       expect(findFirst).not.toHaveBeenCalled();
       expect(pauseRunForInput).not.toHaveBeenCalled();
     },
@@ -108,7 +108,7 @@ describe("credential tools without a page browser", () => {
         finish: async (result: unknown) => result,
       } as never,
     );
-    expect(result).toEqual({ error: WEBSITE_LOGIN_UNAVAILABLE });
+    expect(result).toEqual({ error: WEBSITE_LOGIN_UNAVAILABLE, reason: "no_page_browser" });
   });
 
   it.each([
@@ -171,6 +171,7 @@ describe("credential tools without a page browser", () => {
         error: pageBrowserAllowed
           ? "Website logins can only be filled into their site with browser_act."
           : WEBSITE_LOGIN_UNAVAILABLE,
+        reason: pageBrowserAllowed ? "unknown" : "no_page_browser",
       });
       expect(load).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();
