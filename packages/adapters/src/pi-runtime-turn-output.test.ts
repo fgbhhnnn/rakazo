@@ -29,8 +29,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { PiAgentRuntime } from "./pi-runtime.js";
-import { LENGTH_CUT_CONTINUATION_PROMPT } from "./turn-length-cut.js";
+import { cutReplyAtLimitPrompt, PiAgentRuntime } from "./pi-runtime.js";
 
 // Cards with their own output ceilings: a plain model, a small one, a reasoning model above
 // its 32k default, and one whose ceiling is larger than a quarter of its window.
@@ -263,7 +262,7 @@ describe("a reply cut at the output limit", () => {
       const events = await run(request(plain, {}, lane));
       expect(providerState.stream).toHaveBeenCalledTimes(2);
       expect(sentContexts()[1]).toContain(
-        JSON.stringify(LENGTH_CUT_CONTINUATION_PROMPT).slice(1, -1),
+        JSON.stringify(cutReplyAtLimitPrompt("第一部分写到这里，接着写第二")).slice(1, -1),
       );
       // No turn break, and the restated words are not repeated.
       expect(events.some((event) => event.type === "turn")).toBe(false);
@@ -303,11 +302,12 @@ describe("a reply cut at the output limit", () => {
     expect(events.at(-1)).toEqual({ type: "done", text: "当前测试服版本为 v1.", truncated: true });
   });
 
-  it("an unlaned call does not continue or add a notice", async () => {
+  it("an unlaned call fails honestly after its continuation allowance is exhausted", async () => {
     providerState.stream.mockImplementation(() => cutReply(plain, "A long reply that"));
-    const events = await run(request(plain));
-    expect(providerState.stream).toHaveBeenCalledOnce();
-    expect(events.at(-1)).toEqual({ type: "done", text: "A long reply that", truncated: true });
+    await expect(run(request(plain))).rejects.toThrow(
+      "The model hit its output limit before finishing its reply.",
+    );
+    expect(providerState.stream).toHaveBeenCalledTimes(4);
   });
 
   it("is not reported for a normal stop", async () => {

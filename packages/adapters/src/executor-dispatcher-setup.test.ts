@@ -207,7 +207,7 @@ async function runDispatcherTurn(options: {
         async () => null,
       ),
     },
-    secret: { findFirst: vi.fn(async () => null) },
+    secret: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
     // Models are account-wide now: no Space override, and no account choices either.
@@ -220,8 +220,7 @@ async function runDispatcherTurn(options: {
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
-    agentSecret: { findMany: vi.fn(async () => []) },
-    botSecret: { findMany: vi.fn(async () => []) },
+    vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     chatGroup: { findMany: vi.fn(async () => []) },

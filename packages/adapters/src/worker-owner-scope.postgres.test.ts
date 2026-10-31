@@ -11,7 +11,7 @@ const postgres =
   process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL ? describe : describe.skip;
 
 postgres("hidden worker uses its main bot's data (PostgreSQL)", () => {
-  it("scopes secrets, MCP servers, taught skills and scratchpad to the main bot without writes", async () => {
+  it("reads shared vault credentials and scopes MCP servers, taught skills and scratchpad to the main bot without writes", async () => {
     const { prisma, pool } = createDb(process.env.DATABASE_URL!);
     const id = `worker-scope-${randomUUID()}`;
     const userId = `${id}-user`;
@@ -51,12 +51,11 @@ postgres("hidden worker uses its main bot's data (PostgreSQL)", () => {
             spawnKey: `${id}:helper`,
           },
         });
-        await prisma.botSecret.create({
+        await prisma.vaultCredential.create({
           data: {
             id: `${id}-secret`,
             userId,
-            spaceId,
-            botId: main.id,
+            spaceId: null,
             name: "github",
             origin: "https://api.github.com",
             auth: { type: "bearer" },
@@ -93,11 +92,11 @@ postgres("hidden worker uses its main bot's data (PostgreSQL)", () => {
       expect(dataBotId(childRow)).toBe(child.id);
 
       await system(async () => {
-        // Saved credentials (command variables, login fills, secret_request, list_secrets).
+        // Saved credentials live in the member's shared vault, also available to hidden workers.
         expect(
-          (await listBotSecrets(prisma, { userId, spaceId, botId: workerData })).map((s) => s.name),
+          (await listBotSecrets(prisma, { userId, spaceId })).map((s) => s.name),
         ).toEqual(["github"]);
-        expect(await listBotSecrets(prisma, { userId, spaceId, botId: child.id })).toEqual([]);
+        expect(await listBotSecrets(prisma, { userId: `${id}-other`, spaceId })).toEqual([]);
 
         // MCP servers: the connector looks up assignments by the scoped id.
         expect(await mcpScopeBotId(prisma, worker.id)).toBe(main.id);

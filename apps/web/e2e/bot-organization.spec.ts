@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  activeBotId,
-  captureScreenshot,
-  completeOnboarding,
-  openUserSettings,
-  rpc,
-  signup,
-} from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -145,7 +138,6 @@ test("unpinned bots list newest first; pinned bots reorder by drag or keyboard a
   const chiefId = activeBotId(page);
   const alpha = await rpc<{ id: string }>(page, "bots/create", {
     name: "Alpha",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -153,7 +145,6 @@ test("unpinned bots list newest first; pinned bots reorder by drag or keyboard a
   });
   const beta = await rpc<{ id: string }>(page, "bots/create", {
     name: "Beta",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -295,7 +286,7 @@ test("chat composer controls are vertically centered", async ({ page }, testInfo
   await expect
     .poll(() =>
       bar.evaluate((composerBar) => {
-        const field = composerBar.querySelector("textarea")?.parentElement ?? null;
+        const field = composerBar.querySelector('[data-testid="composer-field"]');
         return [composerBar, field].every(
           (element) =>
             element?.getAnimations().every((animation) => animation.playState !== "running") ??
@@ -346,7 +337,6 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   const chiefId = activeBotId(page);
   const partner = await rpc<{ id: string }>(page, "bots/create", {
     name: "Partner",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,

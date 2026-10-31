@@ -11,7 +11,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deferDispatcherWake } from "./dispatcher-turn-guard.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
-import { RunJobPublisher, RunWorkerHost } from "./run-wakeup.js";
+import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { releaseWorkerRunLeases } from "./worker-shutdown.js";
 
 const url = process.env.DATABASE_URL;
@@ -77,8 +77,9 @@ describePostgres("worker shutdown and wake deferral with direct dispatch (Postgr
       leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
     });
     const realtime = new InMemoryRealtimeFanout();
-    const publisher = new RunJobPublisher(db.prisma, realtime, scheduler());
-    const host = new RunWorkerHost(db.prisma, realtime, { intervalMs: 25 });
+    const starter = new RunStarter(realtime);
+    const publisher = new RunJobPublisher(db.prisma, scheduler(), starter);
+    const host = new RunWorkerHost(db.prisma, realtime, starter, { intervalMs: 25 });
     const entered: string[] = [];
     const handlers = {
       "run.continue": async ({ runId }) => {
@@ -114,7 +115,7 @@ describePostgres("worker shutdown and wake deferral with direct dispatch (Postgr
     });
     const wakeRun = await createRun({ trigger: "bot_message" });
     const realtime = new InMemoryRealtimeFanout();
-    const publisher = new RunJobPublisher(db.prisma, realtime, scheduler());
+    const publisher = new RunJobPublisher(db.prisma, scheduler(), new RunStarter(realtime));
     const deferred = await runAsTenant(identity, () =>
       deferDispatcherWake({ prisma: db.prisma, jobs: publisher }, wakeRun),
     );

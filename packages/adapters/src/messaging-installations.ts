@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem } from "@rakazo/db";
+import { IsolationError, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 
@@ -23,12 +23,12 @@ export class MessagingInstallations implements MessagingInstallationStore {
 
   /** Connect a chat app for an explicit bot — never fall back to the first/default bot. */
   async start(actor: Actor, botId: string): Promise<string> {
-    if (!botId) throw new Error("Bot not found");
+    if (!botId) throw new IsolationError("Bot not found");
     const bot = await this.prisma.bot.findFirst({
       where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
       select: { id: true, spaceId: true },
     });
-    if (!bot) throw new Error("Bot not found");
+    if (!bot) throw new IsolationError("Bot not found");
     const state = randomBytes(32).toString("base64url");
     await runAsSystem("start messaging workspace installation", async () => {
       await this.prisma.messagingInstallSession.deleteMany({
@@ -48,7 +48,8 @@ export class MessagingInstallations implements MessagingInstallationStore {
     return this.provider.authorizeUrl(state);
   }
 
-  async complete(state: string, code: string): Promise<void> {
+  /** Only the user who started it may finish, so a forwarded authorize link cannot attach their workspace. */
+  async complete(actor: Actor, state: string, code: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !code || code.length > 4096)
       throw new Error("Invalid authorization");
     await runAsSystem("complete messaging workspace installation", async () => {
@@ -57,6 +58,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
       });
       if (
         !session ||
+        session.userId !== actor.userId ||
         session.provider !== this.provider.provider ||
         session.expiresAt <= new Date()
       )

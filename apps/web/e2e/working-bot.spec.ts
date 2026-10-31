@@ -20,7 +20,6 @@ test("delegated work stays working and interruptible with a newer queued run", a
   await completeOnboarding(page);
   const bot = await rpc<{ id: string; threadId: string }>(page, "bots/create", {
     name: "Research Helper",
-    title: "",
     description: "",
     computerMode: "team",
   });

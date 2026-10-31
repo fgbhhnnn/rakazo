@@ -31,12 +31,15 @@ import {
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { AccountAccess } from "../components/AccountAccess";
+import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
+import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { MemberAccessSettings } from "../components/MemberAccessSettings";
 import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
+import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import {
@@ -78,6 +81,8 @@ export type SettingsGeneralProps = {
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
   isDeploymentOwner?: boolean;
+  onAccountImported?: () => Promise<void>;
+  onImportAgent?: () => void;
 };
 
 export function GeneralSettingsPanels({
@@ -87,6 +92,8 @@ export function GeneralSettingsPanels({
   timezone = null,
   onTimezoneChange,
   isDeploymentOwner = false,
+  onAccountImported,
+  onImportAgent,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
   const account = accountDisplay({ name, email }, t`You`);
@@ -203,6 +210,7 @@ export function GeneralSettingsPanels({
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.stopPropagation();
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (!namePending) setEditingName(false);
               }
             }}
@@ -459,12 +467,17 @@ export function GeneralSettingsPanels({
         </div>
       </Disclosure>
 
+      <TrustedLinkSitesSettings />
+      <ComputerDeviceSettings />
+
       {showPassword || passkeysSupported ? (
         <SettingsGroup title={<Trans>Security</Trans>}>
           {showPassword ? <ChangePasswordRow email={email} /> : null}
           <PasskeySettings />
         </SettingsGroup>
       ) : null}
+
+      <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />
 
       <AccountAccess onSecurity={setAccountSecurity} />
     </div>

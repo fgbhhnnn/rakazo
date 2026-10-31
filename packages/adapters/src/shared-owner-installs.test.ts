@@ -103,6 +103,8 @@ const secrets = [
 
 function matches(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([key, expected]) => {
+    if (key === "OR" && Array.isArray(expected))
+      return expected.some((branch) => matches(row, branch));
     if (expected && typeof expected === "object" && "in" in expected)
       return (expected as { in: unknown[] }).in.includes(row[key]);
     return row[key] === expected;
@@ -357,7 +359,11 @@ describe("owner MCP sources shared with locked members", () => {
       headers: { authorization: `Bearer ${MEMBER_KEY}` },
     });
     expect(prisma.secret.findFirst).toHaveBeenCalledWith({
-      where: { id: "member-secret", spaceId: MEMBER_SPACE, userId: MEMBER },
+      where: {
+        id: "member-secret",
+        userId: MEMBER,
+        OR: [{ spaceId: MEMBER_SPACE }, { spaceId: null }],
+      },
     });
   });
 

@@ -78,7 +78,7 @@ async function listWorkspaceFiles(
         const relative = normalizeWorkspacePath(
           directory ? `${directory}/${entry.name}` : entry.name,
         );
-        if (shouldSkipPortableWorkspaceFile(relative)) continue;
+        if (shouldSkipPortableWorkspaceFile(relative, entry.type === "dir")) continue;
         if (entry.type === "dir") {
           if (!isRebuildableDependencyDirectory(entry.name)) deeper.push(relative);
         } else if (entry.type === "file") {

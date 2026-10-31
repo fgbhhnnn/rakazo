@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   listPiCatalog,
+  ModelSignInError,
   modelCredentialDto,
   oauthCredentialEmail,
   prepareStoredModelAuth,
@@ -324,7 +325,13 @@ export function modelsRoutes(ctx: RouterContext) {
           });
       }),
       submitOAuthCode: ownerManaged.models.submitOAuthCode.handler(async ({ context, input }) => {
-        return deps.oauthLogins.submit(input.loginId, context.actor, input.code);
+        return deps.oauthLogins
+          .submit(input.loginId, context.actor, input.code)
+          .catch((error: unknown) => {
+            if (error instanceof ModelSignInError)
+              throw new ORPCError("BAD_REQUEST", { message: error.message, cause: error });
+            throw error;
+          });
       }),
       completeOAuth: ownerManaged.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, {
@@ -626,9 +633,7 @@ export function modelsRoutes(ctx: RouterContext) {
                 },
               );
               if (existing.length === 0) return;
-              // Credentials belong to the account, not the space — disconnecting
-              // removes them everywhere, matching voice.disconnect. Their own models
-              // go with them.
+              // Credentials are account-wide, so disconnecting removes them from every Space.
               await tx.userModelCredential.deleteMany({
                 where: { userId: context.actor.userId, id: { in: ids } },
               });

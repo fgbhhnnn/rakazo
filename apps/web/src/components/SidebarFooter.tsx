@@ -1,13 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { NavLink } from "@rakazo/contracts";
 import { AppMarkStack, Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import {
   Download,
   FolderOpen,
   Gauge,
+  Link2,
   LogOut,
   Plug,
+  ScrollText,
   Settings,
   SquareKanban,
+  UserPlus,
   UserRound,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -24,10 +28,14 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onIntegrations: () => void;
+  onSkills: () => void;
   onBoard?: () => void;
+  links?: NavLink[];
+  onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
   onUsage: () => void;
+  onInvite?: () => void;
   onLogOut: () => void;
   signingOut: boolean;
   logOutError: string | null;
@@ -48,10 +56,14 @@ export function SidebarFooter({
   open,
   onOpenChange,
   onIntegrations,
+  onSkills,
   onBoard,
+  links = [],
+  onLink,
   onArtifacts,
   onSettings,
   onUsage,
+  onInvite,
   onLogOut,
   signingOut,
   logOutError,
@@ -135,10 +147,27 @@ export function SidebarFooter({
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
-              onClick={onUsage}
+              aria-label={t`Settings`}
+              onClick={onSettings}
             >
-              <Gauge className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Usage</Trans>
+              <Settings className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Settings</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2.5 font-normal"
+              onClick={onSkills}
+            >
+              <ScrollText className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Skills</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2.5 font-normal"
+              onClick={onArtifacts}
+            >
+              <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Artifacts</Trans>
             </Button>
             {onBoard ? (
               <Button
@@ -150,23 +179,38 @@ export function SidebarFooter({
                 <Trans>Board</Trans>
               </Button>
             ) : null}
+            {links.map((link) => (
+              <Button
+                key={link.id}
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={() => onLink?.(link)}
+              >
+                <Link2 className="text-muted-foreground" strokeWidth={1.75} />
+                {link.label}
+              </Button>
+            ))}
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
-              onClick={onArtifacts}
+              onClick={onUsage}
             >
-              <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Artifacts</Trans>
+              <Gauge className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Usage</Trans>
             </Button>
-            <Button
-              variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
-              aria-label={t`Settings`}
-              onClick={onSettings}
-            >
-              <Settings className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Settings</Trans>
-            </Button>
+            {onInvite ? (
+              <>
+                <div className="my-1 border-t border-border" />
+                <Button
+                  variant="ghost"
+                  className="h-9 w-full justify-start gap-2.5 font-normal"
+                  onClick={onInvite}
+                >
+                  <UserPlus className="text-muted-foreground" strokeWidth={1.75} />
+                  <Trans>Invite friends</Trans>
+                </Button>
+              </>
+            ) : null}
             <div className="my-1 border-t border-border" />
             <Button
               variant="ghost"

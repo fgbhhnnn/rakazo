@@ -53,7 +53,7 @@ async function createFixture(prisma: ReturnType<typeof createDb>["prisma"], id: 
     for (const [uid, name] of [
       [userId, "Owner"],
       [otherUserId, "Other"],
-    ]) {
+    ] as const) {
       await prisma.user.create({ data: { id: uid, name, email: `${uid}@rakazo.test` } });
     }
     await prisma.organization.create({

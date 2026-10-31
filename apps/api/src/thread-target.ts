@@ -10,18 +10,24 @@ import type {
   ReplyPreview,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { GROUP_MEMBER_MIN, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
+import {
+  GROUP_MEMBER_MIN,
+  MessageBlock as MessageBlockSchema,
+  resolveBotAvatarSet,
+} from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
   deferredHandoffTargetId,
   isConversationalRun,
+  messageBypassesTakeoverWait,
   messageReaction,
   projectMessages,
   QUEUE_HOLDING_RUN_STATUSES,
   resolveGroupTargetBotIds,
   runFailureError,
+  runReadsThreadHistory,
 } from "@rakazo/core";
 import { deriveMessageQuote, messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -34,6 +40,7 @@ import {
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
+  eligibleWaitingTextAnswer,
   IsolationError,
   lockOwnedGroup,
   primaryActiveRun,
@@ -50,6 +57,8 @@ import {
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
 import { assertOpenableBot } from "./hidden-worker-access.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import type { ImageAdmissionRun } from "./thread-image-admission.js";
+import { assertThreadImageInput } from "./thread-image-admission.js";
 import { loadMessagePage } from "./thread-message-pages.js";
 
 export type ThreadTarget =
@@ -72,6 +81,21 @@ const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set<string>(QUEUE_HOLDING_RUN_STATUSES);
+/**
+ * An answer steers the waiting run it resumes when the model must see its image, or when the run
+ * reads no thread history and would otherwise never get the attachment.
+ */
+function answerSteersRun(
+  run: { trigger?: string | null },
+  attachments: MessageBlock[],
+  imageHandling: "confirm" | "file" | undefined,
+) {
+  return (
+    (imageHandling === "confirm" && attachments.some((block) => block.kind === "image")) ||
+    (attachments.length > 0 && !runReadsThreadHistory(run.trigger))
+  );
+}
+
 /** Background work holds pending steering; paused cards never hold the queue. */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
@@ -276,7 +300,7 @@ async function lockAndLoadGroupMembers(
     include: {
       members: {
         where: { bot: { archivedAt: null } },
-        include: { bot: { select: { id: true, name: true, color: true } } },
+        include: { bot: { select: { id: true, name: true, color: true, avatarSet: true } } },
         orderBy: [{ createdAt: "asc" }, { botId: "asc" }],
       },
     },
@@ -286,6 +310,7 @@ async function lockAndLoadGroupMembers(
     botId: member.bot.id,
     name: member.bot.name,
     color: member.bot.color,
+    avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
   }));
 }
 
@@ -314,6 +339,7 @@ export async function resolveThreadTarget(
       botId: member.bot.id,
       name: member.bot.name,
       color: member.bot.color,
+      avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
       status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
     }));
     return {
@@ -391,12 +417,9 @@ export async function threadSnapshot(
             }),
           ]);
           const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
-          // A failed run is only the thread's word while it is still the newest
-          // terminal run; otherwise a stale failure would resurface in the
-          // composer error strip on every load, forever. Instead of comparing
-          // timestamps (equal createdAt values reverse under gt/gte), ask for
-          // the newest terminal run under the same deterministic ordering and
-          // check whether it is this failure.
+          // A failure only surfaces while it is still the newest terminal run, or a stale
+          // failure would reappear on every load. Compare by ordering, not timestamps:
+          // equal createdAt values reverse under gt/gte.
           const newestTerminal =
             run?.status === "failed"
               ? await tx.run.findFirst({
@@ -557,7 +580,6 @@ function pickPrimaryPrivateActiveRun<T extends { status: string }>(
   );
 }
 
-/** Latest terminal by end time (completedAt, else createdAt), then createdAt, then id. */
 function pickLatestTerminalRun<T extends { id: string; createdAt: Date; completedAt: Date | null }>(
   runs: T[],
 ): T | null {
@@ -630,11 +652,74 @@ function mapRun(run: {
   };
 }
 
+/**
+ * Admit a confirmed image against the model each recipient run will use: the waiting runs this
+ * text answers, otherwise the run that would take it as steering, otherwise the bot's default.
+ */
+async function assertImageRecipients(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  target: { threadId: string },
+  text: string | undefined,
+  attachmentBlocks: MessageBlock[],
+  recipient: {
+    botId: string;
+    runs: Array<ImageAdmissionRun & { id: string }>;
+    imageAdmission: Parameters<typeof assertThreadImageInput>[5];
+  },
+) {
+  if (!attachmentBlocks.some((block) => block.kind === "image")) return;
+  const { botId, runs } = recipient;
+  const answered = [];
+  for (const run of runs.filter((run) => run.status === "waiting_input")) {
+    const eligible = await eligibleWaitingTextAnswer(tx, {
+      spaceId: actor.spaceId,
+      threadId: target.threadId,
+      runId: run.id,
+      answeredByUserId: actor.userId,
+      answer: text ?? "",
+    });
+    if (eligible) answered.push(run);
+  }
+  const current =
+    runs.find(steersUserMessage) ?? runs.find((run) => STEERABLE_RUN_STATUSES.has(run.status));
+  for (const run of answered.length ? answered : [current]) {
+    await assertThreadImageInput(
+      tx as unknown as PrismaClient,
+      actor,
+      botId,
+      attachmentBlocks,
+      run && (isConversationalRun(run.trigger) || run.status === "waiting_input") ? run : undefined,
+      recipient.imageAdmission,
+    );
+  }
+}
+
+/** Intent changes the message representation, never the owned artifact. */
+function sendAttachmentBlocks(
+  blocks: Extract<MessageBlock, { kind: "image" | "file" }>[],
+  artifacts: Array<{ id: string; size: number }>,
+  handling: "confirm" | "file" | undefined,
+): Extract<MessageBlock, { kind: "image" | "file" }>[] {
+  return blocks.map((block) => {
+    if (block.kind !== "image") return block;
+    if (handling === "file")
+      return {
+        ...block,
+        kind: "file",
+        size: artifacts.find((artifact) => artifact.id === block.artifactId)!.size,
+      };
+    return handling === "confirm" ? { ...block, imageHandling: "confirm" } : block;
+  });
+}
+
 export async function sendThreadMessage(
   deps: {
     prisma: PrismaClient;
     events: ThreadEvents;
     jobs: JobPublisher;
+    imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
+    maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
   },
   actor: Actor,
@@ -642,12 +727,15 @@ export async function sendThreadMessage(
   input: {
     text?: string;
     artifactIds?: string[];
+    imageHandling?: "confirm" | "file";
     mentions?: MentionTargetInput[];
     replyToMessageId?: string;
     replyQuote?: string;
     clientNonce?: string;
   },
   releaseTakeover?: (runId: string) => Promise<void>,
+  /** Runs saved with the message, after the thread lock and before the message is routed. */
+  startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
 ) {
   const existing = await replayExistingSend(
     deps,
@@ -666,6 +754,7 @@ export async function sendThreadMessage(
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
+      let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
@@ -715,7 +804,7 @@ export async function sendThreadMessage(
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
         const { blocks: attachmentBlocks, artifacts } = await resolveSendAttachments(
-          { prisma: tx },
+          { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
           actor,
           target.botId,
           input.artifactIds,
@@ -725,7 +814,37 @@ export async function sendThreadMessage(
           actor,
           mentionTargets.connectorMentionIds,
         );
-        const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
+        // Match message counter locking before inspecting runs, without changing counters on rejection.
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+        routineRuns = (await startRoutines?.(tx)) ?? [];
+        const activeRuns = await tx.run.findMany({
+          where: {
+            threadId: target.threadId,
+            botId: target.botId,
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+          },
+          select: {
+            id: true,
+            taskId: true,
+            status: true,
+            trigger: true,
+            modelProvider: true,
+            modelId: true,
+            modelPinned: true,
+            thinkingLevel: true,
+          },
+        });
+        if (input.imageHandling === "confirm") {
+          await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
+            botId: target.botId,
+            runs: activeRuns,
+            imageAdmission: deps.imageAdmission,
+          });
+        }
+        const blocks = buildUserMessageBlocks(
+          input.text,
+          sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
+        );
         const message = await createThreadMessageInTransaction(tx, {
           threadId: target.threadId,
           role: "user",
@@ -733,14 +852,6 @@ export async function sendThreadMessage(
           replyToMessageId,
           replyQuote,
           clientNonce: input.clientNonce,
-        });
-        const activeRuns = await tx.run.findMany({
-          where: {
-            threadId: target.threadId,
-            botId: target.botId,
-            status: { in: [...ACTIVE_RUN_STATUSES] },
-          },
-          select: { id: true, taskId: true, status: true, trigger: true },
         });
         const answered: typeof activeRuns = [];
         for (const run of activeRuns.filter((run) => run.status === "waiting_input")) {
@@ -768,6 +879,19 @@ export async function sendThreadMessage(
           const primary = answered[0];
           if (!primary) throw new IsolationError();
           await tx.message.update({ where: { id: message.id }, data: { runId: primary.id } });
+          const steered = answered.filter((run) =>
+            answerSteersRun(run, attachmentBlocks, input.imageHandling),
+          );
+          for (const run of steered) {
+            await tx.steeringMessage.create({
+              data: {
+                messageId: message.id,
+                botId: target.botId,
+                userId: actor.userId,
+                runId: run.id,
+              },
+            });
+          }
           const event = await appendEventInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId: target.threadId,
@@ -786,10 +910,12 @@ export async function sendThreadMessage(
               replyPreview,
             },
           });
-          return { message, runs: answered, eventSeq: event.seq };
+          return { message, runs: answered, routineRuns, eventSeq: event.seq };
         }
-        const holdingRuns = activeRuns.filter((run) =>
-          QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
+        const holdingRuns = activeRuns.filter(
+          (run) =>
+            QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
+            !messageBypassesTakeoverWait(run),
         );
         const active = holdingRuns.find(steersUserMessage) ?? holdingRuns[0];
         if (active) {
@@ -819,7 +945,7 @@ export async function sendThreadMessage(
               replyPreview,
             },
           });
-          return { message, runs: [active], eventSeq: event.seq };
+          return { message, runs: [active], routineRuns, eventSeq: event.seq };
         }
         const task = await tx.task.create({
           data: {
@@ -868,7 +994,7 @@ export async function sendThreadMessage(
             replyPreview,
           },
         });
-        return { message, runs: [run], eventSeq: event.seq };
+        return { message, runs: [run], routineRuns, eventSeq: event.seq };
       }
 
       const members = await lockAndLoadGroupMembers(tx, actor, target);
@@ -888,7 +1014,7 @@ export async function sendThreadMessage(
       );
       const targetBotIds = mentionedBotIds.filter((botId) => botId !== deferredBotId);
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
-        { prisma: tx },
+        { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
         target.groupId,
         memberBotIds,
@@ -899,7 +1025,40 @@ export async function sendThreadMessage(
         actor,
         mentionTargets.connectorMentionIds,
       );
-      const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
+      // Group ownership is locked first, then the thread, as in the normal write path.
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      routineRuns = (await startRoutines?.(tx)) ?? [];
+      const activeRuns = await tx.run.findMany({
+        where: {
+          threadId: target.threadId,
+          botId: { in: targetBotIds },
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+        select: {
+          id: true,
+          taskId: true,
+          botId: true,
+          status: true,
+          trigger: true,
+          modelProvider: true,
+          modelId: true,
+          modelPinned: true,
+          thinkingLevel: true,
+        },
+      });
+      if (input.imageHandling === "confirm") {
+        for (const botId of targetBotIds) {
+          await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
+            botId,
+            runs: activeRuns.filter((run) => run.botId === botId),
+            imageAdmission: deps.imageAdmission,
+          });
+        }
+      }
+      const blocks = buildUserMessageBlocks(
+        input.text,
+        sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
+      );
       const message = await createThreadMessageInTransaction(tx, {
         threadId: target.threadId,
         role: "user",
@@ -907,14 +1066,6 @@ export async function sendThreadMessage(
         replyToMessageId,
         replyQuote,
         clientNonce: input.clientNonce,
-      });
-      const activeRuns = await tx.run.findMany({
-        where: {
-          threadId: target.threadId,
-          botId: { in: targetBotIds },
-          status: { in: [...ACTIVE_RUN_STATUSES] },
-        },
-        select: { id: true, taskId: true, botId: true, status: true, trigger: true },
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
@@ -943,7 +1094,7 @@ export async function sendThreadMessage(
           }
           continue;
         }
-        if (!STEERABLE_RUN_STATUSES.has(run.status)) continue;
+        if (!STEERABLE_RUN_STATUSES.has(run.status) || messageBypassesTakeoverWait(run)) continue;
         const current = activeByBotId.get(run.botId);
         if (!current || (!steersUserMessage(current) && steersUserMessage(run))) {
           activeByBotId.set(run.botId, run);
@@ -953,6 +1104,14 @@ export async function sendThreadMessage(
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
+          const steered = answered.filter((run) =>
+            answerSteersRun(run, attachmentBlocks, input.imageHandling),
+          );
+          for (const run of steered) {
+            await tx.steeringMessage.create({
+              data: { messageId: message.id, botId, userId: actor.userId, runId: run.id },
+            });
+          }
           runs.push(...answered);
           continue;
         }
@@ -1029,7 +1188,7 @@ export async function sendThreadMessage(
           replyPreview,
         },
       });
-      return { message, runs, eventSeq: event.seq };
+      return { message, runs, routineRuns, eventSeq: event.seq };
     });
 
   const committed = await withSerializableRetry(commit).catch(async (error) => {
@@ -1057,7 +1216,7 @@ export async function sendThreadMessage(
       if (steersUserMessage(run)) await releaseTakeover(run.id);
     }
   }
-  await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
+  await enqueueRunsNeedingContinue(deps.jobs, [...committed.routineRuns, ...committed.runs]);
   return sendResult(committed.message, committed.runs);
 }
 

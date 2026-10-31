@@ -5,6 +5,7 @@ import {
   appendEventInTransaction,
   clearEndedRunState,
   expireComputerExecutionLeases,
+  transientRunEventsWhere,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { cancelComputerRunWork } from "./computer-idle.js";
@@ -94,7 +95,7 @@ export async function stopThreadRunsForBots(
     if (ids.length) {
       await tx.event.deleteMany({
         where: {
-          type: "thread.progress",
+          ...transientRunEventsWhere(),
           runId: { in: ids },
         },
       });

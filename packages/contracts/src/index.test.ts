@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  BOT_DESCRIPTION_MAX_LENGTH,
-  BOT_INSTRUCTIONS_MAX_LENGTH,
-  BOT_TITLE_MAX_LENGTH,
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   CreateBotInput,
@@ -13,7 +10,6 @@ import {
   MessageBlock,
   ModelConnectInputSchema,
   ModelOAuthBeginSchema,
-  normalizeCreateBotProfile,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -59,6 +55,15 @@ describe("contracts", () => {
     expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
       { kind: "progress", text: "Using browser", activity: true },
     );
+  });
+
+  it("preserves background worker card titles and accepts cards without a title", () => {
+    const card = { kind: "child_bot", botId: "worker-1", name: "Task", status: "created" };
+    expect(MessageBlock.parse(card)).toEqual(card);
+    expect(MessageBlock.parse({ ...card, title: "Task #T123" })).toEqual({
+      ...card,
+      title: "Task #T123",
+    });
   });
 
   it("parses bounded model image limits", () => {
@@ -222,6 +227,14 @@ describe("contracts", () => {
     );
   });
 
+  it("keeps a note on a step and still reads steps saved without one", () => {
+    const steps = [
+      { label: "Read file", count: 1, note: "The meeting is with Anna." },
+      { label: "Save", count: 1 },
+    ];
+    expect(MessageBlock.parse({ kind: "steps", steps })).toEqual({ kind: "steps", steps });
+  });
+
   it("limits reactions to persisted non-channel messages", () => {
     expect(
       canReactToThreadMessage({ id: "message-1", blocks: [{ kind: "text", text: "hi" }] }),
@@ -248,7 +261,6 @@ describe("contracts", () => {
 
   it("parses bot create input", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
-    expect(parsed.title).toBe("");
     expect(parsed.notifyOnFinish).toBe(true);
     expect(parsed.avatarFamily).toBeUndefined();
   });
@@ -259,19 +271,6 @@ describe("contracts", () => {
     for (const avatarFamily of [-1, 10, 2.5, "3"]) {
       expect(CreateBotInput.safeParse({ name: "Chief", avatarFamily }).success).toBe(false);
     }
-  });
-
-  it("normalizes bot creation fields without losing the longer instruction copy", () => {
-    const profile = normalizeCreateBotProfile({
-      name: `  ${"N".repeat(100)}  `,
-      title: `  ${"T".repeat(BOT_TITLE_MAX_LENGTH + 10)}  `,
-      description: `  ${"D".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 10)}  `,
-    });
-
-    expect(profile.name).toHaveLength(80);
-    expect(profile.title).toHaveLength(BOT_TITLE_MAX_LENGTH);
-    expect(profile.description).toHaveLength(BOT_DESCRIPTION_MAX_LENGTH);
-    expect(profile.instructions).toHaveLength(BOT_INSTRUCTIONS_MAX_LENGTH);
   });
 
   it("rejects unknown built-in tool names and keeps a known denylist", () => {
@@ -298,19 +297,14 @@ describe("contracts", () => {
     );
   });
 
-  it("accepts the same title limit when creating and updating bots", () => {
-    const title = "T".repeat(BOT_TITLE_MAX_LENGTH);
-    expect(CreateBotInput.safeParse({ name: "Chief", title }).success).toBe(true);
-    expect(UpdateBotInput.safeParse({ botId: "bot-1", title }).success).toBe(true);
-    expect(UpdateBotInput.safeParse({ botId: "bot-1", title: `${title}T` }).success).toBe(false);
+  it("drops a title that installed apps still send", () => {
+    expect(CreateBotInput.parse({ name: "Chief", title: "Lead" })).not.toHaveProperty("title");
+    expect(UpdateBotInput.parse({ botId: "bot-1", title: "Lead" })).toEqual({ botId: "bot-1" });
   });
 
   it("normalizes bot names and rejects whitespace-only values at the contract boundary", () => {
     expect(CreateBotInput.parse({ name: "  Chief  " }).name).toBe("Chief");
     expect(UpdateBotInput.parse({ botId: "bot-1", name: "  Atlas  " }).name).toBe("Atlas");
-    expect(UpdateBotInput.parse({ botId: "bot-1", title: "  Lead researcher  " }).title).toBe(
-      "Lead researcher",
-    );
     expect(
       UpdateBotInput.parse({ botId: "bot-1", description: "  Concise briefs.  " }).description,
     ).toBe("Concise briefs.");

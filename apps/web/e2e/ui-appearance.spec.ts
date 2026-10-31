@@ -125,13 +125,8 @@ test("sidebar footer opens integrations and the account menu", async ({ page }, 
   await expect(page.getByRole("button", { name: "Close integrations", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close integrations", exact: true }).click();
   await page.getByTestId("user-menu-trigger").click();
-  const accountMenu = page.locator('[data-slot="popover-content"]');
-  await expect(accountMenu.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
-  await expect(
-    accountMenu.getByRole("link", { name: "Get the mobile app", exact: true }),
-  ).toHaveCount(0);
-  await expect(accountMenu.getByRole("link", { name: "Docs", exact: true })).toHaveCount(0);
-  await expect(accountMenu.getByRole("link")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Get the mobile app", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Docs", exact: true })).toHaveCount(0);
   await expect(footer.locator('span[aria-hidden="true"] > span')).toHaveCount(3);
   if (avatarBox && pillBox) {
     await expect
@@ -249,7 +244,6 @@ test("sidebar footer keeps the account identity readable and installs a ready de
   await updateButton.evaluate((el) => el.blur());
 
   // Width changes must drop marks before taking space from the label or padding.
-  // Measure the fixed controls and label, then target the middle of each band.
   // Marks need 26px initially and 22px per additional mark, leaving 11px margin.
   const fixedWidth = await pill.evaluate((el) => {
     const style = getComputedStyle(el);
@@ -425,7 +419,6 @@ test("sidebar list fades above the transparent footer and keeps the last row rea
   for (let index = 0; index < 20; index++) {
     await rpc(page, "bots/create", {
       name: `Demo chat ${index}`,
-      title: "",
       description: "",
       notifyOnFinish: true,
       computerMode: "team",

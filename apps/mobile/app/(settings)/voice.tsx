@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadFailure } from "../../components/load-failure";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
@@ -121,6 +122,7 @@ function VoiceSettingsScreen() {
     "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const deviceVoiceRevision = useRef(0);
   const deviceVoiceSaveInFlight = useRef(false);
 
@@ -140,6 +142,7 @@ function VoiceSettingsScreen() {
         fetchFresh(queryClient, reads.status, reuse),
       ]);
       if (revision !== loadRevision.current) return;
+      setLoadError(null);
       const selected = pickProvider(nextCatalog, nextStatus, nextProvider);
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
@@ -169,14 +172,19 @@ function VoiceSettingsScreen() {
     set(value);
   };
 
+  const open = useCallback(() => {
+    void load(undefined, true)
+      .catch((err: unknown) => {
+        // A newer read replaced this one and reports for both.
+        if (!isCancelledError(err))
+          setLoadError(errorText(err, t("Could not load voice settings")));
+      })
+      .finally(() => setLoading(false));
+  }, [load, t]);
+
   useFocusEffect(
     useCallback(() => {
-      void load(undefined, true)
-        .catch((err: unknown) => {
-          // A newer read replaced this one and reports for both.
-          if (!isCancelledError(err)) setError(errorText(err, t("Could not load voice settings")));
-        })
-        .finally(() => setLoading(false));
+      open();
       if (!deviceSettings) return;
       const revision = ++deviceVoiceRevision.current;
       void loadDeviceVoiceEnabled()
@@ -204,7 +212,7 @@ function VoiceSettingsScreen() {
           }
         },
       );
-    }, [deviceSettings, load, t]),
+    }, [deviceSettings, open, t]),
   );
 
   /** One sound-switch save at a time; a failed save rolls back only that switch. */
@@ -263,6 +271,7 @@ function VoiceSettingsScreen() {
     if (pending !== null || !deviceVoiceReady) return;
     setPending("device-voice");
     setError(null);
+    if (status) setLoadError(null);
     try {
       await saveDeviceVoice(!deviceVoice);
     } finally {
@@ -277,8 +286,9 @@ function VoiceSettingsScreen() {
     loadRevision.current++;
     setPending("voice");
     setError(null);
+    if (status) setLoadError(null);
     try {
-      if (wasDeviceVoice && !(await saveDeviceVoice(false))) return;
+      if (deviceSettings && !(await saveDeviceVoice(false))) return;
       setProvider(nextProvider);
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
@@ -320,12 +330,14 @@ function VoiceSettingsScreen() {
     credentials.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const canConnect = selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8;
+  const keyless = Boolean(selected?.keyless);
+  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
 
   async function connect() {
     if (!selected || !canConnect) return;
     setPending("connect");
     setError(null);
+    if (status) setLoadError(null);
     try {
       await rpc("voice/connect", {
         provider: selected.id,
@@ -355,6 +367,7 @@ function VoiceSettingsScreen() {
     if (!providerId) return;
     setPending("disconnect");
     setError(null);
+    if (status) setLoadError(null);
     try {
       await rpc("voice/disconnect", { provider: providerId });
       setApiKey("");
@@ -374,6 +387,7 @@ function VoiceSettingsScreen() {
     speechModelSave.current = next;
     setPending("speech");
     setError(null);
+    if (status) setLoadError(null);
     try {
       const saved = await rpc("voice/setSpeechModel", {
         provider: selected.id,
@@ -414,6 +428,7 @@ function VoiceSettingsScreen() {
   async function testVoice() {
     setPending("test");
     setError(null);
+    if (status) setLoadError(null);
     try {
       const ready = await speakText(t("Hi, this is how I'll sound when I read replies out loud."), {
         scope,
@@ -428,6 +443,9 @@ function VoiceSettingsScreen() {
     }
   }
 
+  const failure = error ?? loadError;
+  const shownError = error ?? (status ? loadError : null);
+
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
@@ -435,8 +453,19 @@ function VoiceSettingsScreen() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {loading || !deviceVoiceReady ? <ActivityIndicator color={native.secondaryLabel} /> : null}
+        {failure && !status ? (
+          <LoadFailure
+            message={failure}
+            onRetry={() => {
+              setLoadError(null);
+              setLoading(true);
+              open();
+            }}
+          />
+        ) : shownError ? (
+          <Text style={styles.error}>{shownError}</Text>
+        ) : null}
         {deviceSettings ? (
           <View style={styles.group}>
             <Pressable
@@ -452,11 +481,6 @@ function VoiceSettingsScreen() {
             >
               <View style={styles.rowCopy}>
                 <Text style={styles.cardTitle}>{t("This device")}</Text>
-                <Text style={styles.cardMeta}>
-                  {deviceVoice
-                    ? t("Free, works offline")
-                    : t("Your phone's built-in voice. Free, no account needed")}
-                </Text>
               </View>
               {deviceVoice ? <Checkmark /> : null}
             </Pressable>
@@ -465,12 +489,12 @@ function VoiceSettingsScreen() {
         {catalog.length ? (
           <View style={styles.group}>
             {catalog.map((entry, index) => {
-              const connected = credentials.some((cred) => cred.provider === entry.id);
+              const chosen = deviceVoiceReady && !deviceVoice && provider === entry.id;
               return (
                 <Pressable
                   key={entry.id}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: !deviceVoice && provider === entry.id }}
+                  accessibilityState={{ selected: chosen }}
                   disabled={pending !== null || !deviceVoiceReady}
                   onPress={() => void chooseProvider(entry.id)}
                   style={({ pressed }) => [
@@ -482,15 +506,8 @@ function VoiceSettingsScreen() {
                 >
                   <View style={styles.rowCopy}>
                     <Text style={styles.cardTitle}>{entry.name}</Text>
-                    <Text style={styles.cardMeta}>
-                      {connected
-                        ? t("Connected")
-                        : entry.transcribe
-                          ? t("Speak + transcribe")
-                          : t("Speak only")}
-                    </Text>
                   </View>
-                  {!deviceVoice && provider === entry.id ? <Checkmark /> : null}
+                  {chosen ? <Checkmark /> : null}
                 </Pressable>
               );
             })}
@@ -505,7 +522,7 @@ function VoiceSettingsScreen() {
             onPress={() => void disconnect(OPENAI_COMPATIBLE_PROVIDER_ID)}
           />
         ) : null}
-        {selected && !deviceVoice ? (
+        {selected && deviceVoiceReady && !deviceVoice ? (
           <>
             {selfHosted ? (
               <TextInput
@@ -523,26 +540,28 @@ function VoiceSettingsScreen() {
                 textContentType="URL"
               />
             ) : null}
-            <TextInput
-              accessibilityLabel={t("API key")}
-              autoCapitalize="none"
-              autoComplete="off"
-              autoCorrect={false}
-              importantForAutofill="no"
-              value={apiKey}
-              onChangeText={setApiKey}
-              placeholder={
-                selfHosted
-                  ? t("Optional")
-                  : credential
-                    ? t("Paste a replacement key")
-                    : t("Paste your API key")
-              }
-              placeholderTextColor={native.tertiaryLabel}
-              secureTextEntry
-              style={styles.input}
-              textContentType="none"
-            />
+            {keyless ? null : (
+              <TextInput
+                accessibilityLabel={t("API key")}
+                autoCapitalize="none"
+                autoComplete="off"
+                autoCorrect={false}
+                importantForAutofill="no"
+                value={apiKey}
+                onChangeText={setApiKey}
+                placeholder={
+                  selfHosted
+                    ? t("Optional")
+                    : credential
+                      ? t("Paste a replacement key")
+                      : t("Paste your API key")
+                }
+                placeholderTextColor={native.tertiaryLabel}
+                secureTextEntry
+                style={styles.input}
+                textContentType="none"
+              />
+            )}
             {selfHosted ? (
               <>
                 <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
@@ -569,17 +588,19 @@ function VoiceSettingsScreen() {
                 />
               </>
             ) : null}
-            <NativeActionButton
-              disabled={pending !== null || !canConnect}
-              label={
-                credential && selfHosted
-                  ? t("Reconnect")
-                  : credential
-                    ? t("Replace key")
-                    : t("Connect")
-              }
-              onPress={() => void connect()}
-            />
+            {keyless && credential ? null : (
+              <NativeActionButton
+                disabled={pending !== null || !canConnect}
+                label={
+                  credential && selfHosted
+                    ? t("Reconnect")
+                    : credential
+                      ? t("Replace key")
+                      : t("Connect")
+                }
+                onPress={() => void connect()}
+              />
+            )}
             {credential && scope === "account" ? (
               <NativeActionButton
                 disabled={pending !== null}
@@ -689,7 +710,6 @@ function createVoiceStyles() {
     },
     rowCopy: { flex: 1 },
     cardTitle: { color: native.label, fontSize: 16 },
-    cardMeta: { color: native.tertiaryLabel, marginTop: 4, fontSize: 12 },
     fieldLabel: { color: native.label, marginTop: 16 },
     input: {
       marginTop: 8,

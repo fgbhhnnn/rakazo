@@ -53,6 +53,7 @@ async function render(
           open
           onOpenChange={() => {}}
           onIntegrations={onIntegrations}
+          onSkills={vi.fn()}
           onBoard={onBoard}
           onArtifacts={() => {}}
           onSettings={() => {}}
@@ -140,10 +141,11 @@ it("opens integrations and keeps the existing account actions and links", async 
   expect(onIntegrations).toHaveBeenCalledOnce();
   const menu = document.querySelector('[data-slot="popover-content"]')!;
   expect([...menu.querySelectorAll("button, a")].map((row) => row.textContent)).toEqual([
-    "Usage",
-    "Board",
-    "Artifacts",
     "Settings",
+    "Skills",
+    "Artifacts",
+    "Board",
+    "Usage",
     "Log out",
   ]);
   expect(host.querySelector('[data-testid="user-menu-trigger"]')?.getAttribute("aria-label")).toBe(
@@ -167,9 +169,10 @@ it.each(["Android", "iPhone", "Mozilla/5.0 (Macintosh)"])(
     expect(menu.textContent).not.toContain("Docs");
     expect(menu.querySelectorAll("a")).toHaveLength(0);
     expect([...menu.querySelectorAll("button")].map((row) => row.textContent)).toEqual([
-      "Usage",
-      "Artifacts",
       "Settings",
+      "Skills",
+      "Artifacts",
+      "Usage",
       "Log out",
     ]);
   },

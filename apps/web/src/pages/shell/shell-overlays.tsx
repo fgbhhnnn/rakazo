@@ -1,9 +1,17 @@
-import type { Bot, Me, Space, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
+import type {
+  Bot,
+  BotAvatarSet,
+  Me,
+  Space,
+  SpaceMemoryConfig,
+  UsageSummary,
+} from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
+import { AGENT_IMPORT_ENABLED } from "../../lib/agent-import-flag";
 import type { connectedAppMarks } from "../../lib/connected-apps";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
@@ -20,6 +28,9 @@ const PeerMessagesOverlay = lazyOverlay(() =>
 const PluginsOverlay = lazyOverlay(() =>
   import("../PluginsOverlay").then((module) => module.PluginsOverlay),
 );
+const SkillsDialog = lazyOverlay(() =>
+  import("../../components/integrations/skills-dialog").then((module) => module.SkillsDialog),
+);
 const McpServersOverlay = lazyOverlay(() =>
   import("../McpServersOverlay").then((module) => module.McpServersOverlay),
 );
@@ -35,7 +46,7 @@ function voiceStatusRefreshTimeout(): Promise<never> {
   });
 }
 
-/** The integrations and MCP overlays the URL opens. */
+/** The integrations, skills and MCP overlays the URL opens. */
 export function AppOverlays({
   overlay,
   setOverlay,
@@ -62,6 +73,7 @@ export function AppOverlays({
           onOpenMcp={memberSettingsLocked ? undefined : () => setOverlay({ kind: "mcp" })}
         />
       ) : null}
+      {overlay?.kind === "skills" ? <SkillsDialog onClose={() => setOverlay(null)} /> : null}
       {overlay?.kind === "mcp" && !memberSettingsLocked ? (
         <McpServersOverlay
           editServerId={overlay.serverId}
@@ -84,6 +96,8 @@ export function SettingsOverlays({
   spaces,
   renameSpace,
   removeSpace,
+  refreshSpaces,
+  openAgentImport,
   alive,
   user,
   refetchSession,
@@ -105,6 +119,8 @@ export function SettingsOverlays({
   spaces: Space[];
   renameSpace: (spaceId: string, name: string) => Promise<void>;
   removeSpace: (spaceId: string) => Promise<void>;
+  refreshSpaces: () => Promise<void>;
+  openAgentImport: () => void;
   alive: RefObject<boolean>;
   user: { name?: string | null; email?: string } | undefined;
   refetchSession: () => Promise<unknown>;
@@ -115,7 +131,7 @@ export function SettingsOverlays({
   peerConversation: { peerBotId: string; peerBotName: string } | null;
   setPeerConversation: (peer: null) => void;
   active: Bot | undefined;
-  peerBot: (botId: string) => { color: string } | undefined;
+  peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
 }) {
   // Read when Usage opens; a reopened Usage shows the last summary while it refreshes.
   const usageQuery = useQuery({ ...queries.usage.summary.queryOptions(), enabled: false });
@@ -152,11 +168,21 @@ export function SettingsOverlays({
             setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
           }
           messagingEnabled={messagingEnabled}
+          paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
           timezone={bootstrapMe?.timezone ?? null}
           onTimezoneChange={async (timezone) => {
             const nextMe = await rpc.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
           }}
+          onAccountImported={refreshSpaces}
+          onImportAgent={
+            AGENT_IMPORT_ENABLED
+              ? () => {
+                  setOverlay(null);
+                  openAgentImport();
+                }
+              : undefined
+          }
           memoryConfig={memoryConfig}
           onMemoryConfigChange={(config) => {
             void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);
@@ -180,9 +206,11 @@ export function SettingsOverlays({
           botId={active.id}
           botName={active.name}
           botColor={active.color}
+          botAvatarSet={active.avatarSet}
           peerBotId={peerConversation.peerBotId}
           peerBotName={peerConversation.peerBotName}
           peerBotColor={peerBot(peerConversation.peerBotId)?.color ?? FALLBACK_BOT_COLOR}
+          peerBotAvatarSet={peerBot(peerConversation.peerBotId)?.avatarSet}
           onClose={() => setPeerConversation(null)}
         />
       ) : null}

@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
+import { ApprovalRulePreview } from "./ApprovalRulePreview";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
 const segmented = "rounded-lg bg-muted p-1";
@@ -42,6 +43,7 @@ export function ApprovalRulesSettings({
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
   const [saving, setSaving] = useState(false);
+  const [previewRule, setPreviewRule] = useState<string | null>(null);
   const [actionError, setError] = useState<string | null>(null);
   const error =
     actionError ?? (loadFailed ? errorText(loadFailed, t`Could not load approval rules`) : null);
@@ -143,60 +145,78 @@ export function ApprovalRulesSettings({
       {rules.length > 0 ? (
         <SettingsGroup data-testid="approval-rules">
           {rules.map((rule) => (
-            <SettingsRow
-              key={rule.id}
-              label={ruleLabel(rule)}
-              control={
-                <>
-                  {rule.matchKind === "category" ? (
-                    <span className="text-[13px] text-muted-foreground">
-                      {rule.effect === "always_allow" ? (
-                        <Trans>Allow</Trans>
-                      ) : rule.effect === "deny" ? (
-                        <Trans>Block</Trans>
-                      ) : (
-                        <Trans>Ask</Trans>
-                      )}
-                    </span>
-                  ) : (
-                    <ToggleGroup
-                      aria-label={ruleLabel(rule)}
-                      value={[rule.effect]}
-                      onValueChange={([next]) => {
-                        if (next === "always_allow" || next === "deny") void setEffect(rule, next);
-                      }}
-                      disabled={readOnly || saving}
-                      spacing={1}
-                      className={segmented}
-                    >
-                      <ToggleGroupItem value="always_allow" className={segment}>
-                        <Trans>Allow</Trans>
-                      </ToggleGroupItem>
-                      {/* An older ask rule keeps showing what it does until it is switched. */}
-                      {rule.effect === "require_approval" ? (
-                        <ToggleGroupItem value="require_approval" className={segment}>
-                          <Trans>Ask</Trans>
-                        </ToggleGroupItem>
-                      ) : null}
-                      <ToggleGroupItem value="deny" className={segment}>
-                        <Trans>Block</Trans>
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  )}
-                  {readOnly ? null : (
+            <div key={rule.id}>
+              <SettingsRow
+                label={ruleLabel(rule)}
+                control={
+                  <>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-muted-foreground"
                       disabled={saving}
-                      onClick={() => void removeRule(rule)}
+                      onClick={() => setPreviewRule(previewRule === rule.id ? null : rule.id)}
+                      aria-expanded={previewRule === rule.id}
                     >
-                      <Trans>Remove</Trans>
+                      <Trans>Preview</Trans>
                     </Button>
-                  )}
-                </>
-              }
-            />
+                    {rule.matchKind === "category" ? (
+                      <span className="text-[13px] text-muted-foreground">
+                        {rule.effect === "always_allow" ? (
+                          <Trans>Allow</Trans>
+                        ) : rule.effect === "deny" ? (
+                          <Trans>Block</Trans>
+                        ) : (
+                          <Trans>Ask</Trans>
+                        )}
+                      </span>
+                    ) : (
+                      <ToggleGroup
+                        aria-label={ruleLabel(rule)}
+                        value={[rule.effect]}
+                        onValueChange={([next]) => {
+                          if (next === "always_allow" || next === "deny")
+                            void setEffect(rule, next);
+                        }}
+                        disabled={readOnly || saving}
+                        spacing={1}
+                        className={segmented}
+                      >
+                        <ToggleGroupItem value="always_allow" className={segment}>
+                          <Trans>Allow</Trans>
+                        </ToggleGroupItem>
+                        {/* An older ask rule keeps showing what it does until it is switched. */}
+                        {rule.effect === "require_approval" ? (
+                          <ToggleGroupItem value="require_approval" className={segment}>
+                            <Trans>Ask</Trans>
+                          </ToggleGroupItem>
+                        ) : null}
+                        <ToggleGroupItem value="deny" className={segment}>
+                          <Trans>Block</Trans>
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    )}
+                    {readOnly ? null : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground"
+                        disabled={saving}
+                        onClick={() => void removeRule(rule)}
+                      >
+                        <Trans>Remove</Trans>
+                      </Button>
+                    )}
+                  </>
+                }
+              />
+              {previewRule === rule.id ? (
+                <ApprovalRulePreview
+                  key={`${scope}:${rule.id}:${JSON.stringify(rules)}`}
+                  rule={rule}
+                  scope={scope}
+                />
+              ) : null}
+            </div>
           ))}
         </SettingsGroup>
       ) : null}

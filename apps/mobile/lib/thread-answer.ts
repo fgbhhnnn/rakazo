@@ -1,4 +1,4 @@
-import type { RpcInput } from "@rakazo/contracts";
+import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
 import { askAnswerRunId } from "@rakazo/core";
 import type { MobileMessage } from "./api";
 
@@ -17,8 +17,9 @@ export async function answerThreadMessage(
   { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead }: ThreadAnswerContext,
   message: Pick<MobileMessage, "id" | "runId"> & { blocks?: MobileMessage["blocks"] | null },
   answer: string,
-  username?: string,
+  fields?: readonly LoginFieldInput[],
   dismiss?: boolean,
+  remember?: false,
 ) {
   // A mirrored worker approval answers the worker's run, not this chat's.
   const runId = askAnswerRunId(message);
@@ -29,7 +30,8 @@ export async function answerThreadMessage(
     runId,
     messageId: message.id,
     answer,
-    ...(username ? { username } : {}),
+    ...(fields ? { fields: [...fields] } : {}),
+    ...(remember === false ? { remember } : {}),
     ...(dismiss ? { dismiss: true as const } : {}),
   });
   // The answer is saved once the server accepts it; a failed refresh only delays the card.

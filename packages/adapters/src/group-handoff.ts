@@ -1,11 +1,11 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
+import type { HandoffFailureReason } from "@rakazo/core";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   botMessageContext,
   botMessageHopExhausted,
   formatHandoffBrief,
-  type HandoffFailureReason,
   nextBotMessageHop,
   renderBotGroupDirectory,
   renderGroupMembersContext,
@@ -25,6 +25,7 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { stageSourceForHandoff } from "./group-consult.js";
 import { holdWhileBusy } from "./group-held-runs.js";
 import { recordTeamRunHandoff, teamRunHandoffGate } from "./group-team-run-gate.js";
+import { runLeaseFor } from "./run-messages.js";
 
 export type HandoffResult =
   | { error: string; reason: HandoffFailureReason }
@@ -55,7 +56,7 @@ type CommittedHandoff =
     };
 
 export async function handoffToGroupBot(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
   run: {
     id: string;
     spaceId: string;
@@ -247,6 +248,7 @@ export async function handoffToGroupBot(
       botId: run.botId,
       runId: historyRunId,
       clientNonce: deliveryKey,
+      lease: historyRunId ? runLeaseFor(deps, historyRunId) : undefined,
     });
     const task = await tx.task.create({
       data: {
@@ -280,6 +282,7 @@ export async function handoffToGroupBot(
       botId: run.botId,
       type: "group.handoff",
       runId: historyRunId,
+      lease: historyRunId ? runLeaseFor(deps, historyRunId) : undefined,
       payload: {
         messageId: message.id,
         fromBotId: run.botId,
@@ -395,7 +398,7 @@ export async function loadGroupContext(
       members: {
         where: { bot: { archivedAt: null } },
         include: {
-          bot: { select: { id: true, name: true, title: true, description: true } },
+          bot: { select: { id: true, name: true, description: true } },
         },
         orderBy: { createdAt: "asc" },
       },
