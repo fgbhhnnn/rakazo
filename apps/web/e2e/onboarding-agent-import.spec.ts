@@ -51,8 +51,20 @@ test("a new user can import an agent from Settings after onboarding", async ({
   });
   await expect(page.getByRole("button", { name: "Import an agent", exact: true })).toHaveCount(0);
   expect(await rpc<Bot[]>(page, "bots/list", {})).toEqual([]);
-  model.needsModel = false;
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  // Import lives in Settings now, so finish the required model step before opening it.
+  await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Import an agent", exact: true })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Provider" }).click();
+  await page.getByRole("option", { name: "Ollama Cloud", exact: true }).click();
+  await page.getByLabel("Model id", { exact: true }).fill("fixture-model");
+  await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
+  model.needsModel = false;
+  await clickAndWaitForRpc(
+    page,
+    page.getByRole("button", { name: "Continue", exact: true }),
+    "models/connect",
+  );
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   const panel = await openImport(page);
   await captureScreenshot(page, testInfo, "onboarding-import-choose");
