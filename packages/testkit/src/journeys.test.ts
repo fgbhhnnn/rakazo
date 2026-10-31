@@ -2660,7 +2660,14 @@ describeJourneys("required product journeys", () => {
       async () => (await texts(stall.threadId)).at(-1) === "团队任务已暂停，等你回复。",
     );
     const stallTexts = await texts(stall.threadId);
-    expect(stallTexts.filter((text) => text.startsWith("（系统提醒 Planner"))).toHaveLength(1);
+    // The nudge is a hidden follow-up turn: exactly one, and nothing posted for it.
+    expect(
+      await prisma.run.count({
+        where: { threadId: stall.threadId, clientNonce: { startsWith: "team-nudge:" } },
+      }),
+    ).toBe(1);
+    // (The scripted bot echoes its prompt, so only a posted reminder card would start with it.)
+    expect(stallTexts.filter((text) => text.startsWith("（系统提醒"))).toEqual([]);
     expect(stallTexts.at(-1)).toBe("团队任务已暂停，等你回复。");
 
     // The hop budget stops the run with a visible notice.

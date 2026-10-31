@@ -35,6 +35,7 @@ import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
 import { dispatcherTimeoutNotice, dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
+import { settleHandoffNarration } from "./group-stale-narration.js";
 import { afterGroupTurn } from "./group-turn-end.js";
 import {
   COMPACTION_BATCH_SIZE,
@@ -690,7 +691,13 @@ export async function completeRun(ctx: RunContext) {
     bot,
     handedOff: ctx.state.handedOff,
     handoffTargets: ctx.state.handoffTargets,
-    blocks: draftBlocks,
+    blocks: thread.groupId
+      ? await settleHandoffNarration(
+          deps.prisma,
+          { id: runId, threadId: thread.id },
+          { handedOff: ctx.state.handedOff, blocks: draftBlocks },
+        )
+      : draftBlocks,
     humanTurn: { threadId: thread.id, before: run.createdAt },
   });
   const replyGuard = guardDispatcherReply(

@@ -13,6 +13,11 @@ export const TEAM_RUN_DEFAULT_MAX_HOPS = 16;
 export const TEAM_RUN_DEFAULT_MAX_MINUTES = 60;
 /** The leader may send the same member another stage this many times in a row, then it stops. */
 export const TEAM_RUN_MAX_LEADER_REPEATS = 2;
+/**
+ * When the member returned a new result each time, the leader's sends back to it are review
+ * rounds (fix this, then that), not a loop: this many of them are allowed before the run pauses.
+ */
+export const TEAM_RUN_MAX_REVISION_ROUNDS = 3;
 
 export type TeamRunStatus =
   | "active"
@@ -51,14 +56,18 @@ export function teamRunWithinBudget(
 
 /**
  * The leader's streak after it hands a stage to `targetId`, and whether that is one repeat
- * too many: the same member again and again with nothing else in between is a loop.
+ * too many: the same member again and again with nothing else in between is a loop. With
+ * `revision` (the member returned a new result since the leader's last send to it), the send
+ * is a review round instead, and up to TEAM_RUN_MAX_REVISION_ROUNDS of those are allowed.
  */
 export function nextLeaderStreak(
   run: { lastLeaderTargetId: string | null; leaderTargetStreak: number },
   targetId: string,
+  options: { revision?: boolean } = {},
 ): { streak: number; loop: boolean } {
   const streak = run.lastLeaderTargetId === targetId ? run.leaderTargetStreak + 1 : 1;
-  return { streak, loop: streak > TEAM_RUN_MAX_LEADER_REPEATS + 1 };
+  const repeats = options.revision ? TEAM_RUN_MAX_REVISION_ROUNDS : TEAM_RUN_MAX_LEADER_REPEATS;
+  return { streak, loop: streak > repeats + 1 };
 }
 
 /** Visible text of the system's hand-back card after a member finishes a stage. */
@@ -130,7 +139,7 @@ export function renderTeamRunContext(input: {
       ...roster,
       "Run it to completion with the team, one stage at a time:",
       "- Plan the stages from what the request needs and what each member does, then hand the first stage to the best-suited member with handoff_to_bot and a short brief (objective, deliverable, acceptance criteria, links to earlier results). Do your own part yourself when it is yours.",
-      "- When a member finishes, the system returns the result to you. Check it, then hand the next stage on, or send it back once with what to fix.",
+      `- When a member finishes, the system returns the result to you. Check it, then hand the next stage on, or send it back with exactly what to fix (at most ${TEAM_RUN_MAX_REVISION_ROUNDS} review rounds per member). When a member only needs information another member has, relay it in one handoff or let them ask each other.`,
       "- Before you close the task, check the result against the acceptance criteria. If a member's description fits reviewing or checking work, you may hand it to them to verify first.",
       `- When everything is done, call ${COMPLETE_TEAM_RUN_TOOL_NAME} with a summary for the user, the deliverables and any open issues. Saying it is done does not close it.`,
       `- If the user asks to stop or cancel the task, hand nothing on and call ${COMPLETE_TEAM_RUN_TOOL_NAME} with outcome "stopped"; a stopped task is never reported as completed.`,

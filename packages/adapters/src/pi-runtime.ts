@@ -597,7 +597,7 @@ export class PiAgentRuntime implements AgentRuntime {
           // Reasoning deltas reach no runtime event, but they are progress for a watchdog. A
           // started model call (turn_start, message_start) may think silently before its first
           // token; the dispatcher watchdog waits longer for it (dispatcher-model-wait.ts).
-          request.onStreamActivity?.(streamActivityKindOf(event.type));
+          request.onStreamActivity?.(streamActivityKindOf(event));
           if (event.type === "tool_execution_end" && !event.result.terminate) {
             finishedCalls.set(event.toolCallId, {
               role: "toolResult",

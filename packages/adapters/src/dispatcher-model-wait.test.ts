@@ -49,19 +49,26 @@ describe("dispatcher model wait", () => {
   });
 
   it("classifies agent events", () => {
-    expect(streamActivityKindOf("turn_start")).toBe("model_wait");
-    expect(streamActivityKindOf("message_start")).toBe("model_wait");
-    for (const type of [
-      "message_update",
-      "message_end",
-      "tool_execution_start",
-      "tool_execution_update",
-      "tool_execution_end",
-    ]) {
-      expect(streamActivityKindOf(type)).toBe("output");
+    const assistant = { role: "assistant" };
+    expect(streamActivityKindOf({ type: "turn_start" })).toBe("model_wait");
+    expect(streamActivityKindOf({ type: "message_start", message: assistant })).toBe("model_wait");
+    for (const type of ["message_update", "message_end"]) {
+      expect(streamActivityKindOf({ type, message: assistant })).toBe("output");
     }
-    expect(streamActivityKindOf("agent_start")).toBeUndefined();
-    expect(streamActivityKindOf("turn_end")).toBeUndefined();
+    for (const type of ["tool_execution_start", "tool_execution_update", "tool_execution_end"]) {
+      expect(streamActivityKindOf({ type })).toBe("output");
+    }
+    expect(streamActivityKindOf({ type: "agent_start" })).toBeUndefined();
+    expect(streamActivityKindOf({ type: "turn_end" })).toBeUndefined();
+  });
+
+  it("the prompt and tool results are not model output", () => {
+    for (const role of ["user", "toolResult", "custom", undefined]) {
+      for (const type of ["message_start", "message_update", "message_end"]) {
+        expect(streamActivityKindOf({ type, message: { role } })).toBeUndefined();
+      }
+    }
+    expect(streamActivityKindOf({ type: "message_end" })).toBeUndefined();
   });
 
   it("lets a turn waiting on the model stay silent past the idle limit", () => {
@@ -139,5 +146,73 @@ describe("dispatcher model wait", () => {
     expect(controller.signal.aborted).toBe(false);
     vi.advanceTimersByTime(1_001);
     expect(controller.signal.aborted).toBe(true);
+  });
+});
+
+// The order pi-agent-core emits for a dispatcher turn (agent-loop.js): agent_start, turn_start,
+// the prompt's message_start/message_end, then nothing until the model's first token. In prod the
+// prompt's message_end put the turn back on the 90 s idle limit, so silently thinking models were
+// cut off at 90 s ("回复超时") despite the 180 s first-token wait.
+describe("dispatcher watchdog replaying the real agent event order", () => {
+  const IDLE = 90_000;
+  const MODEL_WAIT = 180_000;
+  const start = () => {
+    vi.useFakeTimers();
+    vi.stubEnv("RAKAZO_DISPATCHER_TURN_MAX_MS", String(IDLE));
+    vi.stubEnv("RAKAZO_DISPATCHER_MODEL_WAIT_MAX_MS", String(MODEL_WAIT));
+    vi.stubEnv("RAKAZO_DISPATCHER_TURN_HARD_CAP_MS", "900000");
+    const controller = new AbortController();
+    const watchdog = startDispatcherWatchdog(controller, vi.fn());
+    const emit = (type: string, role?: string) =>
+      watchdog.touch(streamActivityKindOf(role ? { type, message: { role } } : { type }));
+    return { controller, watchdog, emit };
+  };
+  const prompt = (emit: (type: string, role?: string) => void) => {
+    emit("agent_start");
+    emit("turn_start");
+    emit("message_start", "user");
+    emit("message_end", "user");
+  };
+
+  it("does not stop a silent first model call before the model wait", () => {
+    const { controller, watchdog, emit } = start();
+    prompt(emit);
+    vi.advanceTimersByTime(MODEL_WAIT - 1_000);
+    expect(controller.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1_001);
+    expect(controller.signal.aborted).toBe(true);
+    watchdog();
+  });
+
+  it("applies the idle limit once the model streams", () => {
+    const { controller, watchdog, emit } = start();
+    prompt(emit);
+    vi.advanceTimersByTime(120_000);
+    emit("message_start", "assistant");
+    emit("message_update", "assistant");
+    vi.advanceTimersByTime(IDLE - 1_000);
+    expect(controller.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1_001);
+    expect(controller.signal.aborted).toBe(true);
+    watchdog();
+  });
+
+  it("waits for the next model call again after a tool round", () => {
+    const { controller, watchdog, emit } = start();
+    prompt(emit);
+    emit("message_start", "assistant");
+    emit("message_update", "assistant");
+    emit("message_end", "assistant");
+    emit("tool_execution_start");
+    emit("tool_execution_end");
+    emit("message_start", "toolResult");
+    emit("message_end", "toolResult");
+    emit("turn_end");
+    emit("turn_start");
+    vi.advanceTimersByTime(MODEL_WAIT - 1_000);
+    expect(controller.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1_001);
+    expect(controller.signal.aborted).toBe(true);
+    watchdog();
   });
 });

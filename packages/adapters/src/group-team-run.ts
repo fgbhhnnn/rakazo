@@ -22,12 +22,14 @@ import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { handoffToGroupBot } from "./group-handoff.js";
 import { postGroupNotice } from "./group-reply-routing.js";
+import { askForMissingStageOutput } from "./group-stage-output.js";
 import { humanAnchorForRun } from "./group-team-run-anchor.js";
 import {
   interruptedTeamRunGoal,
   supersedeEarlierTeamRuns,
   teamRunEndedForTurn,
 } from "./group-team-run-close.js";
+import { teamNudgeNoncePrefix } from "./group-team-run-followups.js";
 import { endTeamRun, newerHumanMessage } from "./group-team-run-gate.js";
 
 /**
@@ -222,6 +224,8 @@ export async function continueTeamRun(
     thread: { groupId: string | null | undefined };
     bot: { id: string; name: string; spawnKey?: string | null };
     replyText: string;
+    /** The saved reply, to tell a stage that showed its output from a bare "done". */
+    blocks?: readonly MessageBlock[];
     /** The turn waits on the user: it asked a question or posted a form. */
     waitsOnUser: boolean;
     /** The user steered the turn; the continuation run answers, not this one. */
@@ -257,6 +261,8 @@ async function continueActiveTeamRun(
   if (await pendingBackgroundTasks(deps.prisma, run)) return false;
   if (view.role === "member") {
     if (input.waitsOnUser) return false;
+    // "Done" with nothing to show is not a finished stage: ask once for the output first.
+    if (await askForMissingStageOutput(deps, run, input.blocks ?? [])) return true;
     return returnStageToLeader(deps, run, view, input.bot.name, input.replyText);
   }
   return leaderStopped(deps, run, view, input.waitsOnUser);
@@ -278,7 +284,8 @@ async function returnStageToLeader(
     run,
     view.row.groupId,
     { bot_id: view.leader.id, message: text },
-    { allowFinishedSource: true },
+    // The leader may still be finishing an earlier turn: queue behind it, never overlap.
+    { allowFinishedSource: true, holdWhileTargetBusy: true },
   );
   if ("ok" in result) return true;
   getLogger().info("team run return to leader refused", { runId: run.id, reason: result.reason });
@@ -318,7 +325,10 @@ async function leaderStopped(
   return false;
 }
 
-/** Posts the visible reminder and starts one more leader turn with it as the prompt. */
+/**
+ * Starts one more leader turn with the reminder as its prompt. The reminder is the leader's
+ * instruction, not chat: nothing is posted, and the turn keeps the stopped turn's source.
+ */
 async function nudgeLeader(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
   run: SourceRun,
@@ -332,14 +342,6 @@ async function nudgeLeader(
       data: { nudges: 1 },
     });
     if (claimed.count !== 1) return undefined;
-    const blocks: MessageBlock[] = [{ kind: "text", text }];
-    const message = await createThreadMessageInTransaction(tx, {
-      threadId: run.threadId,
-      role: "bot",
-      blocks,
-      botId: view.leader.id,
-      clientNonce: `team-nudge:${view.row.id}:${run.id}`,
-    });
     const task = await tx.task.create({
       data: {
         spaceId: run.spaceId,
@@ -359,22 +361,13 @@ async function nudgeLeader(
         userId: run.userId,
         status: "queued",
         trigger: "follow_up",
-        sourceMessageId: message.id,
+        sourceMessageId: run.sourceMessageId ?? null,
+        clientNonce: `${teamNudgeNoncePrefix(view.row.id)}${run.id}`,
       },
     });
-    const event = await appendEventInTransaction(tx, {
-      spaceId: run.spaceId,
-      threadId: run.threadId,
-      botId: view.leader.id,
-      type: "thread.message.created",
-      payload: { messageId: message.id, role: "bot", blocks },
-    });
-    return { runId: nextRun.id, seq: event.seq };
+    return { runId: nextRun.id };
   });
   if (!committed) return false;
-  await deps.events.notify(run.threadId, committed.seq).catch((error) => {
-    getLogger().error("team run nudge notification", error);
-  });
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
     getLogger().error("team run nudge enqueue", error);
   });

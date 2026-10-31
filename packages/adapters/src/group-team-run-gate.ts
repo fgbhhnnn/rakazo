@@ -8,6 +8,7 @@ import {
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { humanAnchorForRun } from "./group-team-run-anchor.js";
 import { cancelTeamRunFollowUps } from "./group-team-run-followups.js";
+import { leaderSendIsRevision } from "./group-team-run-revisions.js";
 
 export { humanAnchor } from "./group-team-run-anchor.js";
 
@@ -94,7 +95,12 @@ export async function teamRunHandoffGate(
       error: "this team task reached its handoff or time budget; it is paused for the user",
     };
   }
-  if (run.botId === row.leaderBotId && nextLeaderStreak(row, targetId).loop) {
+  if (
+    run.botId === row.leaderBotId &&
+    nextLeaderStreak(row, targetId, {
+      revision: await leaderSendIsRevision(tx, row, targetId),
+    }).loop
+  ) {
     await endTeamRun(tx, row.id, "paused", "loop");
     return {
       kind: "refused",
@@ -106,8 +112,8 @@ export async function teamRunHandoffGate(
     kind: "team",
     runId: row.id,
     leaderId: row.leaderBotId,
-    // Inside a team run a stage may return to the leader, and the leader may send it back once
-    // more; two members still never bounce a stage between themselves.
+    // Inside a team run a stage may return to the leader, and the leader may send it back for
+    // review rounds; two members still never bounce a stage between themselves.
     allowHandBack: targetId === row.leaderBotId || run.botId === row.leaderBotId,
   };
 }

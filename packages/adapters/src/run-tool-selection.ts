@@ -4,6 +4,7 @@ import {
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
 import {
+  ASK_TEAMMATE_TOOL_NAME,
   COMPLETE_TEAM_RUN_TOOL_NAME,
   isBackgroundRunTrigger,
   isOwnerStartedRun,
@@ -42,6 +43,8 @@ export const BUILTIN_AGENT_TOOL_NAMES = new Set([
   ...builtinAgentTools.map((tool) => tool.name),
   // Not in the shared catalog: the executor offers it only to a team run's leader.
   COMPLETE_TEAM_RUN_TOOL_NAME,
+  // Offered by the executor to visible group members (run-tools-ask.ts).
+  ASK_TEAMMATE_TOOL_NAME,
 ]);
 
 const FLEET_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_TOOL_NAMES);

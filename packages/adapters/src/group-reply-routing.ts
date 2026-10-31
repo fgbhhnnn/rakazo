@@ -179,7 +179,12 @@ export async function routeGroupReply(
     runId: run.id,
     reason: result.reason,
   });
-  if (result.reason === "hand_back" || result.reason === "source_inactive") return;
+  if (
+    result.reason === "hand_back" ||
+    result.reason === "source_inactive" ||
+    result.reason === "answering_question"
+  )
+    return;
   await postGroupNotice(deps, run, failedHandoffNotice(plan.target.name, result.reason));
 }
 

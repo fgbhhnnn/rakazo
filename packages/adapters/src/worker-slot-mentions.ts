@@ -11,13 +11,36 @@ const BY_SLOT = new RegExp(
 );
 const SLOT = new RegExp(`后台\\s*\\d+(?!\\s*${COUNT_UNIT})(?:\\s*号)?`, "g");
 
+/** Marks where a slot mention was removed, so only brackets emptied by that removal go. */
+const GONE = "\uE000";
+const EMPTIED_PAIR = new RegExp(`[（(][\\s，,、${GONE}]*${GONE}[\\s，,、${GONE}]*[）)]`, "g");
+const OPEN_SEPARATOR = new RegExp(`([（(])\\s*${GONE}\\s*[，,、]\\s*`, "g");
+const SEPARATOR_CLOSE = new RegExp(`[，,、]\\s*${GONE}\\s*([）)])`, "g");
+/** Fenced blocks (closed or running to the end) and inline code spans are never rewritten. */
+const CODE = /(```[\s\S]*?(?:```|$)|`[^`\n]*`)/;
+
+function proseWithoutSlots(text: string): string {
+  const marked = text.replace(BY_SLOT, GONE);
+  const renamed = marked.replace(SLOT, "后台");
+  if (!marked.includes(GONE)) return renamed;
+  return renamed
+    .replace(EMPTIED_PAIR, "")
+    .replace(OPEN_SEPARATOR, "$1")
+    .replace(SEPARATOR_CLOSE, "$1")
+    .replaceAll(GONE, "");
+}
+
+/**
+ * Removes worker slot names from prose. Brackets are only touched when a removed "由后台N执行"
+ * left them empty; an unrelated "()" or "（）" (code such as `fn()` above all) stays, and code
+ * spans and fenced blocks are left exactly as written.
+ */
 export function withoutWorkerSlotMentions(text: string): string {
+  if (!text.includes("后台")) return text;
   return text
-    .replace(BY_SLOT, "")
-    .replace(SLOT, "后台")
-    .replace(/（\s*）|\(\s*\)/g, "")
-    .replace(/（\s*[，,、]\s*/g, "（")
-    .replace(/[，,、]\s*）/g, "）");
+    .split(CODE)
+    .map((part, index) => (index % 2 === 1 ? part : proseWithoutSlots(part)))
+    .join("");
 }
 
 /**

@@ -26,6 +26,41 @@ describe("withoutWorkerSlotMentions", () => {
   });
 });
 
+describe("withoutWorkerSlotMentions leaves brackets and code alone", () => {
+  it.each([
+    "调用 `response.text()` 读取正文。",
+    "先 await response.text() 再解析。",
+    "函数 fn() 和 init（） 都没有参数。",
+    "后台3个任务都在跑，fn() 返回空。",
+    "```ts\nconst body = await response.text();\nfoo();\n```",
+    "注意（）里没有内容。",
+  ])("keeps %s", (input) => {
+    expect(withoutWorkerSlotMentions(input)).toBe(input);
+  });
+
+  it("keeps empty parentheses elsewhere in a message that names a slot", () => {
+    expect(withoutWorkerSlotMentions("结果（由后台2完成）：调用 fn() 即可。")).toBe(
+      "结果：调用 fn() 即可。",
+    );
+  });
+
+  it("never rewrites a slot-like name inside a code block or span", () => {
+    const text = "由后台4执行。\n```\nlog('由后台4执行 ()');\nrun();\n```\n见 `后台2()`。";
+    expect(withoutWorkerSlotMentions(text)).toBe(
+      "。\n```\nlog('由后台4执行 ()');\nrun();\n```\n见 `后台2()`。",
+    );
+  });
+
+  it("keeps an unclosed fence as code", () => {
+    const text = "进度（由后台1执行）\n```js\nstart();";
+    expect(withoutWorkerSlotMentions(text)).toBe("进度\n```js\nstart();");
+  });
+
+  it("drops the separator left next to a removed slot inside brackets", () => {
+    expect(withoutWorkerSlotMentions("（由后台2执行，#AB12CD34）")).toBe("（#AB12CD34）");
+  });
+});
+
 describe("guardDispatcherReply removes worker slot names", () => {
   it("rewrites a relayed result that credits a slot (seq 1609)", () => {
     const text = "**蒙特卡洛 π 任务已完成**（#TIZXV4ZQ，由后台4执行）：共运行 4 轮。";

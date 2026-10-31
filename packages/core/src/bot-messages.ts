@@ -1,5 +1,6 @@
 import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
+import { teammateQuestionPromptLines } from "./group-consult.js";
 import { escapePromptData } from "./prompt-data.js";
 
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;
@@ -140,6 +141,8 @@ export function renderGroupMembersContext(
   options: {
     /** handoff_to_bot is in this run's tools; without it the prompt never mentions it. */
     handoffTool?: boolean;
+    /** ask_teammate is in this run's tools (group-consult.ts). */
+    askTool?: boolean;
   } = {},
 ): string {
   const handoffTool = options.handoffTool ?? true;
@@ -154,6 +157,7 @@ export function renderGroupMembersContext(
     ...formatBotRosterLines(members),
     "</group_members>",
     ...groupTeamworkLines(handoffTool),
+    ...(options.askTool ? teammateQuestionPromptLines() : []),
   ].join("\n");
 }
 

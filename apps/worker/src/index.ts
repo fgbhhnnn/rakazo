@@ -63,6 +63,7 @@ import {
   RunWorkerHost,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcileTeammateQuestions,
   resolveDeploymentModel,
   resolvePiSessionRoot,
   resolveSandboxProvider,
@@ -345,6 +346,7 @@ async function main() {
     reconcileHomeStorage: homeStorageSweeper(home),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
     reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
+    reconcileTeammateQuestions: () => reconcileTeammateQuestions({ prisma, jobs, events }),
   });
   let stopHealth: (() => Promise<void>) | undefined;
   const shutdown = new AbortController();

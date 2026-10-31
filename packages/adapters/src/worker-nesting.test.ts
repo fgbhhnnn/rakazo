@@ -27,6 +27,7 @@ describe("worker nesting policy", () => {
   it("covers every way a worker could start another agent", () => {
     expect([...WORKER_NESTED_AGENT_TOOLS].sort()).toEqual(
       [
+        "ask_teammate",
         "background_task",
         "background_task_cancel",
         "background_task_message",

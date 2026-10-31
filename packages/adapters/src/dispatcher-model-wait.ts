@@ -29,17 +29,30 @@ export function dispatcherModelWaitMs(
   return Math.min(Math.max(wait, idleMs), Math.max(capMs, idleMs));
 }
 
+/** The part of an agent event the watchdog reads. */
+export type StreamActivityEvent = {
+  readonly type: string;
+  readonly message?: { readonly role?: string } | undefined;
+};
+
 /**
  * What an agent event says about the turn: a model call just started and the turn now waits on
  * the model, or the model/tools produced output. Other events keep the current window.
+ *
+ * Only the assistant's own message is model output. The prompt (user) message and tool results
+ * are also announced with message_start/message_end, right after turn_start and before the model
+ * says anything; counting them as output dropped a silently thinking model back to the short
+ * idle limit, so the long first-token wait never applied.
  */
-export function streamActivityKindOf(eventType: string): StreamActivityKind | undefined {
-  switch (eventType) {
+export function streamActivityKindOf(event: StreamActivityEvent): StreamActivityKind | undefined {
+  switch (event.type) {
     case "turn_start":
-    case "message_start":
       return "model_wait";
+    case "message_start":
+      return event.message?.role === "assistant" ? "model_wait" : undefined;
     case "message_update":
     case "message_end":
+      return event.message?.role === "assistant" ? "output" : undefined;
     case "tool_execution_start":
     case "tool_execution_update":
     case "tool_execution_end":

@@ -73,6 +73,7 @@ import {
   RunJobPublisher,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcileTeammateQuestions,
   removePiUserSessions,
   resolveDeploymentModel,
   ScriptedAgentRuntime,
@@ -628,6 +629,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           securityEventRetentionDays(),
         ),
         reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+        reconcileTeammateQuestions: () => reconcileTeammateQuestions({ prisma, jobs, events }),
       })
     : undefined;
   reconciler?.start();

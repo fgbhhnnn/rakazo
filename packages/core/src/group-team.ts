@@ -19,7 +19,9 @@ export type HandoffFailureReason =
   // A team run's own guards (see group-team-run.ts).
   | "team_budget"
   | "team_loop"
-  | "team_interrupted";
+  | "team_interrupted"
+  // A turn answering a teammate's question (group-consult.ts) answers; it does not hand off.
+  | "answering_question";
 
 /** Shown in the group when a team run reaches its handoff or time budget. */
 export const TEAM_RUN_BUDGET_NOTICE = "团队任务已达到交接次数或时长上限，已暂停，等你回复。";
@@ -50,6 +52,7 @@ export function failedHandoffNotice(name: string, reason: HandoffFailureReason):
     team_budget: "团队任务已达到上限",
     team_loop: "同一阶段反复往返",
     team_interrupted: "你发了新消息，之前的团队任务已停止",
+    answering_question: "正在回答提问，回答会自动送回提问的成员",
   };
   return `未能交接给 ${name}：${why[reason]}。`;
 }
@@ -106,20 +109,48 @@ function shortNames(name: string): string[] {
 
 export type HandoffClaim = { sentence: string; memberIds: string[] };
 
+// Reports that a handoff did not happen, or could not: not a claim that one did.
+const NOT_DONE =
+  /失败|未能|没能|没有成功|无法|不能|上限|交接次数|被拒|拒绝|failed|couldn't|could not|limit/i;
+// The hand-over verb itself; whoever is named right after it (up to the next clause) received
+// the work.
+const HANDOVER = /交给|转交给?|交接给|移交给?|转给|派给|分配给|通知了?/g;
+const RECEIVER_WINDOW = 8;
+
+function namedIn(text: string, members: readonly GroupMemberRef[]): string[] {
+  const lower = text.toLowerCase();
+  return members
+    .filter((member) => shortNames(member.name).some((name) => lower.includes(name.toLowerCase())))
+    .map((member) => member.id);
+}
+
+/**
+ * The members a claim sentence handed work to: the ones named right after the hand-over verb
+ * ("调用层已交给前端，按后端确认的契约来写" names only 前端), else every member it names.
+ */
+function claimedReceivers(sentence: string, members: readonly GroupMemberRef[]): string[] {
+  const receivers = new Set<string>();
+  for (const match of sentence.matchAll(HANDOVER)) {
+    const start = (match.index ?? 0) + match[0].length;
+    const window = sentence.slice(start, start + RECEIVER_WINDOW).split(/[，,；;：:（(]/)[0] ?? "";
+    for (const id of namedIn(window, members)) {
+      receivers.add(id);
+    }
+  }
+  if (receivers.size) return [...receivers];
+  const ids = new Set(mentionedMembersInOrder(sentence, members).map((member) => member.id));
+  for (const id of namedIn(sentence, members)) ids.add(id);
+  return [...ids];
+}
+
 /** Sentences of a reply that say work was handed to someone, with the members they name. */
 export function handoffClaims(text: string, members: readonly GroupMemberRef[]): HandoffClaim[] {
   const claims: HandoffClaim[] = [];
   for (const sentence of text.match(SENTENCE) ?? []) {
     if (QUESTION.test(sentence.trim())) continue;
     if (!ZH_CLAIM.test(sentence) && !EN_CLAIM.test(sentence)) continue;
-    const ids = new Set(mentionedMembersInOrder(sentence, members).map((member) => member.id));
-    const lower = sentence.toLowerCase();
-    for (const member of members) {
-      if (shortNames(member.name).some((name) => lower.includes(name.toLowerCase()))) {
-        ids.add(member.id);
-      }
-    }
-    claims.push({ sentence, memberIds: [...ids] });
+    if (NOT_DONE.test(sentence)) continue;
+    claims.push({ sentence, memberIds: claimedReceivers(sentence, members) });
   }
   return claims;
 }

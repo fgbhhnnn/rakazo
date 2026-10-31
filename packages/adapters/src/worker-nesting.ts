@@ -15,6 +15,7 @@ export const WORKER_NESTED_AGENT_TOOLS = [
   "run_subagent",
   "spawn_bot",
   "handoff_to_bot",
+  "ask_teammate",
   "message_bot",
   "message_agent",
   "create_child_routine",

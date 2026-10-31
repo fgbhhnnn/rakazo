@@ -12,7 +12,7 @@ import { humanAnchorForRun } from "./group-team-run-anchor.js";
 
 type Tx = Prisma.TransactionClient;
 
-/** clientNonce prefix of the system's reminder to the leader of one team run. */
+/** clientNonce prefix of the system's reminder turn for the leader of one team run. */
 export function teamNudgeNoncePrefix(teamRunId: string): string {
   return `team-nudge:${teamRunId}:`;
 }
@@ -43,7 +43,11 @@ export async function cancelTeamRunFollowUpsInTransaction(
     where: {
       threadId: row.threadId,
       status: "queued",
-      sourceMessage: { clientNonce: { startsWith: teamNudgeNoncePrefix(row.id) } },
+      OR: [
+        { clientNonce: { startsWith: teamNudgeNoncePrefix(row.id) } },
+        // Reminders queued before they stopped being posted in the chat.
+        { sourceMessage: { clientNonce: { startsWith: teamNudgeNoncePrefix(row.id) } } },
+      ],
     },
     select: { id: true },
   });

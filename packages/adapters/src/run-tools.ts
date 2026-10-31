@@ -9,6 +9,7 @@ import type { ToolHandler } from "./run-tool-gate.js";
 import { gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
+import { askTools } from "./run-tools-ask.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
 import { fileTools } from "./run-tools-files.js";
 import { fleetTools } from "./run-tools-fleet.js";
@@ -34,6 +35,7 @@ export const TOOL_HANDLERS: ReadonlyMap<string, ToolHandler> = new Map<string, T
   ...Object.entries(fleetTools),
   ...Object.entries(pageTools),
   ...Object.entries(teamTools),
+  ...Object.entries(askTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 
@@ -89,7 +91,9 @@ async function dispatchTool(
   ctx.context.signal.throwIfAborted();
   if (ctx.state.handedOff) {
     return refusedTool(ctx.state, {
-      error: "This stage was handed off. End the turn without more tool calls.",
+      error: ctx.state.askedTeammate
+        ? "You asked a teammate a question. End this turn without more tool calls; you will be woken with the answer."
+        : "This stage was handed off. End the turn without more tool calls.",
       ...(name === "handoff_to_bot" ? { reason: "one_handoff_per_turn" } : {}),
     });
   }

@@ -120,6 +120,8 @@ export function createJobReconciler(
     reconcileHomeStorage?: () => Promise<void>;
     reconcileIdleComputers?: () => Promise<void>;
     reconcileDeadJobs?: () => Promise<void>;
+    /** Wakes askers whose teammate question went unanswered (group-consult.ts). */
+    reconcileTeammateQuestions?: () => Promise<void>;
   },
   options: { intervalMs?: number; batchSize?: number } = {},
 ) {
@@ -152,6 +154,7 @@ export function createJobReconciler(
           deps.reconcileHomeStorage,
           deps.reconcileIdleComputers,
           deps.reconcileDeadJobs,
+          deps.reconcileTeammateQuestions,
         ].map(async (reconcile) => reconcile?.()),
       );
       for (const result of auxiliary) {

@@ -127,6 +127,8 @@ postgres("group team run polish (PostgreSQL)", () => {
   }
 
   type RunRow = Awaited<ReturnType<typeof wake>>[number];
+  /** A finished stage that shows its output (a bare "done" is asked for it first). */
+  const DRAFT_DONE = "初稿完成，正文见 drafts/article.md";
 
   const bot = (fx: Team, id: string) => {
     const row = fx.bots.find((entry) => entry.id === id);
@@ -337,7 +339,7 @@ postgres("group team run polish (PostgreSQL)", () => {
     /** The writer handed the stage back; the leader's turn ended without handing on. */
     async function leaderStalled() {
       const { fx, origin, writer } = await underway();
-      await finish(fx, writer, "初稿完成");
+      await finish(fx, writer, DRAFT_DONE);
       const leader = await nextRun(fx, "主编");
       const stalled = await finish(fx, leader, "收到，我来汇总。");
       return { fx, origin, leader, stalled };
@@ -345,17 +347,15 @@ postgres("group team run polish (PostgreSQL)", () => {
     const nudgeRun = (fx: Team) =>
       sys(() =>
         prisma.run.findFirstOrThrow({
-          where: {
-            threadId: fx.thread.id,
-            sourceMessage: { clientNonce: { startsWith: "team-nudge:" } },
-          },
+          // The reminder is the leader's prompt, not a chat message: its run carries the nonce.
+          where: { threadId: fx.thread.id, clientNonce: { startsWith: "team-nudge:" } },
         }),
       );
 
     it("queues no claim recheck behind the run's own next turn", async () => {
       const { fx, writer } = await underway();
       // A member that finished hands the stage back to the leader: that turn follows.
-      expect(await finish(fx, writer, "初稿完成")).toEqual({ suppressClaimRecheck: true });
+      expect(await finish(fx, writer, DRAFT_DONE)).toEqual({ suppressClaimRecheck: true });
       const leader = await nextRun(fx, "主编");
       // The leader stopped without handing on: the nudge follows.
       expect(await finish(fx, leader, "收到")).toEqual({ suppressClaimRecheck: true });
@@ -373,7 +373,7 @@ postgres("group team run polish (PostgreSQL)", () => {
 
     it("suppresses the recheck of a turn whose run already closed", async () => {
       const { fx, writer } = await underway();
-      await finish(fx, writer, "初稿完成");
+      await finish(fx, writer, DRAFT_DONE);
       const back = await nextRun(fx, "主编");
       await sys(() =>
         completeTeamRun(deps, back, thread(fx), bot(fx, back.botId), { summary: "文章完成" }),

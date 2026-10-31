@@ -64,6 +64,23 @@ describe("handoff claims", () => {
     );
   });
 
+  it("counts only the member named right after the hand-over verb", () => {
+    // Group test s2: the reply named 后端 only as the source of the contract.
+    expect(handoffClaims("调用层已交给前端，按后端确认的契约来写。", others)[0]?.memberIds).toEqual(
+      ["fe"],
+    );
+    expect(
+      unverifiedHandoffClaimNote("调用层已交给前端，按后端确认的契约来写。", others, ["fe"]),
+    ).toBeUndefined();
+  });
+
+  it("does not treat a failed or refused handoff as a claim", () => {
+    expect(handoffClaims("刚才交给后端失败了，我再试一次。", others)).toEqual([]);
+    expect(unverifiedHandoffClaimNote("团队任务已到交接上限，没能交给测试。", others, [])).toBe(
+      undefined,
+    );
+  });
+
   it("accepts a claim backed by a real handoff", () => {
     expect(unverifiedHandoffClaimNote("已交给@团队-后端。", others, ["be"])).toBeUndefined();
     expect(unverifiedHandoffClaimNote("已转交，等结果。", others, ["be"])).toBeUndefined();

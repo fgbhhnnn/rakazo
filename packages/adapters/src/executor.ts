@@ -105,6 +105,7 @@ import {
 import { dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { deferDispatcherWake, dispatcherComputerPlaceholder } from "./dispatcher-turn-guard.js";
 import type { FleetRun } from "./fleet-tools.js";
+import { answersTeammateQuestion } from "./group-consult.js";
 import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
 import { teamRunForRun, teamRunPromptContext } from "./group-team-run.js";
 import {
@@ -188,6 +189,7 @@ import {
   selectBuiltinToolsForRun,
 } from "./run-tool-selection.js";
 import { applyTool } from "./run-tools.js";
+import { askTeammateTool } from "./run-tools-ask.js";
 import { completeTeamRunTool } from "./run-tools-team.js";
 import { createRunTrustLoaders } from "./run-trust.js";
 import { completeRun, consumeRunEvents, failRun } from "./run-turn.js";
@@ -1122,7 +1124,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ),
           ...(run.trigger === "created" ? [] : exposedConnectorTools),
         ];
+        // A turn answering a teammate's question only answers it (group-consult.ts): no handoff,
+        // no team-run role, no question of its own.
+        const answeringQuestion =
+          Boolean(thread.groupId) && answersTeammateQuestion(sourceMessage, bot.id);
+        if (answeringQuestion) {
+          const handoffIndex = tools.findIndex((tool) => tool.name === "handoff_to_bot");
+          if (handoffIndex >= 0) tools.splice(handoffIndex, 1);
+        }
         const handoffTool = tools.some((tool) => tool.name === "handoff_to_bot");
+        const askTool = handoffTool && Boolean(thread.groupId) && !isHiddenBot(bot);
+        if (askTool) tools.push(askTeammateTool);
         // A group team run (group-team-run.ts): its leader can close it, and both roles are told.
         const teamRun = handoffTool
           ? await teamRunForRun(deps.prisma, run, thread, bot, { start: true }).catch((error) => {
@@ -1138,7 +1150,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 deps.prisma,
                 thread.groupId,
                 { id: bot.id, name: bot.name },
-                { handoffTool },
+                { handoffTool, askTool },
               ),
               await teamRunPromptContext(deps.prisma, teamRun),
             ]

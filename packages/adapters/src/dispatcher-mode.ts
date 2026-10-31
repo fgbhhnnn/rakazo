@@ -1,5 +1,5 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
-import { COMPLETE_TEAM_RUN_TOOL_NAME } from "@rakazo/core";
+import { ASK_TEAMMATE_TOOL_NAME, COMPLETE_TEAM_RUN_TOOL_NAME } from "@rakazo/core";
 import { isHiddenBot } from "@rakazo/db";
 import {
   BACKGROUND_LANE_GUIDANCE,
@@ -164,6 +164,8 @@ export const DISPATCHER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "handoff_to_bot",
   // Closing a group team run the dispatcher leads is talk too (offered only to that leader).
   COMPLETE_TEAM_RUN_TOOL_NAME,
+  // Asking a teammate a question is talk as well.
+  ASK_TEAMMATE_TOOL_NAME,
   ...DISPATCHER_OWNER_TOOL_NAMES,
 ]);
 

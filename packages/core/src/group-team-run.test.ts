@@ -7,6 +7,7 @@ import {
   TEAM_RUN_DEFAULT_MAX_HOPS,
   TEAM_RUN_DEFAULT_MAX_MINUTES,
   TEAM_RUN_LOOP_NOTICE,
+  TEAM_RUN_MAX_REVISION_ROUNDS,
   teamRunBudget,
   teamRunNudgeText,
   teamRunReturnText,
@@ -58,6 +59,18 @@ describe("leader loop guard", () => {
       row = { lastLeaderTargetId: "writer", leaderTargetStreak: next.streak };
     }
     expect(steps).toEqual([false, false, false, true]);
+  });
+
+  it("allows review rounds after new results, then calls the next one a loop", () => {
+    let row = { lastLeaderTargetId: null as string | null, leaderTargetStreak: 0 };
+    const steps: boolean[] = [];
+    for (let i = 0; i < TEAM_RUN_MAX_REVISION_ROUNDS + 2; i++) {
+      const next = nextLeaderStreak(row, "writer", { revision: i > 0 });
+      steps.push(next.loop);
+      row = { lastLeaderTargetId: "writer", leaderTargetStreak: next.streak };
+    }
+    expect(TEAM_RUN_MAX_REVISION_ROUNDS).toBe(3);
+    expect(steps).toEqual([false, false, false, false, true]);
   });
 
   it("resets when the leader hands to someone else", () => {

@@ -4,6 +4,7 @@ import {
   systemHandoffMarker,
   TEAM_RUN_BUDGET_NOTICE,
   TEAM_RUN_LOOP_NOTICE,
+  TEAM_RUN_MAX_REVISION_ROUNDS,
   TEAM_RUN_PAUSED_NOTICE,
 } from "@rakazo/core";
 import { createDb, createThreadMessageInTransaction, runAsSystem } from "@rakazo/db";
@@ -316,7 +317,14 @@ postgres("group team runs (PostgreSQL)", () => {
     await finish(fx, back, "看起来不错。");
     expect(await teamRow(fx)).toMatchObject({ status: "active", nudges: 1 });
     const nudge = await nextRun(fx, "策划");
-    expect((await texts(fx)).at(-1)).toContain("系统提醒 策划");
+    // The reminder is the leader's next prompt; nothing about it shows in the chat.
+    expect(nudge.clientNonce).toMatch(/^team-nudge:/);
+    expect(nudge.sourceMessageId).toBe(back.sourceMessageId);
+    const nudgeTask = await sys(() =>
+      prisma.task.findUniqueOrThrow({ where: { id: nudge.taskId } }),
+    );
+    expect(nudgeTask.prompt).toContain("系统提醒 策划");
+    expect((await texts(fx)).some((text) => text.includes("系统提醒"))).toBe(false);
     // Running the nudge twice (a retried job) cannot post a second one.
     await finish(fx, back, "看起来不错。");
     expect(
@@ -411,7 +419,8 @@ postgres("group team runs (PostgreSQL)", () => {
     const [leaderRun] = await wake(fx, origin.id, "策划");
     await start(fx, leaderRun!);
     let leader = leaderRun!;
-    for (let round = 0; round < 3; round++) {
+    // Each send after a new draft is a review round: the first stage plus TEAM_RUN_MAX_REVISION_ROUNDS.
+    for (let round = 0; round <= TEAM_RUN_MAX_REVISION_ROUNDS; round++) {
       expect(await handoff(fx, leader, "撰稿", `第 ${round} 版`)).toMatchObject({ ok: true });
       const writer = await nextRun(fx, "撰稿");
       await finish(fx, writer, `稿 ${round}`);

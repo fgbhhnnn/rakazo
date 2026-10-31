@@ -172,6 +172,8 @@ export interface RunState {
   handedOff: boolean;
   /** Bots this turn really handed work to (the handoff tool's delivered results). */
   handoffTargets: string[];
+  /** This turn asked a teammate a question (ask_teammate) and now waits for the answer. */
+  askedTeammate?: boolean;
   terminalCheckpointComplete: boolean;
   /** The runtime's final message stopped at the output-token limit after writing text. */
   finalCutAtOutputLimit?: boolean;

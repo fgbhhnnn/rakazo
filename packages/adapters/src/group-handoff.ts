@@ -22,6 +22,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { stageSourceForHandoff } from "./group-consult.js";
+import { holdWhileBusy } from "./group-held-runs.js";
 import { recordTeamRunHandoff, teamRunHandoffGate } from "./group-team-run-gate.js";
 
 export type HandoffResult =
@@ -49,6 +51,7 @@ type CommittedHandoff =
       threadId: string;
       inGroup: boolean;
       groupName: string;
+      held?: boolean;
     };
 
 export async function handoffToGroupBot(
@@ -68,6 +71,11 @@ export async function handoffToGroupBot(
      * its run has just completed; the tool call itself always needs a running source.
      */
     allowFinishedSource?: boolean;
+    /**
+     * Queue the target's turn behind a turn it is still working on in this thread instead of
+     * starting a second, overlapping one (see group-held-runs.ts).
+     */
+    holdWhileTargetBusy?: boolean;
   } = {},
 ): Promise<HandoffResult> {
   const text = input.message.trim();
@@ -115,7 +123,7 @@ export async function handoffToGroupBot(
       select: {
         id: true,
         thread: { select: { groupId: true } },
-        sourceMessage: { select: { blocks: true } },
+        sourceMessage: { select: { id: true, botId: true, clientNonce: true, blocks: true } },
       },
     });
     if (!activeSource)
@@ -187,9 +195,13 @@ export async function handoffToGroupBot(
     if (targetId === run.botId)
       return { error: "cannot hand off to yourself", reason: "self_target" } as const;
 
+    // A teammate question is not a stage: its answerer may not hand off, and its asker's chain
+    // checks use the stage it asked from (group-consult.ts).
+    const stage = await stageSourceForHandoff(tx, run, activeSource.sourceMessage);
+    if ("refused" in stage) return { error: stage.refused, reason: "answering_question" } as const;
     let sourceBlocks: MessageBlock[] = [];
-    if (activeSource.sourceMessage) {
-      const parsedSource = MessageBlock.array().safeParse(activeSource.sourceMessage.blocks);
+    if (stage.source) {
+      const parsedSource = MessageBlock.array().safeParse(stage.source.blocks);
       if (!parsedSource.success) {
         return { error: "cannot verify the group handoff chain", reason: "invalid_chain" } as const;
       }
@@ -246,6 +258,9 @@ export async function handoffToGroupBot(
         status: "queued",
       },
     });
+    const heldUntil = options.holdWhileTargetBusy
+      ? await holdWhileBusy(tx, { threadId: targetThreadId, botId: targetId })
+      : undefined;
     const nextRun = await tx.run.create({
       data: {
         spaceId: run.spaceId,
@@ -256,6 +271,7 @@ export async function handoffToGroupBot(
         status: "queued",
         trigger: "follow_up",
         sourceMessageId: message.id,
+        ...(heldUntil ? { wakeAt: heldUntil } : {}),
       },
     });
     const event = await appendEventInTransaction(tx, {
@@ -282,16 +298,28 @@ export async function handoffToGroupBot(
       threadId: targetThreadId,
       inGroup,
       groupName: group.name,
+      held: Boolean(heldUntil),
     } as const;
   });
-  if ("error" in committed) return committed;
+  if ("error" in committed) {
+    // The reason and target only: never the message, which may quote user content.
+    getLogger().info("group handoff refused", {
+      runId: run.id,
+      reason: committed.reason,
+      targetId: input.bot_id ?? null,
+      byName: Boolean(input.confirm_name && !input.bot_id),
+    });
+    return committed;
+  }
   await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("group handoff realtime notification", error);
   });
-  await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-    // The queued run is durable and the job reconciler will repair a missed immediate wake.
-    getLogger().error("group handoff enqueue", error);
-  });
+  // A held turn starts when the target's current turn ends (or its hold expires).
+  if (!committed.held)
+    await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
+      // The queued run is durable and the job reconciler will repair a missed immediate wake.
+      getLogger().error("group handoff enqueue", error);
+    });
   return {
     ok: true,
     delivered: true,
@@ -359,7 +387,7 @@ export async function loadGroupContext(
   prisma: PrismaClient,
   groupId: string,
   self: { id: string; name: string },
-  options: { handoffTool?: boolean } = {},
+  options: { handoffTool?: boolean; askTool?: boolean } = {},
 ): Promise<string | undefined> {
   const group = await prisma.chatGroup.findUnique({
     where: { id: groupId },
