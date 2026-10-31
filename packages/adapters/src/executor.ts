@@ -1167,7 +1167,9 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           .filter(Boolean)
           .join("\n\n");
         const graphical =
-          computerKind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
+          !dispatcherTurn &&
+          computerKind !== "desktop" &&
+          deps.sandbox.describe().capabilities.graphical;
         // Gate on the pair written to the run row above; re-deriving it would drop the
         // deployment fallback and gate a vision-capable default as text-only.
         const modelSeesImages = modelAcceptsImageInput(
@@ -1220,9 +1222,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const voiceCall = callEndRun || isCallClientNonce(sourceClientNonce);
         const graphicalToolsAllowed = graphical && acceptsImages && !heldForTakeover;
         const pageBrowserAllowed =
-          (dispatcherTurn
-            ? workerPageBrowserAllowed(deps.sandbox, browser)
-            : graphical && browser.describe().capabilities.page) && !heldForTakeover;
+          graphical && browser.describe().capabilities.page && !heldForTakeover;
+        const credentialPageCapability = dispatcherTurn
+          ? workerPageBrowserAllowed(deps.sandbox, browser)
+          : pageBrowserAllowed;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
         const userComputerOwnerId = userComputerOwner({
           trigger: run.trigger,
@@ -1255,6 +1258,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             historyRetrievalEnabled: contextStrategy !== "current",
             graphicalToolsAllowed,
             pageBrowserAllowed,
+            credentialPageBrowserAllowed: credentialPageCapability,
             groupId: thread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
@@ -1490,6 +1494,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           abortController: runAbortController,
           fleetRun,
           secrets: runSecrets,
+          credentialPageBrowserAllowed: credentialPageCapability,
           source: {
             ownerStartedRun,
             messagingChannelRun,
@@ -1832,6 +1837,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 historyRetrievalEnabled: contextStrategy !== "current",
                 computerInstruction,
                 pageBrowserAllowed,
+                credentialPageBrowserAllowed: credentialPageCapability,
                 taskCatalogInstruction,
                 workspaceInstruction,
                 agentEnvironmentInstruction,
@@ -1843,7 +1849,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(builtins),
                 dispatcherRun,
-                workerPageBrowserAllowed: dispatcherRun ? pageBrowserAllowed : undefined,
+                workerPageBrowserAllowed: dispatcherRun ? credentialPageCapability : undefined,
                 askUserOffered: tools.some((tool) => tool.name === "ask_user"),
                 userComputer,
               })

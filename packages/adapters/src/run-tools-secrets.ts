@@ -32,6 +32,7 @@ import {
 import { passwordSubmissionNote, WEBSITE_LOGIN_UNAVAILABLE } from "./credential-page-capability.js";
 import { loginFailure } from "./login-failure.js";
 import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
+import { runCredentialPageBrowserAllowed } from "./run-credential-capability.js";
 import { recordEffect } from "./run-effects.js";
 import { renewRunLease } from "./run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "./run-notifications.js";
@@ -64,7 +65,7 @@ export const secretTools: ToolHandlers = {
   },
   async generate_secret(ctx, call) {
     const { deps, run } = ctx;
-    if (!ctx.computer.pageBrowserAllowed && call.args.type === "login") {
+    if (!runCredentialPageBrowserAllowed(ctx) && call.args.type === "login") {
       return call.finish(loginFailure(WEBSITE_LOGIN_UNAVAILABLE, "no_page_browser"));
     }
     // Fills would type this run's unsaved login instead of the generated one.
@@ -100,7 +101,7 @@ export const secretTools: ToolHandlers = {
         request: args,
         signal: context.signal,
         remote: deps.secretHttp,
-        pageBrowserAllowed: ctx.computer.pageBrowserAllowed,
+        pageBrowserAllowed: runCredentialPageBrowserAllowed(ctx),
         registerRedactions: (values) => addRunSecrets(ctx, values),
       });
       return call.finish(result);
@@ -115,7 +116,7 @@ export const secretTools: ToolHandlers = {
     const resolvedSecret = resolveRequestSecretDestination(args);
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
     const destination = resolvedSecret.destination;
-    if (!ctx.computer.pageBrowserAllowed && destination?.auth.type === "login") {
+    if (!runCredentialPageBrowserAllowed(ctx) && destination?.auth.type === "login") {
       return call.finish(loginFailure(WEBSITE_LOGIN_UNAVAILABLE, "no_page_browser"));
     }
     const failureReason = LoginFailureReasonSchema.safeParse(args.failureReason);
@@ -231,7 +232,7 @@ export const secretTools: ToolHandlers = {
             ? {
                 ok: true,
                 submitted: true,
-                note: passwordSubmissionNote(ctx.computer.pageBrowserAllowed),
+                note: passwordSubmissionNote(runCredentialPageBrowserAllowed(ctx)),
               }
             : {
                 ok: true,

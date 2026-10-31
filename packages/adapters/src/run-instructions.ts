@@ -282,13 +282,14 @@ function userComputerInstruction(state: UserComputerState): string | undefined {
 function toolUsageLine(parts: {
   computerInstruction: string;
   pageBrowserAllowed: boolean;
+  credentialPageBrowserAllowed?: boolean;
   disabledBuiltinTools?: ReadonlySet<string>;
 }): string {
   const disabled = parts.disabledBuiltinTools;
   const clauses = [
     pageWorkClause(parts.pageBrowserAllowed, disabled),
     webLookupClause(disabled),
-    ...secretGuidance(parts.pageBrowserAllowed, disabled),
+    ...secretGuidance(parts.credentialPageBrowserAllowed ?? parts.pageBrowserAllowed, disabled),
     builtinOffered(disabled, "connect_app")
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,
@@ -314,6 +315,7 @@ export function userTurnInstructions(parts: {
   historyRetrievalEnabled?: boolean;
   computerInstruction: string;
   pageBrowserAllowed: boolean;
+  credentialPageBrowserAllowed?: boolean;
   taskCatalogInstruction?: string;
   workspaceInstruction: string;
   agentEnvironmentInstruction: string | undefined;

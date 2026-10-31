@@ -72,6 +72,8 @@ export function selectBuiltinToolsForRun(options: {
   graphicalToolsAllowed: boolean;
   /** Page browser tools need a graphical computer (Chrome), not model vision. */
   pageBrowserAllowed?: boolean;
+  /** A dispatcher collects credentials for its workers, without gaining their page tools. */
+  credentialPageBrowserAllowed?: boolean;
   groupId: string | null;
   trigger: string;
   semanticMemoryEnabled: boolean;
@@ -104,7 +106,9 @@ export function selectBuiltinToolsForRun(options: {
           filterPageBrowserTools(
             credentialToolsForPageCapability(
               filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-              options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+              options.credentialPageBrowserAllowed ??
+                options.pageBrowserAllowed ??
+                options.graphicalToolsAllowed,
             ),
             options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
           ),

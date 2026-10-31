@@ -289,6 +289,8 @@ export interface RunContext {
   fleetRun: FleetRun;
   /** Every value redacted from what this run shows or stores. Grows during the run. */
   secrets: string[];
+  /** Credential capability of the worker computer on dispatcher turns. */
+  credentialPageBrowserAllowed?: boolean;
   source: RunSource;
   computer: RunComputerContext;
   tools: RunTools;
