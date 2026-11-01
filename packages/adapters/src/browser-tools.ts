@@ -11,6 +11,7 @@ import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { redactConnectorPayload } from "./connector-safety.js";
 import { loginFillFailure } from "./login-failure.js";
+import { pageBrowserTimeoutNote } from "./page-browser-recovery-prompt.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 
 const MAX_BROWSER_ACTIONS = 24;
@@ -372,10 +373,13 @@ function formatBrowserResult<T extends { fallback?: "computer_act"; error?: stri
   { desktopTools = true }: PageToolOptions,
 ) {
   if (result.fallback !== "computer_act") return result;
+  const timeoutNote = pageBrowserTimeoutNote(result.error);
   if (desktopTools) {
     return {
       ...result,
-      note: "Page browser could not complete this step. Inspect the current state before continuing with computer_act if available, otherwise request_takeover. Do not replay completed or uncertain actions.",
+      note:
+        timeoutNote ??
+        "Page browser could not complete this step. Inspect the current state before continuing with computer_act if available, otherwise request_takeover. Do not replay completed or uncertain actions.",
     };
   }
   // Without desktop tools, pointing at computer_act leaves only request_takeover. A browser
@@ -383,6 +387,8 @@ function formatBrowserResult<T extends { fallback?: "computer_act"; error?: stri
   const { fallback: _fallback, ...rest } = result;
   return {
     ...rest,
-    note: "Page browser could not complete this step. The computer or its browser may still be starting, so call browser_snapshot again to check the page. Use request_takeover only if it keeps failing. Do not replay completed or uncertain actions.",
+    note:
+      timeoutNote ??
+      "Page browser could not complete this step. The computer or its browser may still be starting, so call browser_snapshot again to check the page. Use request_takeover only if it keeps failing. Do not replay completed or uncertain actions.",
   };
 }

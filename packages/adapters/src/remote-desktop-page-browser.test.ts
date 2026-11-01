@@ -1,9 +1,12 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
+import { PAGE_BROWSER_RECOVERY_SOURCE } from "./page-browser-recovery-source.js";
 import { remoteDesktopPageBrowser } from "./remote-desktop-page-browser.js";
 import { pageBrowserDesktop } from "./remote-desktop-page-browser-command.js";
 import { PAGE_BROWSER_SOURCE } from "./remote-desktop-page-browser-source.js";
@@ -131,6 +134,32 @@ describe("remote page browser", () => {
     expect(f.handle.disconnect).toHaveBeenCalledTimes(2);
   });
 
+  it("installs the recovery module beside the helper and the watchdog can import it outside that directory", async () => {
+    const f = fixture();
+    await f.call({ command: "restart" });
+    expect(f.handle.sendStdin).toHaveBeenCalledWith('{"command":"restart"}\n', expect.anything());
+    const assets = vi.mocked(f.desktop.files.write).mock.calls[0]![0];
+    expect(new TextDecoder().decode(assets[1]!.data)).toBe(PAGE_BROWSER_RECOVERY_SOURCE);
+    expect(f.run.mock.calls[1]![0]).toContain("rakazo_page_browser_recovery.py");
+    const helper = fileURLToPath(
+      new URL("../../../infra/sandboxes/computer/rakazo-page-browser", import.meta.url),
+    );
+    const command = f.start.mock.calls[0]![0].replace(
+      "/usr/local/bin/rakazo-page-browser",
+      helper,
+    ).replace(/ restart$/, "");
+    const process = spawnSync("bash", ["-c", command], { cwd: "/tmp", encoding: "utf8" });
+    expect(process.status, process.stderr).toBe(2);
+    expect(JSON.parse(process.stdout).error).toContain("usage: rakazo-page-browser");
+  });
+
+  it("allows navigation enough time for its longer budget and one recovery", async () => {
+    const f = fixture();
+    await f.call({ command: "navigate", url: "https://example.test/" });
+    expect(f.start.mock.calls[0]![1].timeoutMs).toBe(55_000);
+    expect(f.start.mock.calls[0]![0]).toContain("signal.alarm(55)");
+  });
+
   it("uses an existing matching helper without writing it again", async () => {
     const f = fixture();
     f.run.mockResolvedValueOnce({
@@ -237,7 +266,7 @@ describe("remote page browser", () => {
       expect(await f.call(body)).toMatchObject({
         uncertain: body.command === "act",
         error: expect.stringContaining(
-          body.command === "act" ? "Inspect the screen" : "Retry once",
+          body.command === "act" ? "Inspect the screen" : "Call browser_restart",
         ),
       });
     },

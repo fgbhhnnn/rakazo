@@ -2,7 +2,6 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   appendTextSegment,
   appendToolCallSegment,
-  createStreamingRedactor,
   endsSentence,
   isBackgroundRunTrigger,
   noteLastToolStep,
@@ -23,6 +22,7 @@ import {
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
+import { createVisibleBotRedactor } from "./visible-bot-text.js";
 import { slotFree } from "./worker-slot-mentions.js";
 
 /** A fresh reply that knows the progress messages earlier attempts of this run posted. */
@@ -59,7 +59,7 @@ export async function createReplyState(
     lastProgressAt: 0,
     hasStreamedText: false,
     assistantTurnBreakPending: false,
-    redactor: createStreamingRedactor(secrets),
+    redactor: createVisibleBotRedactor(secrets),
   };
   const priorProgress = await deps.prisma.message.findMany({
     where: { runId: run.id, role: "bot" },

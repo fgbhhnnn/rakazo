@@ -99,6 +99,7 @@ import {
   STEERING_RESETS_MAX_PER_RUN,
   userProgressClientNonce,
 } from "./user-progress.js";
+import { visibleBotBlocks, visibleBotText } from "./visible-bot-text.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { slotFree } from "./worker-slot-mentions.js";
 
@@ -344,7 +345,7 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
     type: "thread.progress",
     runId,
     payload: {
-      text: redactSecrets(event.text, ctx.secrets),
+      text: visibleBotText(redactSecrets(event.text, ctx.secrets)),
       ...(event.activity ? { activity: true } : {}),
     },
   });
@@ -842,9 +843,11 @@ export async function completeRun(ctx: RunContext) {
       exemptClaim: groupReply.isTeamClaim,
     },
   );
-  const blocks = replyGuard.blocks;
+  const blocks = visibleBotBlocks(replyGuard.blocks);
   const text = redactSecrets(
-    completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
+    visibleBotText(
+      completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
+    ),
     ctx.secrets,
   );
   if (containsSecret(text, ctx.secrets)) {
@@ -1023,7 +1026,7 @@ export async function failRun(
         ).trim();
   const partialReply =
     partialText && !containsSecret(partialText, ctx.secrets)
-      ? [{ kind: "text" as const, text: partialText }]
+      ? visibleBotBlocks([{ kind: "text" as const, text: partialText }])
       : [];
   await ctx.settleRunningHelpers();
   const failed = await deps.events.finalizeRun({

@@ -11,6 +11,7 @@ import sys
 import unittest
 from unittest.mock import Mock, patch
 from urllib.parse import urlsplit
+from test_page_browser_recovery import RecoveryTest
 
 loader = importlib.machinery.SourceFileLoader("page_browser", str(Path(__file__).with_name("rakazo-page-browser")))
 spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -1951,6 +1952,22 @@ class PageBrowserTest(unittest.TestCase):
         self.assertEqual(browser.mouse(), [])
         # The inner frame element was asked first, in the login frame's own page.
         self.assertEqual([spot[:2] for spot in browser.spots], [("deep", "s-auth"), ("auth", "top")])
+
+    def test_apple_login_uses_only_the_idmsa_frame_origin(self):
+        for origin, allowed in (("https://idmsa.apple.com", True), ("https://apple.com", False),
+                                ("https://appleid.apple.com", False), ("https://account.apple.com", False),
+                                ("https://other.example.test", False)):
+            with self.subTest(origin=origin):
+                browser = FrameBrowser()
+                browser.frames["main"]["url"] = "https://account.apple.com/sign-in"
+                browser.frames["auth"]["url"] = "https://idmsa.apple.com/appleauth/auth/signin"
+                result = browser.act([{"kind": "fill", "ref": "f22", "text": "fake-apple-secret",
+                                       "origin": origin, "field": "password"}], "auth")
+                self.assertEqual(result["ok"], allowed)
+                self.assertEqual(len(browser.fills), int(allowed))
+                if not allowed:
+                    self.assertEqual((result["completed"], result["uncertain"]), (0, False))
+                    self.assertNotIn("fake-apple-secret", "".join(e for _, _, e in browser.evaluated))
 
     def test_a_saved_login_is_filled_in_the_frame_it_is_for_in_that_frame_s_own_world(self):
         browser = FrameBrowser()

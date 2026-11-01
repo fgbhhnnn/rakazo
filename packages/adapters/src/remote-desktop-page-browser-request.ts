@@ -15,6 +15,7 @@ export const remotePageBrowserRequest = z.discriminatedUnion("command", [
       }),
   }),
   z.object({ command: z.literal("snapshot") }),
+  z.object({ command: z.literal("restart") }),
   z.object({
     command: z.literal("act"),
     actions: z

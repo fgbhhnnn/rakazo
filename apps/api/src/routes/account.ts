@@ -54,11 +54,13 @@ import {
   voiceProviderFor,
 } from "../voice.js";
 import type { RouterContext } from "./context.js";
+import { savedPasswordSettingsRoutes } from "./saved-password-settings.js";
 import { deploymentDto, meDto } from "./shared.js";
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed, ownerManaged } = ctx;
   return {
+    ...savedPasswordSettingsRoutes(ctx),
     aiConsent: {
       status: authed.aiConsent.status.handler(({ context, input }) =>
         aiConsentStatus(deps, context.actor, input),

@@ -96,6 +96,35 @@ describe("live page helper saved-login fill", () => {
 
   const origin = "https://login.example.test";
 
+  it.each([
+    ["https://idmsa.apple.com", true],
+    ["https://apple.com", false],
+    ["https://appleid.apple.com", false],
+    ["https://account.apple.com", false],
+    ["https://other.example.test", false],
+  ])("checks an Apple frame's own origin for credential %s", (savedOrigin, allowed) => {
+    const { domWindow, browser } = installPageHelper(
+      "https://idmsa.apple.com/appleauth/auth/signin",
+      html,
+    );
+    const fill = () =>
+      browser.fill(
+        refFor("Password", browser.snapshot().elements),
+        "fake-apple-secret",
+        savedOrigin as string,
+        "password",
+      );
+    if (allowed) {
+      fill();
+      expect(fieldValue(domWindow, "Password")).toBe("fake-apple-secret");
+      expect(JSON.stringify(browser.snapshot())).not.toContain("fake-apple-secret");
+    } else {
+      expect(fill).toThrow(/not on the site/);
+      expect(fieldValue(domWindow, "Password")).toBe("");
+    }
+    domWindow.close();
+  });
+
   it("types a username only into text, email, and tel inputs on the saved HTTPS origin", () => {
     const { domWindow, browser } = installPageHelper(`${origin}/signin`, html);
     const snap = browser.snapshot();

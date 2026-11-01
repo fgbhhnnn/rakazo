@@ -9,6 +9,7 @@ fallback computer_act.
 from __future__ import annotations
 
 import base64
+import rakazo_page_browser_recovery as recovery
 import contextlib
 import hashlib
 import json
@@ -158,6 +159,7 @@ class CdpClient:
         # When set (time.time()), every call fails cleanly by then instead of waiting out its own timeout.
         self.deadline: float | None = None
         self.context_id: int | None = None
+        self.last_timeout: str | None = None
         self._pending: dict[int, dict[str, Any] | None] = {}
         # Worlds live in Chromium until navigation; rediscover them per CLI process.
         self._contexts: dict[int, dict[str, Any]] = {}
@@ -185,7 +187,9 @@ class CdpClient:
         else:
             host, port = host_port, 80
         path = "/" + path
-        sock = socket.create_connection((host, port), timeout=10)
+        until = time.monotonic() + recovery.CALL_SECONDS
+        sock = socket.create_connection((host, port), timeout=recovery.CALL_SECONDS)
+        self._sock = sock
         key = base64.b64encode(os.urandom(16)).decode("ascii")
         req = (
             f"GET {path} HTTP/1.1\r\n"
@@ -196,9 +200,13 @@ class CdpClient:
             "Sec-WebSocket-Version: 13\r\n"
             "\r\n"
         )
+        sock.settimeout(max(0.001, until - time.monotonic()))
         sock.sendall(req.encode("ascii"))
         data = b""
         while b"\r\n\r\n" not in data:
+            sock.settimeout(max(0.001, until - time.monotonic()))
+            if time.monotonic() >= until:
+                raise TimeoutError("CDP connection timed out")
             chunk = sock.recv(4096)
             if not chunk:
                 raise RuntimeError("CDP websocket handshake closed")
@@ -450,7 +458,7 @@ class CdpClient:
         params: dict[str, Any] | None = None,
         *,
         session_id: str | None = None,
-        timeout_s: float = 30.0,
+        timeout_s: float = recovery.CALL_SECONDS,
     ) -> dict[str, Any]:
         assert self._sock is not None
         msg_id = self._next_id
@@ -460,8 +468,10 @@ class CdpClient:
             payload["sessionId"] = session_id
         if self.deadline is not None:
             if time.time() >= self.deadline:
-                raise RuntimeError("The page did not answer in time.")
+                self.last_timeout = session_id or ""
+                raise TimeoutError("The page did not answer in time.")
             timeout_s = min(timeout_s, self.deadline - time.time())
+        self._sock.settimeout(timeout_s)
         self._pending[msg_id] = None
         self._send_frame(json.dumps(payload).encode("utf-8"))
         deadline = time.time() + timeout_s
@@ -486,6 +496,8 @@ class CdpClient:
                 continue
             if message.get("method"):
                 self._handle_event(message)
+        self._pending.pop(msg_id, None)
+        self.last_timeout = session_id or ""
         raise TimeoutError(f"CDP call timed out: {method}")
 
 
@@ -504,6 +516,8 @@ def attach_page(client: CdpClient) -> str:
             if eval_json(client, session_id, 'document.visibilityState === "visible"'):
                 focused = eval_json(client, session_id, "document.hasFocus()")
                 candidates.append((session_id, focused))
+        except TimeoutError:
+            raise
         except Exception:
             continue
     focused = [session for session, focus in candidates if focus]
@@ -1356,6 +1370,8 @@ def navigate(client: CdpClient, session_id: str, url: str) -> dict[str, Any]:
                 return {"ok": True, "url": eval_json(client, session_id, "location.href"),
                         "title": eval_json(client, session_id, "(document.title || '').slice(0, 200)"),
                         **page_after_navigation(client, session_id, started)}
+        except TimeoutError:
+            raise
         except Exception:
             pass
         time.sleep(0.1)
@@ -2632,37 +2648,23 @@ def run(argv: list[str]) -> int:
     # Set once the browser answers: before that, no action can have reached the page.
     connected = False
     try:
+        if command == "restart":
+            print(json.dumps(recovery.restart_browser(port, wait_for_cdp, lambda: CdpClient(discover_ws_url(port)))))
+            return 0
         wait_for_cdp(port)
         ws_url = discover_ws_url(port)
         client = CdpClient(ws_url)
-        client.connect()
-        connected = True
         try:
-            session_id = attach_page(client)
-            if command == "navigate":
-                result = navigate(client, session_id, str(args.get("url") or ""))
-            elif command == "snapshot":
-                result = snapshot(client, session_id)
-            elif command == "act":
-                actions = args.get("actions")
-                if not isinstance(actions, list):
-                    raise RuntimeError("actions must be an array")
-                result = act(client, session_id, actions)
-            else:
-                result = {
-                    "ok": False,
-                    "error": f"unknown command: {command}",
-                    "fallback": "computer_act",
-                }
-                print(json.dumps(result))
-                return 2
+            client.connect()
+            connected = True
+            result = recovery.run_operation(globals(), client, command, args)
             print(json.dumps(result))
-            return 0  # Structured failures preserve partial action progress.
+            return 0 if command in ("navigate", "snapshot", "act") else 2  # Keep structured action failures.
         finally:
             client.close()
     except Exception as exc:  # noqa: BLE001
-        print(json.dumps({"ok": False, "error": str(exc), "fallback": "computer_act",
-                              "uncertain": command == "act" and connected}))
+        print(json.dumps({"ok": False, "error": recovery.TIMEOUT_MESSAGE if isinstance(exc, TimeoutError) else str(exc),
+                              "fallback": "computer_act", "uncertain": command == "act" and connected}))
         return 0
 
 

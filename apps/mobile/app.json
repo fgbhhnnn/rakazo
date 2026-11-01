@@ -56,8 +56,7 @@
       "expo-sharing",
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
-      "./plugins/with-lan-cleartext",
-      "./plugins/with-app-intents"
+      "./plugins/with-lan-cleartext"
     ],
     "ios": {
       "bundleIdentifier": "com.ccxxyy.rakazo",

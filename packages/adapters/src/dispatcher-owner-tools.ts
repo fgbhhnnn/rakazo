@@ -20,6 +20,7 @@ export const DISPATCHER_OWNER_TOOL_NAMES = [
   "request_secret",
   "secret_request",
   "list_secrets",
+  "reveal_secret",
   "forget_secret",
   "add_mcp_server",
 ] as const;

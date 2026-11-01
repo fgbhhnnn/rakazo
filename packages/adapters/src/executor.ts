@@ -62,6 +62,8 @@ import {
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
+import { passwordRevealAllowed } from "./reveal-secret.js";
+import { redactRevealedContent } from "./reveal-secret-redaction.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import {
   chatPasswordRunRedactions,
@@ -95,6 +97,7 @@ import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { addRunSecrets } from "./run-context.js";
+import { createRunModelFallbackReporter } from "./run-model-fallback.js";
 
 export type { ExecutorDeps } from "./executor-deps.js";
 
@@ -1254,6 +1257,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         }
         const builtins = [
           ...selectBuiltinToolsForRun({
+            allowBotPasswordReveal: await passwordRevealAllowed(deps.prisma, run.userId),
             ticketBoardEnabled: deps.ticketBoardEnabled,
             phoneCallsEnabled: deps.phoneCallsEnabled,
             historyRetrievalEnabled: contextStrategy !== "current",
@@ -1790,6 +1794,17 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         );
         // Provider kind and model id only: custom endpoints are identified by kind, never host.
         const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
+        const reportModelFallback = createRunModelFallbackReporter(deps, run, {
+          configured: modelChoice,
+          selected,
+          connectionAvailable: Boolean(
+            overrideCredential ||
+              ((await modelCreditBillingEnabled(deps)) &&
+                modelChoice.modelProvider === runDeployment?.provider),
+          ),
+          hidden: isHiddenBot(bot),
+          secrets: runSecrets,
+        });
         // Shutdown must not finalize the attempt. The finally block queues the run
         // when this worker still owns it.
         const interruptedByShutdown = async () => {
@@ -1803,10 +1818,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         try {
           if (setupTimeout) throw setupTimeout;
           if (checkpointLoadError) throw checkpointLoadError;
+          await reportModelFallback(runModelProvider, runModelId);
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
               verbatimMcpServers,
+              redactTelemetryContent: (value) => redactRevealedContent(ctx, value),
               threadId: thread.id,
               runId,
               routineId: run.routineId,
@@ -1947,6 +1964,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 }
                 activeModel["model.provider"] = provider;
                 activeModel["model.id"] = modelId;
+                await reportModelFallback(provider, modelId, "runtime");
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               turnCheckpoint,

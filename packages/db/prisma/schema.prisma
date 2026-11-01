@@ -31,6 +31,7 @@ model User {
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   avatarStyle                 String                       @default("organic")
+  allowBotPasswordReveal      Boolean                      @default(false)
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   marketingEmailOptOutAt      DateTime?

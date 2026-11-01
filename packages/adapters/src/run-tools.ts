@@ -4,6 +4,7 @@ import { thinkWorkerToolRefusal } from "./background-task-lanes.js";
 import { loginFailure } from "./login-failure.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import { refusedTool } from "./refused-tool-breaker.js";
+import { revealSecret } from "./reveal-secret.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
@@ -36,6 +37,7 @@ import { workerUserFacingRefusal } from "./worker-user-facing-tools.js";
 
 /** Every tool name with its own handler; any other name runs as a connector or cloud-agent tool. */
 export const TOOL_HANDLERS: ReadonlyMap<string, ToolHandler> = new Map<string, ToolHandler>([
+  ["reveal_secret", revealSecret],
   ...Object.entries(computerTools),
   ...Object.entries(fileTools),
   ...Object.entries(memoryTools),

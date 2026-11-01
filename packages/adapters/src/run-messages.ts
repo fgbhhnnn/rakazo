@@ -8,6 +8,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { visibleBotBlocks } from "./visible-bot-text.js";
 
 /** Deps for one attempt: its run's history writes carry the lease, so a superseded attempt cannot write. */
 export function withRunLease(deps: ExecutorDeps, runId: string, lease: RunLease): ExecutorDeps {
@@ -124,6 +125,7 @@ export async function persistMessageInTransaction(
   allowCancelledRun = false,
   lease?: RunLease,
 ) {
+  if (role === "bot") blocks = visibleBotBlocks(blocks);
   const message = await createThreadMessageInTransaction(tx, {
     threadId: run.threadId,
     role,

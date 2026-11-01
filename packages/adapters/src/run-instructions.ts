@@ -10,6 +10,7 @@ import {
   WORKER_LOGIN_FAILURE_GUIDANCE,
 } from "./login-failure.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
+import { pageBrowserRecoveryGuidance } from "./page-browser-recovery-prompt.js";
 import { PAGE_DISPATCH_GUIDANCE, PAGE_GUIDANCE } from "./page-tools.js";
 import { replyGuidanceForOfferedTools } from "./run-replies.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
@@ -288,6 +289,7 @@ function toolUsageLine(parts: {
   const disabled = parts.disabledBuiltinTools;
   const clauses = [
     pageWorkClause(parts.pageBrowserAllowed, disabled),
+    pageBrowserRecoveryGuidance(parts.pageBrowserAllowed, disabled),
     webLookupClause(disabled),
     ...secretGuidance(parts.credentialPageBrowserAllowed ?? parts.pageBrowserAllowed, disabled),
     builtinOffered(disabled, "connect_app")

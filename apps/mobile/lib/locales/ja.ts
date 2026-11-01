@@ -1,4 +1,7 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Allow bots to use saved passwords directly": "ボットによる保存済みパスワードの直接使用を許可",
+  "Passwords go to your model provider and may appear in history. Enable only if needed.":
+    "パスワードはモデル提供元に送信され、履歴に表示される場合があります。必要な場合のみ有効にしてください。",
   Dictate: "音声入力",
   "Stop dictation": "音声入力を停止",
   "Nothing heard. Try again.": "音声が聞き取れませんでした。もう一度お試しください。",

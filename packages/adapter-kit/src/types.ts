@@ -515,6 +515,8 @@ export type AgentContextStrategy = "current" | "retrieval" | "snapshots" | "cach
 export const DEFAULT_CONTEXT_STRATEGY: AgentContextStrategy = "retrieval";
 
 export interface AgentRunRequest {
+  /** Scrub optional diagnostic content without changing what the model receives. */
+  redactTelemetryContent?: (value: unknown) => unknown;
   /** Awaited producer-side accounting, independent of event-consumer cancellation. */
   onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
   contextStrategy?: AgentContextStrategy;
@@ -1152,6 +1154,7 @@ export interface BrowserActResult {
 export type PageBrowserCommand =
   | { command: "navigate"; url: string }
   | { command: "snapshot" }
+  | { command: "restart" }
   | { command: "act"; actions: BrowserActStep[] };
 
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };

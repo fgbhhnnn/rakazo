@@ -32,9 +32,11 @@ import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
+import { redactRevealedContent } from "./reveal-secret-redaction.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { inferScript } from "./scripted-runtime.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
+import { createVisibleBotRedactor } from "./visible-bot-text.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
 
@@ -349,7 +351,7 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
   if (additions.length === 0) return;
   reply.pendingProgress += reply.redactor.finish();
   ctx.secrets.push(...additions);
-  reply.redactor = createStreamingRedactor(ctx.secrets);
+  reply.redactor = createVisibleBotRedactor(ctx.secrets);
 }
 
 export function pauseForApproval(ctx: RunContext) {
@@ -408,7 +410,9 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
   if (capture) {
     const saved = JSON.parse(capture());
     saved.effectOccurrences = effects.occurrences;
-    await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+    await saveRunTurnCheckpoint(
+      deps.prisma, run, workerId, fence, JSON.stringify(redactRevealedContent(ctx, saved)),
+    );
     effects.storedTurnCheckpoint = true;
   } else if (effects.storedTurnCheckpoint) {
     // Helper calls have no saved turn. An earlier pause's turn must not resume this one.

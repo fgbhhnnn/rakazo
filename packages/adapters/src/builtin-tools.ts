@@ -23,7 +23,9 @@ import {
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
+import { browserRestartTool } from "./page-browser-restart.js";
 import { pageTools } from "./page-tools.js";
+import { revealSecretTool } from "./reveal-secret-tool.js";
 import { messageUserMaxLength } from "./user-progress.js";
 import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 import { reportProgressTool } from "./worker-progress.js";
@@ -247,6 +249,7 @@ const fleetGroupTargetProperties = {
 };
 
 export const builtinAgentTools: ConnectorTool[] = [
+  revealSecretTool,
   {
     name: "generate_image",
     description:
@@ -329,6 +332,7 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
 
+  browserRestartTool,
   {
     name: "browser_navigate",
     description:

@@ -6783,3 +6783,11 @@ msgstr "你的语音提供方额度已用完。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "你的语音提供方拒绝了该密钥。"
+
+#: src/components/SavedPasswordSettings.tsx
+msgid "Allow bots to use saved passwords directly"
+msgstr "允许 bot 直接使用保存的密码"
+
+#: src/components/SavedPasswordSettings.tsx
+msgid "Passwords go to your model provider and may appear in history. Enable only if needed."
+msgstr "密码会发送给模型提供商，并可能出现在历史记录中。仅在需要时启用。"

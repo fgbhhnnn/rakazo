@@ -1,28 +1,12 @@
 import type { AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import { detectChatPasswordValues } from "./chat-password-detection.js";
 import { messageToAgentHistoryText } from "./reply-context.js";
 
 /** Internal redaction values only: never log or return these from a tool. */
 export function chatPasswordRedactions(text: string): string[] {
-  const values: string[] = [];
-  const assignments =
-    /(?:密码|口令|password|passwd|pwd|api[_ -]?key|access[_ -]?token|secret)\s*[：:=]\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s，,;；]+))/giu;
-  const pairs =
-    /(?:用户名|账号|帐号|username|user|login)\s*[：:=]\s*\S+[^\n]*?(?:密码|password|passwd|pwd)\s+(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s，,;；]+))/giu;
-  for (const pattern of [assignments, pairs]) {
-    for (const match of text.matchAll(pattern)) {
-      const value = match[1] ?? match[2] ?? match[3];
-      if (value && !/^\[(?:redacted|hidden)\]$/i.test(value)) values.push(value);
-    }
-  }
-  if (values.length) {
-    for (const match of text.matchAll(
-      /(?:用户名|账号|帐号|username|user|login)\s*[：:=]\s*([^\s，,;；]+)/giu,
-    ))
-      values.push(match[1]!);
-  }
-  return [...new Set(values)];
+  return detectChatPasswordValues(text);
 }
 
 /** No matched value is ever included in the instruction. */

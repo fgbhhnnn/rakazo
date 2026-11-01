@@ -163,6 +163,7 @@ import {
   RunsListOutputSchema,
 } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
+import { savedPasswordSettingsContract } from "./saved-password-settings.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 
@@ -260,6 +261,7 @@ export const appContract = {
   },
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
+  savedPasswordSettings: savedPasswordSettingsContract,
   billing: {
     status: oc.output(BillingStatusSchema),
     /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */

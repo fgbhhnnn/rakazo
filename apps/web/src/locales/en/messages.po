@@ -6783,3 +6783,11 @@ msgstr "Your voice provider is out of credit."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Your voice provider key was rejected."
+
+#: src/components/SavedPasswordSettings.tsx
+msgid "Allow bots to use saved passwords directly"
+msgstr "Allow bots to use saved passwords directly"
+
+#: src/components/SavedPasswordSettings.tsx
+msgid "Passwords go to your model provider and may appear in history. Enable only if needed."
+msgstr "Passwords go to your model provider and may appear in history. Enable only if needed."

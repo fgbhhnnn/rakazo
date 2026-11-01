@@ -319,6 +319,35 @@ function withEmptyModels<T extends object>(prisma: T): T {
 }
 
 describe("pasted credentials in the initial user turn", () => {
+  it.each([
+    ["密码是 Abc12345!", "Abc12345!"],
+    ["账号 foo@bar.com 密码 xxxx", "xxxx"],
+    ["apple id xxx 密码 yyy", "yyy"],
+    ["My password is Fake123!", "Fake123!"],
+    ["Account demo@example.test password fake-pass", "fake-pass"],
+  ])(
+    "warns and protects conversational assignments before the runtime starts (%#)",
+    async (userText, value) => {
+      const { runtimeRun, published } = await runAfterFill([], {
+        savedLogin: false,
+        userText,
+        reply: `Echo: ${value}`,
+      });
+      const request = runtimeRun.mock.calls[0]?.[0] as unknown as {
+        prompt: string;
+        history: unknown;
+        resumeToolResult: unknown;
+      };
+      expect(request).toBeDefined();
+      expect(request.prompt).toContain("A user message in this turn appears to contain");
+      expect(
+        JSON.stringify([request.prompt, request.history, request.resumeToolResult]),
+      ).not.toContain(value);
+      expect(published).not.toContain(value);
+      expect(published).toContain("[redacted]");
+    },
+  );
+
   it("keeps the task while warning and redacting prompt, history and resume text", async () => {
     const { runtimeRun } = await runAfterFill([], {
       savedLogin: false,
@@ -342,5 +371,16 @@ describe("pasted credentials in the initial user turn", () => {
     const { runtimeRun } = await runAfterFill([], { userText: "Upload the file." });
     const request = runtimeRun.mock.calls[0]?.[0] as unknown as { prompt: string };
     expect(request.prompt).not.toContain("A user message in this turn appears to contain");
+  });
+
+  it("keeps internal handoff annotations out of the streamed and completed bot reply", async () => {
+    const { published, runtimeRun } = await runAfterFill([], {
+      savedLogin: false,
+      userText: "Please continue",
+      reply: "已处理。（未实际交接给 前端）继续。",
+    });
+    expect(runtimeRun).toHaveBeenCalledOnce();
+    expect(published).not.toContain("未实际交接");
+    expect(published).toContain("已处理。继续。");
   });
 });

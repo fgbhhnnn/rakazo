@@ -67,6 +67,10 @@ export class ComputerBrowserProvider implements BrowserProvider {
     };
   }
 
+  async restart(computer: ComputerRef, context: AdapterContext): Promise<PageBrowserResult> {
+    return (await this.runLive(computer, { command: "restart" }, context)) as PageBrowserResult;
+  }
+
   async navigate(
     computer: ComputerRef,
     request: BrowserNavigateRequest,

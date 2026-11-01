@@ -1,4 +1,7 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Allow bots to use saved passwords directly": "允许 bot 直接使用保存的密码",
+  "Passwords go to your model provider and may appear in history. Enable only if needed.":
+    "密码会发送给模型提供商，并可能出现在历史记录中。仅在需要时启用。",
   Dictate: "语音输入",
   "Stop dictation": "停止语音输入",
   "Nothing heard. Try again.": "未听到语音，请重试。",

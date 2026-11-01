@@ -37,6 +37,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "web_fetch",
   "browser_snapshot",
   "list_secrets",
+  "reveal_secret",
   "cloud_agent_status",
   "background_task_status",
   "purchase_status",
@@ -66,6 +67,7 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
 export function selectBuiltinToolsForRun(options: {
+  allowBotPasswordReveal?: boolean;
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
   historyRetrievalEnabled?: boolean;
@@ -122,6 +124,7 @@ export function selectBuiltinToolsForRun(options: {
     Boolean(options.cloudAgentEnabled),
   ).filter(
     (tool) =>
+      (options.allowBotPasswordReveal || tool.name !== "reveal_secret") &&
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
@@ -172,6 +175,7 @@ export function selectBuiltinToolsForRun(options: {
 export const PAGE_BROWSER_TOOL_NAMES = new Set([
   "browser_navigate",
   "browser_snapshot",
+  "browser_restart",
   "browser_act",
 ]);
 

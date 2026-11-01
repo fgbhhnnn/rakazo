@@ -31,7 +31,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -133,13 +132,13 @@ class RakazoNotificationService : Service() {
       try {
         if (generation != sessionGeneration.get()) return
         val avatarStyle = selectedAvatarStyle
-          ?: avatarStyle(storage.endpoint, token, storage.spaceId, storage.headers)
+          ?: avatarStyle(storage.endpoint, token, storage.spaceId)
             .also { selectedAvatarStyle = it }
         if (generation != sessionGeneration.get()) return
-        val active = runs(storage.endpoint, token, storage.spaceId, storage.headers, "active")
+        val active = runs(storage.endpoint, token, storage.spaceId, "active")
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
-        val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
+        val recent = runs(storage.endpoint, token, storage.spaceId, "recent")
         val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
@@ -187,7 +186,7 @@ class RakazoNotificationService : Service() {
         for ((run, scheduled) in replyLookups) {
           if (generation != sessionGeneration.get()) return
           val reply = runCatching {
-            latestReply(storage.endpoint, token, storage.spaceId, storage.headers, run)
+            latestReply(storage.endpoint, token, storage.spaceId, run)
           }.getOrDefault("")
           if (reply == null) continue
           if (!runIfCurrent(generation) {
@@ -506,14 +505,8 @@ private object Channels {
   const val ATTENTION = "rakazo_attention"
 }
 
-private fun runs(
-  endpoint: String,
-  token: String,
-  spaceId: String,
-  headers: String,
-  filter: String,
-): List<RunRecord> {
-  val root = rpc(endpoint, token, spaceId, headers, "runs/list", JSONObject().put("filter", filter))
+private fun runs(endpoint: String, token: String, spaceId: String, filter: String): List<RunRecord> {
+  val root = rpc(endpoint, token, spaceId, "runs/list", JSONObject().put("filter", filter))
   val rows = root.optJSONArray("runs") ?: throw IOException("Invalid activity response")
   return List(rows.length()) { index ->
     val row = rows.optJSONObject(index) ?: throw IOException("Invalid activity response")
@@ -536,20 +529,14 @@ private fun runs(
 private fun isWorking(run: RunRecord): Boolean =
   run.status == "queued" || run.status == "leased" || run.status == "running"
 
-private fun avatarStyle(endpoint: String, token: String, spaceId: String, headers: String): String =
-  rpc(endpoint, token, spaceId, headers, "me", JSONObject()).optString("avatarStyle", "organic")
+private fun avatarStyle(endpoint: String, token: String, spaceId: String): String =
+  rpc(endpoint, token, spaceId, "me", JSONObject()).optString("avatarStyle", "organic")
 
-private fun latestReply(
-  endpoint: String,
-  token: String,
-  spaceId: String,
-  headers: String,
-  run: RunRecord,
-): String? {
+private fun latestReply(endpoint: String, token: String, spaceId: String, run: RunRecord): String? {
   val target = JSONObject().apply {
     if (run.groupId != null) put("groupId", run.groupId) else put("botId", run.botId)
   }
-  val root = rpc(endpoint, token, spaceId, headers, "threads/get", target)
+  val root = rpc(endpoint, token, spaceId, "threads/get", target)
   val messages = root.optJSONArray("messages") ?: return ""
   for (messageIndex in messages.length() - 1 downTo 0) {
     val message = messages.optJSONObject(messageIndex) ?: continue
@@ -1017,7 +1004,6 @@ private fun rpc(
   endpoint: String,
   token: String,
   spaceId: String,
-  headers: String,
   procedure: String,
   input: JSONObject,
 ): JSONObject {
@@ -1028,10 +1014,6 @@ private fun rpc(
     connection.connectTimeout = 8_000
     connection.readTimeout = 15_000
     connection.doOutput = true
-    // An access proxy in front of the server answers a refused request with a redirect to its login
-    // page; following it would read that page as the server's answer.
-    connection.instanceFollowRedirects = false
-    serverHeaders(headers).forEach { (name, value) -> connection.setRequestProperty(name, value) }
     connection.setRequestProperty("Content-Type", "application/json")
     connection.setRequestProperty("Origin", "rakazo://")
     connection.setRequestProperty("Authorization", "Bearer $token")
@@ -1044,28 +1026,10 @@ private fun rpc(
     val status = connection.responseCode
     if (status !in 200..299) throw ApiException(status)
     val body = connection.inputStream.bufferedReader().use { it.readText() }
-    val root = try {
-      JSONObject(body)
-    } catch (_: JSONException) {
-      throw IOException("Invalid server response")
-    }
-    root.optJSONObject("json") ?: throw IOException("Invalid server response")
+    JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid server response")
   } finally {
     connection.disconnect()
   }
-}
-
-/** The saved headers; a value that is not a JSON object of strings sends none. */
-private fun serverHeaders(headers: String): Map<String, String> {
-  if (headers.isBlank()) return emptyMap()
-  val root = try {
-    JSONObject(headers)
-  } catch (_: JSONException) {
-    return emptyMap()
-  }
-  return root.keys().asSequence().mapNotNull { name ->
-    (root.opt(name) as? String)?.let { name to it }
-  }.toMap()
 }
 
 private fun JSONObject.requiredString(name: String): String =

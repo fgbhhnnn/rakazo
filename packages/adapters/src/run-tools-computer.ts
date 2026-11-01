@@ -35,6 +35,7 @@ import {
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { browserRestartFromTool } from "./page-browser-restart.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets } from "./run-context.js";
@@ -138,6 +139,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { name, args } = call;
   const blocked = await screenBlocked(ctx);
   if (blocked) return call.finish({ error: blocked });
+  if (name === "browser_restart") return browserRestartFromTool(ctx, call);
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
   const redactions = () => [...ctx.secrets];

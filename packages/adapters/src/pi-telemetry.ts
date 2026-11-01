@@ -1,13 +1,14 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SpanAttributes, TelemetryContext, TelemetrySpan } from "@earendil-works/pi-telemetry";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import { redactPiContent, withPiContentRedaction } from "./pi-content-redaction.js";
 
 const current = new AsyncLocalStorage<TelemetryContext>();
 let exporter: Promise<{ context: TelemetryContext; shutdown(): Promise<void> }> | undefined;
 
 /** Disabled deployments never load or initialize the OTel SDK. */
 export async function withPiTelemetry<T>(
-  request: Pick<AgentRunRequest, "botId" | "runId" | "routineId">,
+  request: Pick<AgentRunRequest, "botId" | "runId" | "routineId" | "redactTelemetryContent">,
   work: (span?: TelemetrySpan) => Promise<T>,
 ): Promise<T> {
   if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim()) return work();
@@ -30,7 +31,8 @@ export async function withPiTelemetry<T>(
         "rakazo.routine.id": request.routineId ?? undefined,
       },
     },
-    (span) => current.run(span, () => work(span)),
+    (span) => current.run(span, () =>
+      withPiContentRedaction(request.redactTelemetryContent, () => work(span))),
   );
 }
 
@@ -62,7 +64,7 @@ export function recordPiTelemetryContent(
 ): void {
   if (!span || process.env.OTEL_CAPTURE_CONTENT !== "true") return;
   try {
-    span.setAttributes({ [key]: JSON.stringify(value) });
+    span.setAttributes({ [key]: JSON.stringify(redactPiContent(value)) });
   } catch {
     /* Non-serializable content is omitted. */
   }

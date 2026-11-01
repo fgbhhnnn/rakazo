@@ -65,9 +65,11 @@ const plaintexts: Record<string, string> = {
 async function runTurn({
   primaryConnected,
   backupConnected = true,
+  botModel,
 }: {
   primaryConnected: boolean;
   backupConnected?: boolean;
+  botModel?: { modelProvider: string; modelId: string };
 }) {
   const run: Record<string, unknown> = {
     id: "run-1",
@@ -98,6 +100,14 @@ async function runTurn({
       (row) => row.userId === where.userId && matchesProvider(where.provider, row.provider),
     );
   const tx = {
+    $queryRaw: vi.fn(async () => []),
+    thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
+    run: { findUnique: vi.fn(async () => run) },
+    message: {
+      findUnique: vi.fn(async () => null),
+      create: vi.fn(async () => ({ id: "notice" })),
+    },
+    event: { create: vi.fn(async () => ({ seq: 7 })) },
     userModelCredential: {
       findFirst: vi.fn(
         async (args: { where: { id: string } }) =>
@@ -152,6 +162,7 @@ async function runTurn({
           description: "Test assistant",
           modelProvider: null,
           modelId: null,
+          ...botModel,
           thinkingLevel: null,
           computerId: "computer-1",
           computerSwitching: false,
@@ -236,17 +247,36 @@ async function runTurn({
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
-    events: { append: vi.fn(async () => undefined), finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      notify: vi.fn(async () => undefined),
+      finalizeRun,
+    },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   await executor.continueRun("run-1", "worker-1");
-  return { request, run, runtimeRun, finalizeRun };
+  return { request, run, runtimeRun, finalizeRun, notices: tx.message.create };
 }
 
 describe("a main model that cannot start runs on the member's backup", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("publishes the actual model when an unavailable configured bot model falls back", async () => {
+    const botModel = { modelProvider: "deepseek", modelId: "deepseek-flash" };
+    const { request, run, notices } = await runTurn({ primaryConnected: false, botModel });
+    expect(request?.model).toMatchObject({ provider: BACKUP.provider, id: BACKUP.modelId });
+    expect(run).toMatchObject({ modelProvider: BACKUP.provider, modelId: BACKUP.modelId });
+    expect(notices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ role: "system", botId: "bot-1", runId: "run-1" }),
+      }),
+    );
+    expect(JSON.stringify(notices.mock.calls)).toContain(`${BACKUP.provider}/${BACKUP.modelId}`);
+    expect(JSON.stringify(notices.mock.calls)).toContain("deepseek/deepseek-flash");
+    expect(botModel).toEqual({ modelProvider: "deepseek", modelId: "deepseek-flash" });
   });
 
   it("starts on the backup when the main model has no connection", async () => {

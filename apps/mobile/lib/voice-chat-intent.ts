@@ -1,11 +1,7 @@
-import type { EventSubscription } from "expo-modules-core";
-import { requireOptionalNativeModule } from "expo-modules-core";
+import { getVoiceChatNative } from "./voice-chat-native-compat";
 
 /** The "Start Voice Chat" Shortcuts action, which opens a bot's chat and asks it to call. */
-const native = requireOptionalNativeModule<{
-  takePendingVoiceChat(botId: string): boolean;
-  addListener(event: "onPendingVoiceChat", listener: () => void): EventSubscription;
-}>("RakazoVoiceChat");
+const native = getVoiceChatNative();
 
 /** True once, when the action asked to call this bot. */
 export function takeShortcutVoiceChat(botId: string): boolean {

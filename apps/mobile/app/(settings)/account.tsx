@@ -78,6 +78,7 @@ import {
 } from "../../lib/passkey";
 import { registerPushToken } from "../../lib/push";
 import { createQueuedSave } from "../../lib/queued-save";
+import { SavedPasswordSettings } from "../../lib/saved-password-settings";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
@@ -755,6 +756,9 @@ export default function Account() {
             onPress={() => setAdvancedOpen((open) => !open)}
             title={t("Advanced")}
           />
+          {advancedOpen ? (
+            <SavedPasswordSettings />
+          ) : null}
           {advancedOpen ? (
             <SettingsSwitch
               label={t("Stream replies")}

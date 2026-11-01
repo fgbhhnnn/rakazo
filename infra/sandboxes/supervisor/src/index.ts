@@ -532,6 +532,7 @@ app.post("/computers/:id/browser", async (c) => {
           }),
       }),
       z.object({ command: z.literal("snapshot") }),
+      z.object({ command: z.literal("restart") }),
       z.object({
         command: z.literal("act"),
         actions: z
@@ -616,7 +617,7 @@ app.post("/computers/:id/browser", async (c) => {
             ? [`RAKAZO_BROWSER_UPLOAD_MAX_BYTES=${process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES}`]
             : []),
         ],
-        timeoutMs: 25_000,
+        timeoutMs: body.command === "navigate" ? 55_000 : 25_000,
         signal,
         stdin: `${JSON.stringify(body)}\n`,
       },
@@ -631,11 +632,7 @@ app.post("/computers/:id/browser", async (c) => {
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
       throw new Error(
         /command timed out/.test(result.stderr)
-          ? `Page browser timed out; the page may be busy or blocked by a dialog. ${
-              body.command === "act"
-                ? "Inspect the screen before continuing."
-                : "Retry once before using other tools."
-            }`
+          ? `Page browser timed out and could not recover. Call browser_restart before continuing.${body.command === "act" ? " Inspect the screen before continuing; do not replay uncertain actions." : ""}`
           : "Page browser unavailable or interrupted",
       );
     }

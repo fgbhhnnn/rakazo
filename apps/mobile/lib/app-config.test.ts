@@ -78,13 +78,13 @@ describe("mobile app config", () => {
     });
   });
 
-  it("asks a development build to fetch the association itself in developer mode", () => {
+  it("preserves the shipped passkey entitlement even when developer mode is requested", () => {
     vi.stubEnv("EAS_BUILD_PROFILE", "development");
     vi.stubEnv("RAKAZO_PASSKEY_DEVELOPER_MODE", "1");
 
     expect(appConfig(context(config))).toEqual({
       ...config,
-      ios: { ...config.ios, associatedDomains: ["webcredentials:app.example.com?mode=developer"] },
+      ios: { ...config.ios, associatedDomains: ["webcredentials:app.example.com"] },
       extra: { ...config.extra, passkeyRpIds: ["app.example.com"] },
     });
   });

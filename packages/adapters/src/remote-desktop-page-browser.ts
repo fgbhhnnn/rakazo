@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AdapterContext, PageBrowserCommand, PageBrowserResult } from "@rakazo/adapter-kit";
 import { shellQuote } from "./computer-support.js";
+import { PAGE_BROWSER_RECOVERY_SOURCE } from "./page-browser-recovery-source.js";
 import type { PageBrowserCommandHandle } from "./remote-desktop-page-browser-command.js";
 import { remotePageBrowserRequest } from "./remote-desktop-page-browser-request.js";
 import { PAGE_BROWSER_SOURCE } from "./remote-desktop-page-browser-source.js";
@@ -9,13 +10,14 @@ import type { CommandResult, RemoteDesktop } from "./remote-desktop-sandbox.js";
 const TIMEOUT_MS = 25_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 const HELPER_HASH = createHash("sha256").update(PAGE_BROWSER_SOURCE).digest("hex");
+const RECOVERY_HASH = createHash("sha256").update(PAGE_BROWSER_RECOVERY_SOURCE).digest("hex");
 const installed = new WeakMap<RemoteDesktop, Promise<string>>();
 const UNAVAILABLE =
   "Page browser unavailable or interrupted. Inspect the screen before continuing.";
 // One process owns the remote deadline, stdin watcher, and CDP connection. Killing the SDK
 // handle must not orphan a child that could still type a credential into the page.
 const WATCHDOG =
-  'import runpy,signal,sys;signal.alarm(25);sys.argv=sys.argv[1:];runpy.run_path(sys.argv[0],run_name="__main__")';
+  'import os,runpy,signal,sys;signal.alarm(25);sys.argv=sys.argv[1:];sys.path.insert(0,os.path.dirname(sys.argv[0]));runpy.run_path(sys.argv[0],run_name="__main__")';
 type PageBrowserScreen = {
   layout: { display: string; debugPort: number };
   env: { workspaceDir: string };
@@ -45,7 +47,7 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
         'if [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then',
         "  target=/usr/local/bin/rakazo-page-browser",
         'else target="$HOME/.local/lib/rakazo/rakazo-page-browser"; fi',
-        `if [ -f "$target" ] && [ "$(sha256sum "$target" | cut -d ' ' -f1)" = ${HELPER_HASH} ]; then`,
+        `if [ -f "$target" ] && [ "$(sha256sum "$target" | cut -d ' ' -f1)" = ${HELPER_HASH} ] && [ "$(sha256sum "$(dirname "$target")/rakazo_page_browser_recovery.py" 2>/dev/null | cut -d ' ' -f1)" = ${RECOVERY_HASH} ]; then`,
         '  printf "READY=%s\\n" "$target"',
         "else",
         `  (umask 077; mkdir ${shellQuote(stage)})`,
@@ -61,9 +63,17 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
   const target = match[2]!;
   if (match[1] === "READY") return target;
   const next = `${target}.${randomUUID()}`;
+  const recoveryTarget = `${target.slice(0, target.lastIndexOf("/"))}/rakazo_page_browser_recovery.py`;
+  const recoveryNext = `${recoveryTarget}.${randomUUID()}`;
   try {
     await desktop.files.write(
-      [{ path: `${stage}/helper`, data: new TextEncoder().encode(PAGE_BROWSER_SOURCE).buffer }],
+      [
+        { path: `${stage}/helper`, data: new TextEncoder().encode(PAGE_BROWSER_SOURCE).buffer },
+        {
+          path: `${stage}/recovery`,
+          data: new TextEncoder().encode(PAGE_BROWSER_RECOVERY_SOURCE).buffer,
+        },
+      ],
       { signal },
     );
     const result = await desktop.commands.run(
@@ -72,15 +82,20 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
           "set -eu",
           `trap 'rm -rf ${stage}' EXIT`,
           `test "$(sha256sum ${stage}/helper | cut -d ' ' -f1)" = ${HELPER_HASH}`,
+          `test "$(sha256sum ${stage}/recovery | cut -d ' ' -f1)" = ${RECOVERY_HASH}`,
           ...(target === "/usr/local/bin/rakazo-page-browser"
             ? [
                 'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
                 `$root install -o root -g root -m 755 ${stage}/helper ${shellQuote(next)}`,
+                `$root install -o root -g root -m 644 ${stage}/recovery ${shellQuote(recoveryNext)}`,
+                `$root mv -f -- ${shellQuote(recoveryNext)} ${shellQuote(recoveryTarget)}`,
                 `$root mv -f -- ${shellQuote(next)} ${shellQuote(target)}`,
               ]
             : [
                 `mkdir -p -- ${shellQuote(target.slice(0, target.lastIndexOf("/")))}`,
                 `install -m 755 ${stage}/helper ${shellQuote(next)}`,
+                `install -m 644 ${stage}/recovery ${shellQuote(recoveryNext)}`,
+                `mv -f -- ${shellQuote(recoveryNext)} ${shellQuote(recoveryTarget)}`,
                 `mv -f -- ${shellQuote(next)} ${shellQuote(target)}`,
               ]),
         ].join("\n"),
@@ -105,6 +120,7 @@ async function runHelper(
   signal: AbortSignal,
 ): Promise<CommandResult> {
   if (!desktop.commands.startPageBrowser) throw new Error(UNAVAILABLE);
+  const timeoutMs = body.command === "navigate" ? 55_000 : TIMEOUT_MS;
   const limit = new AbortController();
   const combined = AbortSignal.any([signal, limit.signal]);
   let bytes = 0;
@@ -112,7 +128,7 @@ async function runHelper(
     bytes += Buffer.byteLength(chunk);
     if (bytes > MAX_OUTPUT_BYTES) limit.abort(new Error(UNAVAILABLE));
   };
-  const timer = setTimeout(() => limit.abort(new Error("Page browser timed out")), TIMEOUT_MS);
+  const timer = setTimeout(() => limit.abort(new Error("Page browser timed out")), timeoutMs);
   let handle: PageBrowserCommandHandle | undefined;
   let abort!: () => void;
   const interrupted = new Promise<never>((_resolve, reject) => {
@@ -124,10 +140,10 @@ async function runHelper(
     combined.throwIfAborted();
     // Await start even if cancellation wins during startup: its eventual handle must be stopped.
     handle = await desktop.commands.startPageBrowser(
-      `exec python3 -c ${shellQuote(WATCHDOG)} ${shellQuote(helper)} ${body.command}`,
+      `exec python3 -c ${shellQuote(WATCHDOG.replace("alarm(25)", `alarm(${timeoutMs / 1000})`))} ${shellQuote(helper)} ${body.command}`,
       {
         signal: combined,
-        timeoutMs: TIMEOUT_MS,
+        timeoutMs,
         envs: {
           DISPLAY: screen.layout.display,
           RAKAZO_CDP_PORT: String(screen.layout.debugPort),
@@ -226,7 +242,7 @@ export async function remoteDesktopPageBrowser(
       fallback: "computer_act",
       uncertain: body.command === "act",
       error: timedOut
-        ? `Page browser timed out; the page may be busy or blocked by a dialog. ${body.command === "act" ? "Inspect the screen before continuing." : "Retry once before using other tools."}`
+        ? `Page browser timed out and could not recover. Call browser_restart before continuing.${body.command === "act" ? " Inspect the screen before continuing; do not replay uncertain actions." : ""}`
         : UNAVAILABLE,
     };
   }

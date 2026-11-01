@@ -51,7 +51,13 @@ beforeEach(() => {
   }));
 });
 
-async function snapshot(id: string, screen: string, lease: string, home = "home") {
+async function snapshot(
+  id: string,
+  screen: string,
+  lease: string,
+  home = "home",
+  command = "snapshot",
+) {
   return supervisorApp.request(`/computers/${id}/browser`, {
     method: "POST",
     headers: {
@@ -62,7 +68,7 @@ async function snapshot(id: string, screen: string, lease: string, home = "home"
       "x-rakazo-screen-id": screen,
       "x-rakazo-screen-lease-id": lease,
     },
-    body: JSON.stringify({ command: "snapshot" }),
+    body: JSON.stringify({ command }),
   });
 }
 
@@ -87,6 +93,26 @@ it("resolves the owned display and refuses an older fence before running the hel
   expect(await (await snapshot("computer-lease", "first", "run:1")).json()).toMatchObject({
     ok: false,
   });
+  expect(mock.exec).not.toHaveBeenCalled();
+});
+
+it("restarts only through the owned display and rejects an older lease", async () => {
+  expect(
+    await (await snapshot("computer-restart", "first", "run:2", "home", "restart")).json(),
+  ).toMatchObject({ ok: true });
+  const options = mock.exec.mock.calls.at(-1)?.[0];
+  const helperIndex = options.Cmd.indexOf("/usr/local/bin/rakazo-page-browser");
+  expect(helperIndex).toBeGreaterThanOrEqual(0);
+  expect(options.Cmd.slice(helperIndex, helperIndex + 2)).toEqual([
+    "/usr/local/bin/rakazo-page-browser",
+    "restart",
+  ]);
+  expect(options.Env).toContain("DISPLAY=:1");
+  expect(options.Env).toContain("RAKAZO_CDP_PORT=9222");
+  mock.exec.mockClear();
+  expect(
+    await (await snapshot("computer-restart", "first", "run:1", "home", "restart")).json(),
+  ).toMatchObject({ ok: false });
   expect(mock.exec).not.toHaveBeenCalled();
 });
 
@@ -272,7 +298,7 @@ it.each([
 });
 
 it.each([
-  [{ command: "snapshot" }, "Retry once"],
+  [{ command: "snapshot" }, "Call browser_restart"],
   [{ command: "act", actions: [{ kind: "click", ref: "e1" }] }, "Inspect the screen"],
 ])("reports a helper that exceeds its deadline as a timeout: %j", async (body, advice) => {
   const defaultExec = mock.exec.getMockImplementation()!;

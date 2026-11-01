@@ -587,6 +587,8 @@ export interface WebProvider extends WebSearchProvider, WebFetchProvider {
  * for web pages; use computer_act when the page tool cannot operate or the task needs the desktop.
  */
 export interface BrowserProvider {
+  /** Restart the owned page browser while preserving its profile, when supported. */
+  restart?(computer: ComputerRef, context: AdapterContext): Promise<PageBrowserResult>;
   describe(): AdapterDescriptor<BrowserCapabilities>;
   navigate(
     computer: ComputerRef,

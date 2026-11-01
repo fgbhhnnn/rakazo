@@ -1,4 +1,7 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Allow bots to use saved passwords directly": "Разрешить ботам напрямую использовать сохранённые пароли",
+  "Passwords go to your model provider and may appear in history. Enable only if needed.":
+    "Пароли передаются провайдеру модели и могут появиться в истории. Включайте только при необходимости.",
   Dictate: "Диктовать",
   "Stop dictation": "Остановить диктовку",
   "Nothing heard. Try again.": "Речь не распознана. Попробуйте ещё раз.",

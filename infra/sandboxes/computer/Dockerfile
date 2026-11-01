@@ -143,6 +143,7 @@ LABEL rakazo.control.aimedScroll="1"
 COPY --from=capture-builder /build/librakazo-xcapture.so /usr/local/lib/librakazo-xcapture.so
 COPY --chmod=755 rakazo-browser /usr/local/bin/rakazo-browser
 COPY --chmod=755 rakazo-focus-or-launch /usr/local/bin/rakazo-focus-or-launch
+COPY --chmod=644 rakazo_page_browser_recovery.py /usr/local/bin/rakazo_page_browser_recovery.py
 COPY --chmod=755 rakazo-page-browser /usr/local/bin/rakazo-page-browser
 COPY --chmod=644 rakazo-browser.desktop /usr/share/applications/rakazo-browser.desktop
 # Rakazo keeps credentials itself; the browser's save prompts would cover pages.
