@@ -33,7 +33,12 @@ import {
 } from "./worker-incomplete-continue.js";
 import { incompleteResultReason } from "./worker-incomplete-result.js";
 import { workerOutcomeRelay } from "./worker-outcome-relay.js";
+import {
+  completedWorkerNeedsResult,
+  suppressObsoleteWorkerReport,
+} from "./worker-report-supersession.js";
 import { slotFree } from "./worker-slot-mentions.js";
+import { workerReportText } from "./worker-turn-error.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -375,7 +380,7 @@ export async function messageBot(
 
 /** Return a delegated run's terminal outcome unless it already sent one explicitly. */
 export async function returnBotMessageOutcome(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "artifacts" | "maxUploadSizeBytes">,
   run: {
     id: string;
     spaceId: string;
@@ -383,6 +388,7 @@ export async function returnBotMessageOutcome(
     botId: string;
     userId: string;
     sourceMessageId?: string | null;
+    status?: string;
   },
   sender: { id: string; name: string },
   text: string,
@@ -403,6 +409,21 @@ export async function returnBotMessageOutcome(
   // A hidden background worker always reports back to its dispatcher, whatever the intent of
   // the message that woke it: the dispatcher is the only way its result reaches the user.
   const workerTitle = await hiddenWorkerTitle(deps.prisma, run);
+  const failure = intent === "status" && (run.status === "failed" || run.status === "cancelled");
+  if (
+    workerTitle !== undefined &&
+    failure &&
+    (await completedWorkerNeedsResult(deps.prisma, run.id))
+  )
+    return false; // Keep reconciliation open so it delivers the completed transcript next time.
+  if (
+    workerTitle !== undefined &&
+    (await suppressObsoleteWorkerReport(deps.prisma, run.id, failure ? "failure" : intent))
+  ) {
+    await markBotOutcomeReturned(deps, run.id);
+    return true;
+  }
+  text = workerReportText(text);
   if (sourceIntent !== "request" && sourceIntent !== "question" && workerTitle === undefined) {
     await markBotOutcomeReturned(deps, run.id);
     return true;

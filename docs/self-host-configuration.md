@@ -110,9 +110,14 @@ Run `pg_dump` as the owner. The app login would only dump rows it is allowed to 
 
 ## Database connections
 
-The API keeps a pool of 4 Postgres connections and the worker a pool of 8. `DB_POOL_MAX` sets both
-to the same value, so size it for the worker: Graphile Worker needs at least 6, and the worker also
-holds three listening connections and a leadership connection.
+The API defaults to a pool of 12 Postgres connections and the worker to 20. The existing
+`DB_POOL_MAX` setting overrides the default per process; `DATABASE_URL`'s `connection_limit`
+does not size these node-postgres pools. For production deployments pinned to `DB_POOL_MAX=4`,
+raise the API setting to `12` (or remove it to use the default). The worker requires at least 6
+for Graphile Worker. Budget for every API/worker replica, the old and new processes during a
+rolling deployment, two additional content-key connections per process, and the worker's
+listening and leadership connections before raising the limit. No new environment variable is
+required.
 
 `REALTIME_DATABASE_URL` sends the long-lived `LISTEN` connections that carry live updates to a
 different address than `DATABASE_URL`, for example a direct connection when `DATABASE_URL` goes

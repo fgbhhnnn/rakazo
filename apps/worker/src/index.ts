@@ -353,6 +353,8 @@ async function main() {
     prisma,
     jobs,
     events,
+    artifacts,
+    maxUploadSizeBytes: uploadSizeFromEnv(process.env),
     notifications,
     leadership: createPostgresReconciliationLeadership(pool),
     reconcileModelCredits: createModelCreditReconciler({

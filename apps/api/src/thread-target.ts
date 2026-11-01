@@ -54,6 +54,7 @@ import {
   resolveSendAttachments,
 } from "./artifacts.js";
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
+import { groupBackgroundTasks } from "./group-background-tasks.js";
 import { groupSendTargetBotIds } from "./group-send-targets.js";
 import { assertOpenableBot } from "./hidden-worker-access.js";
 import { withSerializableRetry } from "./serializable-retry.js";
@@ -580,6 +581,7 @@ export async function threadSnapshot(
           ? mapRun(primaryActiveRun)
           : null,
     activeRuns: core.activeRuns.map(mapRun),
+    backgroundTasks: await groupBackgroundTasks(deps.prisma, target.threadId, target.members),
   };
 }
 

@@ -23,7 +23,13 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { stageSourceForHandoff } from "./group-consult.js";
-import { holdWhileBusy } from "./group-held-runs.js";
+import {
+  createGroupHandoffRun,
+  groupHandoffVisibleText,
+  handoffReceiptBlocks,
+  handoffTargetRunId,
+  humanStartedHandoffRun,
+} from "./group-handoff-run.js";
 import { recordTeamRunHandoff, teamRunHandoffGate } from "./group-team-run-gate.js";
 import { runLeaseFor } from "./run-messages.js";
 
@@ -53,6 +59,7 @@ type CommittedHandoff =
       inGroup: boolean;
       groupName: string;
       held?: boolean;
+      reused?: boolean;
     };
 
 export async function handoffToGroupBot(
@@ -124,7 +131,9 @@ export async function handoffToGroupBot(
       select: {
         id: true,
         thread: { select: { groupId: true } },
-        sourceMessage: { select: { id: true, botId: true, clientNonce: true, blocks: true } },
+        sourceMessage: {
+          select: { id: true, role: true, botId: true, clientNonce: true, blocks: true },
+        },
       },
     });
     if (!activeSource)
@@ -155,7 +164,6 @@ export async function handoffToGroupBot(
       },
     });
     if (existing) {
-      const nextRun = existing.sourceRuns[0];
       const event = await tx.event.findFirst({
         where: {
           threadId: targetThreadId,
@@ -163,13 +171,29 @@ export async function handoffToGroupBot(
           payload: { path: ["messageId"], equals: existing.id },
         },
         orderBy: { seq: "desc" },
-        select: { seq: true },
+        select: { seq: true, payload: true },
       });
+      const nextRun =
+        existing.sourceRuns[0] ??
+        (inGroup && handoffTargetRunId(event?.payload)
+          ? await humanStartedHandoffRun(
+              tx,
+              run,
+              activeSource.sourceMessage,
+              recordedHandoff(existing.blocks)?.toBotId,
+              handoffTargetRunId(event?.payload),
+            )
+          : null);
       if (!nextRun || !event)
         return { error: "recorded handoff is incomplete", reason: "source_inactive" } as const;
       // Only a replay of the same call reuses the record; a second, different handoff in one
       // turn must not report a success that never happened.
-      const conflict = secondHandoffConflict(existing.blocks, group.members, input, text);
+      const conflict = secondHandoffConflict(
+        handoffReceiptBlocks(existing.blocks, event.payload),
+        group.members,
+        input,
+        text,
+      );
       if (conflict) return conflict;
       return {
         ok: true,
@@ -180,6 +204,7 @@ export async function handoffToGroupBot(
         threadId: targetThreadId,
         inGroup,
         groupName: group.name,
+        reused: existing.sourceRuns.length === 0,
       } as const;
     }
 
@@ -234,11 +259,14 @@ export async function handoffToGroupBot(
     // A finished run can no longer write history; its reply's "@Name" handoff is recorded
     // without a run link (the handoff block names the sender bot).
     const historyRunId = inGroup && !options.allowFinishedSource ? run.id : undefined;
+    const visibleText = inGroup
+      ? await groupHandoffVisibleText(tx, run, text, Boolean(options.allowFinishedSource))
+      : text;
     const handoffBlock: MessageBlock = {
       kind: "handoff",
       fromBotId: run.botId,
       toBotId: targetId,
-      text,
+      text: visibleText,
       hop,
     };
     const message = await createThreadMessageInTransaction(tx, {
@@ -250,31 +278,14 @@ export async function handoffToGroupBot(
       clientNonce: deliveryKey,
       lease: historyRunId ? runLeaseFor(deps, historyRunId) : undefined,
     });
-    const task = await tx.task.create({
-      data: {
-        spaceId: run.spaceId,
-        botId: targetId,
-        threadId: targetThreadId,
-        userId: run.userId,
-        prompt: text,
-        status: "queued",
-      },
-    });
-    const heldUntil = options.holdWhileTargetBusy
-      ? await holdWhileBusy(tx, { threadId: targetThreadId, botId: targetId })
-      : undefined;
-    const nextRun = await tx.run.create({
-      data: {
-        spaceId: run.spaceId,
-        botId: targetId,
-        threadId: targetThreadId,
-        taskId: task.id,
-        userId: run.userId,
-        status: "queued",
-        trigger: "follow_up",
-        sourceMessageId: message.id,
-        ...(heldUntil ? { wakeAt: heldUntil } : {}),
-      },
+    const nextRun = await createGroupHandoffRun(tx, run, {
+      threadId: targetThreadId,
+      botId: targetId,
+      messageId: message.id,
+      text,
+      source: activeSource.sourceMessage,
+      inGroup,
+      holdWhileTargetBusy: options.holdWhileTargetBusy,
     });
     const event = await appendEventInTransaction(tx, {
       spaceId: run.spaceId,
@@ -287,7 +298,9 @@ export async function handoffToGroupBot(
         messageId: message.id,
         fromBotId: run.botId,
         toBotId: targetId,
-        text,
+        text: visibleText,
+        targetRunId: nextRun.id,
+        ...(visibleText === text ? {} : { brief: text }),
       },
     });
     if (teamStep) await recordTeamRunHandoff(tx, teamStep, run.botId, targetId);
@@ -301,7 +314,8 @@ export async function handoffToGroupBot(
       threadId: targetThreadId,
       inGroup,
       groupName: group.name,
-      held: Boolean(heldUntil),
+      held: nextRun.held,
+      reused: nextRun.reused,
     } as const;
   });
   if ("error" in committed) {
@@ -318,7 +332,7 @@ export async function handoffToGroupBot(
     getLogger().error("group handoff realtime notification", error);
   });
   // A held turn starts when the target's current turn ends (or its hold expires).
-  if (!committed.held)
+  if (!committed.held && !committed.reused)
     await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
       // The queued run is durable and the job reconciler will repair a missed immediate wake.
       getLogger().error("group handoff enqueue", error);

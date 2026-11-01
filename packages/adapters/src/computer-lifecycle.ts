@@ -37,6 +37,7 @@ import {
   revokeScreenControl,
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
+import { settleStoppedSuspendBeforeProvision } from "./computer-suspend-recovery.js";
 import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
@@ -182,6 +183,9 @@ export async function provisionComputer(
   const started = performance.now();
   const log = getLogger().child({ "computer.id": computerId, "run.id": context.runId });
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+  if (await settleStoppedSuspendBeforeProvision(deps, existing)) {
+    existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+  }
   if (existing.state === "quarantined")
     throw new Error("Computer requires recovery after an unconfirmed stop");
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)

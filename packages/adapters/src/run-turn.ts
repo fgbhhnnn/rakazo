@@ -40,6 +40,11 @@ import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
 import { settleHandoffNarration } from "./group-stale-narration.js";
 import { afterGroupTurn } from "./group-turn-end.js";
 import {
+  groupTurnReplyBlocks,
+  groupTurnReplyText,
+  holdsGroupTurnReply,
+} from "./group-turn-reply.js";
+import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
   shouldEnqueueCompaction,
@@ -102,6 +107,8 @@ import {
 import { visibleBotBlocks, visibleBotText } from "./visible-bot-text.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { slotFree } from "./worker-slot-mentions.js";
+import { workerFailureMessage } from "./worker-turn-error.js";
+import { retryTransientWorkerTurn } from "./worker-turn-retry.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
 
@@ -374,7 +381,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   const text = redactSecrets(before.text, ctx.secrets).trim();
-  if (text && runPromotesMidTurnNarration(run.trigger)) {
+  if (text && runPromotesMidTurnNarration(run.trigger) && !holdsGroupTurnReply(ctx)) {
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
     reply.workingNotes.length = 0;
@@ -765,6 +772,7 @@ export async function completeRun(ctx: RunContext) {
   if (
     !isBackgroundRunTrigger(run.trigger) &&
     !ctx.state.handedOff &&
+    !holdsGroupTurnReply(ctx) &&
     !reply.explicitNoResponse &&
     reply.workingNotes.length > 0 &&
     !reply.textSinceLastStep.trim()
@@ -811,7 +819,7 @@ export async function completeRun(ctx: RunContext) {
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
     });
   }
-  // A bot that handed off still says what it did: its reply shows beside the handoff card.
+  // The handoff brief already says what happened; a final variant would repeat it.
   const draftBlocks = withoutRestatedLeadSentences(
     finalBlocksAfterMidTurnProgress(
       redactBlocks(completionBlocks, ctx.secrets),
@@ -827,7 +835,7 @@ export async function completeRun(ctx: RunContext) {
       ? await settleHandoffNarration(
           deps.prisma,
           { id: runId, threadId: thread.id },
-          { handedOff: ctx.state.handedOff, blocks: draftBlocks },
+          { handedOff: ctx.state.handedOff, blocks: groupTurnReplyBlocks(ctx, draftBlocks) },
         )
       : draftBlocks,
     humanTurn: { threadId: thread.id, before: run.createdAt },
@@ -846,7 +854,10 @@ export async function completeRun(ctx: RunContext) {
   const blocks = visibleBotBlocks(replyGuard.blocks);
   const text = redactSecrets(
     visibleBotText(
-      completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
+      completionNotificationBody(
+        replyGuard.changed ? "" : groupTurnReplyText(ctx, silentReply.assembled),
+        blocks,
+      ),
     ),
     ctx.secrets,
   );
@@ -1007,10 +1018,14 @@ export async function failRun(
   ) {
     error = dispatcherWatchdogTimeout(ctx.abortController.signal);
   }
+  if (await retryTransientWorkerTurn(ctx, error)) return;
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
-  const message = redactSecrets(userRunError(error), ctx.secrets);
+  const message = redactSecrets(
+    isHiddenBot(bot) ? workerFailureMessage(error) : userRunError(error),
+    ctx.secrets,
+  );
   // Reply text the user watched stream in since the last saved message stays in the
   // thread, above the error, instead of vanishing with the live row.
   recordExplicitNoResponse(reply, reply.assistantTurnText);
@@ -1099,7 +1114,7 @@ export async function failRun(
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
-      { ...run, sourceMessageId: run.sourceMessageId },
+      { ...run, status: "failed", sourceMessageId: run.sourceMessageId },
       { id: bot.id, name: bot.name },
       `Could not complete the delegated request: ${message}`,
       "status",

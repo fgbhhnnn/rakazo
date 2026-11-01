@@ -9,6 +9,7 @@ import {
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { holdsGroupTurnReply } from "./group-turn-reply.js";
 import { clampMidTurnNarration } from "./mid-turn-narration.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
@@ -106,7 +107,11 @@ export function nextProgressNonce(ctx: RunContext) {
 }
 
 export function canPublishDurableNarration(ctx: RunContext) {
-  return runPromotesMidTurnNarration(ctx.run.trigger) && canPublishDurableProgress(ctx.state.reply);
+  return (
+    !holdsGroupTurnReply(ctx) &&
+    runPromotesMidTurnNarration(ctx.run.trigger) &&
+    canPublishDurableProgress(ctx.state.reply)
+  );
 }
 
 export function flushPendingTools(reply: ReplyState) {
@@ -178,7 +183,8 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   const promotes = runPromotesMidTurnNarration(run.trigger);
   if (
     (text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH || beforeConnectCard) &&
-    (canPublishDurableNarration(ctx) || (beforeConnectCard && promotes))
+    (canPublishDurableNarration(ctx) ||
+      (beforeConnectCard && promotes && !holdsGroupTurnReply(ctx)))
   ) {
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;

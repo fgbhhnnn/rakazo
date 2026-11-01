@@ -1,4 +1,4 @@
-import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import type { ArtifactStore, BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -587,6 +587,47 @@ describe("createJobReconciler", () => {
     expect(prisma.messagingOutbound.findFirst).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(leadership.release).toHaveBeenCalledOnce();
+  });
+
+  it("passes the configured artifact store and upload limit when recovering an outcome", async () => {
+    const terminalRun = {
+      id: "worker-run",
+      spaceId: "space",
+      threadId: "thread",
+      botId: "worker",
+      userId: "user",
+      sourceMessageId: "source",
+      status: "completed",
+      error: null,
+      bot: { name: "运营" },
+    };
+    const prisma = fakePrisma();
+    vi.mocked(prisma.run.findMany).mockImplementation((async (args: {
+      where?: { trigger?: string };
+    }) => (args.where?.trigger === "bot_message" ? [terminalRun] : [])) as never);
+    vi.mocked(prisma.message.findMany).mockResolvedValue([
+      { blocks: [{ kind: "text", text: "完整的研究结论。".repeat(2_000) }], clientNonce: null },
+    ] as never);
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true);
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    const artifacts = {} as ArtifactStore;
+    await createJobReconciler({
+      prisma,
+      jobs,
+      events,
+      artifacts,
+      maxUploadSizeBytes: 4096,
+    }).reconcileOnce();
+    expect(returnBotMessageOutcome).toHaveBeenLastCalledWith(
+      { prisma, jobs, events, artifacts, maxUploadSizeBytes: 4096 },
+      terminalRun,
+      { id: "worker", name: "运营" },
+      expect.any(String),
+      "result",
+      { forceUnread: false },
+    );
+    vi.mocked(returnBotMessageOutcome).mockClear();
   });
 
   it("retries terminal bot outcomes that were not returned", async () => {
