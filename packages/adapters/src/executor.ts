@@ -1489,6 +1489,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           overLimitActionCalls: 0,
           toolResults: new Map(),
           tainted: initiallyTainted,
+          // A resumed turn replaces this with the baseline its saved prompt was built from.
+          ownInstructionsBaseline: bot.instructions ?? "",
           earlierAttempt: undefined,
           handedOff: false,
           handoffTargets: [],
