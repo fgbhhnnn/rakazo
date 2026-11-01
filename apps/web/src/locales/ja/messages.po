@@ -651,6 +651,7 @@ msgstr "追加済み"
 msgid "Adding…"
 msgstr "追加中…"
 
+#: src/components/SavedPasswordSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -698,6 +699,10 @@ msgstr "全期間"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "許可"
+
+#: src/components/SavedPasswordSettings.tsx
+msgid "Allow bots to use saved passwords directly"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
@@ -4551,6 +4556,10 @@ msgstr "パスワードを更新しました"
 #: src/pages/Auth.tsx
 msgid "Passwords do not match"
 msgstr "パスワードが一致しません"
+
+#: src/components/SavedPasswordSettings.tsx
+msgid "Passwords go to your model provider and may appear in history. Enable only if needed."
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Past due"

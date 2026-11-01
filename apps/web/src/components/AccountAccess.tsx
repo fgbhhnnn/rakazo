@@ -60,6 +60,7 @@ export function AccountAccess({
           variant="secondary"
           size="sm"
           data-testid="delete-account"
+          aria-label={t`Delete account`}
           className="text-destructive hover:text-destructive"
           onClick={() => setOpen((value) => !value)}
         >
