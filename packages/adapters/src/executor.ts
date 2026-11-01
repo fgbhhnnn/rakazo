@@ -255,8 +255,8 @@ import {
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
-import { verbatimMcpServersForRun } from "./verbatim-mcp-servers.js";
 import { toolResultFingerprint } from "./tool-loop.js";
+import { verbatimMcpServersForRun } from "./verbatim-mcp-servers.js";
 import { createWebProvider } from "./web-provider-factory.js";
 import { botModelChoice } from "./worker-model.js";
 import { dataBotId, loadWorkerOwner, recallForRun } from "./worker-owner-scope.js";
