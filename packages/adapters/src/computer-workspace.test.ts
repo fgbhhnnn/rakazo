@@ -612,7 +612,7 @@ describe("Team bot folder cleanup", () => {
     );
   });
 
-  it("stops waiting for the cleanup once its time budget runs out", async () => {
+  it("stops waiting for the cleanup once its time budget runs out, leaving the rest for the next boot", async () => {
     const { prisma } = deletedBots("deleted-bot");
     let commandSignal: AbortSignal | undefined;
     // Never finishes and ignores aborts, like a wedged provider call.
@@ -632,7 +632,7 @@ describe("Team bot folder cleanup", () => {
         context,
         20,
       ),
-    ).rejects.toThrow("team bot folder cleanup ran out of time");
+    ).resolves.toBeUndefined();
     expect(commandSignal?.aborted).toBe(true);
   });
 
