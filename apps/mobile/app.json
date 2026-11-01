@@ -59,6 +59,9 @@
       "./plugins/with-lan-cleartext",
       "./plugins/with-app-intents"
     ],
+    "locales": {
+      "es": "./locales/es.json"
+    },
     "ios": {
       "bundleIdentifier": "com.ccxxyy.rakazo",
       "buildNumber": "1",
