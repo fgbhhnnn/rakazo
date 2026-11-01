@@ -272,6 +272,7 @@ export class PiAgentRuntime implements AgentRuntime {
           depth: 0,
           pausePending: false,
           pendingShells: [],
+          modelResponses: 0,
         };
         resumeHost = host;
         const tools = toAgentTools(toolDefs, host);
@@ -686,6 +687,7 @@ export class PiAgentRuntime implements AgentRuntime {
             });
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
+            host.modelResponses = (host.modelResponses ?? 0) + 1;
             currentMessageStreamed = "";
             if (!joinCutReply) joinDropped = "";
             // A later message (after a finished shell or steering, not only a tool call)

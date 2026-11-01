@@ -11,6 +11,7 @@ import { reconcileBackgroundTasks } from "./background-tasks.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 import { findRunRecoveryBlockers } from "./run-recovery.js";
 import { reconcileStuckWork } from "./stuck-work.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
@@ -108,7 +109,7 @@ export function createPostgresReconciliationLeadership(
 }
 
 export function createJobReconciler(
-  deps: {
+  deps: Pick<ExecutorDeps, "artifacts" | "maxUploadSizeBytes"> & {
     prisma: PrismaClient;
     jobs: JobPublisher;
     events?: ThreadEvents;
@@ -290,7 +291,14 @@ export function createJobReconciler(
                 ? "status"
                 : ("result" as const);
             const returned = await returnBotMessageOutcome(
-              { prisma: deps.prisma, jobs: deps.jobs, events },
+              {
+                prisma: deps.prisma,
+                jobs: deps.jobs,
+                events,
+                ...(deps.artifacts
+                  ? { artifacts: deps.artifacts, maxUploadSizeBytes: deps.maxUploadSizeBytes }
+                  : {}),
+              },
               run,
               { id: run.botId, name: run.bot.name },
               text,

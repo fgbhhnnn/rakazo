@@ -16,6 +16,7 @@ import type {
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxAllowanceUsedError,
   SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -123,7 +124,6 @@ import {
   installAuditEventStore,
   installSecurityEventStore,
   ProviderTransactionBusyError,
-  parsePositiveInteger,
   provisionMessagingIdentity,
   pushSessionExpiresAt,
   requireMembership,
@@ -140,7 +140,7 @@ import {
   installLogger,
   SERVICE_NAMES,
 } from "@rakazo/logging";
-import { requestLogging } from "@rakazo/logging/hono";
+import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -161,6 +161,7 @@ import {
   withClientIp,
 } from "./client-ip.js";
 import { cspReportRoutes } from "./csp-report.js";
+import { apiDatabasePoolMax } from "./database-pool.js";
 import { mountDiagramScript } from "./diagram-script.js";
 import { configuredEmailProvider } from "./email.js";
 import type { AppEnv } from "./env.js";
@@ -285,7 +286,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const env = { ...loadEnv(process.env), ...envOverrides };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
-  const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
+  const poolMax = apiDatabasePoolMax();
   configureProviderTransactionPool(poolMax);
   const created = prismaOverride
     ? { prisma: prismaOverride, pool: undefined }
@@ -357,7 +358,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   let ownedJobPool: Pool | undefined;
   if (!inMemoryJobs && !created.pool) {
     ownedJobPool = createPool(env.databaseUrl, {
-      poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 4),
+      poolMax,
       applicationName: "rakazo-api-jobs",
     });
   }
@@ -701,6 +702,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         prisma,
         jobs,
         events,
+        artifacts,
+        maxUploadSizeBytes: env.maxUploadSizeBytes,
         notifications,
         reconcileModelCredits: createModelCreditReconciler({
           prisma,
@@ -1564,11 +1567,13 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} computer unavailable`, {
       reason: unavailable.cause instanceof Error ? unavailable.cause.message : undefined,
     });
+    markExpectedFailure();
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: unavailable.message, cause: error });
   }
   // A provider kept another transaction busy past the wait; nothing failed, so the caller retries.
   if (error instanceof ProviderTransactionBusyError) {
     getLogger().warn(`rpc ${path.join("/")} provider transaction busy`);
+    markExpectedFailure();
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message, cause: error });
   }
   if (error instanceof SandboxRateLimitError) {
@@ -1576,6 +1581,11 @@ export function handleRpcError(
       reason: error.cause instanceof Error ? error.cause.message : undefined,
     });
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
+  }
+  // The organization spent this month's computer allowance; its message says so.
+  if (error instanceof SandboxAllowanceUsedError) {
+    getLogger().warn(`rpc ${path.join("/")} computer allowance used up`);
+    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
   // A retry cannot fix a damaged computer; its message tells the user to Recover it.
   if (error instanceof SandboxDamagedError) {
@@ -1587,13 +1597,16 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} client disconnected`, {
       reason: error instanceof Error ? error.message : String(error),
     });
+    markExpectedFailure();
     return;
   }
   logUnexpectedRpcError(error, path);
 }
 
 export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {
-  if (error instanceof ORPCError) return;
+  // A procedure's own 5xx (a store it depends on is down) would otherwise reach the collector
+  // only as an anonymous failed request; report it under the procedure with its cause.
+  if (error instanceof ORPCError && error.status < 500) return;
   const where = `rpc ${path.join("/")} failed`;
   getLogger().error(where, error);
 }

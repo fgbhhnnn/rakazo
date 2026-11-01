@@ -1511,6 +1511,7 @@ function groupPrisma(findManyRuns: ReturnType<typeof groupRunFindMany>) {
     run: { findMany: findManyRuns },
   };
   return {
+    backgroundTaskQueue: { groupBy: vi.fn().mockResolvedValue([]) },
     $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
   } as unknown as PrismaClient;
 }
@@ -4163,6 +4164,7 @@ describe("stopThreadRuns", () => {
 /** Snapshot reads the bot's background-worker counts outside the transaction; none here. */
 const noBackgroundTasks = {
   bot: { findFirst: vi.fn().mockResolvedValue(null) },
+  backgroundTaskQueue: { groupBy: vi.fn().mockResolvedValue([]) },
 };
 describe("helper snapshot settlement", () => {
   it.each(["bot", "group"] as const)(

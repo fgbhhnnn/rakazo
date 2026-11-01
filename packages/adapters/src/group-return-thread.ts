@@ -3,6 +3,7 @@ import { isHiddenBot } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { postGroupNotice } from "./group-reply-routing.js";
+import { suppressObsoleteWorkerReport } from "./worker-report-supersession.js";
 
 /**
  * Where a background worker's result or status goes. A task its dispatcher started from a
@@ -69,6 +70,7 @@ export async function noticeUndeliveredWorkerResult(
 ) {
   if (!row.workerRunId) return;
   try {
+    if (await suppressObsoleteWorkerReport(deps.prisma, row.workerRunId, "undelivered")) return;
     const origin = await deps.prisma.thread.findFirst({
       where: {
         id: row.threadId,

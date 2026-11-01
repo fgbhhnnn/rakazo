@@ -37,8 +37,8 @@ import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
 import { dispatcherTimeoutNotice, dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
-import { settleHandoffNarration } from "./group-stale-narration.js";
 import { afterGroupTurn } from "./group-turn-end.js";
+import { isDuplicateGroupProgress, prepareGroupTurnReply } from "./group-turn-reply.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
@@ -89,7 +89,14 @@ import {
 } from "./silent-reply.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
-import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
+import {
+  advanceOverLimitActionCalls,
+  advanceToolCallLoopGuard,
+  loopGuardStopText,
+  MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
+  overLimitStopText,
+  toolResultFingerprint,
+} from "./tool-loop.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -102,6 +109,8 @@ import {
 import { visibleBotBlocks, visibleBotText } from "./visible-bot-text.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { slotFree } from "./worker-slot-mentions.js";
+import { workerFailureMessage } from "./worker-turn-error.js";
+import { retryTransientWorkerTurn } from "./worker-turn-retry.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
 
@@ -320,7 +329,8 @@ async function streamText(ctx: RunContext, event: RuntimeEvent<"text">) {
 async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
-  ctx.state.toolCallStreak = { key: undefined, count: 0 };
+  // Tool status lines are not the model writing.
+  if (!event.activity) ctx.state.toolCallStreak = { key: undefined, count: 0 };
   if (run.trigger === "routine" || isBackgroundRunTrigger(run.trigger)) return;
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
@@ -382,16 +392,18 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
     reply.hasStreamedText = false;
     reply.pendingProgress = "";
     reply.redactor.skip();
-    await publishMessage(
-      deps,
-      run,
-      "bot",
-      [{ kind: "text", text }],
-      undefined,
-      nextProgressNonce(ctx),
-    );
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    if (!(await isDuplicateGroupProgress(ctx, text))) {
+      await publishMessage(
+        deps,
+        run,
+        "bot",
+        [{ kind: "text", text }],
+        undefined,
+        nextProgressNonce(ctx),
+      );
+      reply.midTurnUserTexts.push(text);
+      reply.publishedMidTurnUserMessage = true;
+    }
   }
   reply.progressBudgetStart = reply.midTurnProgressCount;
   reply.turnStartedAtMs = now;
@@ -558,9 +570,30 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   });
   await showNarrationStatus(ctx, heldNote);
   tryFlushPendingTools(reply);
-  const loopGuard = advanceToolCallLoopGuard(ctx.state.toolCallStreak, event.name, event.args);
-  ctx.state.toolCallStreak = loopGuard.streak;
-  if (loopGuard.stuck) {
+  // A call can finish before or after its own event is handled, so its result is read here.
+  const { toolCallStreak: streak, toolResults } = ctx.state;
+  const previousResult = streak.executionId ? toolResults.get(streak.executionId) : undefined;
+  const loopGuard = advanceToolCallLoopGuard(
+    streak,
+    event.name,
+    event.args,
+    previousResult,
+    event.response,
+  );
+  // A call from the same response as the streak's last one leaves it as it was.
+  if (loopGuard.streak !== streak) {
+    if (streak.executionId) toolResults.delete(streak.executionId);
+    ctx.state.toolCallStreak = { ...loopGuard.streak, executionId: event.executionId };
+  }
+  ctx.state.overLimitActionCalls = advanceOverLimitActionCalls(
+    ctx.state.overLimitActionCalls,
+    event.name,
+    event.args,
+  );
+  if (
+    loopGuard.stuck ||
+    ctx.state.overLimitActionCalls >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
+  ) {
     await stopStuckToolLoop(ctx, event.name);
     return true;
   }
@@ -569,6 +602,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   const audit = { spaceId: run.spaceId, threadId: thread.id, botId: bot.id, runId };
   try {
     const result = await applyTool(ctx, event.name, event.args, event.executionId);
+    toolResults.set(event.executionId, toolResultFingerprint(result));
     await appendToolCompletionAudit(
       deps,
       audit,
@@ -611,7 +645,12 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   }
   await ctx.computer.checkpoint.flush();
   ctx.state.terminalCheckpointComplete = true;
-  const stuckText = loopGuardStopText(humanizeToolName(toolName), ctx.state.toolCallStreak);
+  const overLimit = ctx.state.overLimitActionCalls;
+  const humanName = humanizeToolName(toolName);
+  const stuckText =
+    overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
+      ? overLimitStopText(humanName, overLimit)
+      : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,
@@ -811,25 +850,20 @@ export async function completeRun(ctx: RunContext) {
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
     });
   }
-  // A bot that handed off still says what it did: its reply shows beside the handoff card.
+  // Drop only prose this bot already delivered in this turn.
   const draftBlocks = withoutRestatedLeadSentences(
     finalBlocksAfterMidTurnProgress(
       redactBlocks(completionBlocks, ctx.secrets),
       reply.publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
     ),
   );
+  const turnReply = await prepareGroupTurnReply(ctx, draftBlocks, silentReply.assembled);
   const groupReply = await planGroupReply(deps, {
     groupId: thread.groupId,
     bot,
     handedOff: ctx.state.handedOff,
     handoffTargets: ctx.state.handoffTargets,
-    blocks: thread.groupId
-      ? await settleHandoffNarration(
-          deps.prisma,
-          { id: runId, threadId: thread.id },
-          { handedOff: ctx.state.handedOff, blocks: draftBlocks },
-        )
-      : draftBlocks,
+    blocks: turnReply.blocks,
     humanTurn: { threadId: thread.id, before: run.createdAt },
   });
   const replyGuard = guardDispatcherReply(
@@ -845,9 +879,7 @@ export async function completeRun(ctx: RunContext) {
   );
   const blocks = visibleBotBlocks(replyGuard.blocks);
   const text = redactSecrets(
-    visibleBotText(
-      completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
-    ),
+    visibleBotText(completionNotificationBody(replyGuard.changed ? "" : turnReply.text, blocks)),
     ctx.secrets,
   );
   if (containsSecret(text, ctx.secrets)) {
@@ -1007,10 +1039,14 @@ export async function failRun(
   ) {
     error = dispatcherWatchdogTimeout(ctx.abortController.signal);
   }
+  if (await retryTransientWorkerTurn(ctx, error)) return;
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
-  const message = redactSecrets(userRunError(error), ctx.secrets);
+  const message = redactSecrets(
+    isHiddenBot(bot) ? workerFailureMessage(error) : userRunError(error),
+    ctx.secrets,
+  );
   // Reply text the user watched stream in since the last saved message stays in the
   // thread, above the error, instead of vanishing with the live row.
   recordExplicitNoResponse(reply, reply.assistantTurnText);
@@ -1099,7 +1135,7 @@ export async function failRun(
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
-      { ...run, sourceMessageId: run.sourceMessageId },
+      { ...run, status: "failed", sourceMessageId: run.sourceMessageId },
       { id: bot.id, name: bot.name },
       `Could not complete the delegated request: ${message}`,
       "status",

@@ -9,6 +9,7 @@ import {
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { isDuplicateGroupProgress } from "./group-turn-reply.js";
 import { clampMidTurnNarration } from "./mid-turn-narration.js";
 import type { ReplyState, RunContext } from "./run-context.js";
 import { publishMessage } from "./run-messages.js";
@@ -180,6 +181,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
     (text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH || beforeConnectCard) &&
     (canPublishDurableNarration(ctx) || (beforeConnectCard && promotes))
   ) {
+    if (await isDuplicateGroupProgress(ctx, text)) return undefined;
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;
     await publishMessage(

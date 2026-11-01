@@ -200,6 +200,7 @@ describe("undelivered worker result notice", () => {
     return {
       tx,
       prisma: {
+        backgroundTaskQueue: { findFirst: vi.fn(async () => null) },
         thread: { findFirst: vi.fn(async () => groupThread) },
         $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
       },
@@ -241,4 +242,29 @@ describe("undelivered worker result notice", () => {
     await noticeUndeliveredWorkerResult({ prisma: dm.prisma as never }, row);
     expect(dm.prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it.each(["调研", "运营"])(
+    "does not post an undelivered notice after %s re-dispatches the work",
+    async (name) => {
+      const { noticeUndeliveredWorkerResult } = await import("./group-return-thread.js");
+      const h = db({ id: "group-thread" });
+      h.prisma.backgroundTaskQueue.findFirst
+        .mockResolvedValueOnce({
+          id: "old",
+          status: "completed",
+          threadId: "group-thread",
+          name,
+          runId: "parent",
+          createdAt: new Date(0),
+          taskHash: "same-work",
+        } as never)
+        .mockResolvedValueOnce({ id: "new" } as never);
+      Object.assign(h.prisma, {
+        run: { findUnique: vi.fn(async () => ({ status: "completed" })) },
+      });
+      await noticeUndeliveredWorkerResult({ prisma: h.prisma as never }, { ...row, name });
+      expect(h.prisma.$transaction).not.toHaveBeenCalled();
+      expect(h.tx.message.create).not.toHaveBeenCalled();
+    },
+  );
 });

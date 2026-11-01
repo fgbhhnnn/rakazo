@@ -45,6 +45,7 @@ import {
   CrossSpaceCommunicationBlockedError,
   crossSpaceCommunicationAllowed,
 } from "./cross-space-communication.js";
+import { withPreparedEventWrite } from "./event-preparation.js";
 import type { RunLease } from "./messages.js";
 import {
   assertRunCanWriteHistory,
@@ -1720,8 +1721,12 @@ export async function appendEvent(
   analytics?: ProductAnalytics,
 ): Promise<ProductEvent> {
   // Concurrent writers in one thread (group members, bot messages) can deadlock on the thread row.
-  const event = await withTransactionRetry(() =>
-    prisma.$transaction((tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input)),
+  const event = await withPreparedEventWrite(prisma, input, (prepared) =>
+    withTransactionRetry(() =>
+      prisma.$transaction((tx: Prisma.TransactionClient) =>
+        appendEventInTransaction(tx, input, prepared),
+      ),
+    ),
   );
   if (
     input.runId &&
@@ -2090,6 +2095,7 @@ function steeringOrigin(item: {
 export async function appendEventInTransaction(
   tx: Prisma.TransactionClient,
   input: AppendEventInput,
+  prepared?: Record<string, unknown>,
 ) {
   const activity = input.type === "thread.meta" && hasThinkingActivityMarker(input.payload);
   if (activity) {
@@ -2124,9 +2130,10 @@ export async function appendEventInTransaction(
     firstResponseAt = run?.firstResponseAt;
   }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
-  const payload = sanitizeJsonValue(input.payload);
+  const payload = prepared?.payload ?? sanitizeJsonValue(input.payload);
   const event = await tx.event.create({
     data: {
+      ...(prepared ? { id: prepared.id as string } : {}),
       spaceId: input.spaceId,
       threadId: input.threadId,
       botId: input.botId,
