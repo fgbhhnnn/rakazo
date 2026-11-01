@@ -73,7 +73,8 @@
         "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "CFBundleDisplayName": "Goes Bot"
       }
     },
     "android": {
