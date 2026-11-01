@@ -8,6 +8,7 @@ import { messageBot } from "./bot-messages.js";
 import { endCallFromTool, requestUserCall } from "./call-request.js";
 import { handoffBriefFromArgs, handoffToGroupBot } from "./group-handoff.js";
 import { noticeHandoffToolFailure } from "./group-reply-routing.js";
+import { isDuplicateGroupProgress } from "./group-turn-reply.js";
 import { publishMessage } from "./run-messages.js";
 import {
   canPublishDurableProgress,
@@ -103,6 +104,8 @@ export const messagingTools: ToolHandlers = {
     await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
     // A mid-task message handled meanwhile may have granted a new allowance; keep it.
     reply.steeringReplyPending ||= answering;
+    if (await isDuplicateGroupProgress(ctx, text))
+      return call.finish(truncated ? { ok: true, truncated: true } : { ok: true });
     if (!canPublishDurableProgress(reply)) {
       return call.finish({
         ok: true,

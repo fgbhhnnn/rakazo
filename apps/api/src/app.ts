@@ -124,7 +124,6 @@ import {
   installAuditEventStore,
   installSecurityEventStore,
   ProviderTransactionBusyError,
-  parsePositiveInteger,
   provisionMessagingIdentity,
   pushSessionExpiresAt,
   requireMembership,
@@ -162,6 +161,7 @@ import {
   withClientIp,
 } from "./client-ip.js";
 import { cspReportRoutes } from "./csp-report.js";
+import { apiDatabasePoolMax } from "./database-pool.js";
 import { mountDiagramScript } from "./diagram-script.js";
 import { configuredEmailProvider } from "./email.js";
 import type { AppEnv } from "./env.js";
@@ -286,7 +286,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const env = { ...loadEnv(process.env), ...envOverrides };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
-  const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
+  const poolMax = apiDatabasePoolMax();
   configureProviderTransactionPool(poolMax);
   const created = prismaOverride
     ? { prisma: prismaOverride, pool: undefined }
@@ -358,7 +358,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   let ownedJobPool: Pool | undefined;
   if (!inMemoryJobs && !created.pool) {
     ownedJobPool = createPool(env.databaseUrl, {
-      poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 4),
+      poolMax,
       applicationName: "rakazo-api-jobs",
     });
   }
@@ -702,6 +702,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         prisma,
         jobs,
         events,
+        artifacts,
+        maxUploadSizeBytes: env.maxUploadSizeBytes,
         notifications,
         reconcileModelCredits: createModelCreditReconciler({
           prisma,

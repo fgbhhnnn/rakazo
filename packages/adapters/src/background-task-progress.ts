@@ -24,6 +24,7 @@ import { activitySummary, summarizeWorkerActivity } from "./worker-activity.js";
 import { isIncompleteContinuing } from "./worker-incomplete-result.js";
 import { workerPending } from "./worker-needs-user.js";
 import { WORKER_PROGRESS_NOTICE } from "./worker-progress.js";
+import { suppressObsoleteFailureMilestones } from "./worker-report-supersession.js";
 
 /**
  * The background-task progress card (see TaskProgressBlockSchema). While a bot has background
@@ -410,7 +411,8 @@ async function refreshNow(
   const built = refs.map((ref) =>
     taskProgressEntry(snapshots.get(ref)!, { now, stuckMs, prev: prevByRef.get(ref) }),
   );
-  const { entries, lines } = takeMilestones(built, snapshots, { now, stuckMs });
+  const current = await suppressObsoleteFailureMilestones(deps.prisma, built, snapshots);
+  const { entries, lines } = takeMilestones(current, snapshots, { now, stuckMs });
   const closed = entries.every((entry) => !isTaskProgressActive(entry.state));
   if (openCard && sameTasks(openCard.block.tasks, entries) && !closed && !lines.length)
     return false;

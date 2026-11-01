@@ -12,6 +12,7 @@ import {
 } from "./content-crypto.js";
 import type { ContentKeyRing, RowContext, SpaceSource } from "./content-keys.js";
 import { ROW_OWNER } from "./content-keys.js";
+import { preparedEventArgs } from "./event-preparation.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
 import { Prisma } from "./generated/prisma/client.js";
 import { historyMessageText } from "./history-text.js";
@@ -134,6 +135,7 @@ export const UNINDEXED_MESSAGE = Prisma.sql`COALESCE(cardinality(m."searchTokens
 
 export interface ContentEncryption {
   ring: ContentKeyRing;
+  prepareEvent(data: Record<string, unknown>): Promise<Record<string, unknown>>;
   /**
    * Decrypts rows read with raw SQL. Rows must include `id` and the owner column
    * (`threadId` for messages and events, `documentId` for revisions, `userId` otherwise).
@@ -488,6 +490,8 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
 
   const handle: ContentEncryption = {
     ring,
+    prepareEvent: async (data) =>
+      (ring.encryptWrites ? await sealCreate(ENCRYPTED_MODELS.Event!, data) : data) as RecordValue,
     async openRows(model, rows) {
       await openAll(rows, { model, strip: [], relations: new Map() });
       return rows;
@@ -509,6 +513,9 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
             const where = (args as RecordValue).where;
             if (isRecord(where) && typeof where.id === "string") ring.forget(where.id);
           }
+          const prepared = preparedEventArgs(model, operation, (args ?? {}) as RecordValue);
+          // appendEvent opens this row after committing, outside the interactive transaction.
+          if (prepared) return query(prepared);
           let next = await sealWrites(model, operation, (args ?? {}) as RecordValue);
           if (NO_ROWS.has(operation)) return query(next);
           const planned = plan(model, next);

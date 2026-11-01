@@ -37,8 +37,8 @@ import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
 import { dispatcherTimeoutNotice, dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
-import { settleHandoffNarration } from "./group-stale-narration.js";
 import { afterGroupTurn } from "./group-turn-end.js";
+import { isDuplicateGroupProgress, prepareGroupTurnReply } from "./group-turn-reply.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
@@ -109,6 +109,8 @@ import {
 import { visibleBotBlocks, visibleBotText } from "./visible-bot-text.js";
 import { defersTerminalCheckpoint } from "./worker-checkpoint.js";
 import { slotFree } from "./worker-slot-mentions.js";
+import { workerFailureMessage } from "./worker-turn-error.js";
+import { retryTransientWorkerTurn } from "./worker-turn-retry.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
 
@@ -390,16 +392,18 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
     reply.hasStreamedText = false;
     reply.pendingProgress = "";
     reply.redactor.skip();
-    await publishMessage(
-      deps,
-      run,
-      "bot",
-      [{ kind: "text", text }],
-      undefined,
-      nextProgressNonce(ctx),
-    );
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    if (!(await isDuplicateGroupProgress(ctx, text))) {
+      await publishMessage(
+        deps,
+        run,
+        "bot",
+        [{ kind: "text", text }],
+        undefined,
+        nextProgressNonce(ctx),
+      );
+      reply.midTurnUserTexts.push(text);
+      reply.publishedMidTurnUserMessage = true;
+    }
   }
   reply.progressBudgetStart = reply.midTurnProgressCount;
   reply.turnStartedAtMs = now;
@@ -846,25 +850,20 @@ export async function completeRun(ctx: RunContext) {
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
     });
   }
-  // A bot that handed off still says what it did: its reply shows beside the handoff card.
+  // Drop only prose this bot already delivered in this turn.
   const draftBlocks = withoutRestatedLeadSentences(
     finalBlocksAfterMidTurnProgress(
       redactBlocks(completionBlocks, ctx.secrets),
       reply.publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
     ),
   );
+  const turnReply = await prepareGroupTurnReply(ctx, draftBlocks, silentReply.assembled);
   const groupReply = await planGroupReply(deps, {
     groupId: thread.groupId,
     bot,
     handedOff: ctx.state.handedOff,
     handoffTargets: ctx.state.handoffTargets,
-    blocks: thread.groupId
-      ? await settleHandoffNarration(
-          deps.prisma,
-          { id: runId, threadId: thread.id },
-          { handedOff: ctx.state.handedOff, blocks: draftBlocks },
-        )
-      : draftBlocks,
+    blocks: turnReply.blocks,
     humanTurn: { threadId: thread.id, before: run.createdAt },
   });
   const replyGuard = guardDispatcherReply(
@@ -880,9 +879,7 @@ export async function completeRun(ctx: RunContext) {
   );
   const blocks = visibleBotBlocks(replyGuard.blocks);
   const text = redactSecrets(
-    visibleBotText(
-      completionNotificationBody(replyGuard.changed ? "" : silentReply.assembled, blocks),
-    ),
+    visibleBotText(completionNotificationBody(replyGuard.changed ? "" : turnReply.text, blocks)),
     ctx.secrets,
   );
   if (containsSecret(text, ctx.secrets)) {
@@ -1042,10 +1039,14 @@ export async function failRun(
   ) {
     error = dispatcherWatchdogTimeout(ctx.abortController.signal);
   }
+  if (await retryTransientWorkerTurn(ctx, error)) return;
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
-  const message = redactSecrets(userRunError(error), ctx.secrets);
+  const message = redactSecrets(
+    isHiddenBot(bot) ? workerFailureMessage(error) : userRunError(error),
+    ctx.secrets,
+  );
   // Reply text the user watched stream in since the last saved message stays in the
   // thread, above the error, instead of vanishing with the live row.
   recordExplicitNoResponse(reply, reply.assistantTurnText);
@@ -1134,7 +1135,7 @@ export async function failRun(
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
-      { ...run, sourceMessageId: run.sourceMessageId },
+      { ...run, status: "failed", sourceMessageId: run.sourceMessageId },
       { id: bot.id, name: bot.name },
       `Could not complete the delegated request: ${message}`,
       "status",

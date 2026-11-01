@@ -76,6 +76,7 @@ function deps(
     },
     message: { findUnique: messageFindUnique, findMany: vi.fn().mockResolvedValue([]) },
     run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    backgroundTaskQueue: { findFirst: vi.fn().mockResolvedValue(null) },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
       transactionAttempts += 1;
       if (options.transactionConflictOnce && transactionAttempts === 1) {
@@ -848,6 +849,113 @@ describe("automatic outcome return", () => {
     };
     return { ...harness, updateMany };
   }
+
+  it.each(["调研", "运营"])(
+    "suppresses an obsolete %s failure before waking the team",
+    async (name) => {
+      const h = hiddenWorkerHarness();
+      const task = {
+        id: "old",
+        name,
+        status: "started",
+        args: {},
+        runId: "parent",
+        createdAt: new Date(0),
+        taskHash: "same-work",
+      };
+      vi.mocked(h.deps.prisma.backgroundTaskQueue.findFirst).mockImplementation((async (args: {
+        where?: { id?: unknown };
+      }) => (args?.where?.id ? { id: "replacement" } : task)) as never);
+      h.deps.prisma.run.findUnique = vi.fn(async () => ({
+        id: run.id,
+        botId: run.botId,
+        status: "failed",
+      })) as never;
+      h.deps.prisma.run.findFirst = vi.fn(async () => null) as never;
+      expect(
+        await returnBotMessageOutcome(
+          h.deps,
+          { ...run, sourceMessageId: "message-source" },
+          { ...sender, name },
+          "Could not complete the delegated request: Internal server error",
+          "status",
+        ),
+      ).toBe(true);
+      expect(h.tx.message.create).not.toHaveBeenCalled();
+      expect(h.enqueue).not.toHaveBeenCalled();
+      expect(h.deps.prisma.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { botOutcomeReturnedAt: expect.any(Date) } }),
+      );
+    },
+  );
+
+  it("leaves a completed result for reconciliation when a stale failure arrives", async () => {
+    const h = hiddenWorkerHarness();
+    h.deps.prisma.run.findUnique = vi.fn(async () => ({ status: "completed" })) as never;
+    expect(
+      await returnBotMessageOutcome(
+        h.deps,
+        { ...run, status: "failed", sourceMessageId: "message-source" },
+        sender,
+        "Could not complete the delegated request: Internal server error",
+        "status",
+      ),
+    ).toBe(false);
+    expect(h.tx.message.create).not.toHaveBeenCalled();
+    expect(h.deps.prisma.run.updateMany).not.toHaveBeenCalled();
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("replaces historical internal errors before relaying a current failure", async () => {
+    const h = hiddenWorkerHarness();
+    const task = {
+      id: "old",
+      name: "调研",
+      status: "started",
+      args: {},
+      runId: "parent",
+      createdAt: new Date(0),
+    };
+    vi.mocked(h.deps.prisma.backgroundTaskQueue.findFirst).mockImplementation((async (args: {
+      where?: { id?: unknown };
+    }) => (args?.where?.id ? null : task)) as never);
+    h.deps.prisma.run.findUnique = vi.fn(async (args) =>
+      args.where.id === "parent"
+        ? { status: "completed", createdAt: new Date(0) }
+        : { id: run.id, botId: run.botId, status: "failed" },
+    ) as never;
+    h.deps.prisma.run.findFirst = vi.fn(async () => null) as never;
+    expect(
+      await returnBotMessageOutcome(
+        h.deps,
+        { ...run, sourceMessageId: "message-source" },
+        sender,
+        "Could not complete the delegated request: Internal server error",
+        "status",
+      ),
+    ).toBe(true);
+    const messages = JSON.stringify(vi.mocked(h.tx.message.create).mock.calls);
+    expect(messages).not.toContain("Internal server error");
+    expect(messages).toContain("服务暂时繁忙，这次任务未能完成，请稍后重试。");
+  });
+
+  it.each(["调研", "运营"])(
+    "delivers an oversized %s result without an artifact store",
+    async (name) => {
+      const h = hiddenWorkerHarness();
+      expect(
+        await returnBotMessageOutcome(
+          h.deps,
+          { ...run, sourceMessageId: "message-source" },
+          { ...sender, name },
+          "完整的研究结论。".repeat(2_000),
+        ),
+      ).toBe(true);
+      const messages = JSON.stringify(vi.mocked(h.tx.message.create).mock.calls);
+      expect(messages).toContain("已截断");
+      expect(h.enqueue).toHaveBeenCalledOnce();
+    },
+  );
 
   it("relays a worker summary with a 未完成事项 heading as a normal result", async () => {
     const harness = hiddenWorkerHarness();
