@@ -1153,6 +1153,7 @@ export type MobileMe = Pick<
   | "needsSignupSurvey"
   | "billingEnabled"
   | "paymentWalletProvider"
+  | "ticketBoardEnabled"
 >;
 
 export type MobileModel = ModelCatalogEntry;

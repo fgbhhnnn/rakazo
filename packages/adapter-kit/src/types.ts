@@ -520,6 +520,11 @@ export interface AgentRunRequest {
   contextStrategy?: AgentContextStrategy;
   /** Summarize older tool steps with the same model when a long run nears its context window. */
   inRunCompaction?: boolean;
+  /**
+   * MCP servers that must return tool results whole. Direct tools match `slugs`
+   * (`mcp__<slug>__<tool>`); catalog calls match `ids` (`<server id>:<tool>`).
+   */
+  verbatimMcpServers?: { ids: readonly string[]; slugs: readonly string[] };
   /** Exclusive workflow cost bucket; retrieval tool turns are detected for answer calls. */
   usageOperationKind?: UsageOperationKind;
   botId: string;
@@ -1046,6 +1051,11 @@ export interface BrowserNavigateRequest {
 export interface BrowserNavigateResult {
   url: string;
   title: string;
+  /** The page it reached, as a snapshot shows it, when that could be read in time. */
+  tree?: string;
+  elements?: BrowserSnapshotNode[];
+  /** The page was still loading or waiting on its own requests when it was captured. */
+  loading?: boolean;
   /** When set, the page tool could not operate; use computer_act instead. */
   fallback?: "computer_act";
   error?: string;

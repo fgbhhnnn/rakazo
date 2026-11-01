@@ -252,6 +252,7 @@ import {
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import { verbatimMcpServersForRun } from "./verbatim-mcp-servers.js";
 import { createWebProvider } from "./web-provider-factory.js";
 import { botModelChoice } from "./worker-model.js";
 import { dataBotId, loadWorkerOwner, recallForRun } from "./worker-owner-scope.js";
@@ -1248,7 +1249,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputerScreen = device.platform === "darwin";
           }
           // A chat that used the computer earlier may continue from another device after it closed.
-          else if (await deps.userDevices.hasDevice(userComputerOwnerId).catch(() => false))
+          else if (await deps.userDevices.pairedSince(userComputerOwnerId).catch(() => null))
             userComputer = "offline";
         }
         const builtins = [
@@ -1764,6 +1765,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           setupTimeout = dispatcherWatchdogTimeout(runAbortController?.signal);
         }
 
+        const verbatimMcpServers = await verbatimMcpServersForRun(deps.prisma, {
+          botId: bot.id,
+          spaceId: run.spaceId,
+          userId: run.userId,
+        });
         // The running model is not its own backup, unless another account serves it.
         const fallbackModels = (await loadBackups()).filter(
           (candidate) =>
@@ -1800,6 +1806,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
+              verbatimMcpServers,
               threadId: thread.id,
               runId,
               routineId: run.routineId,

@@ -42,6 +42,7 @@ import { assistantText, messageHasToolCall, sanitizeProviderError } from "./pi-r
 import {
   effectiveOutputReserve,
   MODEL_STREAM_TIMEOUT_MS,
+  operatorMaxTokens,
   resolveCompletionMaxTokens,
 } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
@@ -276,6 +277,7 @@ function fallbackIncompatibility(
     options?.maxTokens,
     candidate.model.reasoning,
     candidate.model.contextWindow,
+    operatorMaxTokens(candidate.model),
   );
   // Token counts are estimates and can differ by provider/tokenizer. Reserve a
   // small input-relative margin, not a fixed 4096 tokens that would exclude
@@ -506,6 +508,7 @@ export function fallbackAwareModelStream(
         attemptOptions.maxTokens,
         sentTarget.model.reasoning,
         sentTarget.model.contextWindow,
+        operatorMaxTokens(sentTarget.model),
       );
       try {
         const apiKey = target.credentials?.accessToken ?? target.apiKey;

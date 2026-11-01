@@ -65,6 +65,9 @@ const BoardPage = lazyComponent(() => import("./pages/Board").then((module) => m
 const AdminPluginsPage = lazyComponent(() =>
   import("./pages/AdminPluginsPage").then((module) => module.AdminPluginsPage),
 );
+const AdminAccessPage = lazyComponent(() =>
+  import("./pages/AdminAccessPage").then((module) => module.AdminAccessPage),
+);
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
 );
@@ -113,6 +116,7 @@ function SessionApp() {
   const signInDestination =
     next === "/integrations/setup" ||
     next === "/admin/plugins" ||
+    next === "/admin/access" ||
     next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`)
       ? next
       : "/app";
@@ -236,6 +240,12 @@ function SessionApp() {
                   ) : (
                     <Navigate to="/sign-in?next=/admin/plugins" replace />
                   )
+                }
+              />
+              <Route
+                path="/admin/access"
+                element={
+                  user ? <AdminAccessPage /> : <Navigate to="/sign-in?next=/admin/access" replace />
                 }
               />
               <Route

@@ -64,16 +64,17 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("always asks before bot management writes that touch several bots, cost money or rewrite a bot", () => {
-    for (const name of [
-      "create_group",
-      "update_group",
-      "set_child_instructions",
-      "set_child_bot_model",
-      "create_child_routine",
-    ]) {
+  it("always asks before bot management writes that cost money or rewrite a bot", () => {
+    for (const name of ["set_child_instructions", "set_child_bot_model"]) {
       expect(toolRequiresApproval(name, false)).toBe(true);
       expect(toolRequiresExplicitApproval(name)).toBe(true);
+    }
+  });
+
+  it("treats grouping and scheduling other bots as ordinary approvals that Never ask skips", () => {
+    for (const name of ["create_group", "update_group", "create_child_routine"]) {
+      expect(toolRequiresApproval(name, false)).toBe(true);
+      expect(toolRequiresExplicitApproval(name)).toBe(false);
     }
   });
 
@@ -98,6 +99,7 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("contacts_get_or_create", true)).toBe(true);
     expect(toolRequiresApproval("notion_search_and_update", true)).toBe(true);
     expect(toolRequiresApproval("crm_get_then_upsert", true)).toBe(true);
+    expect(toolRequiresApproval("github_get_and_lock_issue", true)).toBe(true);
   });
 });
 
@@ -219,6 +221,15 @@ describe("isApprovalAskBlock", () => {
         actions: [{ id: "deny", label: "No" }],
       }),
     ).toBe(false);
+    for (const ids of [["allow"], ["allow", "deny", "edit"]]) {
+      expect(
+        isApprovalAskBlock({
+          kind: "ask",
+          approvalEffectId: "effect-1",
+          actions: ids.map((id) => ({ id, label: id })),
+        }),
+      ).toBe(false);
+    }
   });
 });
 
@@ -488,8 +499,8 @@ describe("block rules", () => {
       resolveActionApprovalDetail({
         toolName: "COMPOSIO_REMOTE_WORKBENCH",
         rules: [rule("always_allow", "tool", "GMAIL_SEND_EMAIL")],
-      }).decision,
-    ).toBe("allow");
+      }),
+    ).toMatchObject({ decision: "allow", source: "default" });
   });
 
   it("refuses a blocked tool in a change watch", () => {
@@ -651,6 +662,7 @@ describe("batches", () => {
       decision: "allow",
       source: "default",
     });
+    expect(resolve()).toMatchObject({ decision: "allow", source: "default" });
   });
 
   it("matches a tool or category rule on the action inside the batch", () => {
@@ -813,6 +825,20 @@ describe("outboundSiteGate", () => {
       "allow",
     );
     expect(outboundSiteGate({ site: "other.com", trusted: false, rules: [siteRule] })).toBe("new");
+    expect(
+      outboundSiteGate({
+        site: "example.com",
+        trusted: false,
+        rules: [{ ...siteRule, effect: "require_approval" }],
+      }),
+    ).toBe("new");
+    expect(
+      outboundSiteGate({
+        site: "example.com",
+        trusted: false,
+        rules: [{ ...siteRule, matchValue: "Example.COM" }],
+      }),
+    ).toBe("allow");
   });
 
   it("allows every site when the deployment trusts all fetch sites", () => {

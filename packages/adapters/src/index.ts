@@ -195,3 +195,4 @@ export * from "./web-provider-factory.js";
 export * from "./web-ssrf.js";
 export * from "./web-tools.js";
 export * from "./worker-shutdown.js";
+export * from "./wrapped-env.js";

@@ -6,6 +6,7 @@ import {
   ComposioConnector,
   IntegrationProviderSettings,
   releaseWorkerRunLeases,
+  unwrapEnvFromKeyManager,
   workerProcessId,
 } from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
@@ -15,6 +16,7 @@ import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 import {
   auditLogConfig,

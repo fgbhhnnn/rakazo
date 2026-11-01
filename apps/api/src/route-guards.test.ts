@@ -32,6 +32,7 @@ const OWNER_MANAGED = [
   "voice.setSpeechModel",
   "mcp.servers.create",
   "mcp.servers.update",
+  "mcp.servers.agents",
   "mcp.servers.remove",
   "mcp.assignments.approve",
   "mcp.assignments.replace",
@@ -67,7 +68,6 @@ const MEMBER_OPEN = [
   "mcp.servers.list",
   "mcp.servers.test",
   "approvalRules.list",
-  "approvalRules.preview",
   "autoReview.get",
 ] as const;
 
@@ -161,6 +161,10 @@ describe("router owner/admin guards", () => {
     }
   });
 
+  it("does not expose the retired approval preview procedure", () => {
+    expect(paths).not.toContain("approvalRules.preview");
+  });
+
   it("classifies every model, voice, MCP and approval procedure", () => {
     const classified = new Set<string>([...OWNER_MANAGED, ...MEMBER_OPEN, ...MEMBER_OWN]);
     const unclassified = paths.filter(
@@ -195,7 +199,7 @@ describe("router owner/admin guards", () => {
   });
 
   it("keeps the member lock on every model, voice, MCP and approval-rule change", () => {
-    expect(OWNER_MANAGED.filter((path) => /^(models|voice|mcp)\./.test(path))).toHaveLength(24);
+    expect(OWNER_MANAGED.filter((path) => /^(models|voice|mcp)\./.test(path))).toHaveLength(25);
     expect(OWNER_MANAGED).toEqual(
       expect.arrayContaining(["approvalRules.set", "approvalRules.remove"]),
     );

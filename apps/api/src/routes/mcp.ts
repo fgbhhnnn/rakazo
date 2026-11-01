@@ -26,7 +26,7 @@ import {
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { isAdmin } from "../admins.js";
+import { requireAdmin } from "../admins.js";
 import {
   assertNameFreeWhereAvailable,
   lockOwner,
@@ -82,10 +82,6 @@ export function mcpRoutes(ctx: RouterContext) {
     ownerManaged,
   } = ctx;
   const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);
-  const requireAdmin = async (actor: Actor) => {
-    if (!(await isAdmin(deps, actor.userId)))
-      throw new ORPCError("FORBIDDEN", { message: "Admins only" });
-  };
   /** Removes an install and, for a plugin, the servers, secrets and skills it added. */
   const removeInstall = async (actor: Actor, id: string) => {
     const notify: Array<{ threadId: string; seq: number }> = [];
@@ -139,11 +135,11 @@ export function mcpRoutes(ctx: RouterContext) {
         };
       }),
       submissions: authed.marketplace.submissions.handler(async ({ context, input }) => {
-        await requireAdmin(context.actor);
+        await requireAdmin(deps, context.actor.userId);
         return listPluginSubmissions(deps.prisma, input.status);
       }),
       review: authed.marketplace.review.handler(async ({ context, input }) => {
-        await requireAdmin(context.actor);
+        await requireAdmin(deps, context.actor.userId);
         return reviewPluginSubmission(deps, input, context.signal);
       }),
     },
@@ -462,6 +458,7 @@ export function mcpRoutes(ctx: RouterContext) {
                     name: existing.name,
                     description: existing.description,
                     enabled: existing.enabled,
+                    verbatimResults: existing.verbatimResults,
                     transport: existing.transport as "streamable_http" | "sse",
                     endpoint: existing.endpoint!,
                     headers: (existingMaterial.headers ?? {}) as Record<string, string>,
@@ -587,6 +584,7 @@ export function mcpRoutes(ctx: RouterContext) {
                         ? Object.fromEntries(Object.keys(config.headers).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,
                       enabled: config.enabled,
+                      verbatimResults: config.verbatimResults,
                       revision: { increment: 1 },
                       // The old verdict is about the old config.
                       healthStatus: "unknown",
@@ -634,6 +632,68 @@ export function mcpRoutes(ctx: RouterContext) {
           const fresh = await deps.prisma.mcpServer.findFirst({ where: scope });
           if (!fresh) throw new IsolationError();
           return mcpServerDto(fresh, oauth);
+        }),
+        agents: ownerManaged.mcp.servers.agents.handler(async ({ context, input }) => {
+          const owner = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+          const { server, assignments, seqs } = await deps.prisma.$transaction(async (tx) => {
+            const existing = await tx.mcpServer.findFirst({
+              where: { id: input.id, ...availableInSpace(context.actor) },
+              select: { id: true },
+            });
+            if (!existing) throw new IsolationError();
+            const server = await tx.mcpServer.update({
+              where: { id: existing.id },
+              data: { allBots: input.allBots },
+              include: { availableIn: AVAILABILITY_SELECT },
+            });
+            let seqs: Array<{ threadId: string; seq: number }> = [];
+            // Under allBots the assignments stay as they were, so choosing agents again restores them.
+            if (!input.allBots) {
+              const botIds = [...new Set(input.botIds)];
+              const bots = await tx.bot.findMany({
+                where: { ...owner, id: { in: botIds } },
+                select: { id: true },
+              });
+              if (bots.length !== botIds.length) throw new IsolationError();
+              const previous = await tx.botMcpServer.findMany({
+                where: { ...owner, serverId: server.id },
+                select: { botId: true },
+              });
+              const removed = previous
+                .map((row) => row.botId)
+                .filter((botId) => !botIds.includes(botId));
+              await tx.botMcpServer.deleteMany({
+                where: { ...owner, serverId: server.id, botId: { in: removed } },
+              });
+              await tx.botMcpServer.createMany({
+                data: botIds.map((botId) => ({ ...owner, botId, serverId: server.id })),
+                skipDuplicates: true,
+              });
+              seqs = (
+                await Promise.all(
+                  removed.map((botId) =>
+                    revertConnectedMcpApprovals(
+                      onboardingDeps,
+                      context.actor,
+                      { botId, serverId: server.id, status: "pending" },
+                      tx,
+                    ),
+                  ),
+                )
+              ).flat();
+            }
+            const assignments = await tx.botMcpServer.findMany({
+              where: { ...owner, serverId: server.id },
+              orderBy: { createdAt: "asc" },
+            });
+            return { server, assignments, seqs };
+          });
+          for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
+          const oauth = await mcpOAuth.summaryFor(server, context.actor);
+          return {
+            server: mcpServerDto(server, oauth),
+            assignments: assignments.map(mcpAssignmentDto),
+          };
         }),
         remove: ownerManaged.mcp.servers.remove.handler(async ({ context, input }) => {
           const server = await deps.prisma.mcpServer.findFirst({

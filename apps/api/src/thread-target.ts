@@ -19,14 +19,12 @@ import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
-  deferredHandoffTargetId,
   isConversationalRun,
   isHumanAuthoredMessage,
   messageBypassesTakeoverWait,
   messageReaction,
   projectMessages,
   QUEUE_HOLDING_RUN_STATUSES,
-  resolveGroupTargetBotIds,
   runFailureError,
   runReadsThreadHistory,
 } from "@rakazo/core";
@@ -56,6 +54,7 @@ import {
   resolveSendAttachments,
 } from "./artifacts.js";
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
+import { groupSendTargetBotIds } from "./group-send-targets.js";
 import { assertOpenableBot } from "./hidden-worker-access.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import type { ImageAdmissionRun } from "./thread-image-admission.js";
@@ -321,6 +320,21 @@ async function lockAndLoadGroupMembers(
     color: member.bot.color,
     avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
   }));
+}
+
+/** The bots a send wakes: the bot itself, or the group members it names (else the first). */
+export function sendTargetBotIds(
+  target:
+    | { kind: "bot"; botId: string }
+    | { kind: "group"; members: Array<{ botId: string; name: string }> },
+  input: { text?: string; mentions?: MentionTargetInput[] },
+): string[] {
+  if (target.kind === "bot") return [target.botId];
+  return groupSendTargetBotIds({
+    text: input.text ?? "",
+    members: target.members.map((member) => ({ id: member.botId, name: member.name })),
+    explicitMentions: splitMentionTargets(input.mentions).botMentionIds,
+  });
 }
 
 export async function resolveThreadTarget(
@@ -1009,19 +1023,7 @@ export async function sendThreadMessage(
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
-      const groupMembers = members.map((member) => ({ id: member.botId, name: member.name }));
-      const mentionedBotIds = resolveGroupTargetBotIds({
-        text: input.text ?? "",
-        members: groupMembers,
-        explicitMentions: mentionTargets.botMentionIds,
-      });
-      // "@A 写需求，然后交给@B": B gets the work from A's turn, not at once with the raw request.
-      const deferredBotId = deferredHandoffTargetId(
-        input.text ?? "",
-        groupMembers,
-        mentionedBotIds,
-      );
-      const targetBotIds = mentionedBotIds.filter((botId) => botId !== deferredBotId);
+      const targetBotIds = sendTargetBotIds({ kind: "group", members }, input);
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
@@ -1253,7 +1255,7 @@ export async function reactToThreadMessage(
     messageId: string;
     reaction: MessageReaction;
     clientNonce: string;
-    /** False when a send could not start a run either (no model, teaching). */
+    /** False when a send to the reacted-to bot could not start a run either (no model, teaching). */
     mayStartTurn: boolean;
   },
   releaseTakeover?: (runId: string) => Promise<void>,

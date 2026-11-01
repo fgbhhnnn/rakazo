@@ -35,15 +35,15 @@ describe("OTA on 1.0.7 native builds", () => {
     await expect(
       setLiveNotificationSettings(settings, endpoint, "token", "space-1"),
     ).resolves.toBeUndefined();
-    expect(legacy.setSettings).toHaveBeenCalledTimes(2);
-    expect(legacy.setSettings.mock.calls[0]).toHaveLength(5);
-    expect(legacy.setSettings.mock.calls[1]).toEqual([settings, endpoint, "token", "space-1"]);
+    expect(legacy.setSettings.mock.calls.map((args) => args.length)).toEqual([6, 5, 4]);
+    expect(legacy.setSettings).toHaveBeenLastCalledWith(settings, endpoint, "token", "space-1");
   });
 
   it("resumes live notifications through the three-argument bridge", async () => {
     const { resumeLiveNotifications } = await import("./live-notifications");
     await expect(resumeLiveNotifications(endpoint, "token", "space-1")).resolves.toBeUndefined();
-    expect(legacy.resume.mock.calls[1]).toEqual([endpoint, "token", "space-1"]);
+    expect(legacy.resume.mock.calls.map((args) => args.length)).toEqual([5, 4, 3]);
+    expect(legacy.resume).toHaveBeenLastCalledWith(endpoint, "token", "space-1");
   });
 
   it("reports no call service instead of calling a missing native function", async () => {
