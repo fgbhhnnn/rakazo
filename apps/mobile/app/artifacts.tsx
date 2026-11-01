@@ -15,7 +15,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
-import { NativeSymbol } from "../components/native-symbol";
+import { FileKindIcon } from "../components/file-kind-icon";
+import { PagesShelf } from "../components/pages-shelf";
 import { formatActivityRelativeTime } from "../lib/activity";
 import type { MobileBot } from "../lib/api";
 import { rpc } from "../lib/api";
@@ -29,11 +30,13 @@ import {
 } from "../lib/artifacts";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 const PAGE_SIZE = 30;
 
 export default function ArtifactsScreen() {
+  const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
   const { t } = useI18n();
@@ -93,7 +96,7 @@ export default function ArtifactsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      rpc<MobileBot[]>("bots/list")
+      rpc("bots/list")
         .then(setBots)
         .catch(() => undefined);
     }, []),
@@ -225,47 +228,57 @@ export default function ArtifactsScreen() {
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
-          <ScrollView
-            ref={chipsScrollRef}
-            onLayout={(event) => {
-              initialChipLayout.current.viewportWidth = event.nativeEvent.layout.width;
-              revealInitialChip();
-            }}
-            onContentSizeChange={(width) => {
-              initialChipLayout.current.contentWidth = width;
-              revealInitialChip();
-            }}
-            horizontal
-            contentInsetAdjustmentBehavior="never"
-            showsHorizontalScrollIndicator={false}
-            style={styles.chipsScroll}
-            contentContainerStyle={styles.chipsRow}
-          >
-            <Chip
-              label={t("All bots")}
-              active={activeBotId === null}
-              onPress={() => setActiveBotId(null)}
-            />
-            {bots.map((bot) => (
+          <>
+            <ScrollView
+              ref={chipsScrollRef}
+              onLayout={(event) => {
+                initialChipLayout.current.viewportWidth = event.nativeEvent.layout.width;
+                revealInitialChip();
+              }}
+              onContentSizeChange={(width) => {
+                initialChipLayout.current.contentWidth = width;
+                revealInitialChip();
+              }}
+              horizontal
+              contentInsetAdjustmentBehavior="never"
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipsScroll}
+              contentContainerStyle={styles.chipsRow}
+            >
               <Chip
-                key={bot.id}
-                onLayout={
-                  bot.id === botId && activeBotId === botId
-                    ? (event) => {
-                        initialChipLayout.current.chip = event.nativeEvent.layout;
-                        revealInitialChip();
-                      }
-                    : undefined
-                }
-                label={bot.name}
-                active={activeBotId === bot.id}
-                onPress={() => setActiveBotId(bot.id)}
-                avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
+                label={t("All bots")}
+                active={activeBotId === null}
+                onPress={() => setActiveBotId(null)}
               />
-            ))}
-          </ScrollView>
+              {bots.map((bot) => (
+                <Chip
+                  key={bot.id}
+                  onLayout={
+                    bot.id === botId && activeBotId === botId
+                      ? (event) => {
+                          initialChipLayout.current.chip = event.nativeEvent.layout;
+                          revealInitialChip();
+                        }
+                      : undefined
+                  }
+                  label={bot.name}
+                  active={activeBotId === bot.id}
+                  onPress={() => setActiveBotId(bot.id)}
+                  avatar={
+                    <BotAvatar
+                      color={bot.color}
+                      avatarSet={bot.avatarSet}
+                      identity={bot.id}
+                      size={16}
+                    />
+                  }
+                />
+              ))}
+            </ScrollView>
+            <PagesShelf botId={activeBotId ?? undefined} />
+          </>
         }
-        style={styles.listView}
+        style={[styles.listView, sideInsets]}
         contentInsetAdjustmentBehavior="automatic"
         data={filtered ?? []}
         keyExtractor={(item) => item.id}
@@ -377,7 +390,6 @@ function ArtifactRow({
 }) {
   const styles = useThemedStyles(createStyles);
   const { t } = useI18n();
-  const isCode = item.mimeType === "text/html";
   return (
     <Pressable
       accessibilityRole="button"
@@ -387,13 +399,7 @@ function ArtifactRow({
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <View style={styles.rowIcon}>
-        <NativeSymbol
-          ios={isCode ? "chevron.left.forwardslash.chevron.right" : "doc.text"}
-          android={isCode ? "code-slash-outline" : "document-text-outline"}
-          size={16}
-        />
-      </View>
+      <FileKindIcon name={item.name} mimeType={item.mimeType} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.rowName} numberOfLines={1}>
@@ -410,7 +416,7 @@ function ArtifactRow({
         <View style={styles.rowFooter}>
           {bot ? (
             <>
-              <BotAvatar color={bot.color} identity={bot.id} size={14} />
+              <BotAvatar color={bot.color} avatarSet={bot.avatarSet} identity={bot.id} size={14} />
               <Text style={styles.rowBotName} numberOfLines={1}>
                 {bot.name}
               </Text>
@@ -463,14 +469,6 @@ function createStyles() {
     footer: { paddingVertical: 20 },
     row: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
     rowPressed: { opacity: 0.6 },
-    rowIcon: {
-      width: 36,
-      height: 36,
-      borderRadius: 10,
-      backgroundColor: native.fill,
-      alignItems: "center",
-      justifyContent: "center",
-    },
     rowBody: { flex: 1, minWidth: 0, gap: 3 },
     rowTop: { flexDirection: "row", alignItems: "center", gap: 6 },
     rowName: { flex: 1, minWidth: 0, color: native.label, fontSize: 15, fontWeight: "600" },

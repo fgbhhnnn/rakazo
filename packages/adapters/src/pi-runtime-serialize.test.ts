@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeToolResult } from "./pi-runtime.js";
+import { serializeToolResult } from "./pi-runtime-tools.js";
 
 describe("serializeToolResult", () => {
   const skill = {
@@ -34,6 +34,23 @@ describe("serializeToolResult", () => {
       ).toEqual(listing);
     },
   );
+
+  it("returns an opted-in MCP result verbatim", () => {
+    const message = {
+      body: `${"x".repeat(8_000)}https://sessions.example.test/join/abc${"y".repeat(8_000)}`,
+    };
+    const text = serializeToolResult(
+      message,
+      "retrieval",
+      "mcp__mail__get_message",
+      {},
+      {
+        ids: ["srv_mail"],
+        slugs: ["mail"],
+      },
+    );
+    expect(JSON.parse(text)).toEqual(message);
+  });
 
   it("still bounds other large tool results", () => {
     const text = serializeToolResult({ output: "x".repeat(20_000) }, "current", "shell", {});

@@ -10,10 +10,25 @@
       "default": "./src/index.ts"
     },
     "./local-settings": "./src/local-settings.js",
+    "./brand": {
+      "types": "./src/brand.ts",
+      "development": "./src/brand.ts",
+      "default": "./src/brand.ts"
+    },
     "./client-build": {
       "types": "./src/client-build.ts",
       "development": "./src/client-build.ts",
       "default": "./src/client-build.ts"
+    },
+    "./network-host": {
+      "types": "./src/network-host.ts",
+      "development": "./src/network-host.ts",
+      "default": "./src/network-host.ts"
+    },
+    "./user-devices": {
+      "types": "./src/user-devices.ts",
+      "development": "./src/user-devices.ts",
+      "default": "./src/user-devices.ts"
     },
     "./content-security-policy": {
       "types": "./src/content-security-policy.ts",

@@ -1,4 +1,5 @@
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   callRequestRefusal,
@@ -222,7 +223,10 @@ describe("requestUserCall security", () => {
 
         update: vi.fn(async () => ({ nextMessageSeq: 1, nextEventSeq: 1 })),
       },
-      run: { findUnique: vi.fn(async () => ({ status: "running" })) },
+      run: {
+        findUnique: vi.fn(async () => ({ status: "running" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
       userVoiceCredential: { findFirst: vi.fn(async () => ({ id: "voice-1" })) },
       message: {
         findFirst: vi.fn(async () => saved),
@@ -264,6 +268,12 @@ describe("requestUserCall security", () => {
     return { deps, tx, saved: () => saved };
   }
 
+  it("forwards the first-response winner for a call request card", async () => {
+    const { deps } = fixture();
+    await requestUserCall(deps, run, input);
+    expect(deps.events.notify).toHaveBeenCalledWith(run.threadId, 0, run.id);
+  });
+
   it("passes configured durations to the persisted request and recipient cooldown", async () => {
     const { deps, tx, saved } = fixture();
     const now = Date.now();
@@ -285,6 +295,24 @@ describe("requestUserCall security", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("does not ring from an attempt a newer claim superseded", async () => {
+    const { deps, tx, saved } = fixture();
+    tx.run.findUnique.mockResolvedValue({
+      status: "running",
+      leaseOwner: "worker-2",
+      leaseFence: 2,
+    } as never);
+    await expect(
+      requestUserCall(
+        { ...deps, runLease: { runId: run.id, owner: "worker-1", fence: 1 } },
+        run,
+        input,
+      ),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    expect(saved()).toBeNull();
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("does no work while disabled", async () => {

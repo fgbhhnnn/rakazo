@@ -1,13 +1,27 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { i18n } from "@lingui/core";
+import { formatter } from "@lingui/format-po";
 import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UI_LOCALES } from "./ui-locale";
 
 describe("lingui catalogs", () => {
   it("translates sign-out failures in every supported language", () => {
-    for (const locale of ["de", "es", "fr", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of [
+      "de",
+      "es",
+      "fr",
+      "hi",
+      "ja",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+      "zh-TW",
+    ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -22,22 +36,67 @@ describe("lingui catalogs", () => {
     }
   });
 
+  it("translates dictation and voice errors into Spanish", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/es/messages.po", import.meta.url)),
+      "utf8",
+    );
+    for (const message of [
+      "Allow Rakazo to use Speech Recognition and the microphone in System Settings.",
+      "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer.",
+      "Dictation failed: {code}",
+      "Transcription request timed out.",
+      "Add a voice provider key and pick a voice in Voice settings.",
+      "Voice request timed out.",
+    ]) {
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
+      const translated = entry?.split("msgstr ")[1];
+      expect(translated, message).toBeTruthy();
+      expect(translated, message).not.toBe('""');
+      if (message.includes("{code}")) expect(translated).toContain("{code}");
+    }
+  });
+
   it("localizes provider error guidance and retains its placeholders", () => {
     const messages = [
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "{summary} Your backup models also failed.",
+      "{summary} No backup model was usable for this request.",
+      "{summary} Backup models failed or were unavailable for this request.",
       "Your OpenRouter",
       "Your OpenAI",
       "Your Anthropic",
       "Your model provider",
       "The model provider returned an error.",
+      "Connect a model in Settings before running bots.",
+      "Connect your own API key in Models or choose Rakazo credits in Billing.",
       "{provider} is rate limiting requests. Try again shortly.",
       "{summary} Resets {date}.",
       "{provider} rejected the API key. Check your connection settings.",
-      "{provider} could not find the requested model.",
+      "{provider} can't run this model.",
       "{provider} took too long to respond. Try again.",
+      "{provider} is overloaded right now. Try again in a moment.",
+      "{provider} couldn't be reached. Check that it's running.",
+      "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
       "Details",
     ];
-    for (const locale of ["de", "es", "fr", "he", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of [
+      "de",
+      "es",
+      "fr",
+      "he",
+      "hi",
+      "ja",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+      "zh-TW",
+    ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -59,6 +118,50 @@ describe("lingui catalogs", () => {
     }
   });
 
+  it("translates bot settings labels and retains placeholders in every locale", () => {
+    for (const locale of UI_LOCALES) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      for (const message of [
+        "Advanced",
+        "Notifications",
+        "When it finishes or needs input",
+        "Model",
+        "Add open work",
+        "Disable a tool",
+        "Edit name",
+        "Enable {0}",
+        "Model connections",
+        "Permissions",
+        "Skills",
+      ]) {
+        const entry = catalog
+          .split("\n\n")
+          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
+        expect(entry, `${locale}: ${message}`).toMatch(/msgstr ".+"/);
+        const translated = entry?.split("msgstr ")[1] ?? "";
+        expect(translated.match(/\{\w+\}/g) ?? [], `${locale}: ${message}`).toEqual(
+          message.match(/\{\w+\}/g) ?? [],
+        );
+      }
+    }
+  });
+
+  it("names a fixed minute every few hours in every locale", () => {
+    for (const locale of UI_LOCALES) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes('msgid "Every {n} hours at :{minute}"\n'));
+      expect(entry, locale).toMatch(/msgstr ".*\{n\}.*\{minute\}.*"/);
+    }
+  });
+
   beforeEach(() => {
     i18n.load("en", {});
     i18n.activate("en");
@@ -67,9 +170,11 @@ describe("lingui catalogs", () => {
   it("translates command credential controls in every locale", () => {
     const messages = [
       "Command variable",
-      "Available to this bot's shell commands as {commandVariable}",
+      "Available to shell commands as {commandVariable}",
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
-      "Values are encrypted and never shown again.",
+      "Show",
+      "Hide",
+      "Could not show the credential",
     ];
     for (const locale of [
       "en",
@@ -78,12 +183,14 @@ describe("lingui catalogs", () => {
       "fr",
       "he",
       "hi",
+      "ja",
       "ko",
       "nl",
       "pt-BR",
       "ru",
       "tr",
       "zh-CN",
+      "zh-TW",
     ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
@@ -102,7 +209,21 @@ describe("lingui catalogs", () => {
   });
 
   it("translates model connection preflight feedback in every non-English catalog", () => {
-    const locales = ["de", "es", "fr", "he", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"];
+    const locales = [
+      "de",
+      "es",
+      "fr",
+      "he",
+      "hi",
+      "ja",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+      "zh-TW",
+    ];
     const messages = [
       "A subscription credential is stored securely.",
       'Model "{modelId}" was not listed.',
@@ -145,25 +266,52 @@ describe("lingui catalogs", () => {
     );
   });
 
-  it("translates the peer marker toggle names and fills in the marker label", () => {
+  it("translates counted peer exchanges and close controls in every locale", () => {
+    const message = "{count, plural, one {# message with {peer}} other {# messages with {peer}}}";
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
       );
-      for (const message of ["Expand {label}", "Collapse {label}"]) {
-        const msgstr = catalog
+      for (const id of [message, "Close"]) {
+        const entry = catalog
           .split("\n\n")
-          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`))
-          ?.match(/msgstr "(.+)"/)?.[1];
-        expect(msgstr, `${locale}: ${message}`).toBeTruthy();
-        expect(msgstr, `${locale}: ${message}`).not.toBe(message);
-        i18n.load(locale, { [message]: msgstr ?? "" });
-        i18n.activate(locale);
-        const name = i18n._({ id: message, message, values: { label: "Writer" } });
-        expect(name, `${locale}: ${message}`).toContain("Writer");
-        expect(name, `${locale}: ${message}`).not.toContain("{label}");
+          .find((block) => block.includes(`msgid ${JSON.stringify(id)}\n`));
+        const translation = entry?.match(/msgstr "(.+)"/)?.[1];
+        expect(translation, `${locale}: ${id}`).toBeTruthy();
+        expect(translation).not.toBe(id);
+        i18n.load(locale, { [id]: translation ?? "" });
+      }
+      i18n.activate(locale);
+      for (const count of [2, 5, 21]) {
+        const label = i18n._({ id: message, values: { count, peer: "Writer" } });
+        expect(label).toContain("Writer");
+        expect(label).toContain(String(count));
+        expect(label).not.toContain("{peer}");
       }
     }
   });
+});
+
+it("keeps source placeholders and JSX markers in Traditional Chinese translations", async () => {
+  const readCatalog = async (locale: string) => {
+    const filename = fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url));
+    return formatter().parse(readFileSync(filename, "utf8"), {
+      locale,
+      sourceLocale: "en",
+      filename,
+    });
+  };
+  const source = await readCatalog("en");
+  const translated = await readCatalog("zh-TW");
+  expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
+  const markers = (value: string) =>
+    [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
+  for (const [id, entry] of Object.entries(source)) {
+    const message = entry.message ?? entry.translation ?? id;
+    // Untranslated entries fall back to English, as in every other catalog.
+    const translation = translated[id]?.translation;
+    if (!translation?.trim()) continue;
+    expect(markers(translation), message).toEqual(markers(message));
+  }
 });

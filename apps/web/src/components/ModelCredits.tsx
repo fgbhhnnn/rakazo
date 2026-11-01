@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
-import { MODEL_CREDIT_AMOUNTS, ModelCreditAmountSchema } from "@rakazo/contracts";
+import {
+  DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  MODEL_CREDIT_AMOUNTS,
+  ModelCreditAmountSchema,
+  PRODUCT_NAME,
+} from "@rakazo/contracts";
 import {
   Button,
   Card,
@@ -14,17 +19,25 @@ import {
   DialogTitle,
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Separator,
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { formatBillingAmount, formatBillingDate, formatBillingPrice } from "../lib/billing";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
+
+function formatMonthlyUsd(cents: number, locale: string): string {
+  return formatBillingPrice(
+    { amount: cents, currency: "usd", interval: "month", intervalCount: 1 },
+    locale,
+  );
+}
 
 export function CreditAmountSelect({
   value,
@@ -35,10 +48,12 @@ export function CreditAmountSelect({
   onChange: (amount: CreditAmount) => void;
   monthly?: boolean;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const items = MODEL_CREDIT_AMOUNTS.map((amount) => ({
     value: amount,
-    label: monthly ? t`$${amount / 100} / month` : `$${amount / 100}`,
+    label: monthly
+      ? formatMonthlyUsd(amount, i18n.locale)
+      : formatBillingAmount(amount, "usd", i18n.locale),
   }));
   return (
     <Select
@@ -50,49 +65,68 @@ export function CreditAmountSelect({
     >
       <SelectTrigger
         aria-label={monthly ? t`Monthly credits` : t`Credit amount`}
-        className="w-full"
-        size="xl"
+        className="w-full rounded-xl pr-3 pl-4 text-base data-[size=default]:h-12"
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false} align="start" className="p-1">
-        {items.map((item) => (
-          <SelectItem key={item.value} value={item.value} className="py-2 text-base">
-            {item.label}
-          </SelectItem>
-        ))}
+      <SelectContent alignItemWithTrigger={false} align="start">
+        <SelectGroup>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value} className="py-2 text-base">
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );
 }
 
-export function CreditChoice({ status }: { status: BillingStatus }) {
-  const { t } = useLingui();
+export function CreditChoice({
+  status,
+  dismissible = false,
+}: {
+  status: BillingStatus;
+  dismissible?: boolean;
+}) {
+  const { t, i18n } = useLingui();
   const features = [
     t`Bots and browser automation`,
     t`Scheduled routines`,
     t`Web, desktop and mobile`,
   ];
-  const [amount, setAmount] = useState<CreditAmount>(1000);
+  const trialDays = status.trialDays;
+  const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
+  const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
-  const { logOut, signingOut } = useSignOut(
-    () => window.location.assign("/sign-in"),
-    () => setError(true),
-  );
+  const { logOut, signingOut } = useSignOut("/sign-in", () => setError(true));
+  // A choice that answers after the plans were closed must not leave the app.
+  const closed = useRef(false);
+  useEffect(() => {
+    closed.current = false;
+    return () => {
+      closed.current = true;
+    };
+  }, []);
+  function go(url: string) {
+    if (!closed.current) window.location.assign(url);
+  }
   async function choose(ownKey: boolean) {
     setPending(true);
     setError(false);
     try {
-      if (ownKey) {
-        await rpc.billing.selectFunding({ funding: "byok" });
-        window.location.assign("/onboarding");
+      if (ownKey && status.byokFreeUntil) {
+        go((await rpc.billing.checkout()).url);
+      } else if (ownKey) {
+        const { url } = await rpc.billing.selectFunding({ funding: "byok" });
+        go(url ?? "/onboarding");
       } else {
         const { url } = await rpc.billing.purchaseCredits({
           amountCents: amount,
           monthly: true,
         });
-        window.location.assign(url);
+        go(url);
       }
     } catch {
       setError(true);
@@ -104,30 +138,36 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
       data-testid="billing-paywall"
       className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center gap-8 px-6 py-12"
     >
-      <Button
-        className="fixed top-4 right-6"
-        variant="text"
-        disabled={pending || signingOut}
-        onClick={() => void logOut()}
-      >
-        <Trans>Log out</Trans>
-      </Button>
-      <h1 className="text-3xl font-medium tracking-tight">
-        <Trans>Choose how to use Rakazo</Trans>
+      {dismissible ? null : (
+        <Button
+          className="fixed top-4 right-6"
+          variant="text"
+          disabled={pending || signingOut}
+          onClick={() => void logOut()}
+        >
+          <Trans>Log out</Trans>
+        </Button>
+      )}
+      <h1 className="text-heading1 font-medium">
+        <Trans>Choose how to use {PRODUCT_NAME}</Trans>
       </h1>
       <div className="grid gap-4 min-[480px]:grid-cols-2">
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">
-              <Trans>Your API key</Trans>
+              <Trans>Your subscription or API key</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
             <p className="flex h-12 items-center text-3xl font-medium tracking-tight">
-              <Trans>Free</Trans>
+              {status.byokPriceCents ? (
+                formatMonthlyUsd(status.byokPriceCents, i18n.locale)
+              ) : (
+                <Trans>Free</Trans>
+              )}
             </p>
             <p className="text-sm text-muted-foreground">
-              <Trans>Pay your model provider directly.</Trans>
+              <Trans>Works with your ChatGPT or Claude plan.</Trans>
             </p>
             <ul className="space-y-3 text-sm">
               {features.map((feature) => (
@@ -143,37 +183,39 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
               className="w-full bg-background dark:bg-transparent"
               variant="outline"
               disabled={pending || !status.canManage}
+              aria-label={
+                status.byokPriceCents && !status.trialAvailable
+                  ? t`Subscribe with your own AI`
+                  : undefined
+              }
               onClick={() => void choose(true)}
             >
-              <Trans>Use my API key</Trans>
+              {!status.byokPriceCents ? (
+                <Trans>Connect my own</Trans>
+              ) : status.trialAvailable ? (
+                <Trans>Start {trialDays}-day free trial</Trans>
+              ) : (
+                <Trans>Subscribe</Trans>
+              )}
             </Button>
           </CardFooter>
         </Card>
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">
-              <Trans>Rakazo credits</Trans>
+              <Trans>{PRODUCT_NAME} credits</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
             <CreditAmountSelect monthly value={amount} onChange={setAmount} />
             <p className="text-sm text-muted-foreground">
-              <Trans>${amount / 100} in monthly model credits. No API key needed.</Trans>
+              <Trans>All {credit} goes to model usage.</Trans>
             </p>
             <ul className="space-y-3 text-sm">
-              {features.map((feature) => (
+              {[...features, t`Models at provider cost`].map((feature) => (
                 <li key={feature} className="flex gap-2">
                   <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
-            <Separator className="data-horizontal:w-8" />
-            <ul className="space-y-3 text-sm">
-              {[t`Models at provider cost`, t`Top up anytime`].map((benefit) => (
-                <li key={benefit} className="flex gap-2">
-                  <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                  <span>{benefit}</span>
                 </li>
               ))}
             </ul>
@@ -182,9 +224,10 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
             <Button
               className="w-full"
               disabled={pending || !status.canManage || !status.creditPurchasesEnabled}
+              aria-label={t`Subscribe to ${PRODUCT_NAME} credits`}
               onClick={() => void choose(false)}
             >
-              <Trans>Continue with credits</Trans>
+              <Trans>Subscribe</Trans>
             </Button>
           </CardFooter>
         </Card>
@@ -207,7 +250,7 @@ export function ModelCreditsSettings({
 }) {
   const { t, i18n } = useLingui();
   const [amount, setAmount] = useState<CreditAmount>(
-    ModelCreditAmountSchema.catch(1000).parse(status.monthlyAmountCents),
+    ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(status.monthlyAmountCents),
   );
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -233,6 +276,12 @@ export function ModelCreditsSettings({
   }
   const recurring =
     status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
+  const freeUntil = status.byokFreeUntil
+    ? formatBillingDate(status.byokFreeUntil, i18n.locale || "en")
+    : null;
+  const price = status.byokPriceCents
+    ? formatBillingAmount(status.byokPriceCents, "usd", i18n.locale)
+    : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
       <div className="rounded-xl border border-border p-5">
@@ -252,22 +301,47 @@ export function ModelCreditsSettings({
         </div>
         <p className="mt-2 text-3xl font-medium tabular-nums">{balance}</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          {status.funding === "byok" ? (
+          {status.funding === "byok" && freeUntil ? (
+            <Trans>Using your API key. Free plan ends {freeUntil}.</Trans>
+          ) : status.funding === "byok" ? (
             <Trans>Using your API key</Trans>
           ) : (
             <Trans>Monthly credits expire at renewal. Top-ups do not expire.</Trans>
           )}
         </p>
         {status.canManage ? (
-          <Button
-            className="mt-5"
-            disabled={!status.creditPurchasesEnabled}
-            onClick={() => setPurchaseOpen(true)}
-          >
-            <Trans>Add credits</Trans>
-          </Button>
+          <div className="mt-5 flex flex-wrap gap-3">
+            {freeUntil && price ? (
+              <Button
+                disabled={pending}
+                onClick={() =>
+                  void action(async () => {
+                    const { url } = await rpc.billing.checkout();
+                    window.location.assign(url);
+                  })
+                }
+              >
+                <Trans>Subscribe for {price} / month</Trans>
+              </Button>
+            ) : null}
+            <Button
+              variant={freeUntil ? "secondary" : "default"}
+              disabled={!status.creditPurchasesEnabled}
+              onClick={() => setPurchaseOpen(true)}
+            >
+              <Trans>Add credits</Trans>
+            </Button>
+          </div>
         ) : null}
       </div>
+      {status.computerHoursLeft != null ? (
+        <div className="rounded-xl border border-border p-5">
+          <h3 className="text-sm text-muted-foreground">
+            <Trans>Computer hours left</Trans>
+          </h3>
+          <p className="mt-2 text-3xl font-medium tabular-nums">{status.computerHoursLeft}</p>
+        </div>
+      ) : null}
       {status.canManage ? (
         <div className="rounded-xl border border-border p-5">
           <h3 className="font-medium">
@@ -338,7 +412,7 @@ export function ModelCreditsSettings({
             })
           }
         >
-          <Trans>Use Rakazo credits</Trans>
+          <Trans>Use {PRODUCT_NAME} credits</Trans>
         </Button>
       ) : null}
       {status.canManage && status.funding !== "byok" && (!recurring || status.cancelAtPeriodEnd) ? (
@@ -347,12 +421,12 @@ export function ModelCreditsSettings({
           disabled={pending}
           onClick={() =>
             void action(async () => {
-              await rpc.billing.selectFunding({ funding: "byok" });
-              window.location.assign("/onboarding");
+              const { url } = await rpc.billing.selectFunding({ funding: "byok" });
+              window.location.assign(url ?? "/onboarding");
             })
           }
         >
-          <Trans>Use my API key</Trans>
+          <Trans>Use my subscription or API key</Trans>
         </Button>
       ) : null}
       {error ? (

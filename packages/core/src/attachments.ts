@@ -1,10 +1,17 @@
 import type { AttachmentMimeType, MessageBlock } from "@rakazo/contracts";
 import {
+  ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
+  isOfficeAssociationMislabel,
+  OFFICE_EXTENSION_MIME_TYPES,
+  OFFICE_MIME_TYPE_EXTENSIONS,
 } from "@rakazo/contracts";
+import { SOURCE_TEXT_EXTENSIONS } from "./source-text-extensions.js";
+import { withoutWorkerSlot } from "./worker-names.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -14,15 +21,10 @@ export class AttachmentValidationError extends Error {
 }
 
 /**
- * Validates base64 without a grouped-repetition regex over the whole string.
- * `/^(?:[A-Za-z0-9+/]{4})*(...)?$/` stack-overflows V8's regex engine on
- * inputs in the megabytes-of-characters range — reproduced directly: a 5 MiB
- * string throws `RangeError: Maximum call stack size exceeded` on `.test()`.
- * At the current 10 MiB attachment limit, base64 expansion (4/3) puts any
- * attachment over ~3.75 MiB squarely in that range, so this crashes on a
- * routine, non-malicious upload. A flat, ungrouped `[chars]*` quantifier does
- * not have this problem; padding is checked separately since it can only
- * ever be the trailing 0-2 characters.
+ * Validates base64 without a grouped-repetition regex over the whole string:
+ * `/^(?:[A-Za-z0-9+/]{4})*(...)?$/` overflows V8's regex stack on multi-megabyte
+ * inputs, which ordinary attachments reach. A flat `[chars]*` quantifier does not;
+ * padding is checked separately since it can only be the trailing 0-2 characters.
  */
 function isWellFormedBase64(value: string): boolean {
   const paddingMatch = /={1,2}$/.exec(value);
@@ -30,6 +32,23 @@ function isWellFormedBase64(value: string): boolean {
   const body = paddingLength > 0 ? value.slice(0, value.length - paddingLength) : value;
   if (body.includes("=")) return false;
   return /^[A-Za-z0-9+/]*$/.test(body);
+}
+
+export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
+  const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
+  if (!value) return ATTACHMENT_MAX_COUNT;
+  const count = Number(value);
+  if (
+    !/^\d+$/.test(value) ||
+    !Number.isInteger(count) ||
+    count < 1 ||
+    count > ATTACHMENT_COUNT_CEILING
+  ) {
+    throw new Error(
+      `MAX_ATTACHMENTS_PER_MESSAGE must be an integer from 1 to ${ATTACHMENT_COUNT_CEILING}`,
+    );
+  }
+  return count;
 }
 
 export function uploadSizeFromEnv(source: { MAX_UPLOAD_SIZE_MB?: string }): number {
@@ -133,12 +152,15 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
       if (block.kind === "chart") return `[chart: ${block.name}]`;
       if (block.kind === "image") return `[image: ${block.name}]`;
       if (block.kind === "file") {
+        if (block.page) return `[page: ${block.name} (page_id ${block.page.pageId})]`;
         return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
       }
       // Keep attribution on peer messages: without it a later turn cannot tell
       // which lines came from another bot rather than the user.
-      if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
-      if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
+      if (block.kind === "bot_message_received")
+        return `[from ${withoutWorkerSlot(block.fromBotName)}] ${block.text}`;
+      if (block.kind === "bot_message_sent")
+        return `[to ${withoutWorkerSlot(block.toBotName)}] ${block.text}`;
       if (block.kind === "handoff") {
         return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
       }
@@ -185,6 +207,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".htm": "text/html",
   ".json": "application/json",
   ".zip": "application/zip",
+  ...Object.fromEntries(SOURCE_TEXT_EXTENSIONS.map((ext) => [ext, "text/plain" as const])),
+  ...OFFICE_EXTENSION_MIME_TYPES,
 };
 
 const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
@@ -204,6 +228,7 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/html": ".html",
   "application/json": ".json",
   "application/zip": ".zip",
+  ...OFFICE_MIME_TYPE_EXTENSIONS,
 };
 
 export function inferAttachmentMimeType(
@@ -233,6 +258,7 @@ export function inferAttachmentMimeType(
   if (extensionType === "text/markdown" && (!reportedType || reportedType === "text/plain")) {
     return extensionType;
   }
+  if (isOfficeAssociationMislabel(extensionType, reportedType)) return extensionType ?? null;
   if (reportedType && isAllowedAttachmentMimeType(reportedType)) return reportedType;
   return extensionType ?? null;
 }

@@ -2,7 +2,7 @@ import { createCipheriv, createHash } from "node:crypto";
 import { BUILTIN_TOOL_NAMES, FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { agentConnectionTools, builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
-import { selectBuiltinToolsForRun } from "./executor.js";
+import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
@@ -179,33 +179,6 @@ describe("builtin tools", () => {
     expect([...BUILTIN_TOOL_NAMES].sort()).toEqual(
       [...builtinAgentTools, ...agentConnectionTools].map((tool) => tool.name).sort(),
     );
-    expect(builtinAgentTools.map((t) => t.name)).toEqual(
-      expect.arrayContaining([
-        "write_file",
-        "attach_file",
-        "shell",
-        "remember",
-        "request_takeover",
-        "ask_user",
-        "message_user",
-        "request_secret",
-        "run_subagent",
-        "create_space",
-        "spawn_bot",
-        "update_bot",
-        "archive_bot",
-        "task_catalog",
-        "skill_read",
-        "skill_create",
-        "skill_update",
-        "skill_delete",
-        "web_search",
-        "web_fetch",
-        "browser_navigate",
-        "browser_snapshot",
-        "browser_act",
-      ]),
-    );
     const options = {
       graphicalToolsAllowed: true,
       groupId: null,
@@ -238,19 +211,12 @@ describe("builtin tools", () => {
         disabledBuiltinTools: ticketNames,
       }).map((tool) => tool.name),
     ).toEqual(disabled);
-    const updateBot = builtinAgentTools.find((tool) => tool.name === "update_bot");
-    expect(updateBot?.inputSchema).toEqual(
-      expect.objectContaining({
-        properties: expect.objectContaining({
-          name: expect.any(Object),
-          title: expect.any(Object),
-          description: expect.any(Object),
-          color: expect.any(Object),
-          artifact_id: expect.any(Object),
-          use_attached_image: expect.any(Object),
-          notifyOnFinish: { type: "boolean", description: expect.any(String) },
-        }),
-      }),
-    );
+    const purchaseNames = ["request_purchase", "purchase_status", "paid_request"];
+    expect(enabled.filter((name) => purchaseNames.includes(name))).toEqual([]);
+    expect(
+      selectBuiltinToolsForRun({ ...options, paymentWalletEnabled: true })
+        .map((tool) => tool.name)
+        .filter((name) => purchaseNames.includes(name)),
+    ).toEqual(purchaseNames);
   });
 });

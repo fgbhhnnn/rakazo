@@ -95,3 +95,17 @@ describe("SpokenMemory", () => {
     expect(memory.isEcho("hey I am here and here", undefined, 100)).toBe(false);
   });
 });
+
+describe("CJK echo", () => {
+  const zh = "好的，我来帮你查一下。今天天气不错。我们继续下一步。";
+  it.each(["好的我来帮你查一下", "好的，我来", "好的 我来帮你 查一下", "今天天气不错"])(
+    "treats %j as the reply leaking back",
+    (heard) => {
+      expect(isEchoOfSpeech(heard, zh, 0.4)).toBe(true);
+      expect(isEchoOfSpeech(heard, zh)).toBe(true);
+    },
+  );
+  it("keeps a genuine Chinese turn", () => {
+    expect(isEchoOfSpeech("帮我看看明天的会议安排", zh, 0.4)).toBe(false);
+  });
+});

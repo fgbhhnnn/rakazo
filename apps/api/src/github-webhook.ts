@@ -2,13 +2,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
+import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
   loadWebhookTarget,
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
-  type WebhookDeps,
-  type WebhookSecretCache,
 } from "./webhook-inbound.js";
 
 export function hasValidGithubSignature(
@@ -167,7 +166,6 @@ export function githubWebhookPath(botId: string): string {
   return `/api/v1/bots/${botId}/github`;
 }
 
-/** Mount the signed GitHub delivery route onto the shared webhook deps. */
 export function mountGithubWebhookRoute(
   app: Hono,
   deps: WebhookDeps,
@@ -222,7 +220,14 @@ export function mountGithubWebhookRoute(
     const deliveryId = c.req.header("x-github-delivery")?.trim();
     if (!deliveryId) return unauthorized();
 
-    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
+    const contentType = c.req.header("content-type");
+    // GitHub's default form content type sends the JSON in the `payload` field.
+    const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+    const body =
+      mediaType === "application/x-www-form-urlencoded"
+        ? (new URLSearchParams(raw).get("payload") ?? "")
+        : raw;
+    const payload = parseWebhookPayload(body, contentType);
     const githubEvent = githubEventName(c.req.header("x-github-event"));
     const eventPrompt = formatGithubEventPrompt(githubEvent, payload);
 

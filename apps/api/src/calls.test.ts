@@ -40,7 +40,7 @@ describe("call route gates", () => {
   it("requires authentication even when enabled", async () => {
     const client = createRouterClient(
       createRouter({ env: { phoneCallsEnabled: true } } as unknown as RouterDeps),
-      { context: {} },
+      { context: { actor: null } },
     );
     const input = { botId: "bot-1", callId: "call-1" };
     await expect(client.threads.answerCall(input)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
@@ -49,4 +49,26 @@ describe("call route gates", () => {
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(client.threads.endCall(input)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
+});
+
+describe("voice catalog", () => {
+  it.each([false, true])(
+    "advertises self-hosted speech only with custom endpoint access (%s)",
+    async (mcpAllowPrivateEndpoint) => {
+      vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
+      try {
+        const client = createRouterClient(
+          createRouter({ env: { mcpAllowPrivateEndpoint } } as unknown as RouterDeps),
+          { context: { actor } },
+        );
+        const catalog = await client.voice.catalog();
+        expect(catalog.some((entry) => entry.id === "openai-compatible")).toBe(
+          mcpAllowPrivateEndpoint,
+        );
+        expect(catalog.some((entry) => entry.id === "elevenlabs")).toBe(true);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 });

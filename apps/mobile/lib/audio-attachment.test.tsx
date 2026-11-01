@@ -38,7 +38,7 @@ vi.mock("../lib/appearance", () => ({
 }));
 vi.mock("../lib/i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("../lib/artifact-open", () => ({
-  audioArtifactUri: vi.fn(),
+  artifactFileUri: vi.fn(),
   openMobileArtifact: mocks.share,
 }));
 vi.mock("../lib/attachment-audio", () => ({

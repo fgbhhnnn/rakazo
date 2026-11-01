@@ -4,8 +4,8 @@ import {
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
   buildAutoReviewPrompt,
-  deploymentAutoReviewDefault,
   isAutoReviewCheckerConfigured,
+  LlmAutoReviewProvider,
   parseAutoReviewJudgeText,
   redactToolArgsForReview,
   resolveAutoReviewChecker,
@@ -149,14 +149,6 @@ describe("isAutoReviewCheckerConfigured", () => {
   });
 });
 
-describe("deploymentAutoReviewDefault", () => {
-  it("defaults off", () => {
-    expect(deploymentAutoReviewDefault({})).toBe(false);
-    expect(deploymentAutoReviewDefault({ RAKAZO_AUTO_REVIEW: "1" })).toBe(true);
-    expect(deploymentAutoReviewDefault({ RAKAZO_AUTO_REVIEW: "true" })).toBe(true);
-  });
-});
-
 describe("autoReviewTimeoutMs", () => {
   it("defaults to 10000 and rejects bad values", () => {
     expect(autoReviewTimeoutMs({})).toBe(10_000);
@@ -285,7 +277,7 @@ describe("buildAutoReviewPrompt", () => {
       botDescription: "Helper",
       matchingRules: [],
     };
-    expect(buildAutoReviewPrompt(request)).not.toContain(url);
+    expect(buildAutoReviewPrompt(request)).not.toContain("site the run was not given");
     const prompt = buildAutoReviewPrompt({ ...request, newSite: true });
     expect(prompt).toContain(url);
     expect(prompt).toContain("site the run was not given");
@@ -307,6 +299,49 @@ describe("buildAutoReviewPrompt", () => {
     expect(taskBlock?.[1]).toBe(injection);
     expect(prompt.indexOf("untrusted data")).toBeLessThan(prompt.indexOf("<user_task>"));
     expect(prompt).toContain('"decision":"pass"|"ask"');
+  });
+});
+
+describe("LlmAutoReviewProvider", () => {
+  it("asks without running the checker when the arguments are too long to show in full", async () => {
+    const run = vi.fn(() =>
+      (async function* () {
+        yield { type: "done", text: '{"decision":"pass","reason":"fits"}' } as never;
+      })(),
+    );
+    const provider = new LlmAutoReviewProvider({
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run } as never,
+      checker: { provider: "openrouter", model: "x" },
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    const result = await provider.review(
+      {
+        toolName: "multi_execute",
+        connectorKind: "composio",
+        args: {
+          actions: [
+            { tool: "notes_create", body: "a".repeat(10_000) },
+            { tool: "gmail_send_email", to: "someone@else.test" },
+          ],
+        },
+        userTask: "Save a note",
+        botDescription: "Helper",
+        matchingRules: [],
+      },
+      {
+        operationId: "auto-review",
+        traceId: "auto-review",
+        spaceId: "ws",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    );
+    expect(result.decision).toBe("ask");
+    expect(run).not.toHaveBeenCalled();
   });
 });
 
@@ -346,6 +381,19 @@ describe("runAutoReviewJudge instructions", () => {
     expect(captured?.instructions).toContain("Current date and time");
     expect(captured?.instructions).toContain("fast safety checker");
     expect(captured?.model?.callObserver).toBe(callObserver);
+    expect(captured?.model?.thinkingLevel).toBeNull();
+
+    await runAutoReviewJudge({
+      runtime: runtime as never,
+      checker: { provider: "openrouter", model: "x", thinkingLevel: "low" },
+      prompt: "test",
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    expect(captured?.model?.thinkingLevel).toBe("low");
   });
 });
 
@@ -429,7 +477,7 @@ describe("runAutoReviewJudge timeout", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const runtime = {
       run: () => {
-        throw new Error(`fake-checker-key ${"x".repeat(300)}`);
+        throw new Error(`fake-checker-key fake-header-secret us ${"x".repeat(300)}`);
       },
     };
     await expect(
@@ -437,6 +485,7 @@ describe("runAutoReviewJudge timeout", () => {
         runtime: runtime as never,
         checker: { provider: "openrouter", model: "x" },
         apiKey: "fake-checker-key",
+        headers: { "x-session": "fake-header-secret", "x-region": "us" },
         prompt: "test",
         runId: "run",
         spaceId: "ws",
@@ -446,7 +495,39 @@ describe("runAutoReviewJudge timeout", () => {
       }),
     ).resolves.toMatchObject({ decision: "error", reason: "Checker failed." });
     expect(warn).toHaveBeenCalledExactlyOnceWith(
-      `[auto-review] checker openrouter/x failed: Error: [redacted] ${"x".repeat(181)}…`,
+      `[auto-review] checker openrouter/x failed: Error: [redacted] [redacted] us ${"x".repeat(167)}…`,
+    );
+  });
+
+  it("redacts header-only credentials from asynchronous checker failures", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runtime = {
+      run: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: "text", text: "" };
+          throw new Error("status failed: 12345678 fake-session-secret us");
+        },
+      }),
+    };
+    await expect(
+      runAutoReviewJudge({
+        runtime: runtime as never,
+        checker: { provider: "openai-compatible", model: "fixture" },
+        headers: {
+          "x-boundary": "12345678",
+          "x-session": "fake-session-secret",
+          "x-region": "us",
+        },
+        prompt: "test",
+        runId: "run",
+        spaceId: "ws",
+        userId: "user",
+        botId: "bot",
+        threadId: "thread",
+      }),
+    ).resolves.toMatchObject({ decision: "error", reason: "Checker failed." });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "[auto-review] checker openai-compatible/fixture failed: Error: status failed: [redacted] [redacted] us",
     );
   });
 

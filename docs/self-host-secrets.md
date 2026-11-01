@@ -72,6 +72,10 @@ off it, set `ENCRYPTION_MASTER_KEYS` and run the rotation in
 without stranding content. Keep `ENCRYPTION_KEY` unchanged afterwards: stored
 credentials still depend on it.
 
+With `MASTER_KEY_PROVIDER=aws-kms`, these and the other API and worker
+secrets can be kept in `.env` wrapped by the key manager instead of in
+plaintext ([wrapped settings](content-encryption.md#wrapped-settings)).
+
 ## Optional keys (leave blank if unused)
 
 From `.env.images.example` (images installer). Leave blank if unused:
@@ -82,7 +86,7 @@ From `.env.images.example` (images installer). Leave blank if unused:
 | `TYPESAFE_API_KEY` | Optional TypeSafe Jev Auto Review verifier (`RAKAZO_AUTO_REVIEW_PROVIDER=jev`) |
 | `COMPOSIO_API_KEY` | Composio managed catalog |
 | `E2B_API_KEY` / `DAYTONA_API_KEY` / `BOAT_API_KEY` | Remote computers when `SANDBOX_PROVIDER` is not `docker` |
-| `SMTP_URL` / `EMAIL_FROM` | Password-recovery email |
+| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `SMTP_URL` / `EMAIL_FROM` | Optional account email via Resend API or SMTP |
 | `EXPO_ACCESS_TOKEN` | Mobile push when the Expo project enables enhanced push security |
 | Messaging tokens (Slack, Telegram, …) | Only if you enable those surfaces |
 
@@ -117,6 +121,8 @@ later" item.
 ## Related
 
 - [Self-hosting](./self-host.md)
+- [Configuration](./self-host-configuration.md)
+- [Storage and encryption](./self-host-storage.md)
 
 ## Optional credential storage
 

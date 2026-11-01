@@ -9,7 +9,7 @@ tags:
     permissions:
       notifications: deny
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    visible: "Sign up for Gose Bot|Pixel Launcher isn't responding"
     timeout: 30000
 - runFlow:
     when:
@@ -17,15 +17,12 @@ tags:
     commands:
       - tapOn: "Close app"
 - extendedWaitUntil:
-    visible: "Sign up for Rakazo"
+    visible: "Sign up for Gose Bot"
     timeout: 30000
 - tapOn: "Sign in"
 - runFlow: helpers/server.yaml
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
-- tapOn:
-    text: "Use password"
-    optional: true
 - tapOn: "Password"
 - inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
 - hideKeyboard

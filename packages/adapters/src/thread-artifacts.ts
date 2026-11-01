@@ -23,6 +23,7 @@ import {
 import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
 import { withResolvedArtifactVersion } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { attachmentDisplayName } from "./attachment-display-name.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
 export type MaterializedThreadFile = {
@@ -58,7 +59,7 @@ export async function attachWorkspaceFileToThread(
   if (!mimeType) {
     throw new Error(`Unsupported attachment type for ${fileName}`);
   }
-  const name = (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  const name = attachmentDisplayName(input.name, fileName, ARTIFACT_NAME_MAX_LENGTH);
   validateAttachmentMimeType(mimeType);
   if (input.bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
     throw new Error(
@@ -194,11 +195,8 @@ async function materializeThreadFiles(
   input: Parameters<typeof materializeCurrentTurnFiles>[2],
   preserveExisting: boolean,
 ): Promise<MaterializedThreadFile[]> {
-  // "image" attachments (e.g. a photo pasted or uploaded in chat) are backed
-  // by a real artifact exactly like "file" ones — the model seeing them
-  // inline for vision (loadCurrentTurnImages) doesn't put them on disk, so
-  // they must be included here too or a bot can describe a photo it can't
-  // actually attach, forward, or hand to a tool that needs the file.
+  // Images seen inline for vision are not on disk, so they are copied too; otherwise a bot can
+  // describe a photo it cannot attach, forward, or hand to a tool.
   const fileBlocks = attachmentBlocks(blocks);
   if (!fileBlocks.length) return [];
   const byId = await attachedArtifacts(deps.prisma, fileBlocks, input.context);
@@ -298,7 +296,7 @@ export async function listRecentThreadFiles(
 }
 
 /** The newest attachments across the last `maxTurns` user turns that carry any. */
-function recentAttachmentBlocks(
+export function recentAttachmentBlocks(
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: { skipMessageId?: string | null; maxTurns: number },
@@ -337,4 +335,130 @@ export function recentThreadFilesInstruction(files: readonly MaterializedThreadF
     "Files attached earlier in this conversation are also on your computer:",
     ...files.map(fileLine),
   ].join("\n");
+}
+
+/** How far back a file's bytes count as "already in the chat" for duplicate checks. */
+export const POSTED_ATTACHMENT_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+const PAGE_SOURCE_EXTENSION = /\.(md|markdown|html?)$/i;
+
+/**
+ * The key a Page shown in the chat leaves in `postedAttachmentHashes`, for a file that would be
+ * its source or export: "大道出海 Expo 迁移进度.md" matches the Page "大道出海 Expo 迁移进度".
+ */
+export function pageTitleKey(fileNameOrTitle: string): string | undefined {
+  const base = fileNameOrTitle.split(/[\\/]/).pop() ?? "";
+  const title = base.replace(PAGE_SOURCE_EXTENSION, "").trim().toLowerCase();
+  return title ? `page:${title}` : undefined;
+}
+
+/** True when `keys` already holds this file's bytes, or a Page it is the source or export of. */
+export function alreadyPostedFile(
+  keys: ReadonlySet<string>,
+  contentKey: string,
+  fileName: string,
+): boolean {
+  if (keys.has(contentKey)) return true;
+  if (!PAGE_SOURCE_EXTENSION.test(fileName)) return false;
+  const key = pageTitleKey(fileName);
+  return key !== undefined && keys.has(key);
+}
+
+function isRelayedOrBotMessage(message: { role: string; blocks: unknown }): boolean {
+  if (message.role === "bot") return true;
+  return (Array.isArray(message.blocks) ? message.blocks : []).some(
+    (block) =>
+      typeof block === "object" &&
+      block !== null &&
+      (block as { kind?: unknown }).kind === "bot_message_received",
+  );
+}
+
+/**
+ * Content keys ("sha256:<hex>") of files this bot posted in the thread since `since`, whichever
+ * run posted them: a retried or resumed turn, an earlier wake turn, or a worker relay. Files and
+ * Pages a relayed worker report carried into the thread count too (their run is the worker's),
+ * and each Page also adds `pageTitleKey(title)`. With `sinceUserTurn`, the window also starts at
+ * the user's latest own message (a relayed worker message does not count), so a file the user
+ * asks for again can be sent again.
+ */
+export async function postedAttachmentHashes(
+  prisma: PrismaClient,
+  input: { spaceId: string; threadId: string; botId: string; sinceUserTurn?: boolean },
+  now = new Date(),
+): Promise<Set<string>> {
+  const keys = new Set<string>();
+  let since = new Date(now.getTime() - POSTED_ATTACHMENT_WINDOW_MS);
+  try {
+    if (input.sinceUserTurn) {
+      const userMessages = await prisma.message.findMany({
+        where: { threadId: input.threadId, role: "user", createdAt: { gte: since } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { createdAt: true, blocks: true },
+      });
+      const own = userMessages.find(
+        (message) => !isRelayedOrBotMessage({ role: "user", blocks: message.blocks }),
+      );
+      if (own && own.createdAt > since) since = own.createdAt;
+    }
+    const runs = await prisma.run.findMany({
+      where: {
+        threadId: input.threadId,
+        botId: input.botId,
+        OR: [{ completedAt: null }, { completedAt: { gte: since } }],
+      },
+      select: { id: true },
+    });
+    if (runs.length) {
+      const rows = await prisma.artifact.findMany({
+        where: {
+          spaceId: input.spaceId,
+          botId: input.botId,
+          runId: { in: runs.map((run) => run.id) },
+          createdAt: { gte: since },
+        },
+        select: { hash: true },
+      });
+      for (const row of rows) keys.add(`sha256:${row.hash}`);
+    }
+  } catch (error) {
+    getLogger().warn(
+      `posted attachment lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return new Set();
+  }
+  try {
+    const messages = await prisma.message.findMany({
+      where: { threadId: input.threadId, createdAt: { gte: since } },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: { role: true, blocks: true },
+    });
+    const artifactIds = new Set<string>();
+    for (const message of messages ?? []) {
+      // The user's own uploads are theirs to have sent back; only the bot's side counts.
+      if (!isRelayedOrBotMessage(message)) continue;
+      for (const block of Array.isArray(message.blocks) ? message.blocks : []) {
+        const artifactId = (block as { artifactId?: unknown } | null)?.artifactId;
+        if (typeof artifactId === "string") artifactIds.add(artifactId);
+      }
+    }
+    if (artifactIds.size) {
+      const rows = await prisma.artifact.findMany({
+        where: { spaceId: input.spaceId, id: { in: [...artifactIds] } },
+        select: { hash: true, kind: true, name: true },
+      });
+      for (const row of rows) {
+        keys.add(`sha256:${row.hash}`);
+        const titleKey = row.kind === "page" ? pageTitleKey(row.name) : undefined;
+        if (titleKey) keys.add(titleKey);
+      }
+    }
+  } catch (error) {
+    getLogger().warn(
+      `thread file lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return keys;
 }

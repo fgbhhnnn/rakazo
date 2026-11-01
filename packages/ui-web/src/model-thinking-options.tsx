@@ -1,11 +1,14 @@
+import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import type { ReactNode } from "react";
 import { useId } from "react";
 import { Checkbox } from "./components/ui/checkbox.js";
 import { Disclosure } from "./components/ui/disclosure.js";
 import { Field, FieldLabel } from "./components/ui/field.js";
 import { Input } from "./components/ui/input.js";
-import { OptionSelect } from "./components/ui/select.js";
+import { OptionSelect } from "./components/ui/option-select.js";
 
 export function ModelThinkingOptions({
+  children,
   reasoning = false,
   onReasoningChange,
   supportsImages,
@@ -30,6 +33,7 @@ export function ModelThinkingOptions({
   imagesLabel,
   maxImagesLabel,
 }: {
+  children?: ReactNode;
   reasoning?: boolean;
   onReasoningChange?: (reasoning: boolean) => void;
   supportsImages?: boolean;
@@ -101,7 +105,7 @@ export function ModelThinkingOptions({
             type="number"
             inputMode="numeric"
             min={1}
-            max={131072}
+            max={MAX_MODEL_MAX_TOKENS}
             step={1}
             value={maxTokens ?? ""}
             onChange={(event) => onMaxTokensChange(event.target.value)}
@@ -119,7 +123,7 @@ export function ModelThinkingOptions({
             type="number"
             inputMode="numeric"
             min={1}
-            max={1048576}
+            max={MAX_MODEL_CONTEXT_WINDOW}
             step={1}
             value={contextWindow ?? ""}
             onChange={(event) => onContextWindowChange(event.target.value)}
@@ -158,6 +162,7 @@ export function ModelThinkingOptions({
           />
         </Field>
       ) : null}
+      {children}
     </Disclosure>
   );
 }

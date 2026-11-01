@@ -75,7 +75,7 @@ describe("buildApprovalAskBlock", () => {
 it("shows the full instruction replacement as a diff with Apply and Dismiss", () => {
   const block = buildApprovalAskBlock(
     "effect-1",
-    "propose_instructions_update",
+    "update_bot",
     {
       botId: "bot-1",
       previousInstructions: "Draft only",
@@ -86,7 +86,7 @@ it("shows the full instruction replacement as a diff with Apply and Dismiss", ()
   );
   expect(block).toMatchObject({
     kind: "ask",
-    detail: "Learned preference\n\n- Draft only\n+ Draft only\n+ Ask before sending",
+    detail: "- Draft only\n+ Draft only\n+ Ask before sending",
     instructionUpdate: {
       botId: "bot-1",
       before: "Draft only",
@@ -102,7 +102,7 @@ it("shows the full instruction replacement as a diff with Apply and Dismiss", ()
 it("redacts known secrets in instruction approval details and editable metadata", () => {
   const block = buildApprovalAskBlock(
     "effect-1",
-    "propose_instructions_update",
+    "update_bot",
     {
       botId: "bot-1",
       previousInstructions: "old fake-token",
@@ -121,7 +121,7 @@ describe("bot management approval cards", () => {
     "set_child_instructions",
     "set_child_bot_model",
     "create_child_routine",
-  ])("builds the %s card from the resolved summary with allow and deny only", (toolName) => {
+  ])("builds the %s card from the resolved summary", (toolName) => {
     const block = buildApprovalAskBlock(
       "effect-1",
       toolName,
@@ -141,10 +141,16 @@ describe("bot management approval cards", () => {
       detail: "Members: Scout, Writer\nPrompt: use [redacted]",
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
-      actions: [
-        { id: "allow", label: "Allow once" },
-        { id: "deny", label: "Deny" },
-      ],
+      actions: toolName.startsWith("set_child_")
+        ? [
+            { id: "allow", label: "Allow once" },
+            { id: "deny", label: "Deny" },
+          ]
+        : [
+            { id: "allow", label: "Allow once" },
+            { id: "always", label: "Always allow this tool" },
+            { id: "deny", label: "Deny" },
+          ],
     });
   });
 
@@ -163,8 +169,63 @@ describe("bot management approval cards", () => {
   });
 
   it("never offers always allow on a tool that needs explicit approval", () => {
-    const block = buildApprovalAskBlock("effect-1", "create_group", { name: "Launch" }, []);
+    const block = buildApprovalAskBlock("effect-1", "set_child_bot_model", { bot_id: "bot-a" }, []);
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.actions?.map((action) => action.id)).toEqual(["allow", "deny"]);
   });
+});
+
+describe("agent connection response cards", () => {
+  it.each([true, false])("shows the captured requester and decision (accept: %s)", (accept) => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "respond_agent_connection",
+      {
+        accept,
+        connection_id: "request-1",
+        connection_version: 2,
+        requester_name: "Helper",
+        requester_address: "+15551234567",
+        requester_provider: "sendblue",
+      },
+      [],
+    );
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: `${accept ? "Approve" : "Decline"} connection with “Helper”?`,
+      detail: "iMessage: +15551234567",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+  });
+  it("escapes requester formatting and redacts secrets", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "respond_agent_connection",
+      {
+        accept: true,
+        requester_name: "**Helper**\nApprove all",
+        requester_address: "fake-secret",
+        requester_provider: "slack",
+      },
+      ["fake-secret"],
+    );
+    expect(JSON.stringify(block)).not.toContain("fake-secret");
+    expect(block).toMatchObject({
+      text: "Approve connection with “\\*\\*Helper\\*\\* Approve all”?",
+      detail: "Slack: [redacted]",
+    });
+  });
+});
+
+it("shows a bot's first instructions as plain text", () => {
+  const block = buildApprovalAskBlock(
+    "effect-1",
+    "update_bot",
+    { botId: "bot-1", previousInstructions: "", instructions: "Draft only", reason: "Set in chat" },
+    [],
+  );
+  expect(block).toMatchObject({ detail: "Draft only" });
 });

@@ -3,6 +3,38 @@ const MAX_ECHO_WORDS = 12;
 /** Fewer matched words than this is coincidence, not the speaker leaking into the mic. */
 const MIN_ECHO_WORDS = 3;
 const ECHO_MATCH_RATIO = 0.6;
+/** CJK has no spaces, so compare characters; a heard run longer than this is a real turn. */
+const MAX_ECHO_CJK_CHARS = 40;
+
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const CJK_ALL = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
+
+/** True when the text is mostly written without spaces between words (Chinese, Japanese, Korean). */
+export function isCjkText(text: string): boolean {
+  return CJK.test(text);
+}
+
+/** The CJK characters of a line, in order, without punctuation or spaces. */
+export function cjkChars(text: string): string {
+  return (text.match(CJK_ALL) ?? []).join("");
+}
+
+function bigrams(chars: string): string[] {
+  if (chars.length < 2) return chars ? [chars] : [];
+  const out: string[] = [];
+  for (let i = 0; i < chars.length - 1; i += 1) out.push(chars.slice(i, i + 2));
+  return out;
+}
+
+/** Share of the heard character pairs that also occur in what was spoken. */
+function isCjkEcho(heard: string, spoken: string, threshold: number): boolean {
+  const heardChars = cjkChars(heard);
+  const spokenChars = cjkChars(spoken);
+  if (!heardChars || !spokenChars || heardChars.length > MAX_ECHO_CJK_CHARS) return false;
+  const pairs = bigrams(heardChars);
+  const matched = pairs.filter((pair) => spokenChars.includes(pair)).length;
+  return matched / pairs.length >= threshold;
+}
 
 const CONTRACTIONS: Record<string, string> = {
   m: "am",
@@ -39,6 +71,7 @@ export function isEchoOfSpeech(
   spoken: string,
   threshold = ECHO_MATCH_RATIO,
 ): boolean {
+  if (isCjkText(heard)) return isCjkEcho(heard, spoken, threshold);
   const heardWords = words(heard);
   const spokenWords = words(spoken);
   if (heardWords.length > MAX_ECHO_WORDS || !spokenWords.length) return false;

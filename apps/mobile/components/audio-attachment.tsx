@@ -3,7 +3,7 @@ import type { PressableProps } from "react-native";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
-import { audioArtifactUri, openMobileArtifact } from "../lib/artifact-open";
+import { artifactFileUri, openMobileArtifact } from "../lib/artifact-open";
 import {
   createAttachmentAudioPlayer,
   INITIAL_ATTACHMENT_AUDIO_STATE,
@@ -38,7 +38,7 @@ export function AudioAttachment({
     const requestTarget: MobileArtifactTarget =
       botId !== undefined ? { botId } : { groupId: groupId! };
     const instance = createAttachmentAudioPlayer(
-      () => audioArtifactUri(requestTarget, artifactId, mimeType),
+      () => artifactFileUri(requestTarget, artifactId, mimeType),
       setState,
     );
     player.current = instance;

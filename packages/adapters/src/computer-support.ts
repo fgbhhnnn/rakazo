@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
+import {
+  expandWorkspaceHomePrefix,
+  normalizeWorkspacePath,
+} from "./workspace-path-normalization.js";
+
+export { normalizeWorkspacePath, workspacePath } from "./workspace-path-normalization.js";
 
 export function toComputerRef(computer: {
   homeKey: string;
@@ -62,20 +68,6 @@ export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
-export function normalizeWorkspacePath(value: string): string {
-  const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error("Path escapes the computer workspace");
-  }
-  return segments.join("/");
-}
-
-export function workspacePath(root: string, relative: string): string {
-  const normalized = normalizeWorkspacePath(relative);
-  return normalized ? path.posix.join(root, normalized) : root;
-}
-
 export function teamBotWorkspaceDirectory(botId: string): string {
   return path.posix.join("bots", normalizeWorkspacePath(botId));
 }
@@ -83,8 +75,9 @@ export function teamBotWorkspaceDirectory(botId: string): string {
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
-  requestedPath: string,
+  rawPath: string,
 ): string {
+  const requestedPath = expandHomePrefix(rawPath);
   if (scope !== "team") return requestedPath;
   const explicitRootPath = stripVirtualWorkspaceRoot(requestedPath);
   const normalized = normalizeWorkspacePath(explicitRootPath ?? requestedPath);
@@ -141,7 +134,7 @@ export function displayBotWorkspacePath(
 }
 
 function isBotRelativeRequest(value: string): boolean {
-  if (stripVirtualWorkspaceRoot(value) !== null) return false;
+  if (stripVirtualWorkspaceRoot(expandHomePrefix(value)) !== null) return false;
   return !isTeamRootPath(normalizeWorkspacePath(value));
 }
 
@@ -152,6 +145,11 @@ function isTeamRootPath(value: string): boolean {
     value === "bots" ||
     value.startsWith("bots/")
   );
+}
+
+// A leading ~ or /home/rakazo means the workspace root, the same as a leading /.
+function expandHomePrefix(value: string): string {
+  return expandWorkspaceHomePrefix(value);
 }
 
 function stripVirtualWorkspaceRoot(value: string): string | null {

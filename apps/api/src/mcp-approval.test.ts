@@ -2,6 +2,7 @@ import type * as db from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   dismissMcpServerApprovals,
+  queueMcpConnectedRun,
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
 } from "./mcp-approval.js";
@@ -27,10 +28,16 @@ function jsonContains(value: unknown, needle: unknown): boolean {
   return value === needle;
 }
 
+type MessageQuery = { where?: { blocks?: { array_contains?: unknown } } };
+
 function fixture(blocks: unknown[]) {
   const tx = {
     message: {
-      findMany: vi.fn(async () => [{ id: "card-message", botId: "bot", blocks }]),
+      findMany: vi.fn(
+        async (_query: MessageQuery): Promise<unknown[]> => [
+          { id: "card-message", botId: "bot", blocks },
+        ],
+      ),
       update: vi.fn(),
     },
   };
@@ -161,7 +168,7 @@ describe("resolveMcpApprovalCards", () => {
         effect,
       ),
     ).resolves.toBe("saved");
-    expect(effect).toHaveBeenCalledWith(tx, { assign: true });
+    expect(effect).toHaveBeenCalledWith(tx, { assign: true, resolved: true });
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "card-message" },
       data: { blocks: [{ ...blocks[0], status: "connected" }] },
@@ -178,7 +185,7 @@ describe("resolveMcpApprovalCards", () => {
       { botId: "bot", serverId: "srv-a", status: "connected", threadId: "group-thread" },
       effect,
     );
-    expect(effect).toHaveBeenCalledWith(tx, { assign: false });
+    expect(effect).toHaveBeenCalledWith(tx, { assign: false, resolved: false });
     expect(tx.message.update).not.toHaveBeenCalled();
   });
 
@@ -194,7 +201,7 @@ describe("resolveMcpApprovalCards", () => {
         effect,
       ),
     ).resolves.toBe("saved");
-    expect(effect).toHaveBeenCalledWith(tx, { assign: true });
+    expect(effect).toHaveBeenCalledWith(tx, { assign: true, resolved: true });
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "card-message" },
       data: { blocks: [{ ...blocks[0], status: "connected" }] },
@@ -259,13 +266,11 @@ describe("resolveMcpApprovalCards", () => {
       },
     ];
     const { deps, actor, tx } = fixture(blocks);
-    tx.message.findMany = vi.fn(
-      async (query: { where?: { blocks?: { array_contains?: unknown } } }) => {
-        const needle = query.where?.blocks?.array_contains;
-        if (needle === undefined) return [];
-        return rows.filter((row) => jsonContains(row.blocks, needle));
-      },
-    );
+    tx.message.findMany.mockImplementation(async (query) => {
+      const needle = query.where?.blocks?.array_contains;
+      if (needle === undefined) return [];
+      return rows.filter((row) => jsonContains(row.blocks, needle));
+    });
     await dismissMcpServerApprovals(deps, actor, "srv-a");
     expect(deps.prisma.thread.findMany).not.toHaveBeenCalled();
     expect(tx.message.findMany).toHaveBeenCalledWith({
@@ -297,7 +302,7 @@ describe("resolveMcpApprovalCards", () => {
   it("does not reset another bot's card in a shared group", async () => {
     const blocks = [{ kind: "mcp_approval", name: "A", serverId: "srv-a", status: "connected" }];
     const { deps, actor, tx } = fixture(blocks);
-    tx.message.findMany = vi.fn(async () => [{ id: "card-message", botId: "other-bot", blocks }]);
+    tx.message.findMany.mockResolvedValue([{ id: "card-message", botId: "other-bot", blocks }]);
     await revertConnectedMcpApprovals(deps, actor, {
       botId: "bot",
       serverId: "srv-a",
@@ -309,8 +314,8 @@ describe("resolveMcpApprovalCards", () => {
   it("does not repaint another bot's direct chat when the bot has left", async () => {
     const blocks = [{ kind: "mcp_approval", name: "A", serverId: "srv-a", status: "pending" }];
     const { deps, actor, tx } = fixture(blocks);
-    deps.prisma.thread.findMany = vi.fn(async () => []);
-    deps.prisma.bot.findFirst = vi.fn(async () => null);
+    vi.mocked(deps.prisma.thread.findMany).mockResolvedValue([]);
+    vi.mocked(deps.prisma.bot.findFirst).mockResolvedValue(null);
     await resolveMcpApprovalCards(deps, actor, {
       botId: "bot",
       serverId: "srv-a",
@@ -318,5 +323,67 @@ describe("resolveMcpApprovalCards", () => {
       threadId: "other-thread",
     });
     expect(tx.message.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("queueMcpConnectedRun", () => {
+  const actor = {
+    userId: "user",
+    spaceId: "space",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  };
+  const input = { botId: "bot", serverId: "srv-a", threadId: "thread" };
+
+  function connectedFixture(state: { thread?: boolean; busy?: boolean; archived?: boolean } = {}) {
+    const tx = {
+      bot: { findFirst: vi.fn(async () => (state.archived ? null : { id: "bot" })) },
+      thread: { findFirst: vi.fn(async () => (state.thread === false ? null : { id: "thread" })) },
+      run: {
+        findFirst: vi.fn(async () => (state.busy ? { id: "active" } : null)),
+        create: vi.fn(async () => ({ id: "run" })),
+      },
+      mcpServer: { findFirst: vi.fn(async () => ({ name: "Axiom" })) },
+      task: { create: vi.fn(async () => ({ id: "task" })) },
+    };
+    return tx as typeof tx & Parameters<typeof queueMcpConnectedRun>[0];
+  }
+
+  it("queues a turn for the bot in the card's chat", async () => {
+    const tx = connectedFixture();
+    await expect(queueMcpConnectedRun(tx, actor, input)).resolves.toBe("run");
+    expect(tx.task.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        botId: "bot",
+        threadId: "thread",
+        prompt: expect.stringContaining('"Axiom"'),
+      }),
+    });
+    expect(tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ taskId: "task", trigger: "user", status: "queued" }),
+      select: { id: true },
+    });
+  });
+
+  it("does not queue while the bot is still busy in that chat", async () => {
+    const tx = connectedFixture({ busy: true });
+    await expect(queueMcpConnectedRun(tx, actor, input)).resolves.toBeNull();
+    expect(tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("does not restart an archived bot", async () => {
+    const tx = connectedFixture({ archived: true });
+    await expect(queueMcpConnectedRun(tx, actor, input)).resolves.toBeNull();
+    expect(tx.bot.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "bot", archivedAt: null }),
+      select: { id: true },
+    });
+    expect(tx.task.create).not.toHaveBeenCalled();
+  });
+
+  it("does not queue in a chat the bot is not part of", async () => {
+    const tx = connectedFixture({ thread: false });
+    await expect(queueMcpConnectedRun(tx, actor, input)).resolves.toBeNull();
+    expect(tx.task.create).not.toHaveBeenCalled();
   });
 });

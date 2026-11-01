@@ -12,18 +12,25 @@ test("agent-attached files appear as cards with previews and downloads", async (
   await composer.fill("write notes/result.txt and attach it to the thread");
   await page.keyboard.press("Enter");
 
-  // Scope to ArtifactFileCard text (name + mime); sidebar bot status can also
-  // include the prompt path notes/result.txt once status syncs immediately.
-  const fileCard = page.getByRole("button", { name: /result\.txt text\/plain/ });
+  // Plain text opens the in-app viewer; the card's side button still downloads it.
+  // Exact names keep sidebar status (which can mention notes/result.txt) out of scope.
+  const fileCard = page.getByRole("button", { name: "Preview result.txt" });
   await expect(fileCard).toBeVisible({ timeout: 30_000 });
   await captureScreenshot(page, testInfo, "current-file-card");
 
-  const downloadPromise = page.waitForEvent("download");
   await fileCard.click();
+  const textDialog = page.getByRole("dialog", { name: "result.txt" });
+  await expect(textDialog).toBeVisible();
+  await expect(textDialog.getByRole("button", { name: "Close preview" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(textDialog).toHaveCount(0);
+  await expect(fileCard).toBeFocused();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download result.txt" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("result.txt");
 
-  // Markdown opens a rendered preview and can be downloaded.
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
   await composer.fill(
     "write path notes/preview.md and attach it to the thread says # Project preview",
@@ -33,10 +40,22 @@ test("agent-attached files appear as cards with previews and downloads", async (
   const previewButton = page.getByRole("button", { name: "Preview preview.md" });
   await expect(previewButton).toBeVisible({ timeout: 30_000 });
   await captureScreenshot(page, testInfo, "markdown-file-card");
+  let releasePreview = () => {};
+  const previewReady = new Promise<void>((resolve) => {
+    releasePreview = resolve;
+  });
+  await page.route("**/rpc/artifacts/get", async (route) => {
+    await previewReady;
+    await route.continue();
+  });
   await previewButton.click();
 
   const dialog = page.getByRole("dialog", { name: "preview.md" });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("status", { name: "Loading preview…" })).toBeVisible();
+  await expect(dialog).not.toContainText("Loading preview…");
+  await captureScreenshot(page, testInfo, "markdown-preview-loading-spinner");
+  releasePreview();
   await expect(dialog.getByRole("heading", { name: "Project preview" })).toBeVisible();
   const closeButton = dialog.getByRole("button", { name: "Close preview" });
   const downloadButton = dialog.getByRole("button", { name: "Download preview.md" });
@@ -56,7 +75,6 @@ test("agent-attached files appear as cards with previews and downloads", async (
   await expect(dialog).toHaveCount(0);
   await expect(previewButton).toBeFocused();
 
-  // HTML renders in the sandboxed preview.
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
   await composer.fill(
     "write path notes/page.html and attach it to the thread says <h1>Rendered page</h1><p id=ran></p><script>document.getElementById('ran').textContent = 'script ran'</script>",

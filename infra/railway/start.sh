@@ -7,14 +7,21 @@ if [[ $(id -u) == 0 ]]; then
   exec gosu node "$0"
 fi
 
-export RAILWAY_ENVIRONMENT_ID
-RAILWAY_ENVIRONMENT_ID=$(node infra/railway/sandbox-environment.mjs)
 # Set DATABASE_MIGRATION_URL to the owner and DATABASE_URL to a runtime login to
 # enforce row-level security; with one URL the app runs as the owner and warns.
-pnpm --filter @rakazo/api db:deploy
-unset DATABASE_MIGRATION_URL
+# Migrate, then start over without the owner login: unset alone would leave it in this
+# shell's original environment, which any process running as node can read from /proc.
+if [[ "${1:-}" != serve ]]; then
+  pnpm --filter @rakazo/api db:deploy
+  exec env -u DATABASE_MIGRATION_URL bash "$0" serve
+fi
+
+export RAILWAY_ENVIRONMENT_ID
+RAILWAY_ENVIRONMENT_ID=$(node infra/railway/sandbox-environment.mjs)
 pnpm --filter @rakazo/api exec node dist/cli/bootstrap-owner.js
 unset OWNER_PASSWORD
+# Personal template: registration is operator configuration, never an app-account permission.
+export SIGNUPS_ENABLED=false
 
 # All processes share one volume; a failed process restarts the whole service.
 trap 'kill $(jobs -pr) 2>/dev/null || true; wait || true' EXIT
@@ -37,7 +44,7 @@ pnpm --filter @rakazo/worker start &
   }
   throw new Error("API did not become ready");
 '
-  exec env -u RAILWAY_API_TOKEN -u DATABASE_URL -u ENCRYPTION_KEY -u ENCRYPTION_MASTER_KEYS -u BETTER_AUTH_SECRET \
+  exec env -u RAILWAY_API_TOKEN -u DATABASE_URL -u ENCRYPTION_KEY -u ENCRYPTION_MASTER_KEYS -u OBJECT_STORAGE_SECRET_ACCESS_KEY -u BETTER_AUTH_SECRET \
     pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173
 ) &
 wait -n

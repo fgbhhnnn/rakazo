@@ -13,8 +13,13 @@ import {
   selectContext,
   shortenToolResultText,
 } from "./context-selection.js";
-import { effectiveOutputReserve, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
+import {
+  effectiveOutputReserve,
+  operatorMaxTokens,
+  resolveCompletionMaxTokens,
+} from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
+import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
@@ -38,7 +43,7 @@ const messageHash = (message: Message) =>
   createHash("sha256")
     .update(JSON.stringify(providerContextPrefix("", [], [message])))
     .digest("hex");
-/** A rebuild breaks the cached prefix, so it must drop at least this much stale content (estimated, a byte bound). */
+/** A rebuild breaks the cached prefix, so it must drop at least this much stale content (estimated). */
 const REBUILD_MIN_SAVED_TOKENS = 16_384;
 /** Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. */
 const REBUILD_MAX_STALE_IMAGES = 16;
@@ -161,6 +166,8 @@ export function createRuntimeContextPolicy(
       request.model.maxTokens,
       undefined,
       model.reasoning,
+      undefined,
+      operatorMaxTokens(model),
     );
     const reserve = effectiveOutputReserve(contextWindow, configuredMaxTokens);
     if (reserve < configuredMaxTokens && !warnedOutputClamp) {
@@ -261,7 +268,10 @@ export function createRuntimeContextPolicy(
     // Unknown/disabled caches retain the default; explicit overrides still win.
     const retention = request.model.cacheCapabilities?.retentionMs;
     const strategy =
-      request.contextStrategy ??
+      // A restored turn must fit even when the unbounded diagnostic baseline was selected.
+      (request.turnCheckpoint && request.contextStrategy === "current"
+        ? DEFAULT_CONTEXT_STRATEGY
+        : request.contextStrategy) ??
       (!standaloneHistoryFallback &&
       request.model.cacheCapabilities?.retentionMode !== "none" &&
       typeof retention === "number" &&
@@ -478,13 +488,24 @@ export function createRuntimeContextPolicy(
       recentToolResults.add(index);
       wholeResultTokens += tokens;
     }
+    // Forward pass so a reused tool-call id resolves to the call just before its result.
+    const latestCalls = new Map<string, unknown>();
+    const keptWhole = messages.map((message) => {
+      if (message.role === "assistant")
+        for (const part of message.content)
+          if (part.type === "toolCall") latestCalls.set(part.id, part);
+      if (message.role !== "toolResult") return false;
+      const call = toolCallIdentity(latestCalls.get(message.toolCallId), message.toolName);
+      return isVerbatimMcpResult(call.name, call.arguments, request.verbatimMcpServers);
+    });
     const shortenOlderResults = (keepRecent: boolean) =>
       messages.map((message, index) => {
         if (
           message.role !== "toolResult" ||
           index >= latestToolCall ||
           (keepRecent && recentToolResults.has(index)) ||
-          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName))
+          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName)) ||
+          keptWhole[index]
         )
           return message;
         const source = text(message);
@@ -521,6 +542,7 @@ export function createRuntimeContextPolicy(
       budget,
       strategy,
       protectedIndexes,
+      verbatimMcpServers: request.verbatimMcpServers,
       cacheWarmth: predictedCache,
       recentExchanges:
         retainShortHistory || standaloneHistoryFallback ? messages.length : 8 + laterUserMessages,

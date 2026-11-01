@@ -103,13 +103,13 @@ export async function startOnboarding(
   const { thread } = await requireBotThread(deps, actor, botId);
   const existing = await deps.prisma.message.count({ where: { threadId: thread.id } });
   if (existing > 0) return;
-  // Fresh chats start empty (same as web). The focus card is posted later via
-  // promptFocus so non-first bots can wait ~10s for free typing, or skip if the
-  // user already engaged.
+  // The focus card is posted later via promptFocus so non-first bots can wait ~10s for
+  // free typing, or skip if the user already engaged.
 }
 
-function messageHasChoice(blocks: MessageBlock[]): boolean {
-  return blocks.some((block) => block.kind === "choice");
+/** A focus card, or a question the bot asked itself; either way the thread already asks. */
+function messageHasChoiceOrAsk(blocks: MessageBlock[]): boolean {
+  return blocks.some((block) => block.kind === "choice" || block.kind === "ask");
 }
 
 function messageHasPendingChoice(blocks: MessageBlock[]): boolean {
@@ -133,7 +133,6 @@ export async function promptFocus(
   // Check + insert + event in one transaction so concurrent promptFocus calls
   // cannot duplicate cards, and a concurrent user send cannot publish first.
   const committed = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    // Serialize concurrent promptFocus callers on this thread before the gate check.
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     const recent = await tx.message.findMany({
       where: { threadId: thread.id },
@@ -141,7 +140,18 @@ export async function promptFocus(
       orderBy: { createdAt: "asc" },
     });
     if (recent.some((message) => message.role === "user")) return null;
-    if (recent.some((message) => messageHasChoice(message.blocks as MessageBlock[]))) return null;
+    if (recent.some((message) => messageHasChoiceOrAsk(message.blocks as MessageBlock[])))
+      return null;
+    // A bot whose creation intro is running asks what it is for itself (see enqueueBotIntroRun).
+    const intro = await tx.run.findFirst({
+      where: {
+        threadId: thread.id,
+        trigger: "created",
+        status: { notIn: ["failed", "cancelled"] },
+      },
+      select: { id: true },
+    });
+    if (intro) return null;
     const message = await createThreadMessageInTransaction(tx, {
       threadId: target.threadId,
       role: "bot",

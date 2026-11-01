@@ -1,18 +1,19 @@
-import { WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { Domain } from "chat-adapter-lark";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import { Domain } from "./lark/thread-id.js";
+import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
   enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
-  type MessagingEnvironmentValues,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   parseSendblueStatuses,
   parseWhatsAppStatuses,
+  photonProjectsFromEnv,
   splitOutboundBody,
   telegramBotsFromEnv,
 } from "./messaging-platforms.js";
@@ -34,6 +35,8 @@ const fullEnv: MessagingEnvironmentValues = {
   larkAppId: "cli-fake",
   larkAppSecret: "lark-secret",
   larkVerificationToken: "lark-verify",
+  photonProjectId: "photon-project",
+  photonProjectSecret: "photon-secret",
 };
 
 function providers(env: MessagingEnvironmentValues): string[] {
@@ -43,7 +46,22 @@ function providers(env: MessagingEnvironmentValues): string[] {
 describe("messagingPlatformsFromEnv", () => {
   it("mounts nothing without credentials and everything with full credentials", () => {
     expect(providers({})).toEqual([]);
-    expect(providers(fullEnv)).toEqual(["sendblue", "slack", "whatsapp", "telegram", "lark"]);
+    expect(providers(fullEnv)).toEqual([
+      "sendblue",
+      "slack",
+      "whatsapp",
+      "telegram",
+      "lark",
+      "photon",
+    ]);
+  });
+
+  it("publishes the iMessage line so people know where to send a link code", () => {
+    const addresses = Object.fromEntries(
+      messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform.address]),
+    );
+    expect(addresses.sendblue).toBe("+15550009999");
+    expect(addresses.slack).toBeUndefined();
   });
 
   it("requires all four sendblue values", () => {
@@ -187,6 +205,107 @@ describe("messagingPlatformsFromEnv", () => {
     },
   );
 
+  it("mounts each named Photon project as its own photon-<name> provider", () => {
+    const platforms = messagingPlatformsFromEnv(
+      {
+        photonProjectId: "photon-project",
+        photonProjectSecret: "photon-secret",
+        photonProjects: [
+          { name: "pm", projectId: "photon-pm", projectSecret: "pm-secret" },
+          {
+            name: "am",
+            projectId: "photon-am",
+            projectSecret: "am-secret",
+            webhookSecret: "am-hook",
+          },
+        ],
+      },
+      { pollInboundMessages: true },
+    );
+    expect(platforms.map((platform) => [platform.provider, platform.adapterName])).toEqual([
+      ["photon", "imessage"],
+      ["photon-pm", "imessage"],
+      ["photon-am", "imessage"],
+    ]);
+    const config = (index: number) =>
+      (platforms[index]!.adapter as unknown as { config: Record<string, unknown> }).config;
+    expect(config(1)).toMatchObject({ projectId: "photon-pm", pollInboundMessages: true });
+    expect(config(2)).toMatchObject({ projectId: "photon-am", webhookSecret: "am-hook" });
+  });
+
+  it("reads named Photon projects from PHOTON_PROJECT_ID_<NAME> pairs", () => {
+    expect(
+      photonProjectsFromEnv({
+        PHOTON_PROJECT_ID: "default",
+        PHOTON_PROJECT_SECRET: "default-secret",
+        PHOTON_PROJECT_ID_PM: " photon-pm ",
+        PHOTON_PROJECT_SECRET_PM: " pm-secret ",
+        PHOTON_PROJECT_ID_AM: "photon-am",
+        PHOTON_PROJECT_SECRET_AM: "am-secret",
+        PHOTON_WEBHOOK_SECRET_AM: " am-hook ",
+        PHOTON_PROJECT_ID_NOSECRET: "photon-nosecret",
+        PHOTON_PROJECT_ID_BAD_NAME: "photon-bad",
+        PHOTON_PROJECT_SECRET_BAD_NAME: "bad-secret",
+      }),
+    ).toEqual([
+      { name: "am", projectId: "photon-am", projectSecret: "am-secret", webhookSecret: "am-hook" },
+      { name: "pm", projectId: "photon-pm", projectSecret: "pm-secret", webhookSecret: undefined },
+    ]);
+  });
+
+  it("skips a named Photon project that reuses another provider's project", () => {
+    const warn = vi.spyOn(getLogger(), "warn");
+    try {
+      expect(
+        providers(
+          messagingEnvFromProcess({
+            PHOTON_PROJECT_ID: "photon-shared",
+            PHOTON_PROJECT_SECRET: "default-secret",
+            PHOTON_PROJECT_ID_COPY: " photon-shared ",
+            PHOTON_PROJECT_SECRET_COPY: "copy-secret",
+            PHOTON_PROJECT_ID_PM: "photon-pm",
+            PHOTON_PROJECT_SECRET_PM: "pm-secret",
+          }),
+        ),
+      ).toEqual(["photon", "photon-pm"]);
+      expect(warn).toHaveBeenCalledWith(
+        "skipping Photon project that reuses another provider's project",
+        { provider: "photon-copy" },
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("photon-shared");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("requires both Photon credentials and maps PHOTON_* process env", () => {
+    expect(providers({ ...fullEnv, photonProjectSecret: undefined })).not.toContain("photon");
+    expect(providers({ ...fullEnv, photonProjectId: undefined })).not.toContain("photon");
+    expect(
+      messagingEnvFromProcess({
+        PHOTON_PROJECT_ID: " photon-project ",
+        PHOTON_PROJECT_SECRET: " photon-secret ",
+        PHOTON_WEBHOOK_SECRET: " ",
+      }),
+    ).toMatchObject({
+      photonProjectId: "photon-project",
+      photonProjectSecret: "photon-secret",
+      photonWebhookSecret: undefined,
+    });
+  });
+
+  it("streams Photon inbound only in the process that owns the inbound sink", () => {
+    const photon = (pollInboundMessages?: boolean) =>
+      (
+        messagingPlatformsFromEnv(
+          { photonProjectId: "photon-project", photonProjectSecret: "photon-secret" },
+          pollInboundMessages === undefined ? {} : { pollInboundMessages },
+        )[0]!.adapter as unknown as { config: { pollInboundMessages: boolean } }
+      ).config.pollInboundMessages;
+    expect(photon()).toBe(false);
+    expect(photon(true)).toBe(true);
+  });
+
   it("forces Lark into webhook inbound so worker initialize cannot open a long connection", () => {
     const lark = messagingPlatformsFromEnv({
       larkAppId: "cli-fake",
@@ -195,10 +314,9 @@ describe("messagingPlatformsFromEnv", () => {
     })[0]!;
     const incoming = lark.adapter as unknown as {
       incomingConfig: { events: string; callbacks: string };
-      shouldStartWsClient: () => boolean;
     };
     expect(incoming.incomingConfig).toEqual({ events: "webhook", callbacks: "webhook" });
-    expect(incoming.shouldStartWsClient()).toBe(false);
+    expect("shouldStartWsClient" in incoming).toBe(false);
   });
 
   it("maps LARK_* process env and accepts the international domain switch", () => {
@@ -265,6 +383,7 @@ describe("messagingPlatformsFromEnv", () => {
       files: true,
     });
     expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
   });
 });
 
@@ -383,10 +502,47 @@ describe("parseWhatsAppStatuses", () => {
 });
 
 describe("splitOutboundBody", () => {
-  it("splits only WhatsApp bodies over its per-message limit", () => {
+  it.each(["telegram", "telegram-work"])(
+    "splits %s replies on paragraph boundaries",
+    (provider) => {
+      const paragraph = "a".repeat(3000);
+      expect(splitOutboundBody(provider, `${paragraph}\n\n${paragraph}`)).toEqual([
+        paragraph,
+        paragraph,
+      ]);
+      expect(splitOutboundBody(provider, "short")).toEqual(["short"]);
+      expect(splitOutboundBody(provider, "a".repeat(4096))).toEqual(["a".repeat(4096)]);
+    },
+  );
+
+  it.each([
+    "a".repeat(4097),
+    `${"a".repeat(4095)}😀${"b".repeat(4096)}`,
+    "😀".repeat(4097),
+    "!".repeat(4096),
+  ])("preserves the full text without breaking UTF-16 pairs", (body) => {
+    const parts = splitOutboundBody("telegram", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it.each([
+    ["a run of emoji one unit off the boundary", `a${"😀".repeat(6000)}`],
+    ["an emoji across the first cut", `${"a".repeat(4095)}😀${"b".repeat(4096)}`],
+  ])("keeps emoji whole in WhatsApp parts: %s", (_name, body) => {
+    const parts = splitOutboundBody("whatsapp", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
     expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
+    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
+    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
     expect(splitOutboundBody("sendblue", long)).toEqual([long]);
   });
 });

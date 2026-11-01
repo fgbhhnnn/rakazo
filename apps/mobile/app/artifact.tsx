@@ -1,5 +1,5 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
-import type { ArtifactVersion } from "@rakazo/contracts";
+import type { ArtifactVersion, ArtifactWithContent } from "@rakazo/contracts";
 import { isAttachmentImageMimeType } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -15,12 +15,12 @@ import {
   Text,
   View,
 } from "react-native";
+import { FileViewerBody, hasMobileFileViewer } from "../components/file-viewer";
 import { NativeSymbol } from "../components/native-symbol";
 import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { mobileTokens } from "../lib/appearance";
 import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifact-open";
-import type { MobileArtifactWithContent } from "../lib/artifacts";
 import {
   artifactThreadTarget,
   getArtifactById,
@@ -32,23 +32,27 @@ import { t, useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 type PreviewContent =
   | { kind: "html"; html: string }
   | { kind: "markdown"; text: string }
   | { kind: "image"; uri: string }
+  | { kind: "file"; uri: string; name: string; mimeType: string }
   | { kind: "unsupported" };
 
 type ContentState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; artifact: MobileArtifactWithContent; file: File; preview: PreviewContent };
+  | { status: "ready"; artifact: ArtifactWithContent; file: File; preview: PreviewContent };
 
-async function computePreview(mimeType: string, file: File): Promise<PreviewContent> {
+async function computePreview(mimeType: string, file: File, name: string): Promise<PreviewContent> {
   if (mimeType === "text/html") return { kind: "html", html: await file.text() };
   if (mimeType === "text/markdown") return { kind: "markdown", text: await file.text() };
   if (isAttachmentImageMimeType(mimeType)) return { kind: "image", uri: file.uri };
+  if (hasMobileFileViewer({ name, mimeType }))
+    return { kind: "file", uri: file.uri, name, mimeType };
   return { kind: "unsupported" };
 }
 
@@ -90,7 +94,7 @@ export default function ArtifactDetailScreen() {
     void getArtifactById(selectedVersionId)
       .then(async (artifact) => {
         const file = writeArtifactCacheFile(artifact.id, artifact.mimeType, artifact.contentBase64);
-        const preview = await computePreview(artifact.mimeType, file);
+        const preview = await computePreview(artifact.mimeType, file, artifact.name);
         if (cancelled) return;
         setContent({ status: "ready", artifact, file, preview });
       })
@@ -159,7 +163,7 @@ export default function ArtifactDetailScreen() {
       more: t("More"),
       colorScheme,
       actions: versions.map((version) => ({
-        text: `v${version.version} · ${formatActivityRelativeTime(version.createdAt)}`,
+        text: `v${version.version} (${formatActivityRelativeTime(version.createdAt)})`,
         onPress: () => setSelectedVersionId(version.id),
       })),
     });
@@ -176,7 +180,7 @@ export default function ArtifactDetailScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: content.status === "ready" ? content.artifact.name : t("Loading…"),
+      title: content.status === "ready" ? content.artifact.name : "",
       headerRight: () =>
         content.status === "ready" ? (
           <View style={styles.headerActions}>
@@ -234,7 +238,7 @@ export default function ArtifactDetailScreen() {
       <View style={styles.pillRow}>
         <Pressable accessibilityRole="button" onPress={pickVersion} style={styles.pill}>
           <Text style={styles.pillText}>
-            {`v${content.artifact.version} · ${formatActivityRelativeTime(content.artifact.createdAt)}`}
+            {`v${content.artifact.version} (${formatActivityRelativeTime(content.artifact.createdAt)})`}
           </Text>
           <NativeSymbol
             ios="chevron.down"
@@ -282,6 +286,7 @@ function ArtifactPreview({
   imageLabel: string;
   onOpenImage: (() => void) | null;
 }) {
+  const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const tokens = mobileTokens();
   const colorScheme = useResolvedAppearance();
@@ -295,6 +300,7 @@ function ArtifactPreview({
   if (preview.kind === "markdown") {
     return (
       <ScrollView
+        style={sideInsets}
         contentContainerStyle={styles.markdownScroll}
         contentInsetAdjustmentBehavior="automatic"
       >
@@ -316,6 +322,13 @@ function ArtifactPreview({
       >
         <Image source={{ uri: preview.uri }} style={styles.image} resizeMode="contain" />
       </Pressable>
+    );
+  }
+  if (preview.kind === "file") {
+    return (
+      <View style={styles.previewCard}>
+        <FileViewerBody uri={preview.uri} name={preview.name} mimeType={preview.mimeType} />
+      </View>
     );
   }
   return (

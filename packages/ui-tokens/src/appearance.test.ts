@@ -14,6 +14,11 @@ import {
   resolveAppearancePreference,
   tokensForAppearance,
   UI_APPEARANCE_STORAGE_KEY,
+  webDarkOverrides,
+  webDarkTokens,
+  webLightOverrides,
+  webLightTokens,
+  webTokensForAppearance,
 } from "./index.js";
 
 describe("appearance preference", () => {
@@ -52,14 +57,17 @@ describe("appearance preference", () => {
         key === "destructiveForeground" ||
         key === "destructiveFill" ||
         key === "faviconPlate" ||
-        key === "unread"
+        key === "unread" ||
+        key === "workingDot"
       )
         continue;
       expect(darkTokens[key], key).not.toBe(lightTokens[key]);
     }
-    // Link icons keep a white plate in both themes; the light user bubble is near-black.
-    expect(lightTokens.faviconPlate).toBe("#FFFFFF");
-    expect(darkTokens.faviconPlate).toBe("#FFFFFF");
+    expect(darkTokens.faviconPlate).toBe(lightTokens.faviconPlate);
+  });
+
+  it("keeps the working dot the same green in both themes", () => {
+    expect(darkTokens.workingDot).toBe(lightTokens.workingDot);
   });
 
   it("keeps working-state blue in its own semantic token across themes", () => {
@@ -182,6 +190,7 @@ describe.each([
     ["popoverForeground", "popover"],
     ["foreground", "muted"],
     ["chatUserForeground", "chatUser"],
+    ["chatUserForeground", "unread"],
     ["primaryForeground", "primary"],
     ["sidebarForeground", "sidebar"],
     ["sidebarAccentForeground", "sidebarAccent"],
@@ -214,7 +223,79 @@ describe("tokens.css", () => {
     const css = renderTokensCss();
     expect(css).toContain('[data-theme="dark"] {\n  color-scheme: dark;');
     expect(css).toContain('[data-theme="light"] {\n  color-scheme: light;');
-    expect(css).toContain(`--background: ${lightTokens.background.toLowerCase()};`);
-    expect(css).toContain(`--background: ${darkTokens.background.toLowerCase()};`);
+    expect(css).toContain(`--background: ${webLightTokens.background.toLowerCase()};`);
+    expect(css).toContain(`--background: ${webDarkTokens.background.toLowerCase()};`);
+  });
+});
+
+describe("web palette", () => {
+  it.each([
+    ["dark", darkTokens, webDarkOverrides, webDarkTokens],
+    ["light", lightTokens, webLightOverrides, webLightTokens],
+  ] as const)(
+    "differs from the %s mobile palette only in its overrides",
+    (theme, mobile, overrides, web) => {
+      expect(webTokensForAppearance(theme)).toBe(web);
+      for (const key of Object.keys(mobile) as (keyof ColorTokens)[]) {
+        expect(web[key], key).toBe(
+          key in overrides ? overrides[key as keyof typeof overrides] : mobile[key],
+        );
+      }
+    },
+  );
+
+  it("renders tokens.css from the web palettes", () => {
+    const css = renderTokensCss();
+    expect(css).toContain(`--muted-foreground: ${webDarkTokens.mutedForeground.toLowerCase()};`);
+    expect(css).toContain(`--muted-foreground: ${webLightTokens.mutedForeground.toLowerCase()};`);
+    expect(css).not.toContain(`--muted-foreground: ${darkTokens.mutedForeground.toLowerCase()};`);
+  });
+
+  it.each([webDarkTokens, webLightTokens])(
+    "gives the web primary fill hover and disabled states",
+    (web) => {
+      const css = renderTokensCss();
+      expect(css).toContain(`--primary-hover: ${web.primaryHover.toLowerCase()};`);
+      expect(css).toContain(`--primary-disabled: ${web.primaryDisabled.toLowerCase()};`);
+      expect("primaryHover" in darkTokens || "primaryHover" in lightTokens).toBe(false);
+    },
+  );
+});
+
+describe.each([
+  ["dark", webDarkTokens],
+  ["light", webLightTokens],
+] as const)("web %s palette contrast", (theme, palette: ColorTokens) => {
+  // Opaque text on the surfaces it is drawn on. The web palette copies the target design
+  // exactly, so in light mode success and warning text on cards and white on the red fill
+  // sit below 4.5:1 and are not listed.
+  const pairs: [keyof ColorTokens, keyof ColorTokens][] = [
+    ["foreground", "background"],
+    ["foreground", "dialog"],
+    ["cardForeground", "card"],
+    ["popoverForeground", "popover"],
+    ["foreground", "muted"],
+    ["mutedForeground", "background"],
+    ["mutedForeground", "card"],
+    ["chatUserForeground", "chatUser"],
+    ["primaryForeground", "primary"],
+    ["sidebarForeground", "sidebar"],
+    ["link", "background"],
+    ["link", "card"],
+    ["destructive", "background"],
+    ["destructive", "card"],
+    ["success", "background"],
+    ["warning", "background"],
+    ...(theme === "dark"
+      ? ([
+          ["success", "card"],
+          ["warning", "card"],
+          ["destructiveForeground", "destructiveFill"],
+        ] as [keyof ColorTokens, keyof ColorTokens][])
+      : []),
+  ];
+
+  it.each(pairs)("%s on %s meets WCAG AA (4.5:1)", (text, surface) => {
+    expect(contrastRatio(palette[text], palette[surface])).toBeGreaterThanOrEqual(4.5);
   });
 });
