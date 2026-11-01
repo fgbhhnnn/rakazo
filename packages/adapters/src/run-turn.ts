@@ -37,13 +37,8 @@ import { relayWorkerReportAttachments } from "./dispatcher-relay.js";
 import { guardDispatcherReply, queueClaimRecheck } from "./dispatcher-reply-guard.js";
 import { dispatcherTimeoutNotice, dispatcherWatchdogTimeout } from "./dispatcher-timeout-label.js";
 import { planGroupReply, routeGroupReply } from "./group-reply-routing.js";
-import { settleHandoffNarration } from "./group-stale-narration.js";
 import { afterGroupTurn } from "./group-turn-end.js";
-import {
-  groupTurnReplyBlocks,
-  groupTurnReplyText,
-  holdsGroupTurnReply,
-} from "./group-turn-reply.js";
+import { isDuplicateGroupProgress, prepareGroupTurnReply } from "./group-turn-reply.js";
 import {
   COMPACTION_BATCH_SIZE,
   HISTORY_WINDOW_SIZE,
@@ -381,7 +376,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   const text = redactSecrets(before.text, ctx.secrets).trim();
-  if (text && runPromotesMidTurnNarration(run.trigger) && !holdsGroupTurnReply(ctx)) {
+  if (text && runPromotesMidTurnNarration(run.trigger)) {
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
     reply.workingNotes.length = 0;
@@ -389,16 +384,18 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
     reply.hasStreamedText = false;
     reply.pendingProgress = "";
     reply.redactor.skip();
-    await publishMessage(
-      deps,
-      run,
-      "bot",
-      [{ kind: "text", text }],
-      undefined,
-      nextProgressNonce(ctx),
-    );
-    reply.midTurnUserTexts.push(text);
-    reply.publishedMidTurnUserMessage = true;
+    if (!(await isDuplicateGroupProgress(ctx, text))) {
+      await publishMessage(
+        deps,
+        run,
+        "bot",
+        [{ kind: "text", text }],
+        undefined,
+        nextProgressNonce(ctx),
+      );
+      reply.midTurnUserTexts.push(text);
+      reply.publishedMidTurnUserMessage = true;
+    }
   }
   reply.progressBudgetStart = reply.midTurnProgressCount;
   reply.turnStartedAtMs = now;
@@ -772,7 +769,6 @@ export async function completeRun(ctx: RunContext) {
   if (
     !isBackgroundRunTrigger(run.trigger) &&
     !ctx.state.handedOff &&
-    !holdsGroupTurnReply(ctx) &&
     !reply.explicitNoResponse &&
     reply.workingNotes.length > 0 &&
     !reply.textSinceLastStep.trim()
@@ -819,25 +815,20 @@ export async function completeRun(ctx: RunContext) {
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
     });
   }
-  // The handoff brief already says what happened; a final variant would repeat it.
+  // Drop only prose this bot already delivered in this turn.
   const draftBlocks = withoutRestatedLeadSentences(
     finalBlocksAfterMidTurnProgress(
       redactBlocks(completionBlocks, ctx.secrets),
       reply.publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
     ),
   );
+  const turnReply = await prepareGroupTurnReply(ctx, draftBlocks, silentReply.assembled);
   const groupReply = await planGroupReply(deps, {
     groupId: thread.groupId,
     bot,
     handedOff: ctx.state.handedOff,
     handoffTargets: ctx.state.handoffTargets,
-    blocks: thread.groupId
-      ? await settleHandoffNarration(
-          deps.prisma,
-          { id: runId, threadId: thread.id },
-          { handedOff: ctx.state.handedOff, blocks: groupTurnReplyBlocks(ctx, draftBlocks) },
-        )
-      : draftBlocks,
+    blocks: turnReply.blocks,
     humanTurn: { threadId: thread.id, before: run.createdAt },
   });
   const replyGuard = guardDispatcherReply(
@@ -853,12 +844,7 @@ export async function completeRun(ctx: RunContext) {
   );
   const blocks = visibleBotBlocks(replyGuard.blocks);
   const text = redactSecrets(
-    visibleBotText(
-      completionNotificationBody(
-        replyGuard.changed ? "" : groupTurnReplyText(ctx, silentReply.assembled),
-        blocks,
-      ),
-    ),
+    visibleBotText(completionNotificationBody(replyGuard.changed ? "" : turnReply.text, blocks)),
     ctx.secrets,
   );
   if (containsSecret(text, ctx.secrets)) {

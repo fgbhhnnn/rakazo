@@ -208,4 +208,136 @@ postgres("group handoff delivery deduplication (PostgreSQL)", () => {
       );
       expect(task.prompt).toBe(brief);
     }));
+  it("preserves a completed stage's hand-back notice after its result was posted", async () =>
+    fixture(async (fx) => {
+      const result = "初稿完成";
+      const brief = `Drafter 已完成，交回 Planner。\n\nDrafter 的结果：\n${result}`;
+      await sys(async () => {
+        await prisma.$transaction((tx) =>
+          createThreadMessageInTransaction(tx, {
+            threadId: fx.thread.id,
+            role: "bot",
+            botId: fx.researchRun.botId,
+            runId: fx.researchRun.id,
+            blocks: [{ kind: "text", text: result }],
+          }),
+        );
+        await prisma.run.update({
+          where: { id: fx.researchRun.id },
+          data: { status: "completed" },
+        });
+      });
+      await expect(
+        sys(() =>
+          handoffToGroupBot(
+            deps as never,
+            fx.researchRun,
+            fx.group.id,
+            { bot_id: fx.ops.id, message: brief },
+            { allowFinishedSource: true },
+          ),
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      const messages = await sys(() =>
+        prisma.message.findMany({
+          where: { threadId: fx.thread.id, role: "bot" },
+          orderBy: { seq: "asc" },
+        }),
+      );
+      expect(messages.map((message) => message.blocks)).toEqual([
+        [{ kind: "text", text: result }],
+        [expect.objectContaining({ kind: "handoff", text: brief })],
+      ]);
+      expect(
+        await sys(() =>
+          prisma.task.findFirstOrThrow({
+            where: { threadId: fx.thread.id, botId: fx.ops.id },
+          }),
+        ),
+      ).toMatchObject({ prompt: brief });
+    }));
+
+  it("hides only an identical progress beat when handing off an active turn", async () =>
+    fixture(async (fx) => {
+      const brief = "Sources checked. Please review.";
+      await sys(() =>
+        prisma.$transaction((tx) =>
+          createThreadMessageInTransaction(tx, {
+            threadId: fx.thread.id,
+            role: "bot",
+            botId: fx.researchRun.botId,
+            runId: fx.researchRun.id,
+            blocks: [{ kind: "text", text: brief }],
+          }),
+        ),
+      );
+      await expect(
+        sys(() =>
+          handoffToGroupBot(deps as never, fx.researchRun, fx.group.id, {
+            bot_id: fx.ops.id,
+            message: brief,
+          }),
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      const card = await sys(() =>
+        prisma.message.findUniqueOrThrow({
+          where: {
+            threadId_clientNonce: {
+              threadId: fx.thread.id,
+              clientNonce: `group-handoff:${fx.researchRun.id}`,
+            },
+          },
+        }),
+      );
+      expect(card.blocks).toEqual([expect.objectContaining({ kind: "handoff", text: "" })]);
+      expect(
+        await sys(() =>
+          prisma.task.findFirstOrThrow({
+            where: { threadId: fx.thread.id, botId: fx.ops.id },
+          }),
+        ),
+      ).toMatchObject({ prompt: brief });
+    }));
+
+  it.each(["another bot", "another turn"])("does not hide a brief seen in %s", async (scope) =>
+    fixture(async (fx) => {
+      const brief = "Review the sources.";
+      const earlier = await sys(() =>
+        fx.start(scope === "another bot" ? fx.ops.id : fx.researchRun.botId, "running"),
+      );
+      await sys(() =>
+        prisma.$transaction((tx) =>
+          createThreadMessageInTransaction(tx, {
+            threadId: fx.thread.id,
+            role: "bot",
+            botId: earlier.botId,
+            runId: earlier.id,
+            blocks: [{ kind: "text", text: brief }],
+          }),
+        ),
+      );
+      await expect(
+        sys(() =>
+          handoffToGroupBot(
+            deps as never,
+            fx.researchRun,
+            fx.group.id,
+            { bot_id: fx.ops.id, message: brief },
+            { allowFinishedSource: true },
+          ),
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      const card = await sys(() =>
+        prisma.message.findUniqueOrThrow({
+          where: {
+            threadId_clientNonce: {
+              threadId: fx.thread.id,
+              clientNonce: `group-handoff:${fx.researchRun.id}`,
+            },
+          },
+        }),
+      );
+      expect(card.blocks).toEqual([expect.objectContaining({ kind: "handoff", text: brief })]);
+    }),
+  );
 });

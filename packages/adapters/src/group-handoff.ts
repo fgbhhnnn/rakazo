@@ -259,9 +259,7 @@ export async function handoffToGroupBot(
     // A finished run can no longer write history; its reply's "@Name" handoff is recorded
     // without a run link (the handoff block names the sender bot).
     const historyRunId = inGroup && !options.allowFinishedSource ? run.id : undefined;
-    const visibleText = inGroup
-      ? await groupHandoffVisibleText(tx, run, text, Boolean(options.allowFinishedSource))
-      : text;
+    const visibleText = inGroup ? await groupHandoffVisibleText(tx, run, text) : text;
     const handoffBlock: MessageBlock = {
       kind: "handoff",
       fromBotId: run.botId,

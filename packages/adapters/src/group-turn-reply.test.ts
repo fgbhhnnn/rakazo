@@ -3,11 +3,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { FinalizeRunInput } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { createDispatcherTurnLedger } from "./dispatcher-reply-guard.js";
-import {
-  groupTurnReplyBlocks,
-  groupTurnReplyText,
-  holdsGroupTurnReply,
-} from "./group-turn-reply.js";
+import { isVisibleGroupTurn, prepareGroupTurnReply } from "./group-turn-reply.js";
 import type { RunContext } from "./run-context.js";
 import { createReplyState, publishMidTurnNarration } from "./run-progress.js";
 import { messagingTools } from "./run-tools-messaging.js";
@@ -16,9 +12,11 @@ import { completeRun, consumeRunEvents } from "./run-turn.js";
 async function harness(name = "团队-调研经理", dispatcherTurn = true) {
   const finalizeRun = vi.fn(async (_input: FinalizeRunInput) => false as const);
   const append = vi.fn(async () => ({ seq: 1 }));
-  const messageCreate = vi.fn(async (_input: { data: { blocks: MessageBlock[] } }) => ({
-    id: "handoff-message",
-  }));
+  const posted: { blocks: MessageBlock[] }[] = [];
+  const messageCreate = vi.fn(async (_input: { data: { blocks: MessageBlock[] } }) => {
+    posted.push({ blocks: _input.data.blocks });
+    return { id: "handoff-message" };
+  });
   const run = {
     id: "run",
     spaceId: "space",
@@ -33,7 +31,7 @@ async function harness(name = "团队-调研经理", dispatcherTurn = true) {
   const deps = {
     prisma: {
       message: {
-        findMany: vi.fn(async () => []),
+        findMany: vi.fn(async () => posted),
         create: messageCreate,
         findFirst: vi.fn(async () => null),
         findUnique: vi.fn(async () => null),
@@ -127,9 +125,13 @@ async function harness(name = "团队-调研经理", dispatcherTurn = true) {
     expect(finish).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
   }
   function writtenTexts() {
-    return messageCreate.mock.calls.flatMap(([input]) =>
-      input.data.blocks.flatMap((b) => (b.kind === "text" || b.kind === "handoff" ? [b.text] : [])),
-    );
+    return messageCreate.mock.calls
+      .flatMap(([input]) =>
+        input.data.blocks.flatMap((b) =>
+          b.kind === "text" || b.kind === "handoff" ? [b.text] : [],
+        ),
+      )
+      .filter(Boolean);
   }
   return { ctx, events, handoff, writtenTexts, finalizeRun, finalText, append, messageCreate };
 }
@@ -142,9 +144,9 @@ const tool = (name: string): AgentRuntimeEvent => ({
   executionId: name,
 });
 
-describe("one written group reply per bot turn", () => {
+describe("only duplicate group replies are suppressed", () => {
   it.each([true, false])(
-    "seq35/36/38: holds repeated lead-ins and suppresses the post-handoff variant (dispatcher=%s)",
+    "seq35/36/38: dedupes repeated lead-ins and preserves distinct post-handoff text (dispatcher=%s)",
     async (dispatcher) => {
       const h = await harness("团队-调研经理", dispatcher);
       const lead = "图片还未完成，交给运营补齐。";
@@ -154,16 +156,27 @@ describe("one written group reply per bot turn", () => {
       await h.events(text(final), { type: "done" });
       await completeRun(h.ctx);
       expect(h.writtenTexts()).toEqual([lead]);
-      expect(h.ctx.state.reply.midTurnUserTexts).toEqual([]);
-      expect(h.finalText()).toBe("");
-      expect(h.finalizeRun.mock.calls[0]?.[0]).toMatchObject({ blocks: [] });
+      expect(h.ctx.state.reply.midTurnUserTexts).toEqual([lead]);
+      expect(h.finalText()).toBe(final);
+      expect(h.finalizeRun.mock.calls[0]?.[0]).toMatchObject({
+        blocks: [
+          {
+            kind: "steps",
+            steps: [
+              { label: "Read file", count: 1 },
+              { label: "Handoff to bot", count: 1 },
+            ],
+          },
+          { kind: "text", text: final },
+        ],
+      });
       expect(h.finalizeRun).toHaveBeenCalledOnce();
       expect(h.append).toHaveBeenCalledWith(expect.objectContaining({ type: "thread.progress" }));
     },
   );
 
   it.each(["团队-调研经理", "团队-SEO", "团队-GEO", "团队-运营", "团队-投流"])(
-    "seq54/56: %s leaves the handoff brief as its only reply even when the target replied",
+    "seq54/56: %s preserves a distinct final reply even when the target replied",
     async (name) => {
       const h = await harness(name);
       await h.events(text("当前阶段已完成，下一阶段由运营接手。"), tool("handoff_to_bot"));
@@ -186,23 +199,68 @@ describe("one written group reply per bot turn", () => {
       ) as never;
       await completeRun(h.ctx);
       expect(h.writtenTexts()).toEqual([brief]);
-      expect(h.finalText()).toBe("");
+      expect(h.finalText()).toBe(final);
     },
   );
 
-  it("holds explicit message_user progress and retains it if no final follows", async () => {
+  it("posts explicit message_user progress once if no final follows", async () => {
     const h = await harness();
     const message = "素材清单已准备好。";
     const finish = vi.fn((result: unknown) => result);
     await messagingTools.message_user!(h.ctx, { args: { message }, finish } as never);
     await h.events({ type: "done" });
     await completeRun(h.ctx);
-    expect(h.messageCreate).not.toHaveBeenCalled();
-    expect(h.finalText()).toBe(message);
+    expect(h.writtenTexts()).toEqual([message]);
+    expect(h.messageCreate).toHaveBeenCalledOnce();
+    expect(h.finalText()).toBe("");
     expect(finish).toHaveBeenCalledWith({ ok: true });
   });
 
-  it("does not restore held narration after an empty handed-off turn", async () => {
+  it("suppresses a final repeat of a handoff without hiding a distinct completion", async () => {
+    const h = await harness();
+    const brief = "Sources checked. Please review.";
+    await h.handoff(brief);
+    await h.events(text(brief), { type: "done" });
+    await completeRun(h.ctx);
+    expect(h.writtenTexts()).toEqual([brief]);
+    expect(h.finalText()).toBe("");
+    expect(h.finalizeRun.mock.calls[0]?.[0]).toMatchObject({ blocks: [] });
+    const completion = "Drafter 已完成，交回 Planner。";
+    expect(
+      await prepareGroupTurnReply(h.ctx, [{ kind: "text", text: completion }], completion),
+    ).toEqual({ blocks: [{ kind: "text", text: completion }], text: completion });
+  });
+
+  it("dedupes explicit progress without using up the budget for a new beat", async () => {
+    const h = await harness();
+    const finish = vi.fn((result: unknown) => result);
+    for (const message of ["Sources checked.", "Sources checked.", "Draft complete."]) {
+      await messagingTools.message_user!(h.ctx, { args: { message }, finish } as never);
+    }
+    expect(h.writtenTexts()).toEqual(["Sources checked.", "Draft complete."]);
+    expect(h.ctx.state.reply.midTurnProgressCount).toBe(2);
+    expect(finish.mock.calls).toEqual([[{ ok: true }], [{ ok: true }], [{ ok: true }]]);
+    await h.events(text("Draft complete."), { type: "done" });
+    await completeRun(h.ctx);
+    expect(h.finalText()).toBe("");
+  });
+
+  it("does not post a repeated preview on steering, and still answers the new message", async () => {
+    const h = await harness();
+    const message = "Sources checked.";
+    await messagingTools.message_user!(h.ctx, { args: { message }, finish: vi.fn() } as never);
+    await h.events(text(message), { type: "steered", fromRunUser: true } as AgentRuntimeEvent);
+    expect(h.writtenTexts()).toEqual([message]);
+    expect(h.ctx.state.reply.midTurnUserTexts).toEqual([message]);
+    expect(h.ctx.state.reply.midTurnProgressCount).toBe(1);
+    await messagingTools.message_user!(h.ctx, {
+      args: { message: "Draft updated." },
+      finish: vi.fn(),
+    } as never);
+    expect(h.writtenTexts()).toEqual([message, "Draft updated."]);
+  });
+
+  it("does not restore already visible narration after an empty handed-off turn", async () => {
     const h = await harness();
     await h.events(text("素材交接说明。"), tool("handoff_to_bot"));
     h.ctx.state.handedOff = true;
@@ -221,6 +279,7 @@ describe("one written group reply per bot turn", () => {
   it("keeps a single fallback reply after a refused handoff", async () => {
     const h = await harness();
     h.ctx.run.trigger = "follow_up";
+    h.ctx.state.reply.turnStartedAtMs = Date.now();
     await h.events(text("The sources need review."), tool("handoff_to_bot"));
     const finish = vi.fn((result: unknown) => result);
     await messagingTools.handoff_to_bot!(h.ctx, {
@@ -234,7 +293,7 @@ describe("one written group reply per bot turn", () => {
     expect(h.finalText()).toBe("The sources need review.");
   });
 
-  it("preserves attachments after a handoff while dropping long final variants and tool steps", async () => {
+  it("preserves distinct long final text and attachments after a handoff; drops duplicate text and tool steps", async () => {
     const h = await harness();
     h.ctx.state.handedOff = true;
     const file: MessageBlock = {
@@ -244,26 +303,50 @@ describe("one written group reply per bot turn", () => {
       mimeType: "text/plain",
       size: 10,
     };
-    expect(groupTurnReplyBlocks(h.ctx, [{ kind: "text", text: "x".repeat(1000) }, file])).toEqual([
-      file,
-    ]);
-    expect(groupTurnReplyBlocks(h.ctx, [{ kind: "steps", steps: [] }])).toEqual([]);
+    const blocks: MessageBlock[] = [{ kind: "text", text: "x".repeat(1000) }, file];
+    expect((await prepareGroupTurnReply(h.ctx, blocks, "x".repeat(1000))).blocks).toEqual(blocks);
+    await h.handoff("x".repeat(1000));
+    expect(
+      (
+        await prepareGroupTurnReply(
+          h.ctx,
+          [...blocks, { kind: "steps", steps: [] }],
+          "x".repeat(1000),
+        )
+      ).blocks,
+    ).toEqual([file, { kind: "steps", steps: [] }]);
+    expect(
+      (
+        await prepareGroupTurnReply(
+          h.ctx,
+          [blocks[0]!, { kind: "steps", steps: [] }],
+          "x".repeat(1000),
+        )
+      ).blocks,
+    ).toEqual([]);
+    expect((await prepareGroupTurnReply(h.ctx, [{ kind: "steps", steps: [] }], "")).blocks).toEqual(
+      [{ kind: "steps", steps: [] }],
+    );
   });
 
-  it("does not send a suppressed handoff variant in a completion notification or peer result", async () => {
+  it("suppresses only duplicate text in a completion notification or peer result", async () => {
     const h = await harness();
-    expect(groupTurnReplyText(h.ctx, "Final answer")).toBe("Final answer");
+    expect((await prepareGroupTurnReply(h.ctx, [], "Final answer")).text).toBe("Final answer");
     await h.handoff("Please review the sources");
-    expect(groupTurnReplyText(h.ctx, "I handed off the sources")).toBe("");
+    expect((await prepareGroupTurnReply(h.ctx, [], "Please review the sources")).text).toBe("");
+    expect((await prepareGroupTurnReply(h.ctx, [], "I handed off the sources")).text).toBe(
+      "I handed off the sources",
+    );
     h.ctx.thread.groupId = null;
-    expect(groupTurnReplyText(h.ctx, "Private answer")).toBe("Private answer");
+    expect((await prepareGroupTurnReply(h.ctx, [], "Private answer")).text).toBe("Private answer");
   });
 
-  it("restores only the last held narration when no final answer follows several tools", async () => {
+  it("preserves unposted notes when no final answer follows several tools", async () => {
     const h = await harness();
+    h.ctx.state.reply.turnStartedAtMs = Date.now();
     await h.events(text("正在核对。"), tool("read_file"), text("核对完成。"), tool("read_file"));
     await completeRun(h.ctx);
-    expect(h.finalText()).toBe("核对完成。");
+    expect(h.finalText()).toBe("正在核对。\n\n核对完成。");
   });
 
   it("preserves truncation feedback for explicit group progress", async () => {
@@ -273,8 +356,12 @@ describe("one written group reply per bot turn", () => {
       args: { message: "x".repeat(501) },
       finish,
     } as never);
-    expect(finish).toHaveBeenCalledWith({ ok: true, truncated: true });
-    expect(h.ctx.state.reply.publishedMidTurnUserMessage).toBe(false);
+    expect(finish).toHaveBeenCalledWith({
+      ok: true,
+      truncated: true,
+      note: expect.stringContaining("cut off"),
+    });
+    expect(h.ctx.state.reply.publishedMidTurnUserMessage).toBe(true);
   });
 
   it("keeps the empty-run fallback and explicit silence behavior", async () => {
@@ -289,26 +376,27 @@ describe("one written group reply per bot turn", () => {
     expect(silent.finalText()).toBe("");
   });
 
-  it("holds narration even before a connection card or after steering", async () => {
+  it("posts narration once before a connection card or after steering", async () => {
     const h = await harness();
     await h.events(text("正在整理素材。"), {
       type: "steered",
       fromRunUser: true,
     } as AgentRuntimeEvent);
     await publishMidTurnNarration(h.ctx, true);
-    expect(h.messageCreate).not.toHaveBeenCalled();
-    expect(h.ctx.state.reply.lastDiscardedMidTurnNarration).toBe("正在整理素材。");
+    expect(h.writtenTexts()).toEqual(["正在整理素材。"]);
+    expect(h.messageCreate).toHaveBeenCalledOnce();
+    expect(h.ctx.state.reply.lastDiscardedMidTurnNarration).toBe("");
   });
 
   it("leaves private chats, hidden workers and background ticket work on their existing paths", async () => {
     const h = await harness();
     h.ctx.thread.groupId = null;
-    expect(holdsGroupTurnReply(h.ctx)).toBe(false);
+    expect(isVisibleGroupTurn(h.ctx)).toBe(false);
     h.ctx.thread.groupId = "group";
     h.ctx.bot.spawnKey = "bg-worker:research:1";
-    expect(holdsGroupTurnReply(h.ctx)).toBe(false);
+    expect(isVisibleGroupTurn(h.ctx)).toBe(false);
     h.ctx.bot.spawnKey = null;
     h.ctx.run.trigger = "tickets";
-    expect(holdsGroupTurnReply(h.ctx)).toBe(false);
+    expect(isVisibleGroupTurn(h.ctx)).toBe(false);
   });
 });

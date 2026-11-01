@@ -2,30 +2,18 @@ import { MessageBlock } from "@rakazo/contracts";
 import { isHumanAuthoredMessage } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { holdWhileBusy } from "./group-held-runs.js";
+import { isVisibleGroupReply, visibleGroupReplies } from "./group-visible-reply.js";
 
 type SourceMessage = { id: string; role: string; botId: string | null; blocks: unknown };
 type SourceRun = { spaceId: string; threadId: string; userId: string };
 
-/** A handoff made after the reply was saved is a routing marker, not another copy of it. */
+/** A handoff repeating this turn's visible text needs only its routing marker. */
 export async function groupHandoffVisibleText(
   tx: Prisma.TransactionClient,
-  run: SourceRun & { id: string },
+  run: SourceRun & { id: string; botId: string },
   text: string,
-  finishedSource: boolean,
 ): Promise<string> {
-  if (!finishedSource) return text;
-  const posted = await tx.message.findMany({
-    where: { threadId: run.threadId, runId: run.id, role: "bot" },
-    select: { blocks: true },
-  });
-  return posted.some((message) => {
-    const parsed = MessageBlock.array().safeParse(message.blocks);
-    return (
-      parsed.success && parsed.data.some((block) => block.kind === "text" && block.text.trim())
-    );
-  })
-    ? ""
-    : text;
+  return isVisibleGroupReply(text, await visibleGroupReplies(tx, run)) ? "" : text;
 }
 
 /** Hidden display text still compares against the full brief saved in the handoff receipt. */
