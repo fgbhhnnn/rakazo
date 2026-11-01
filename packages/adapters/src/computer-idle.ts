@@ -451,8 +451,15 @@ export async function sleepComputerIfIdle(
       await expireComputerControl(deps, computer.id, computer.controlLeaseId);
     } catch (error) {
       scheduleComputerSleep(deps.jobs, computer.id, undefined, rateLimitEnds(error));
-      if (deferSleep(error, computer)) return;
-      throw error;
+      const reason = sleepDeferReason(error);
+      if (!reason) throw error;
+      getLogger().warn("computer.sleep_deferred", {
+        "computer.id": computer.id,
+        provider: computer.kind,
+        reason,
+        error,
+      });
+      return;
     }
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
