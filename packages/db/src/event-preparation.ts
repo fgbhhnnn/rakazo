@@ -12,7 +12,8 @@ const preparedWrite = new AsyncLocalStorage<Data>();
 export async function withPreparedEventWrite<
   T extends { id: string; spaceId: string; threadId: string; payload: unknown },
 >(prisma: PrismaClient, input: AppendEventInput, write: (data?: Data) => Promise<T>): Promise<T> {
-  const encryption = contentEncryptionOf(prisma);
+  // System-scoped clients wrap even synchronous accessors in a promise.
+  const encryption = await contentEncryptionOf(prisma);
   if (!encryption) return write();
   const data: Data = {
     id: createRowId(),

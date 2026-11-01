@@ -7,6 +7,7 @@ import { ContentKeyRing, LocalKeyProvider } from "./content-keys.js";
 import { preparedEventArgs, withPreparedEventWrite } from "./event-preparation.js";
 import { appendEvent } from "./events.js";
 import { PrismaClient } from "./generated/prisma/client.js";
+import { asSystem } from "./row-security.js";
 
 const pool = new Pool({ connectionString: "postgres://offline:offline@127.0.0.1:9/offline" });
 afterAll(() => pool.end());
@@ -85,6 +86,24 @@ const input = {
 };
 
 describe("prepared event writes", () => {
+  it("prepares encrypted events through a system-scoped client", async () => {
+    const h = harness();
+    const event = await appendEvent(asSystem(h.prisma), input);
+    expect(event.payload).toEqual(input.payload);
+    expect(h.writes[0]?.payload).toHaveProperty("$sealed");
+    expect(JSON.stringify(h.writes)).not.toContain("secret content");
+    expect(h.keyAccess).toHaveBeenCalled();
+    expect(h.byId).toHaveBeenCalled();
+  });
+  it("keeps key preparation failures outside a system-scoped transaction", async () => {
+    const h = harness();
+    h.keyAccess.mockImplementation(() => {
+      throw new Error("key service unavailable");
+    });
+    await expect(appendEvent(asSystem(h.prisma), input)).rejects.toThrow("key service unavailable");
+    expect(h.transaction).not.toHaveBeenCalled();
+    expect(h.writes).toEqual([]);
+  });
   it("does not open a transaction when key preparation fails", async () => {
     const h = harness();
     h.keyAccess.mockImplementation(() => {

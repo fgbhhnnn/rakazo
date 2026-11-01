@@ -15,6 +15,8 @@ process.env.AGENT_RUNTIME = "scripted";
 process.env.RAKAZO_RUN_CANCEL_POLL_MS ??= "500";
 process.env.RAKAZO_DISPATCHER_MODE = "1";
 process.env.RAKAZO_DISPATCHER_TURN_MAX_MS = "5000";
+// The scripted hang emits progress, so exercise the total turn limit too.
+process.env.RAKAZO_DISPATCHER_TURN_HARD_CAP_MS = "5000";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeIntegration = hasDb ? describe : describe.skip;
