@@ -4,7 +4,7 @@
     "slug": "bot",
     "owner": "ccxxyys-team",
     "scheme": "rakazo",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -56,7 +56,8 @@
       "expo-sharing",
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
-      "./plugins/with-lan-cleartext"
+      "./plugins/with-lan-cleartext",
+      "./plugins/with-app-intents"
     ],
     "ios": {
       "bundleIdentifier": "com.ccxxyy.rakazo",
@@ -72,7 +73,8 @@
         "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "CFBundleDisplayName": "Goes Bot"
       }
     },
     "android": {
@@ -84,7 +86,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "monochromeImage": "./assets/monochrome-icon.png",
         "backgroundImage": "./assets/icon-background.png"
-      }
+      },
+      "runtimeVersion": "1.0.8"
     },
     "web": {
       "favicon": "./assets/favicon.png"
