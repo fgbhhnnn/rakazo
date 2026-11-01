@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MobileMessage } from "./api";
+import { messageRowLayout } from "./message-row-layout";
 
 vi.mock("react-native", async () => {
   const { createElement, useImperativeHandle } = await import("react");
@@ -83,6 +84,13 @@ vi.mock("react-native-reanimated", async () => {
   };
 });
 
+vi.mock("@expo/ui/community/menu", async () => {
+  const { View } = await import("react-native");
+  return {
+    MenuView: ({ children }: { children: ReactNode }) => <View>{children}</View>,
+  };
+});
+
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
 vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
@@ -142,6 +150,7 @@ vi.mock("../components/change-undo", () => ({
 }));
 
 import { McpApprovalCard } from "../components/McpApprovalCard";
+import { MessageContextMenu } from "../components/message-context-menu";
 import { MessageBubble } from "../components/thread/message-bubble";
 
 type BubbleProps = ComponentProps<typeof MessageBubble>;
@@ -227,6 +236,68 @@ describe("thread cards", () => {
       ),
     );
   }
+
+  it.each(["bot", "user"] as const)(
+    "constrains %s file captions and stacks MD/CSV cards before the next message",
+    (role) => {
+      const path = `gallery/${"attachment-notes-".repeat(12)}.md`;
+      const blocks: MessageBlock[] = [
+        text(`Files: ${path}`),
+        { kind: "file", artifactId: "notes", name: path, mimeType: "text/markdown", size: 1024 },
+        {
+          kind: "file",
+          artifactId: "table",
+          name: "gallery/table.csv",
+          mimeType: "text/csv",
+          size: 2048,
+        },
+      ];
+      const layout = messageRowLayout(blocks, {
+        activityBotId: role === "bot" ? "bot-1" : undefined,
+        inGroup: true,
+        columnWidth: 393,
+      });
+      act(() =>
+        root.render(
+          <>
+            <MessageContextMenu
+              actions={[]}
+              fullWidth={layout.menuFullWidth}
+              maxWidth={layout.menuMaxWidth}
+              colorScheme="light"
+              onAction={() => undefined}
+            >
+              <Bubble groupId="group-1" message={{ id: "files", role, blocks }} />
+            </MessageContextMenu>
+            <Bubble message={{ id: "next", role: "bot", blocks: [text("Next message")] }} />
+          </>,
+        ),
+      );
+      const trigger = container.firstElementChild!.firstElementChild!;
+      expect(styleOf(trigger).width).toBe(role === "bot" ? 325 : 317.7);
+      const bubble = trigger.firstElementChild!;
+      expect(styleOf(bubble)).toMatchObject({ width: "100%", gap: 8 });
+      const [caption, markdown, csv] = [...bubble.children];
+      expect(bubble.children).toHaveLength(3);
+      expect(caption!.textContent).toBe(`Files: ${path}`);
+      for (const [card, name] of [
+        [markdown!, path],
+        [csv!, "gallery/table.csv"],
+      ] as const) {
+        const label = card.querySelector("button")!.firstElementChild!.children[1]!;
+        expect(styleOf(label)).toMatchObject({ flexGrow: 1, flexShrink: 1, minWidth: 0 });
+        expect(styleOf(label)).not.toHaveProperty("flex");
+        expect(label.firstElementChild!.textContent).toBe(name);
+        expect(label.firstElementChild!.getAttribute("data-number-of-lines")).toBeNull();
+      }
+      for (const piece of [bubble, ...bubble.children]) {
+        expect(styleOf(piece)).not.toHaveProperty("position", "absolute");
+        expect(styleOf(piece)).not.toHaveProperty("height");
+      }
+      expect(container.lastElementChild!.textContent).toBe("Next message");
+      expect(bubble.contains(container.lastElementChild)).toBe(false);
+    },
+  );
 
   it.each(["user", "bot"] as const)(
     "keeps %s image attachments outside the caption and file bubbles",
