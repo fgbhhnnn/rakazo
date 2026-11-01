@@ -38,6 +38,7 @@ import {
   withDeadline,
 } from "./computer-health.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
+import { BrowserStillRunningError } from "./computer-screens.js";
 import { settleStaleClaimWithProvider } from "./computer-stale-claim.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
@@ -1015,7 +1016,9 @@ export function sleepDeferReason(error: unknown): string | undefined {
             : "too_many_files"
           : error instanceof HomeSaveConflictError
             ? "saved_elsewhere"
-            : undefined;
+            : error instanceof BrowserStillRunningError
+              ? "browser_running"
+              : undefined;
 }
 
 /**
