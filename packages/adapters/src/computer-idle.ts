@@ -447,7 +447,13 @@ export async function sleepComputerIfIdle(
   const stopMs = deps.deadlines?.stopMs ?? COMPUTER_STOP_DEADLINE_MS;
 
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
-    await expireComputerControl(deps, computer.id, computer.controlLeaseId);
+    try {
+      await expireComputerControl(deps, computer.id, computer.controlLeaseId);
+    } catch (error) {
+      scheduleComputerSleep(deps.jobs, computer.id, undefined, rateLimitEnds(error));
+      if (deferSleep(error, computer)) return;
+      throw error;
+    }
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }
