@@ -62,8 +62,6 @@ import {
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
-import { passwordRevealAllowed } from "./reveal-secret.js";
-import { redactRevealedContent } from "./reveal-secret-redaction.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import {
   chatPasswordRunRedactions,
@@ -96,6 +94,8 @@ import {
 import { formatCurrentTimeInstruction, resolveRunTimeZone } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { passwordRevealAllowed } from "./reveal-secret.js";
+import { redactRevealedContent } from "./reveal-secret-redaction.js";
 import { addRunSecrets } from "./run-context.js";
 import { createRunModelFallbackReporter } from "./run-model-fallback.js";
 

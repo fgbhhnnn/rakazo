@@ -1,5 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
-  "Allow bots to use saved passwords directly": "Bots opgeslagen wachtwoorden rechtstreeks laten gebruiken",
+  "Allow bots to use saved passwords directly":
+    "Bots opgeslagen wachtwoorden rechtstreeks laten gebruiken",
   "Passwords go to your model provider and may appear in history. Enable only if needed.":
     "Wachtwoorden worden naar je modelprovider gestuurd en kunnen in de geschiedenis verschijnen. Schakel dit alleen in als het nodig is.",
   Dictate: "Dicteren",

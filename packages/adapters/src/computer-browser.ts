@@ -110,7 +110,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       return this.fake.snapshot(computer, request, context);
     }
     const live = await this.runLive(computer, { command: "snapshot" }, context);
-    if (live?.ok !== true || live.fallback === "computer_act") {
+    if (live?.ok !== true || live.fallback === "computer_act" || live.error) {
       return {
         url: "",
         title: "",
@@ -126,6 +126,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       title: typeof live.title === "string" ? live.title : "",
       tree: typeof live.tree === "string" ? live.tree : formatTree(elements),
       elements,
+      ...(Array.isArray(live.frameOrigins) ? { frameOrigins: live.frameOrigins } : {}),
       ...(live.loading === true ? { loading: true } : {}),
     };
   }

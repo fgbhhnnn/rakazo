@@ -37,8 +37,8 @@ import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { MemberAccessSettings } from "../components/MemberAccessSettings";
 import { PasskeySettings } from "../components/PasskeySettings";
-import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { SavedPasswordSettings } from "../components/SavedPasswordSettings";
+import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";

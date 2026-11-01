@@ -1083,6 +1083,8 @@ export interface BrowserSnapshotNode {
 export interface BrowserSnapshotResult {
   url: string;
   title: string;
+  /** Origins read from the page's current, visible frames in their isolated browser worlds. */
+  frameOrigins?: string[];
   /** Compact accessibility-style tree for the model. */
   tree: string;
   elements: BrowserSnapshotNode[];

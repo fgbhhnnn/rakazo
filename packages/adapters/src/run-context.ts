@@ -9,8 +9,7 @@ import type {
   WebProvider,
 } from "@rakazo/adapter-kit";
 import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
-import type { ToolCallStreak } from "@rakazo/core";
-import { createStreamingRedactor } from "@rakazo/core";
+import type { createStreamingRedactor, ToolCallStreak } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
@@ -27,12 +26,12 @@ import type { DispatcherTurnLedger } from "./dispatcher-reply-guard.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
 import { namedAgentTools } from "./pi-runtime-tools.js";
+import { redactRevealedContent } from "./reveal-secret-redaction.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import type { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { publishMessage } from "./run-messages.js";
 import { subagentMarksUnread } from "./run-notifications.js";
 import { secretPausedToolResult } from "./run-secret.js";
-import { redactRevealedContent } from "./reveal-secret-redaction.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
 import type { inferScript } from "./scripted-runtime.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
@@ -411,7 +410,11 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
     const saved = JSON.parse(capture());
     saved.effectOccurrences = effects.occurrences;
     await saveRunTurnCheckpoint(
-      deps.prisma, run, workerId, fence, JSON.stringify(redactRevealedContent(ctx, saved)),
+      deps.prisma,
+      run,
+      workerId,
+      fence,
+      JSON.stringify(redactRevealedContent(ctx, saved)),
     );
     effects.storedTurnCheckpoint = true;
   } else if (effects.storedTurnCheckpoint) {

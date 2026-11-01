@@ -1918,17 +1918,17 @@ def snapshot_limits(prefix: str, budget: int) -> dict[str, Any]:
             "maxControls": max(8, MAX_CONTROLS * budget // TREE_BUDGET), "minText": min(1500, budget // 4)}
 
 
-def frame_snapshots(client: CdpClient, session_id: str) -> tuple[str, list[Any], int]:
-    """Each shown frame's page under a line naming its site, their elements, and how many shown
-    frames could not be read. Frames with nothing in them are left out."""
+def frame_snapshots(client: CdpClient, session_id: str) -> tuple[str, list[Any], int, list[str]]:
+    """Each shown frame's page, elements, unread count and observed origins.
+    Frames with nothing in them contribute only their origins."""
     deadline = time.monotonic() + FRAMES_SECONDS
     try:
         frames, unread = page_frames(client, session_id, deadline)
     except Exception:  # noqa: BLE001
-        return "", [], 1
+        return "", [], 1, []
     if not frames:
-        return "", [], unread
-    sections, elements, left = [], [], FRAMES_BUDGET
+        return "", [], unread, []
+    sections, elements, origins, left = [], [], [], FRAMES_BUDGET
     for index, frame in enumerate(frames):
         # What the frames before it left over goes to the ones after.
         share = max(MIN_FRAME_SHARE, left // (len(frames) - index))
@@ -1946,6 +1946,7 @@ def frame_snapshots(client: CdpClient, session_id: str) -> tuple[str, list[Any],
         if not isinstance(data, dict):
             unread += 1
             continue
+        origins.append(str(data.get("origin") or ""))
         tree = unframed(str(data.get("tree") or "").strip())
         if tree in ("", "(no interactive elements)"):
             continue
@@ -1957,7 +1958,7 @@ def frame_snapshots(client: CdpClient, session_id: str) -> tuple[str, list[Any],
         left -= sent_length(section) + 1
         sections.append(section)
         elements += data.get("elements") or []
-    return "".join("\n" + section for section in sections), elements, unread
+    return "".join("\n" + section for section in sections), elements, unread, origins
 
 
 def unframed(text: str) -> str:
@@ -2210,7 +2211,7 @@ def snapshot(client: CdpClient, session_id: str, settle: float | None = None) ->
         except Exception:  # noqa: BLE001
             frames = []
         card_shown = any(frame_eval(client, frames, "window.__rakazoPageBrowser.hasCardField()"))
-        sections, frame_elements, unread = frame_snapshots(client, session_id)
+        sections, frame_elements, unread, frame_origins = frame_snapshots(client, session_id)
         if sections and sent_length(tree) + sent_length(sections) > TREE_BUDGET:
             # The frames' share comes out of the page's own, so the whole snapshot still goes to the bot in one piece.
             room = max(TREE_BUDGET - FRAMES_BUDGET, TREE_BUDGET - sent_length(sections))
@@ -2221,6 +2222,7 @@ def snapshot(client: CdpClient, session_id: str, settle: float | None = None) ->
             data.pop("frames", None)
             tree = str(data.get("tree") or "")
         tree = unframed(tree) + sections
+        data["frameOrigins"] = frame_origins
         data["elements"] = list(data.get("elements") or []) + frame_elements
         if card_shown:
             tree += "\n" + PAYMENT_FRAME_HINT

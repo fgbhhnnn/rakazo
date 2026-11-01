@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { getSavedPasswordSettings } from "@rakazo/db";
 import { findBotSecret, resolveLoginFill } from "./bot-secrets.js";
+import { pageHasSecretOrigin } from "./reveal-secret-origin.js";
 import { revealedRuns } from "./reveal-secret-redaction.js";
 import { RevealSecretInput } from "./reveal-secret-tool.js";
 import { addRunSecrets } from "./run-context.js";
@@ -39,7 +40,7 @@ export const revealSecret: ToolHandler = async (ctx, call) => {
       {},
       ctx.context,
     );
-    if (page.error || new URL(page.url).origin !== destination.origin) {
+    if (!pageHasSecretOrigin(page, destination.origin)) {
       return fail("Open the login's saved HTTPS origin before revealing a field.");
     }
     const resolved = await resolveLoginFill({

@@ -162,8 +162,8 @@ import {
   RoutineRunCursorSchema,
   RunsListOutputSchema,
 } from "./runs.js";
-import { SearchQueryOutputSchema } from "./search.js";
 import { savedPasswordSettingsContract } from "./saved-password-settings.js";
+import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 

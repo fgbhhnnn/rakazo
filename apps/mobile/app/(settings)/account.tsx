@@ -78,7 +78,6 @@ import {
 } from "../../lib/passkey";
 import { registerPushToken } from "../../lib/push";
 import { createQueuedSave } from "../../lib/queued-save";
-import { SavedPasswordSettings } from "../../lib/saved-password-settings";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
@@ -89,6 +88,7 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
+import { SavedPasswordSettings } from "../../lib/saved-password-settings";
 import { promptSectionName } from "../../lib/section-name-prompt";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
@@ -756,9 +756,7 @@ export default function Account() {
             onPress={() => setAdvancedOpen((open) => !open)}
             title={t("Advanced")}
           />
-          {advancedOpen ? (
-            <SavedPasswordSettings />
-          ) : null}
+          {advancedOpen ? <SavedPasswordSettings /> : null}
           {advancedOpen ? (
             <SettingsSwitch
               label={t("Stream replies")}

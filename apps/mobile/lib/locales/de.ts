@@ -1,5 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
-  "Allow bots to use saved passwords directly": "Bots dürfen gespeicherte Passwörter direkt verwenden",
+  "Allow bots to use saved passwords directly":
+    "Bots dürfen gespeicherte Passwörter direkt verwenden",
   "Passwords go to your model provider and may appear in history. Enable only if needed.":
     "Passwörter werden an deinen Modellanbieter gesendet und können im Verlauf erscheinen. Nur bei Bedarf aktivieren.",
   Dictate: "Diktieren",

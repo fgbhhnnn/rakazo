@@ -31,8 +31,10 @@ export async function withPiTelemetry<T>(
         "rakazo.routine.id": request.routineId ?? undefined,
       },
     },
-    (span) => current.run(span, () =>
-      withPiContentRedaction(request.redactTelemetryContent, () => work(span))),
+    (span) =>
+      current.run(span, () =>
+        withPiContentRedaction(request.redactTelemetryContent, () => work(span)),
+      ),
   );
 }
 
