@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readPendingAddition } from "./pending-native-source";
 
 const mobile = join(import.meta.dirname, "..");
 const read = (file) => readFileSync(join(mobile, file), "utf8");
@@ -10,7 +9,7 @@ const constant = (file, name) => read(file).match(new RegExp(`${name} = "([^"]+)
 describe("RakazoIntents", () => {
   // The intents read what the app saved; renaming a key on one side would break them silently.
   it("reads the secure-store keys the app writes", () => {
-    const swift = readPendingAddition("ios-intents/RakazoIntents.swift");
+    const swift = read("ios-intents/RakazoIntents.swift");
     for (const [file, name] of [
       ["lib/session.ts", "SESSION_KEY"],
       ["lib/server-config.ts", "API_BASE_STORAGE_KEY"],
@@ -26,8 +25,8 @@ describe("RakazoIntents", () => {
   });
 
   it("hands a voice chat to the module that reads it", () => {
-    const swift = readPendingAddition("ios-intents/RakazoIntents.swift");
-    const module = readPendingAddition("modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift");
+    const swift = read("ios-intents/RakazoIntents.swift");
+    const module = read("modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift");
     expect(swift).toContain('"rakazo.pending_voice_chat"');
     expect(module).toContain('"rakazo.pending_voice_chat"');
     for (const source of [swift, module]) {
@@ -37,6 +36,6 @@ describe("RakazoIntents", () => {
 
   it("falls back to the app's own default server", () => {
     const local = constant("lib/server-config.ts", "LOCAL_API");
-    expect(readPendingAddition("plugins/with-app-intents.js")).toContain(`"${local}"`);
+    expect(read("plugins/with-app-intents.js")).toContain(`"${local}"`);
   });
 });
