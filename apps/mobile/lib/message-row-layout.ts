@@ -21,11 +21,15 @@ export function messageRowLayout(
   const appConnect = blocks.some(
     (block) => block.kind === "app_connect" || block.kind === "mcp_approval",
   );
+  // iOS measures menu triggers without a horizontal constraint. Attachment rows
+  // need a definite width before measuring their caption and flexible file labels.
+  const attachments = blocks.some((block) => block.kind === "file" || block.kind === "image");
+  const fillBubble = appConnect || attachments;
   const gutter = activityBotId ? (inGroup ? 28 : 36) : 0;
   return {
-    width: full ? "100%" : appConnect && !activityBotId ? "90%" : undefined,
+    width: full ? "100%" : fillBubble && !activityBotId ? "90%" : undefined,
     maxWidth: full ? "100%" : activityBotId ? undefined : "90%",
-    menuFullWidth: wideAsk || appConnect,
+    menuFullWidth: wideAsk || fillBubble,
     menuMaxWidth: wideAsk
       ? columnWidth - 40 - gutter
       : isCenteredAgentEvent(blocks)

@@ -476,6 +476,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
     const hasInlineImages = attachments.some(isInlineImageBlock);
     const bubbleStyle = {
+      width: "100%",
       maxWidth: "100%",
       borderRadius: 20,
       backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
@@ -597,7 +598,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   <FileKindIcon mimeType={attachment.mimeType} name={attachment.name} />
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
                     <Text
                       style={{
                         color:
