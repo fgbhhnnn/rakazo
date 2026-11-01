@@ -51,6 +51,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "create_group",
   "update_group",
   "create_child_routine",
+  "feedback",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",
@@ -218,6 +219,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "attach_file",
   "edit_page",
   "end_call",
+  "feedback",
   "generate_secret",
   "list_fleet",
   "list_secrets",

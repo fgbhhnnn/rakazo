@@ -12,6 +12,7 @@ import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { askTools } from "./run-tools-ask.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
+import { feedbackTools } from "./run-tools-feedback.js";
 import { fileTools } from "./run-tools-files.js";
 import { fleetTools } from "./run-tools-fleet.js";
 import { cloudAgentTool, connectorTool, integrationTools } from "./run-tools-integrations.js";
@@ -54,6 +55,7 @@ export const TOOL_HANDLERS: ReadonlyMap<string, ToolHandler> = new Map<string, T
   [USER_COMPUTER_ACT_TOOL, userComputerAct],
   ...Object.entries(purchaseTools),
   ...Object.entries(preferenceTools),
+  ...Object.entries(feedbackTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 
