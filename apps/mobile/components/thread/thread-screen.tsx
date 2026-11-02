@@ -222,7 +222,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               (member) => member.botId,
             )
           : undefined,
-        bots: mentionBots.map((bot) => ({ id: bot.id, name: bot.name, color: bot.color })),
+        bots: mentionBots.map((bot) => ({
+          id: bot.id,
+          name: bot.name,
+          color: bot.color,
+          avatarSet: bot.avatarSet,
+        })),
         groups: mentionGroups.map((group) => ({ id: group.id, name: group.name })),
         routines: mentionRoutines.map((routine) => ({
           id: routine.id,
