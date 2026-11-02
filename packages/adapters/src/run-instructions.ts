@@ -194,6 +194,11 @@ function secretGuidance(pageBrowserAllowed: boolean, disabled?: ReadonlySet<stri
       requestSecretGuidance(pageBrowserAllowed, builtinOffered(disabled, "browser_act")),
     );
   }
+  if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
+    clauses.push(
+      "For a code a site texts or emails, use request_secret oneTimeCode and browser_act fill_code, never chat.",
+    );
+  }
   if (builtinOffered(disabled, "generate_secret")) {
     clauses.push(
       "When you need a new password or key, such as for a website sign-up or a database you set up, use generate_secret instead of choosing one.",

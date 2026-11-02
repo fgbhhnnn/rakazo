@@ -4388,6 +4388,10 @@ msgstr "1回限りの購入です。クレジットは失効しません。"
 msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 msgstr "モデル、音声、MCPサーバーは私だけが管理します（メンバーは私の設定を使用し、変更できません）"
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
 #: src/pages/shell/computer-panel.tsx

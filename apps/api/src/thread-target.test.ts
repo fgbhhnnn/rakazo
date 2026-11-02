@@ -100,6 +100,8 @@ describe("queued run supersession", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "space-1", kind: "run-secret:run-old" },
+          { userId: "user-1", spaceId: "space-1", kind: "run-code:run-old" },
+          { userId: "user-1", spaceId: "space-1", kind: "run-code-spent:run-old" },
           { userId: "user-1", spaceId: "space-1", kind: { startsWith: "run-login:run-old:" } },
         ],
       },
@@ -1729,6 +1731,8 @@ describe("sendThreadMessage", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-waiting-2" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-waiting-2" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-waiting-2" },
           {
             userId: "user-1",
             spaceId: "workspace-1",
@@ -4100,8 +4104,12 @@ describe("stopThreadRuns", () => {
       where: {
         OR: [
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-a" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-a" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-a" },
           { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-a:" } },
           { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-b" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code:run-b" },
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-code-spent:run-b" },
           { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-b:" } },
         ],
       },

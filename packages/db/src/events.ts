@@ -4,6 +4,7 @@ import type {
   LoginFailureReason,
   LoginFieldInput,
   MessageBlock,
+  OneTimeCodeTarget,
   ProductEvent,
 } from "@rakazo/contracts";
 import {
@@ -14,6 +15,7 @@ import {
   hasThinkingActivityMarker,
   loginAnswerValue,
   MessageBlock as MessageBlockSchema,
+  normalizeOneTimeCode,
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
@@ -347,6 +349,8 @@ export interface RunSecretWriter {
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
+    /** The site a code card was shown for. */
+    oneTimeCode?: OneTimeCodeTarget;
     /** False for a login card answered with "Save to Vault" off. */
     remember: boolean;
     runId: string;
@@ -896,7 +900,18 @@ async function commitAnswerRunInput(
   )
     return null;
   if (secretAsk && !dismissed && !runSecretWriter) return null;
-  if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
+  if (
+    secretAsk &&
+    (pendingAsk.credential || pendingAsk.oneTimeCode) &&
+    run.userId !== input.answeredByUserId
+  )
+    return null;
+  // A code is answered as the page will take it; anything that is not a code is not stored.
+  const code =
+    secretAsk && !dismissed && pendingAsk.oneTimeCode
+      ? normalizeOneTimeCode(input.answer)
+      : undefined;
+  if (secretAsk && !dismissed && pendingAsk.oneTimeCode && !code) return null;
   const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
   const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
   // Login fields belong only to a login card, which cannot be saved without them.
@@ -1055,11 +1070,12 @@ async function commitAnswerRunInput(
     await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,
+      oneTimeCode: pendingAsk.oneTimeCode,
       remember: input.remember !== false,
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
-      plaintext: login ? encodeLoginSecret(login) : input.answer,
+      plaintext: login ? encodeLoginSecret(login) : (code ?? input.answer),
       tx,
     });
     await tx.externalEffect.updateMany({

@@ -472,6 +472,7 @@ describe("parametersFor OpenAI wire fidelity", () => {
       "failureReason",
       "fields",
       "label",
+      "oneTimeCode",
       "purpose",
       "replace",
     ]);
