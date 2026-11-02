@@ -463,6 +463,10 @@ msgstr "<0>{0}</0>でログイン用のタブが開きました。そこでこ�
 msgid "A subscription credential is stored securely."
 msgstr "サブスクリプションの認証情報は安全に保存されています。"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "{label}について"
