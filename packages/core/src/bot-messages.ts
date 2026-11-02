@@ -165,6 +165,7 @@ export function renderGroupMembersContext(
     "<group_members>",
     ...formatBotRosterLines(members),
     "</group_members>",
+    'In the conversation so far, messages from other members start with "[Name]:", messages from the user start with "[User]:", and your own earlier messages carry no label. Never begin your replies with a label.',
     ...groupTeamworkLines(handoffTool),
     ...(options.askTool ? teammateQuestionPromptLines() : []),
     BOT_DELIBERATION_GUIDANCE,
