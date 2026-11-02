@@ -4923,6 +4923,7 @@ msgid "Release control"
 msgstr "Kontrolü bırak"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Yeniden yükle"
 
@@ -6370,6 +6371,10 @@ msgstr "Talimatlar güncellensin mi?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Güncelleme gerekli"
 
 #: src/components/pages/PageReader.tsx
 #: src/components/VaultSettings.tsx
