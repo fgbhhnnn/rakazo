@@ -196,7 +196,7 @@ import {
 } from "./team-chat-startup.js";
 import { activeTurnstileSecret, activeTurnstileSiteKey } from "./turnstile-settings.js";
 import { mountUserDeviceRoutes } from "./user-devices.js";
-import { mountVoiceHttpRoutes, voiceAccountErrorStatus } from "./voice.js";
+import { mountVoiceHttpRoutes, transcribeInboundVoice, voiceAccountErrorStatus } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
 /**
@@ -1052,6 +1052,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes },
           { spaceId, userId },
           input,
+        ),
+      transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
+        transcribeInboundVoice(
+          {
+            prisma,
+            secrets,
+            env: { mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint },
+          },
+          { spaceId, userId },
+          { audio, mimeType, signal },
         ),
     } satisfies Parameters<typeof createMessagingInboundHandler>[0];
     const inbound = createMessagingInboundHandler(inboundDeps);

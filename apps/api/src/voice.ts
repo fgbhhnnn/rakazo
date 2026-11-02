@@ -58,14 +58,22 @@ export interface VoiceDeps {
 }
 
 /** A self-hosted speech server on a private address is limited like model endpoints. */
-async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, _actor: Actor, provider: string) {
+async function voiceMayUsePrivateEndpoint(
+  deps: VoiceDeps,
+  _actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+) {
   return (
     provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID && deps.env?.mcpAllowPrivateEndpoint === true
   );
 }
 
 /** The voice adapter for a credential, with the actor's private-endpoint decision. */
-export async function voiceProviderFor(deps: VoiceDeps, actor: Actor, provider: string) {
+export async function voiceProviderFor(
+  deps: VoiceDeps,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+) {
   return createVoiceProvider(provider, {
     allowPrivateEndpoint: await voiceMayUsePrivateEndpoint(deps, actor, provider),
   });
@@ -77,7 +85,10 @@ const SPEAK_TIMEOUT_MS = 60_000;
 export const MAX_SPEAK_REQUEST_BYTES = 16 * 1024;
 export const MAX_TRANSCRIBE_REQUEST_BYTES = 4 * Math.ceil(MAX_TRANSCRIBE_BYTES / 3) + 1024;
 
-export function voiceContext(actor: Actor, signal?: AbortSignal): AdapterContext {
+export function voiceContext(
+  actor: Pick<Actor, "userId" | "spaceId">,
+  signal?: AbortSignal,
+): AdapterContext {
   return {
     operationId: "voice",
     traceId: "voice",
@@ -213,7 +224,7 @@ export function fishSpeechModelValue(speechModel: string): string | null {
 
 export async function loadDefaultVoiceCredential(
   deps: VoiceDeps,
-  actor: Actor,
+  actor: Pick<Actor, "userId" | "spaceId">,
   scope?: SettingsScope,
 ) {
   return loadVoiceCredential(deps, actor, undefined, scope);
@@ -221,7 +232,7 @@ export async function loadDefaultVoiceCredential(
 
 export async function loadVoiceCredential(
   deps: VoiceDeps,
-  requester: Actor,
+  requester: Pick<Actor, "userId" | "spaceId">,
   provider?: string,
   requestedScope?: SettingsScope,
   { shareOwner = true }: { shareOwner?: boolean } = {},
@@ -581,6 +592,29 @@ export async function transcribeVoice(
     },
     voiceContext(actor, input.signal),
   );
+}
+
+/**
+ * Transcribes inbound messaging audio (for example a Telegram voice note) with
+ * the bot owner's default voice connection, as the app's dictation does. Null
+ * when no provider can transcribe or the audio is too large; the caller treats
+ * a throw the same way, so the file is delivered without a transcript.
+ */
+export async function transcribeInboundVoice(
+  deps: VoiceDeps,
+  owner: Pick<Actor, "userId" | "spaceId">,
+  input: { audio: Uint8Array; mimeType: string; signal?: AbortSignal },
+): Promise<string | null> {
+  if (input.audio.byteLength > MAX_TRANSCRIBE_BYTES) return null;
+  const loaded = await loadDefaultVoiceCredential(deps, owner);
+  if (!loaded) return null;
+  const provider = await voiceProviderFor(deps, loaded.actor, loaded.cred.provider);
+  if (!provider.transcribe) return null;
+  const { text } = await provider.transcribe(
+    { audio: input.audio, mimeType: input.mimeType, apiKey: loaded.apiKey },
+    voiceContext(owner, input.signal),
+  );
+  return text;
 }
 
 export function mountVoiceHttpRoutes(
