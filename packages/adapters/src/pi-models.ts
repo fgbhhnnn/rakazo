@@ -134,6 +134,8 @@ const KEY_CHECK_URLS = new Map([
   ["google", "https://generativelanguage.googleapis.com/v1beta/models"],
 ]);
 
+const KEY_CHECK_CANCELLED = "Could not verify the API key. Try again.";
+
 /** Google reports invalid keys as HTTP 400 with a structured ErrorInfo reason. */
 async function googleKeyWasRejected(response: Response): Promise<boolean> {
   const reader = response.body?.getReader();
@@ -162,6 +164,8 @@ async function googleKeyWasRejected(response: Response): Promise<boolean> {
     reader.releaseLock();
   }
 }
+
+/** Refuses only a key the provider rejects; a slow or failing provider is no reason to block saving it. */
 export async function verifyCatalogProviderApiKey(
   input: { provider: string; apiKey: string },
   fetchImpl: typeof fetch = globalThis.fetch,
@@ -186,7 +190,8 @@ export async function verifyCatalogProviderApiKey(
     });
   } catch {
     // Transport errors may contain the request's credential. Never forward them.
-    throw new Error("Could not verify the API key. Try again.");
+    if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
+    return;
   }
   const rejected =
     provider === "google" && response.status === 400
@@ -196,7 +201,7 @@ export async function verifyCatalogProviderApiKey(
   if (rejected) {
     throw new Error(MODEL_KEY_REJECTED_ERROR);
   }
-  if (!response.ok) throw new Error("Could not verify the API key. Try again.");
+  if (signal?.aborted) throw new Error(KEY_CHECK_CANCELLED);
 }
 
 /**
