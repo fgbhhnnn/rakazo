@@ -96,6 +96,8 @@ export interface WorkspaceExportLimits {
   maxFiles: number;
 }
 
+export type ComputerTier = "large" | "standard";
+
 export interface ComputerRef {
   id: string;
   botId: string;

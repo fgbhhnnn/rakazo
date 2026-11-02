@@ -237,7 +237,11 @@ describe("E2B computer backend", () => {
     }
   });
 
-  it("creates new computers from the Rakazo computer template", async () => {
+  it.each([
+    { tier: "large", template: E2B_DESKTOP_TEMPLATE },
+    { tier: "standard", template: E2B_COMPUTER_TEMPLATE },
+    { tier: undefined, template: E2B_COMPUTER_TEMPLATE },
+  ] as const)("creates tier $tier computers from $template", async ({ tier, template }) => {
     const sdk: E2BSandboxSdk = {
       create: vi.fn().mockResolvedValue({ sandboxId: "fresh" }),
       connect: vi.fn(),
@@ -247,36 +251,94 @@ describe("E2B computer backend", () => {
     const provider = new E2BSandboxProvider("test-key", sdk);
 
     await expect(
-      provider.provision({ botId: "bot-1", homePath: "/unused" }, context),
+      provider.provision({ botId: "bot-1", homePath: "/unused", tier }, context),
     ).resolves.toMatchObject({ providerRef: "fresh", fresh: true });
     expect(sdk.create).toHaveBeenCalledOnce();
-    expect(sdk.create).toHaveBeenCalledWith(
-      E2B_COMPUTER_TEMPLATE,
-      e2bCreateOptions("bot-1", "test-key"),
-    );
+    expect(sdk.create).toHaveBeenCalledWith(template, e2bCreateOptions("bot-1", "test-key"));
   });
 
-  it("falls back to the stock desktop template when this account has not built it", async () => {
-    const missing = Object.assign(new SandboxError("404: template 'rakazo-computer' not found"), {
-      statusCode: 404,
-    });
+  it.each(["standard", undefined] as const)(
+    "falls back to desktop when tier %s's template is missing",
+    async (tier) => {
+      const missing = Object.assign(new SandboxError("404: template 'rakazo-computer' not found"), {
+        statusCode: 404,
+      });
+      const sdk: E2BSandboxSdk = {
+        create: vi.fn().mockRejectedValueOnce(missing).mockResolvedValue({ sandboxId: "stock" }),
+        connect: vi.fn(),
+        pause: vi.fn(),
+        kill: vi.fn(async () => true),
+      };
+      const provider = new E2BSandboxProvider("test-key", sdk);
+
+      await expect(
+        provider.provision({ botId: "bot-1", homePath: "/unused", tier }, context),
+      ).resolves.toMatchObject({ providerRef: "stock", fresh: true });
+      expect(sdk.create).toHaveBeenCalledTimes(2);
+      expect(sdk.create).toHaveBeenNthCalledWith(
+        1,
+        E2B_COMPUTER_TEMPLATE,
+        e2bCreateOptions("bot-1", "test-key"),
+      );
+      expect(sdk.create).toHaveBeenNthCalledWith(
+        2,
+        E2B_DESKTOP_TEMPLATE,
+        e2bCreateOptions("bot-1", "test-key"),
+      );
+    },
+  );
+
+  it("does not retry a missing large-tier template with the same template", async () => {
+    const missing = new SandboxError("404: template 'desktop' not found");
     const sdk: E2BSandboxSdk = {
-      create: vi.fn().mockRejectedValueOnce(missing).mockResolvedValue({ sandboxId: "stock" }),
+      create: vi.fn().mockRejectedValue(missing),
       connect: vi.fn(),
       pause: vi.fn(),
-      kill: vi.fn(async () => true),
+      kill: vi.fn(),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
 
     await expect(
-      provider.provision({ botId: "bot-1", homePath: "/unused" }, context),
-    ).resolves.toMatchObject({ providerRef: "stock", fresh: true });
-    expect(sdk.create).toHaveBeenNthCalledWith(
-      2,
+      provider.provision({ botId: "bot-1", homePath: "/unused", tier: "large" }, context),
+    ).rejects.toBe(missing);
+    expect(sdk.create).toHaveBeenCalledExactlyOnceWith(
       E2B_DESKTOP_TEMPLATE,
       e2bCreateOptions("bot-1", "test-key"),
     );
   });
+
+  it.each(["large", "standard"] as const)(
+    "preserves an existing sandbox when reconnecting with tier %s",
+    async (tier) => {
+      const sdk: E2BSandboxSdk = {
+        create: vi.fn(),
+        connect: vi.fn().mockResolvedValue({ sandboxId: "existing" }),
+        pause: vi.fn(),
+        kill: vi.fn(),
+      };
+      const provider = new E2BSandboxProvider("test-key", sdk);
+
+      await expect(
+        provider.provision(
+          {
+            botId: "bot-1",
+            homePath: "/unused",
+            providerRef: "existing",
+            providerKind: "e2b",
+            tier,
+          },
+          context,
+        ),
+      ).resolves.toMatchObject({ providerRef: "existing", fresh: false });
+
+      expect(sdk.connect).toHaveBeenCalledExactlyOnceWith("existing", {
+        apiKey: "test-key",
+        timeoutMs: sandboxIdleMs(),
+      });
+      expect(sdk.create).not.toHaveBeenCalled();
+      expect(sdk.kill).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not hide other create failures behind the stock template", async () => {
     const limited = Object.assign(new SandboxError("429: rate limited"), { statusCode: 429 });

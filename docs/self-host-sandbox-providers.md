@@ -237,8 +237,9 @@ rechecks each selected PID's marker descriptors before signaling it.
 
 ### E2B computer template
 
-E2B computers start from the `rakazo-computer` template: E2B's stock desktop at
-2 vCPU and 4 GB instead of its 8 vCPU and 8 GB. Build it once in the E2B team that
+New E2B computers owned by deployment admins (`RAKAZO_ADMIN_EMAILS`) use the large tier:
+the stock `desktop` template at 8 vCPU and 8 GB. Other owners use the standard tier:
+`rakazo-computer` at 2 vCPU and 4 GB. Build it once in the E2B team that
 owns `E2B_API_KEY`, and again whenever its definition in
 `packages/adapters/src/e2b-template.ts` changes:
 
@@ -246,8 +247,15 @@ owns `E2B_API_KEY`, and again whenever its definition in
 E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
 ```
 
-Until it exists, new computers use the stock desktop template. Existing computers keep
-the size they were created with until they are replaced.
+Until it exists, new standard computers fall back to the stock desktop template.
+Reconnecting an existing computer preserves its template and size, even if its owner's tier changes.
+
+### Daytona computer snapshots
+
+New Daytona computers use the same owner-based tiers: `daytona-large` for deployment admins
+and `daytona-medium` for other owners (or when no tier is supplied). `DAYTONA_SNAPSHOT`
+overrides this choice for all tiers. Reconnecting preserves the existing sandbox and size.
+Desktop tools and a browser are prepared for every tier.
 
 ### Novita computer template
 

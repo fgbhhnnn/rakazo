@@ -185,8 +185,16 @@ describe("host-aware sandbox", () => {
     const isolated = new FakeSandboxProvider();
     const host = new DesktopSandboxProvider();
     const sandbox = new HostAwareSandbox(isolated, host, async () => false);
-    const computer = await sandbox.provision({ botId: "iso", homePath: "/tmp/iso" }, ctx);
+    const provision = vi.spyOn(isolated, "provision");
+    const request = {
+      botId: "iso",
+      homePath: "/tmp/iso",
+      tier: "large",
+      resources: { cpu: 8, memory: 8 },
+    } as const;
+    const computer = await sandbox.provision(request, ctx);
     expect(computer.kind).toBe("fake");
+    expect(provision).toHaveBeenCalledWith(expect.objectContaining(request), ctx);
     await sandbox.destroy(computer, ctx);
   });
 

@@ -150,7 +150,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     Promise<{ url: string; token: string; expiresAt: number; viewPort: number }>
   >();
 
-  /** Optional snapshot override; otherwise new bot computers use a resource tier. */
+  /** Optional snapshot override; otherwise new bot computers use the requested tier. */
   private readonly snapshotName: string | undefined;
 
   constructor(
@@ -185,13 +185,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   }
 
   async provision(
-    request: {
-      botId: string;
-      homePath: string;
-      providerRef?: string;
-      providerKind?: ComputerRef["kind"];
-      resources?: { cpu: number; memory: number };
-    },
+    request: Parameters<SandboxProvider["provision"]>[0],
     context: AdapterContext,
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === "daytona") {
@@ -209,11 +203,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     // The unique name lets a create that fails after Daytona accepted it find and delete the
     // sandbox: it never auto-stops or auto-deletes, so a leaked one bills until removed.
     const name = `rakazo-${randomUUID()}`;
-    const resources = request.resources ?? { cpu: 2, memory: 4 };
-    // The large snapshot provides 4 CPU / 8 GiB to stay within the organization CPU limit.
     const snapshot =
-      this.snapshotName ??
-      (resources.cpu >= 8 || resources.memory >= 8 ? "daytona-large" : "daytona-medium");
+      this.snapshotName ?? (request.tier === "large" ? "daytona-large" : "daytona-medium");
     let sandbox: DaytonaSandbox;
     try {
       sandbox = await this.client.create(
