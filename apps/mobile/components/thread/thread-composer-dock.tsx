@@ -10,6 +10,7 @@ import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { useI18n } from "../../lib/i18n";
 import type { PendingAttachment } from "../../lib/thread-attachments";
+import type { ThreadColumnPadding } from "../../lib/thread-edges";
 import { previewMessageText } from "../../lib/thread-message-text";
 import { ComposerReplyPreview } from "../composer-reply-preview";
 import { FileKindIcon } from "../file-kind-icon";
@@ -23,6 +24,7 @@ import { ReplyDismissButton } from "../reply-dismiss-button";
  */
 export function ThreadComposerDock({
   hidden,
+  columnPadding,
   notice,
   onHeight,
   replyTarget,
@@ -36,6 +38,7 @@ export function ThreadComposerDock({
   children,
 }: {
   hidden: boolean;
+  columnPadding: ThreadColumnPadding;
   /** Shown above the reply, as part of the dock. */
   notice: ReactNode;
   /** The space the list must keep clear: the dock at rest, not following the keyboard. */
@@ -90,7 +93,10 @@ export function ThreadComposerDock({
     // Floats over the messages, which scroll underneath it; only its controls take touches.
     <View
       pointerEvents="box-none"
-      style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "100%" }}
+      style={[
+        { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "100%" },
+        columnPadding,
+      ]}
     >
       <View
         pointerEvents="box-none"
