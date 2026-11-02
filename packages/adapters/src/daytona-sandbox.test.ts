@@ -26,6 +26,31 @@ const context = {
 };
 
 describe("DaytonaSandboxProvider", () => {
+  it("restores unsafe paths with collision suffixes and consistent directory names", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.importWorkspace(
+      computer,
+      (async function* () {
+        for (const path of ["name.txt", "\x7fname.txt", "\x7fdir/你好😀.txt"])
+          yield { path, content: Buffer.from(path), executable: true };
+      })(),
+      context,
+    );
+    expect(fixture.sandbox.fs.uploadFile).toHaveBeenCalledWith(
+      Buffer.from("\x7fname.txt"),
+      "/home/daytona/rakazo-home/name-1.txt",
+    );
+    expect(fixture.sandbox.fs.uploadFile).toHaveBeenCalledWith(
+      Buffer.from("\x7fdir/你好😀.txt"),
+      "/home/daytona/rakazo-home/dir/你好😀.txt",
+    );
+    expect(fixture.executeCommand).toHaveBeenLastCalledWith(
+      expect.stringContaining("'/home/daytona/rakazo-home/name-1.txt'"),
+    );
+  });
+
   beforeEach(() => {
     vi.stubEnv("DAYTONA_SNAPSHOT", undefined);
   });

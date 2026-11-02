@@ -1038,6 +1038,25 @@ describe("Railway computers", () => {
     }
   });
 
+  it("restores unsafe paths with collision suffixes and valid Unicode", async () => {
+    const stopBrowsers = vi.spyOn(LinuxDesktop.prototype, "stopBrowsers").mockResolvedValue();
+    const content = Uint8Array.of(1, 2, 3);
+    try {
+      await provider.importWorkspace(
+        computer,
+        (async function* () {
+          for (const path of ["note.txt", "\x7fnote.txt", "\x7fdir/你好😀.txt"])
+            yield { path, content };
+        })(),
+        ctx,
+      );
+      expect(sandbox.files.write).toHaveBeenCalledWith("/home/rakazo/note-1.txt", content);
+      expect(sandbox.files.write).toHaveBeenCalledWith("/home/rakazo/dir/你好😀.txt", content);
+    } finally {
+      stopBrowsers.mockRestore();
+    }
+  });
+
   it("restores many files without one exec connection per file", async () => {
     const stopBrowsers = vi.spyOn(LinuxDesktop.prototype, "stopBrowsers").mockResolvedValue();
     let active = 0;

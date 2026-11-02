@@ -22,6 +22,11 @@ import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-su
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import { walkE2BWorkspaceConcurrently } from "./e2b-workspace-walk.js";
 import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import {
+  escapedFilePath,
+  PortableFileNames,
+  sanitizePortableFiles,
+} from "./portable-file-names.js";
 import type { PageBrowserCommandHandle } from "./remote-desktop-page-browser-command.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -428,6 +433,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    file = new PortableFileNames().file(file);
     await this.use(computer, (desktop) => writeRemoteFiles(desktop, [file], context));
   }
 
@@ -458,11 +464,11 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     const flush = async () => {
       if (!batch.length) return;
       const files = batch;
-      await this.use(computer, (desktop) => writeRemoteFiles(desktop, files, context));
+      await this.use(computer, (desktop) => restoreRemoteFiles(desktop, files, context));
       batch = [];
       batchBytes = 0;
     };
-    for await (const file of files) {
+    for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (
         batch.length >= 32 ||
@@ -589,6 +595,42 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
         throw error;
       }
     });
+  }
+}
+
+/** A rejected multipart batch must not prevent the remaining home files from being restored. */
+async function restoreRemoteFiles(
+  desktop: RemoteDesktop,
+  files: readonly PortableFile[],
+  context: AdapterContext,
+): Promise<void> {
+  try {
+    context.signal.throwIfAborted();
+    await writeRemoteFiles(desktop, files, context);
+  } catch (error) {
+    context.signal.throwIfAborted();
+    // Keep connection recovery and sandbox replacement working for a lost computer.
+    if (
+      isSandboxNotRunning(error) ||
+      isSandboxGoneError(error) ||
+      statusCode(error) === 401 ||
+      statusCode(error) === 403 ||
+      statusCode(error) === 429 ||
+      (error instanceof Error &&
+        ["AuthenticationError", "RateLimitError", "TimeoutError", "AbortError"].includes(
+          error.name,
+        ))
+    )
+      throw error;
+    if (files.length > 1) {
+      getLogger().warn("portable file batch failed; retrying files individually", { error });
+      for (const file of files) await restoreRemoteFiles(desktop, [file], context);
+    } else {
+      getLogger().warn("skipped portable file after upload failed", {
+        path: escapedFilePath(files[0]!.path),
+        error,
+      });
+    }
   }
 }
 

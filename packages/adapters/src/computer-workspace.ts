@@ -19,6 +19,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
+import { sanitizePortableFiles } from "./portable-file-names.js";
 import { isSandboxDamagedError } from "./sandbox-errors.js";
 import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
@@ -346,7 +347,9 @@ export async function checkpointComputerWorkspace(
       if (copied.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
       await use(bytes);
     };
-    for await (const file of sandbox.exportWorkspace(computer, context, limits)) {
+    for await (const file of sanitizePortableFiles(
+      sandbox.exportWorkspace(computer, context, limits),
+    )) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (++copied.files > limits.maxFiles) throw new WorkspaceTooLargeError("files");
       // Even an empty file takes an inode and usually a block.

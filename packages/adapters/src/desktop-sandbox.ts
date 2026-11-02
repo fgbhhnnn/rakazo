@@ -49,6 +49,7 @@ import {
   win32NtRelativeAvailable,
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
+import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import { hostCommandEnvironment } from "./sandbox-command-environment.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
@@ -397,6 +398,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile) {
+    file = new PortableFileNames().file(file);
     const box = this.requiredBox(computer);
     const target = await localWorkspaceTarget(box.home, file.path, false);
     const handle = await openContainedWorkspaceFile(
@@ -423,7 +425,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     _context: AdapterContext,
   ) {
-    for await (const file of files) {
+    for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       await this.writeFile(computer, file);
     }
