@@ -1130,10 +1130,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           () => runAbortController?.abort(),
         );
         const computerKind = (await deps.sandbox.provisionKind?.()) ?? storedComputer.kind;
-        const workspaceCheckpoint = createRunWorkspaceCheckpoint(async () => {
-          if (!runComputer.ready) return;
-          await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
-        }, context.signal);
+        const workspaceCheckpoint = createRunWorkspaceCheckpoint(
+          async () => {
+            if (!runComputer.ready) return;
+            await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
+          },
+          { id: storedComputer.id, kind: computerKind },
+          context.signal,
+        );
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
         // Every attachment message of this turn, steering included; unlike pendingTurnFiles it is
         // never drained, so a background_task launched later still forwards them.
