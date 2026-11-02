@@ -23,7 +23,9 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  deploymentAdminEmails,
   expireComputerExecutionLeases,
+  isDeploymentAdmin,
   parseComputerMode,
   recordComputerRunEnd,
   recordComputerRunStart,
@@ -394,6 +396,12 @@ export async function provisionComputer(
       });
     await mkdir(homePath, { recursive: true });
     await onProgress?.("recreating");
+    const owner = deploymentAdminEmails()
+      ? await deps.prisma.user.findUnique({
+          where: { id: existing.userId },
+          select: { email: true },
+        })
+      : null;
     const provision = () =>
       getLogger().withContext(
         { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
@@ -404,6 +412,9 @@ export async function provisionComputer(
               homePath,
               providerRef: existing.providerRef ?? undefined,
               providerKind: existing.kind as ComputerRef["kind"],
+              resources: isDeploymentAdmin({ email: owner?.email })
+                ? { cpu: 8, memory: 8 }
+                : { cpu: 2, memory: 4 },
               // A save from an older release has no time; the provider keeps its own state then.
               savedAt:
                 existing.homeRevision === "empty"

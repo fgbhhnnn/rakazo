@@ -33,7 +33,12 @@ import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
-import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import {
+  INSTALL_LINUX_BROWSER,
+  LinuxDesktop,
+  onBotScreen,
+  PREPARE_LINUX_DESKTOP,
+} from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { withAbort } from "./web-ssrf.js";
@@ -48,10 +53,13 @@ const DAYTONA_RESTORE_TIMEOUT_MS = 600_000;
 const DAYTONA_POLL_MS = 1_000;
 /** How long a cached handle is trusted before Daytona is asked whether the sandbox still runs. */
 const DAYTONA_HANDLE_PROBE_MS = 60_000;
+const PREPARE_DAYTONA_DESKTOP = [PREPARE_LINUX_DESKTOP, INSTALL_LINUX_BROWSER].join("\n");
 
 export type DaytonaSandbox = Pick<
   Sandbox,
   | "id"
+  | "cpu"
+  | "memory"
   | "state"
   | "desiredState"
   | "recoverable"
@@ -65,6 +73,7 @@ export type DaytonaSandbox = Pick<
   | "recover"
   | "waitUntilStarted"
   | "stop"
+  | "resize"
   | "delete"
 > & {
   process: Pick<Sandbox["process"], "executeCommand">;
@@ -181,6 +190,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      resources?: { cpu: number; memory: number };
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
@@ -212,6 +222,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         },
         { timeout: 120 },
       );
+      const resources = request.resources ?? { cpu: 2, memory: 4 };
+      // Snapshot resources are inherited; decreasing CPU or memory requires a stopped sandbox.
+      const restart =
+        sandbox.state === SandboxState.STARTED &&
+        (resources.cpu < sandbox.cpu || resources.memory < sandbox.memory);
+      if (restart) await sandbox.stop(DAYTONA_STOP_TIMEOUT_MS / 1_000);
+      await sandbox.resize(resources);
+      if (restart) await sandbox.start(DAYTONA_START_TIMEOUT_MS / 1_000);
     } catch (error) {
       await this.deleteAbandoned(name);
       throw error;
@@ -557,7 +575,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         throw new Error(result.result || "could not create Daytona workspace");
       }
       const runtime = await sandbox.process.executeCommand(
-        `bash -c ${shellQuote(PREPARE_LINUX_DESKTOP)}`,
+        `bash -c ${shellQuote(PREPARE_DAYTONA_DESKTOP)}`,
         undefined,
         undefined,
         300,

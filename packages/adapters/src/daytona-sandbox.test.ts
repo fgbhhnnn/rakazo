@@ -10,8 +10,10 @@ import {
   DaytonaValidationError,
 } from "@daytona/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { shellQuote } from "./computer-support.js";
 import type { DaytonaSandbox, DaytonaSandboxSdk } from "./daytona-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
+import { INSTALL_LINUX_BROWSER, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
@@ -27,6 +29,74 @@ describe("DaytonaSandboxProvider", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
+  });
+
+  it.each([
+    { tier: "admin", resources: { cpu: 8, memory: 8 } },
+    { tier: "non-admin", resources: { cpu: 2, memory: 4 } },
+    { tier: "default", resources: undefined },
+  ])("applies $tier resources after snapshot creation", async ({ resources }) => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider(
+      { apiKey: "test-key", snapshot: "rakazo-computer" },
+      fixture.client,
+    );
+
+    await provider.provision({ botId: "bot-a", homePath: "/unused", resources }, context);
+
+    expect(fixture.create).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshot: "rakazo-computer" }),
+      { timeout: 120 },
+    );
+    expect(fixture.resize).toHaveBeenCalledExactlyOnceWith(resources ?? { cpu: 2, memory: 4 });
+    expect(fixture.sandbox).toMatchObject(resources ?? { cpu: 2, memory: 4 });
+    expect(fixture.stop).not.toHaveBeenCalled();
+    expect(fixture.start).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { cpu: 8, memory: 4 },
+    { cpu: 2, memory: 8 },
+  ])("stops before reducing snapshot resources from $cpu CPU / $memory GiB", async (resources) => {
+    const fixture = daytonaFixture({ resources });
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    expect(fixture.stop).toHaveBeenCalledExactlyOnceWith(120);
+    expect(fixture.resize).toHaveBeenCalledExactlyOnceWith({ cpu: 2, memory: 4 });
+    expect(fixture.start).toHaveBeenCalledExactlyOnceWith(120);
+    expect(fixture.remote.state).toBe("started");
+    expect(computer).toMatchObject({ fresh: true });
+  });
+
+  it("deletes the new sandbox when resize fails", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const error = new DaytonaError("resize failed");
+    fixture.resize.mockRejectedValueOnce(error);
+
+    await expect(provider.provision({ botId: "bot-a", homePath: "/unused" }, context)).rejects.toBe(
+      error,
+    );
+
+    expect(fixture.deleteSandbox).toHaveBeenCalledOnce();
+    expect(fixture.remote.missing).toBe(true);
+  });
+
+  it("installs a browser alongside desktop tools during prepare", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    await provider.prepare(computer, context);
+
+    expect(fixture.executeCommand).toHaveBeenCalledWith(
+      `bash -c ${shellQuote([PREPARE_LINUX_DESKTOP, INSTALL_LINUX_BROWSER].join("\n"))}`,
+      undefined,
+      undefined,
+      300,
+    );
   });
 
   it("forwards an optional snapshot name to create()", async () => {
@@ -884,6 +954,7 @@ function daytonaFixture(
     recoverable?: boolean;
     later?: SandboxState[];
     prepareFails?: boolean;
+    resources?: { cpu: number; memory: number };
   } = {},
 ) {
   const remote: {
@@ -990,6 +1061,16 @@ function daytonaFixture(
     }
     settle("stopped");
   });
+  const resize = vi.fn(async (resources: { cpu?: number; memory?: number; disk?: number }) => {
+    if (
+      remote.state === "started" &&
+      ((resources.cpu !== undefined && resources.cpu < sandbox.cpu) ||
+        (resources.memory !== undefined && resources.memory < sandbox.memory))
+    ) {
+      throw new DaytonaValidationError("Cannot decrease resources while running", 400);
+    }
+    Object.assign(sandbox, resources);
+  });
   const deleteSandbox = vi.fn(async (_timeout?: number, _wait?: boolean) => {
     if (remote.missing) throw notFound();
     remote.missing = true;
@@ -1004,6 +1085,8 @@ function daytonaFixture(
 
   const sandbox = {
     id: remote.id,
+    cpu: options.resources?.cpu ?? 2,
+    memory: options.resources?.memory ?? 4,
     state: remote.state,
     desiredState: remote.desiredState,
     recoverable: remote.recoverable,
@@ -1027,6 +1110,7 @@ function daytonaFixture(
     recover,
     waitUntilStarted,
     stop,
+    resize,
     delete: deleteSandbox,
   } satisfies DaytonaSandbox;
 
@@ -1062,6 +1146,7 @@ function daytonaFixture(
     recover,
     waitUntilStarted,
     stop,
+    resize,
     deleteSandbox,
     getSignedPreviewUrl,
     expireSignedPreviewUrl,
