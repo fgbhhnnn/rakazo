@@ -9,7 +9,7 @@ import {
   DaytonaTimeoutError,
   DaytonaValidationError,
 } from "@daytona/sdk";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { shellQuote } from "./computer-support.js";
 import type { DaytonaSandbox, DaytonaSandboxSdk } from "./daytona-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
@@ -26,62 +26,43 @@ const context = {
 };
 
 describe("DaytonaSandboxProvider", () => {
+  beforeEach(() => {
+    vi.stubEnv("DAYTONA_SNAPSHOT", undefined);
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
   });
 
   it.each([
-    { tier: "admin", resources: { cpu: 8, memory: 8 } },
-    { tier: "non-admin", resources: { cpu: 2, memory: 4 } },
-    { tier: "default", resources: undefined },
-  ])("applies $tier resources after snapshot creation", async ({ resources }) => {
+    { tier: "admin", resources: { cpu: 8, memory: 8 }, snapshot: "daytona-large" },
+    { tier: "CPU threshold", resources: { cpu: 8, memory: 4 }, snapshot: "daytona-large" },
+    { tier: "memory threshold", resources: { cpu: 2, memory: 8 }, snapshot: "daytona-large" },
+    { tier: "above threshold", resources: { cpu: 9, memory: 9 }, snapshot: "daytona-large" },
+    { tier: "below threshold", resources: { cpu: 7, memory: 7 }, snapshot: "daytona-medium" },
+    { tier: "non-admin", resources: { cpu: 2, memory: 4 }, snapshot: "daytona-medium" },
+    { tier: "default", resources: undefined, snapshot: "daytona-medium" },
+  ])("selects $snapshot for $tier resources without resizing", async ({ resources, snapshot }) => {
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider(
-      { apiKey: "test-key", snapshot: "rakazo-computer" },
-      fixture.client,
-    );
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
 
     await provider.provision({ botId: "bot-a", homePath: "/unused", resources }, context);
 
     expect(fixture.create).toHaveBeenCalledWith(
-      expect.objectContaining({ snapshot: "rakazo-computer" }),
+      {
+        name: expect.stringMatching(/^rakazo-/),
+        snapshot,
+        labels: { botId: "bot-a", rakazo: "computer" },
+        envVars: { VNC_RESOLUTION: "1280x800" },
+        autoStopInterval: 0,
+        autoDeleteInterval: -1,
+      },
       { timeout: 120 },
     );
-    expect(fixture.resize).toHaveBeenCalledExactlyOnceWith(resources ?? { cpu: 2, memory: 4 });
-    expect(fixture.sandbox).toMatchObject(resources ?? { cpu: 2, memory: 4 });
+    expect(fixture.resize).not.toHaveBeenCalled();
     expect(fixture.stop).not.toHaveBeenCalled();
     expect(fixture.start).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    { cpu: 8, memory: 4 },
-    { cpu: 2, memory: 8 },
-  ])("stops before reducing snapshot resources from $cpu CPU / $memory GiB", async (resources) => {
-    const fixture = daytonaFixture({ resources });
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
-
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
-
-    expect(fixture.stop).toHaveBeenCalledExactlyOnceWith(120);
-    expect(fixture.resize).toHaveBeenCalledExactlyOnceWith({ cpu: 2, memory: 4 });
-    expect(fixture.start).toHaveBeenCalledExactlyOnceWith(120);
-    expect(fixture.remote.state).toBe("started");
-    expect(computer).toMatchObject({ fresh: true });
-  });
-
-  it("deletes the new sandbox when resize fails", async () => {
-    const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const error = new DaytonaError("resize failed");
-    fixture.resize.mockRejectedValueOnce(error);
-
-    await expect(provider.provision({ botId: "bot-a", homePath: "/unused" }, context)).rejects.toBe(
-      error,
-    );
-
-    expect(fixture.deleteSandbox).toHaveBeenCalledOnce();
-    expect(fixture.remote.missing).toBe(true);
   });
 
   it("installs a browser alongside desktop tools during prepare", async () => {
@@ -99,29 +80,44 @@ describe("DaytonaSandboxProvider", () => {
     );
   });
 
-  it("forwards an optional snapshot name to create()", async () => {
+  it.each([
+    { cpu: 2, memory: 4 },
+    { cpu: 8, memory: 8 },
+  ])("lets config.snapshot override the tier for %j resources", async (resources) => {
     const fixture = daytonaFixture();
     const provider = new DaytonaSandboxProvider(
       { apiKey: "test-key", snapshot: "rakazo-computer" },
       fixture.client,
     );
-    await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.provision({ botId: "bot-a", homePath: "/unused", resources }, context);
     expect(fixture.create).toHaveBeenCalledWith(
       expect.objectContaining({ snapshot: "rakazo-computer" }),
       { timeout: 120 },
     );
+    expect(fixture.resize).not.toHaveBeenCalled();
+    expect(fixture.stop).not.toHaveBeenCalled();
+    expect(fixture.start).not.toHaveBeenCalled();
   });
 
-  it("falls back to DAYTONA_SNAPSHOT when config.snapshot is unset", async () => {
-    vi.stubEnv("DAYTONA_SNAPSHOT", " env-snapshot ");
-    const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
-    expect(fixture.create).toHaveBeenCalledWith(
-      expect.objectContaining({ snapshot: "env-snapshot" }),
-      { timeout: 120 },
-    );
-  });
+  it.each([
+    { cpu: 2, memory: 4 },
+    { cpu: 8, memory: 8 },
+  ])(
+    "lets DAYTONA_SNAPSHOT override the tier for %j resources when config.snapshot is unset",
+    async (resources) => {
+      vi.stubEnv("DAYTONA_SNAPSHOT", " env-snapshot ");
+      const fixture = daytonaFixture();
+      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      await provider.provision({ botId: "bot-a", homePath: "/unused", resources }, context);
+      expect(fixture.create).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshot: "env-snapshot" }),
+        { timeout: 120 },
+      );
+      expect(fixture.resize).not.toHaveBeenCalled();
+      expect(fixture.stop).not.toHaveBeenCalled();
+      expect(fixture.start).not.toHaveBeenCalled();
+    },
+  );
 
   it("prefers config.snapshot over DAYTONA_SNAPSHOT", async () => {
     vi.stubEnv("DAYTONA_SNAPSHOT", "env-snapshot");
@@ -135,6 +131,7 @@ describe("DaytonaSandboxProvider", () => {
       expect.objectContaining({ snapshot: "config-snapshot" }),
       { timeout: 120 },
     );
+    expect(fixture.resize).not.toHaveBeenCalled();
   });
 
   it("prunes excluded directories before listing their contents and keeps project core", async () => {
@@ -169,12 +166,19 @@ describe("DaytonaSandboxProvider", () => {
     expect(visited).not.toContain("/home/daytona/rakazo-home/.browser-profiles/chromium/Cache");
   });
 
-  it("omits snapshot from create() when unset", async () => {
+  it("uses the medium snapshot when the override is blank", async () => {
     vi.stubEnv("DAYTONA_SNAPSHOT", "   ");
     const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const provider = new DaytonaSandboxProvider(
+      { apiKey: "test-key", snapshot: "   " },
+      fixture.client,
+    );
     await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
-    expect(fixture.create.mock.calls[0]?.[0]).not.toHaveProperty("snapshot");
+    expect(fixture.create).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshot: "daytona-medium" }),
+      { timeout: 120 },
+    );
+    expect(fixture.resize).not.toHaveBeenCalled();
   });
 
   it("preserves desktop command output in failures", async () => {
@@ -954,7 +958,6 @@ function daytonaFixture(
     recoverable?: boolean;
     later?: SandboxState[];
     prepareFails?: boolean;
-    resources?: { cpu: number; memory: number };
   } = {},
 ) {
   const remote: {
@@ -1061,15 +1064,8 @@ function daytonaFixture(
     }
     settle("stopped");
   });
-  const resize = vi.fn(async (resources: { cpu?: number; memory?: number; disk?: number }) => {
-    if (
-      remote.state === "started" &&
-      ((resources.cpu !== undefined && resources.cpu < sandbox.cpu) ||
-        (resources.memory !== undefined && resources.memory < sandbox.memory))
-    ) {
-      throw new DaytonaValidationError("Cannot decrease resources while running", 400);
-    }
-    Object.assign(sandbox, resources);
+  const resize = vi.fn(async () => {
+    throw new DaytonaNotFoundError("Resize endpoint not found", 404);
   });
   const deleteSandbox = vi.fn(async (_timeout?: number, _wait?: boolean) => {
     if (remote.missing) throw notFound();
@@ -1085,8 +1081,8 @@ function daytonaFixture(
 
   const sandbox = {
     id: remote.id,
-    cpu: options.resources?.cpu ?? 2,
-    memory: options.resources?.memory ?? 4,
+    cpu: 2,
+    memory: 4,
     state: remote.state,
     desiredState: remote.desiredState,
     recoverable: remote.recoverable,
