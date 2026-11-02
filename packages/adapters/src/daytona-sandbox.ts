@@ -150,7 +150,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     Promise<{ url: string; token: string; expiresAt: number; viewPort: number }>
   >();
 
-  /** Optional Daytona snapshot name for new bot computers; unset = server default. */
+  /** Optional snapshot override; otherwise new bot computers use a resource tier. */
   private readonly snapshotName: string | undefined;
 
   constructor(
@@ -209,12 +209,17 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     // The unique name lets a create that fails after Daytona accepted it find and delete the
     // sandbox: it never auto-stops or auto-deletes, so a leaked one bills until removed.
     const name = `rakazo-${randomUUID()}`;
+    const resources = request.resources ?? { cpu: 2, memory: 4 };
+    // The large snapshot provides 4 CPU / 8 GiB to stay within the organization CPU limit.
+    const snapshot =
+      this.snapshotName ??
+      (resources.cpu >= 8 || resources.memory >= 8 ? "daytona-large" : "daytona-medium");
     let sandbox: DaytonaSandbox;
     try {
       sandbox = await this.client.create(
         {
           name,
-          ...(this.snapshotName ? { snapshot: this.snapshotName } : {}),
+          snapshot,
           labels: { botId: request.botId, rakazo: "computer" },
           envVars: { VNC_RESOLUTION: "1280x800" },
           autoStopInterval: 0,
@@ -222,14 +227,6 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         },
         { timeout: 120 },
       );
-      const resources = request.resources ?? { cpu: 2, memory: 4 };
-      // Snapshot resources are inherited; decreasing CPU or memory requires a stopped sandbox.
-      const restart =
-        sandbox.state === SandboxState.STARTED &&
-        (resources.cpu < sandbox.cpu || resources.memory < sandbox.memory);
-      if (restart) await sandbox.stop(DAYTONA_STOP_TIMEOUT_MS / 1_000);
-      await sandbox.resize(resources);
-      if (restart) await sandbox.start(DAYTONA_START_TIMEOUT_MS / 1_000);
     } catch (error) {
       await this.deleteAbandoned(name);
       throw error;
