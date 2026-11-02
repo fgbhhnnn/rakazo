@@ -5,6 +5,7 @@ import { PRODUCT_NAME } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   accountDeletionEmail,
+  CATALOGS,
   emailLocale,
   emailText,
   identityCodeEmail,
@@ -12,8 +13,6 @@ import {
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
-import { ES_MESSAGES } from "./locales/es.js";
-
 import {
   integrationClaimConfirmEmail,
   pluginSubmissionAdminEmail,
@@ -97,12 +96,30 @@ describe("email languages", () => {
   it("writes in the saved app language, else the asking browser's, else English", () => {
     expect(emailLocale("es", headers("de-DE,de;q=0.9"))).toBe("es");
     expect(emailLocale(null, headers("es-CL,es;q=0.9,en;q=0.8"))).toBe("es");
-    expect(emailLocale(undefined, headers("ja-JP"))).toBe("en");
-    expect(emailLocale("de", headers("es-ES"))).toBe("en");
-    expect(emailLocale(null, headers("de-DE,es;q=0.9"))).toBe("es");
+    expect(emailLocale(undefined, headers("it-IT"))).toBe("en");
+    expect(emailLocale("it", headers("es-ES"))).toBe("en");
+    expect(emailLocale(null, headers("it-IT,es;q=0.9"))).toBe("es");
     expect(emailLocale(null, headers("en-US,es;q=0.9"))).toBe("en");
     expect(emailLocale(null, headers("*"))).toBe("en");
     expect(emailLocale(null, null)).toBe("en");
+  });
+
+  it.each([
+    ["de-DE", "de"],
+    ["fr-FR", "fr"],
+    ["iw-IL", "he"],
+    ["hi-IN", "hi"],
+    ["ja-JP", "ja"],
+    ["ko-KR", "ko"],
+    ["nl-NL", "nl"],
+    ["pt", "pt-BR"],
+    ["ru-RU", "ru"],
+    ["tr-TR", "tr"],
+    ["zh-Hans-TW", "zh-CN"],
+    ["zh-Hant-HK", "zh-TW"],
+  ])("matches %s to the %s email catalog", (tag, locale) => {
+    expect(emailLocale(tag, headers("en-US"))).toBe(locale);
+    expect(emailLocale(null, headers(`${tag},en;q=0.9`))).toBe(locale);
   });
 
   it("writes a code email in Spanish", async () => {
@@ -110,6 +127,17 @@ describe("email languages", () => {
     expect(message.subject).toBe(`Tu código para iniciar sesión en ${PRODUCT_NAME}`);
     expect(message.html).toContain('lang="es"');
     expect(message.text).toContain(`Introduce este código para iniciar sesión en ${PRODUCT_NAME}:`);
+    expect(message.html).toContain('dir="ltr"');
+  });
+
+  it("lays a right-to-left language out right to left", async () => {
+    const message = await integrationClaimConfirmEmail(
+      "user@example.test",
+      "https://example.test/claim",
+      "he",
+    );
+    expect(message.html).toContain('lang="he"');
+    expect(message.html).toContain('dir="rtl"');
   });
 
   it("greets by name in Spanish and keeps English as written", async () => {
@@ -132,20 +160,60 @@ describe("email languages", () => {
     ).toBe(expected);
   });
 
-  it("translates every email string into Spanish with its placeholders", () => {
-    const dir = dirname(fileURLToPath(import.meta.url));
-    const ids = readdirSync(dir)
-      .filter((file) => file.endsWith(".tsx"))
-      .flatMap((file) =>
-        [...readFileSync(join(dir, file), "utf8").matchAll(/say\(\s*("(?:[^"\\]|\\.)*")/g)].map(
-          (match) => JSON.parse(match[1] ?? '""') as string,
-        ),
-      );
-    expect(ids.length).toBeGreaterThan(30);
-    const placeholders = (text: string) => [...text.matchAll(/\{\w+\}/g)].map(String).sort();
-    for (const id of ids) {
-      expect(ES_MESSAGES[id], id).toBeTruthy();
-      expect(placeholders(ES_MESSAGES[id] ?? ""), id).toEqual(placeholders(id));
-    }
-  });
+  it.each(Object.entries(CATALOGS))(
+    "renders page claim confirmation and review emails in %s with fork branding",
+    async (locale, catalog) => {
+      const email = "user@example.test";
+      const url = "https://example.test/claim?token=fake-token&source=email";
+      const name = "Rakazo tools";
+      const expected = (key: string) =>
+        catalog[key]!.replaceAll("Rakazo", PRODUCT_NAME).replaceAll("{name}", name);
+      const confirmation = await integrationClaimConfirmEmail(email, url, locale);
+      expect(confirmation.subject).toBe(expected("Confirm your Rakazo page claim"));
+      expect(confirmation.html).toContain(`lang="${locale}"`);
+      expect(confirmation.html).toContain(`href="${url.replaceAll("&", "&amp;")}"`);
+      expect(confirmation.text).toContain(url);
+      for (const key of [
+        "Confirm claim",
+        "We review every claim once it's confirmed and will email you when it's done.",
+        "This link expires in one day. If you did not claim a page, ignore this email.",
+      ]) {
+        expect(confirmation.text).toContain(expected(key));
+      }
+      for (const status of ["approved", "rejected"] as const) {
+        const reviewed = await pluginSubmissionReviewedEmail(
+          { email, name, status, reason: null, claim: true },
+          locale,
+        );
+        expect(reviewed.subject).toBe(expected("Your Rakazo page claim: {name}"));
+        expect(reviewed.text).toContain(
+          expected(
+            status === "approved"
+              ? "Your changes to the {name} page are approved."
+              : "We couldn't approve your changes to the {name} page.",
+          ),
+        );
+      }
+    },
+  );
+
+  it.each(Object.entries(CATALOGS))(
+    "translates every email string into %s with its placeholders",
+    (_locale, catalog) => {
+      const dir = dirname(fileURLToPath(import.meta.url));
+      const ids = readdirSync(dir)
+        .filter((file) => file.endsWith(".tsx"))
+        .flatMap((file) =>
+          [...readFileSync(join(dir, file), "utf8").matchAll(/say\(\s*("(?:[^"\\]|\\.)*")/g)].map(
+            (match) => JSON.parse(match[1] ?? '""') as string,
+          ),
+        );
+      expect(ids.length).toBeGreaterThan(30);
+      const placeholders = (text: string) => [...text.matchAll(/\{\w+\}/g)].map(String).sort();
+      for (const id of ids) {
+        expect(catalog[id], id).toBeTruthy();
+        expect(placeholders(catalog[id] ?? ""), id).toEqual(placeholders(id));
+      }
+    },
+  );
 });
