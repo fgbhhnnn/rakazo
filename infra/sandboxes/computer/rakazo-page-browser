@@ -187,7 +187,7 @@ class AgentBrowser:
             # Always the Chromium on this display: without it, agent-browser would start a browser of its own.
             "AGENT_BROWSER_CDP": str(port),
             "AGENT_BROWSER_IDLE_TIMEOUT_MS": "900000",
-            # Dialogs are the person's and the page's to answer, as on the screen.
+            # Dialogs are the person's and the page's to answer, as on the screen; see PageBrowser.dialog_result.
             "AGENT_BROWSER_NO_AUTO_DIALOG": "1",
             "AGENT_BROWSER_NO_WEBMCP": "1",
         })
@@ -446,6 +446,9 @@ class PageBrowser:
         self.port, self.target, self.ab = port, target_id, browser
         self.client, self.session_id = client, session_id
         self.downloads: Downloads | None = None
+        # Set by a step whose input opened a JavaScript dialog. Reading a page that a dialog blocks
+        # times out, and agent-browser then stops answering for the tab, dialog commands included.
+        self.dialog_opened = False
 
     # -- reading the page -------------------------------------------------------------------------
 
@@ -657,13 +660,47 @@ class PageBrowser:
         return {"ok": True, **{key: page[key] for key in ("url", "title", "tree", "elements", "frameOrigins", "loading")
                               if key in page}}
 
+    def dialog(self) -> dict[str, Any] | None:
+        """The JavaScript dialog (alert, confirm, prompt or beforeunload) the page has open, if any."""
+        try:
+            # Short: it can follow a step that already used most of the caller's time limit.
+            (status,) = self.ab.batch([["dialog", "status"]], timeout=3.0)
+        except Exception:  # noqa: BLE001
+            return None
+        return status if status.get("hasDialog") else None
+
+    def dialog_result(self, dialog: dict[str, Any], progress: dict[str, Any], remaining: bool = False) -> dict[str, Any]:
+        """An alert only informs and OK is its one answer, so it is closed and its message reported.
+        Any other dialog asks something: it stays open on the screen for computer_act or the person."""
+        kind = str(dialog.get("type") or "")
+        message = str(dialog.get("message") or "")[:300]
+        quoted = f": {json.dumps(message, ensure_ascii=False)}" if message else ""
+        if kind != "alert":
+            name = '"Leave site?"' if kind == "beforeunload" else kind
+            return {"ok": False, **progress, "error": f"A {name} dialog is open on the screen{quoted}",
+                    "dialog": kind, "fallback": "computer_act"}
+        note = f"The page showed an alert, now closed{quoted}."
+        try:
+            self.ab.batch([["dialog", "dismiss"]])
+            snap = self.snapshot(ACTION_WAIT_SECONDS)
+        except Exception:  # noqa: BLE001
+            return {"ok": False, **progress, "error": f"The page showed an alert{quoted}.", "fallback": "computer_act"}
+        # A step that was still running when the alert came may or may not have taken effect.
+        unsure = " Check whether the last step took effect." if progress.get("uncertain") else ""
+        if remaining or unsure:
+            after = " The remaining steps did not run." if remaining else ""
+            return {**snap, **progress, "ok": False, "error": f"{note}{unsure}{after}"}
+        return {**snap, **progress, "note": note}
+
     def step(self, commands: list[list[str]]) -> list[Any]:
         try:
-            return self.ab.batch(commands)
+            results = self.ab.batch(commands)
         except AbError as error:
             if any(marker in str(error) for marker in SETTLED_ERRORS):
                 raise Settled(str(error)) from None
             raise
+        self.dialog_opened = any(result.get("dialogOpened") is True for result in results)
+        return results
 
     def fill(self, ref: str, text: str) -> None:
         _, kept = self.step([["fill", f"@{ref}", text], ["get", "value", f"@{ref}"]])
@@ -753,6 +790,10 @@ class PageBrowser:
                         raise
                 completed += 1
                 uncertain = False
+                dialog = self.dialog() if self.dialog_opened else None
+                if dialog:
+                    return self.dialog_result(dialog, {"completed": completed, "uncertain": False},
+                                              remaining=completed < len(actions))
             ended = time.time()
             time.sleep(ACTION_QUIET_SECONDS)
             started = time.monotonic()
@@ -777,6 +818,10 @@ class PageBrowser:
             return {"ok": False, "completed": completed, "uncertain": uncertain,
                     "error": recovery.TIMEOUT_MESSAGE, "fallback": "computer_act"}
         except Exception as exc:  # noqa: BLE001
+            dialog = self.dialog()
+            if dialog:
+                return self.dialog_result(dialog, {"completed": completed, "uncertain": uncertain},
+                                          remaining=completed + uncertain < len(actions))
             return {"ok": False, "completed": completed, "uncertain": uncertain, "error": str(exc),
                     "fallback": "computer_act"}
 
@@ -1331,11 +1376,17 @@ def run_operation(client: CdpClient, port: int, browser: AgentBrowser, command: 
             connection.download_frame = frame["id"]
             connection.call("Network.enable", {"maxPostDataSize": 1}, session_id=session)
             page.downloads = downloads
-        if command == "navigate":
-            return page.navigate(value, opened=target == opened_target)
-        if command == "snapshot":
-            return page.snapshot()
-        return page.act(value)
+        try:
+            if command == "navigate":
+                return page.navigate(value, opened=target == opened_target)
+            if command == "snapshot":
+                return page.snapshot()
+            return page.act(value)
+        except Exception:  # noqa: BLE001
+            dialog = page.dialog()
+            if dialog:
+                return page.dialog_result(dialog, {})
+            raise
 
     # A replacement tab needs no old CDP page driver: agent-browser initializes its own page.
     api = {"attach_page": attach_page, "ensure_world": lambda connection, session: None,
