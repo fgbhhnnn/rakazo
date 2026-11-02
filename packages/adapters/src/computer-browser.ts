@@ -79,7 +79,11 @@ export class ComputerBrowserProvider implements BrowserProvider {
     if (this.canUseInProcess(computer)) {
       return this.fake.navigate(computer, request, context);
     }
-    const live = await this.runLive(computer, { command: "navigate", url: request.url }, context);
+    const live = await this.runLive(
+      computer,
+      { command: "navigate", url: request.url, downloads: request.downloads },
+      context,
+    );
     if (live?.ok !== true || live.fallback === "computer_act") {
       return {
         url: request.url,
@@ -98,6 +102,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       title: typeof live.title === "string" ? live.title : "",
       ...page,
       ...(page.tree !== undefined && live.loading === true ? { loading: true } : {}),
+      ...downloadsOf(live),
     };
   }
 
@@ -141,7 +146,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
     }
     const live = await this.runLive(
       computer,
-      { command: "act", actions: request.actions },
+      { command: "act", actions: request.actions, downloads: request.downloads },
       context,
     );
     const elements = Array.isArray(live?.elements) ? live.elements : undefined;
@@ -157,6 +162,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         url: typeof live.url === "string" ? live.url : "",
         title: typeof live.title === "string" ? live.title : "",
         ...(tree !== undefined ? { tree, elements } : {}),
+        ...downloadsOf(live),
         error: live.error || DETACHED_MESSAGE,
       };
     }
@@ -171,6 +177,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         ...(elements
           ? { tree: typeof live?.tree === "string" ? live.tree : formatTree(elements), elements }
           : {}),
+        ...downloadsOf(live),
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
       };
@@ -183,6 +190,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       tree: typeof live.tree === "string" ? live.tree : elements ? formatTree(elements) : undefined,
       elements,
       ...(live.loading === true ? { loading: true } : {}),
+      ...downloadsOf(live),
     };
   }
 
@@ -237,6 +245,11 @@ export class ComputerBrowserProvider implements BrowserProvider {
       };
     }
   }
+}
+
+/** Files the call's page downloaded, which the helper lists even when a later step failed. */
+function downloadsOf(live: LivePayload | undefined) {
+  return Array.isArray(live?.downloads) ? { downloads: live.downloads } : {};
 }
 
 function formatTree(elements: BrowserSnapshotNode[]): string {
