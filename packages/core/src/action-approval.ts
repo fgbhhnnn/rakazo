@@ -300,6 +300,12 @@ export function truthyFlag(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
 }
 
+/**
+ * These send data to the site their url names, so a site the run was not given is gated, and
+ * "Always allow" on a card naming that site allows the site, never the tool.
+ */
+export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "paid_request"]);
+
 export function siteAlwaysAllowed(rules: ActionApprovalRule[], site: string): boolean {
   return rules.some(
     (rule) =>
