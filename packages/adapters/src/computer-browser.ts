@@ -118,7 +118,11 @@ export class ComputerBrowserProvider implements BrowserProvider {
     }
     const live = await this.runLive(
       computer,
-      { command: "snapshot", ...(request.query ? { query: request.query } : {}) },
+      {
+        command: "snapshot",
+        ...(request.query ? { query: request.query } : {}),
+        downloads: request.downloads,
+      },
       context,
     );
     if (live?.ok !== true || live.fallback === "computer_act" || live.error) {
@@ -129,6 +133,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         elements: [],
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
+        ...downloadsOf(live),
         ...pageNotice(live),
       };
     }
@@ -140,6 +145,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       elements,
       ...(Array.isArray(live.frameOrigins) ? { frameOrigins: live.frameOrigins } : {}),
       ...(live.loading === true ? { loading: true } : {}),
+      ...downloadsOf(live),
       ...pageNotice(live),
     };
   }
