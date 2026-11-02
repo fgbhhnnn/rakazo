@@ -25,7 +25,6 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   deploymentAdminEmails,
   expireComputerExecutionLeases,
-  isDeploymentAdmin,
   parseComputerMode,
   recordComputerRunEnd,
   recordComputerRunStart,
@@ -40,6 +39,7 @@ import {
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
 import { settleStoppedSuspendBeforeProvision } from "./computer-suspend-recovery.js";
+import { COMPUTER_TIER_RESOURCES, computerTierFor } from "./computer-tier.js";
 import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
@@ -402,6 +402,7 @@ export async function provisionComputer(
           select: { email: true },
         })
       : null;
+    const tier = computerTierFor({ email: owner?.email });
     const provision = () =>
       getLogger().withContext(
         { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
@@ -412,9 +413,8 @@ export async function provisionComputer(
               homePath,
               providerRef: existing.providerRef ?? undefined,
               providerKind: existing.kind as ComputerRef["kind"],
-              resources: isDeploymentAdmin({ email: owner?.email })
-                ? { cpu: 8, memory: 8 }
-                : { cpu: 2, memory: 4 },
+              tier,
+              resources: COMPUTER_TIER_RESOURCES[tier],
               // A save from an older release has no time; the provider keeps its own state then.
               savedAt:
                 existing.homeRevision === "empty"

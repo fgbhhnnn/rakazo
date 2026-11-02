@@ -6,6 +6,7 @@ import type {
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ComputerTier,
   ControlLeaseRef,
   PortableFile,
   ProcessEvent,
@@ -164,6 +165,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       apiKey: string;
       sdk: RemoteDesktopSdk;
       template: string;
+      templatesByTier?: Record<ComputerTier, string>;
       fallbackTemplate?: string;
       isTimeoutError: (error: unknown) => boolean;
     },
@@ -267,12 +269,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   }
 
   async provision(
-    request: {
-      botId: string;
-      homePath: string;
-      providerRef?: string;
-      providerKind?: ComputerRef["kind"];
-    },
+    request: Parameters<SandboxProvider["provision"]>[0],
     _context: AdapterContext,
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === this.config.id) {
@@ -300,6 +297,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       }
     }
     const desktop = await this.createDesktop(
+      this.config.templatesByTier?.[request.tier ?? "standard"] ?? this.config.template,
       remoteDesktopCreateOptions(request.botId, this.config.apiKey),
     );
     this.boxes.set(desktop.sandboxId, desktop);
@@ -518,16 +516,22 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
 
   /** Prefer the right-sized template; an account that has not built it keeps the stock one. */
   private async createDesktop(
+    template: string,
     options: ReturnType<typeof remoteDesktopCreateOptions>,
   ): Promise<RemoteDesktop> {
     try {
-      return await this.config.sdk.create(this.config.template, options);
+      return await this.config.sdk.create(template, options);
     } catch (error) {
-      if (!this.config.fallbackTemplate || !isTemplateMissingError(error)) throw error;
+      if (
+        !this.config.fallbackTemplate ||
+        template === this.config.fallbackTemplate ||
+        !isTemplateMissingError(error)
+      )
+        throw error;
       getLogger().warn(
         `${this.config.label} computer template is not built; using the stock desktop template`,
         {
-          template: this.config.template,
+          template,
         },
       );
       return this.config.sdk.create(this.config.fallbackTemplate, options);

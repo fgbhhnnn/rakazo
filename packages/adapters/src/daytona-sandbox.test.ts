@@ -36,79 +36,84 @@ describe("DaytonaSandboxProvider", () => {
   });
 
   it.each([
-    { tier: "admin", resources: { cpu: 8, memory: 8 }, snapshot: "daytona-large" },
-    { tier: "CPU threshold", resources: { cpu: 8, memory: 4 }, snapshot: "daytona-large" },
-    { tier: "memory threshold", resources: { cpu: 2, memory: 8 }, snapshot: "daytona-large" },
-    { tier: "above threshold", resources: { cpu: 9, memory: 9 }, snapshot: "daytona-large" },
-    { tier: "below threshold", resources: { cpu: 7, memory: 7 }, snapshot: "daytona-medium" },
-    { tier: "non-admin", resources: { cpu: 2, memory: 4 }, snapshot: "daytona-medium" },
-    { tier: "default", resources: undefined, snapshot: "daytona-medium" },
-  ])("selects $snapshot for $tier resources without resizing", async ({ resources, snapshot }) => {
-    const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    { tier: "large", resources: { cpu: 8, memory: 8 }, snapshot: "daytona-large" },
+    { tier: "standard", resources: { cpu: 2, memory: 4 }, snapshot: "daytona-medium" },
+    { tier: "large", resources: { cpu: 2, memory: 4 }, snapshot: "daytona-large" },
+    { tier: "standard", resources: { cpu: 8, memory: 8 }, snapshot: "daytona-medium" },
+    { tier: undefined, resources: { cpu: 8, memory: 8 }, snapshot: "daytona-medium" },
+    { tier: undefined, resources: undefined, snapshot: "daytona-medium" },
+  ] as const)(
+    "selects $snapshot for tier $tier without resizing",
+    async ({ tier, resources, snapshot }) => {
+      const fixture = daytonaFixture();
+      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
 
-    await provider.provision({ botId: "bot-a", homePath: "/unused", resources }, context);
+      await provider.provision({ botId: "bot-a", homePath: "/unused", tier, resources }, context);
 
-    expect(fixture.create).toHaveBeenCalledWith(
-      {
-        name: expect.stringMatching(/^rakazo-/),
-        snapshot,
-        labels: { botId: "bot-a", rakazo: "computer" },
-        envVars: { VNC_RESOLUTION: "1280x800" },
-        autoStopInterval: 0,
-        autoDeleteInterval: -1,
-      },
-      { timeout: 120 },
-    );
-    expect(fixture.resize).not.toHaveBeenCalled();
-    expect(fixture.stop).not.toHaveBeenCalled();
-    expect(fixture.start).not.toHaveBeenCalled();
-  });
+      expect(fixture.create).toHaveBeenCalledWith(
+        {
+          name: expect.stringMatching(/^rakazo-/),
+          snapshot,
+          labels: { botId: "bot-a", rakazo: "computer" },
+          envVars: { VNC_RESOLUTION: "1280x800" },
+          autoStopInterval: 0,
+          autoDeleteInterval: -1,
+        },
+        { timeout: 120 },
+      );
+      expect(fixture.resize).not.toHaveBeenCalled();
+      expect(fixture.stop).not.toHaveBeenCalled();
+      expect(fixture.start).not.toHaveBeenCalled();
+    },
+  );
 
-  it("installs a browser alongside desktop tools during prepare", async () => {
-    const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+  it.each(["large", "standard", undefined] as const)(
+    "installs a browser alongside desktop tools for tier %s",
+    async (tier) => {
+      const fixture = daytonaFixture();
+      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const computer = await provider.provision(
+        { botId: "bot-a", homePath: "/unused", tier },
+        context,
+      );
 
-    await provider.prepare(computer, context);
+      await provider.prepare(computer, context);
 
-    expect(fixture.executeCommand).toHaveBeenCalledWith(
-      `bash -c ${shellQuote([PREPARE_LINUX_DESKTOP, INSTALL_LINUX_BROWSER].join("\n"))}`,
-      undefined,
-      undefined,
-      300,
-    );
-  });
+      expect(fixture.executeCommand).toHaveBeenCalledWith(
+        `bash -c ${shellQuote([PREPARE_LINUX_DESKTOP, INSTALL_LINUX_BROWSER].join("\n"))}`,
+        undefined,
+        undefined,
+        300,
+      );
+    },
+  );
 
-  it.each([
-    { cpu: 2, memory: 4 },
-    { cpu: 8, memory: 8 },
-  ])("lets config.snapshot override the tier for %j resources", async (resources) => {
-    const fixture = daytonaFixture();
-    const provider = new DaytonaSandboxProvider(
-      { apiKey: "test-key", snapshot: "rakazo-computer" },
-      fixture.client,
-    );
-    await provider.provision({ botId: "bot-a", homePath: "/unused", resources }, context);
-    expect(fixture.create).toHaveBeenCalledWith(
-      expect.objectContaining({ snapshot: "rakazo-computer" }),
-      { timeout: 120 },
-    );
-    expect(fixture.resize).not.toHaveBeenCalled();
-    expect(fixture.stop).not.toHaveBeenCalled();
-    expect(fixture.start).not.toHaveBeenCalled();
-  });
+  it.each(["large", "standard", undefined] as const)(
+    "lets config.snapshot override tier %s",
+    async (tier) => {
+      const fixture = daytonaFixture();
+      const provider = new DaytonaSandboxProvider(
+        { apiKey: "test-key", snapshot: "rakazo-computer" },
+        fixture.client,
+      );
+      await provider.provision({ botId: "bot-a", homePath: "/unused", tier }, context);
+      expect(fixture.create).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshot: "rakazo-computer" }),
+        { timeout: 120 },
+      );
+      expect(fixture.resize).not.toHaveBeenCalled();
+      expect(fixture.stop).not.toHaveBeenCalled();
+      expect(fixture.start).not.toHaveBeenCalled();
+    },
+  );
 
-  it.each([
-    { cpu: 2, memory: 4 },
-    { cpu: 8, memory: 8 },
-  ])(
-    "lets DAYTONA_SNAPSHOT override the tier for %j resources when config.snapshot is unset",
-    async (resources) => {
+  it.each(["large", "standard", undefined] as const)(
+    "lets DAYTONA_SNAPSHOT override tier %s when config.snapshot is unset",
+    async (tier) => {
       vi.stubEnv("DAYTONA_SNAPSHOT", " env-snapshot ");
       const fixture = daytonaFixture();
       const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
-      await provider.provision({ botId: "bot-a", homePath: "/unused", resources }, context);
+      await provider.provision({ botId: "bot-a", homePath: "/unused", tier }, context);
       expect(fixture.create).toHaveBeenCalledWith(
         expect.objectContaining({ snapshot: "env-snapshot" }),
         { timeout: 120 },
@@ -307,6 +312,31 @@ describe("DaytonaSandboxProvider", () => {
     expect(fixture.expireSignedPreviewUrl).toHaveBeenCalledWith(6100, "preview-token");
     expect(fixture.stop).toHaveBeenCalledWith(120);
   });
+
+  it.each(["large", "standard"] as const)(
+    "preserves an existing sandbox when reconnecting with tier %s",
+    async (tier) => {
+      const fixture = daytonaFixture({ id: "existing", state: "stopped" });
+      const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+
+      await expect(
+        provider.provision(
+          {
+            botId: "bot-a",
+            homePath: "/unused",
+            providerRef: "existing",
+            providerKind: "daytona",
+            tier,
+          },
+          context,
+        ),
+      ).resolves.toMatchObject({ providerRef: "existing", fresh: false });
+
+      expect(fixture.create).not.toHaveBeenCalled();
+      expect(fixture.resize).not.toHaveBeenCalled();
+      expect(fixture.deleteSandbox).not.toHaveBeenCalled();
+    },
+  );
 
   it("reconnects stopped sandboxes and replaces missing ones", async () => {
     const existing = daytonaFixture({ id: "existing", state: "stopped" });

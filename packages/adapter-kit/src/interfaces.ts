@@ -35,6 +35,7 @@ import type {
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ComputerTier,
   ConnectorCall,
   ConnectorCapabilities,
   ConnectorCatalogItem,
@@ -122,6 +123,8 @@ export interface SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      /** Size tier for fresh creates only; reconnecting preserves the existing computer. */
+      tier?: ComputerTier;
       /** Requested vCPU and GiB of memory, for providers that support sizing. */
       resources?: { cpu: number; memory: number };
       /**

@@ -21,7 +21,7 @@ const context = {
   signal: new AbortController().signal,
 } satisfies AdapterContext;
 
-describe("Daytona computer resource tiers", () => {
+describe("computer provisioning tiers", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it.each([
@@ -29,27 +29,31 @@ describe("Daytona computer resource tiers", () => {
       name: "deployment-admin owner",
       admins: " other@example.test, ADMIN@example.test ",
       owner: { email: "admin@example.test" },
+      tier: "large",
       resources: { cpu: 8, memory: 8 },
     },
     {
       name: "ordinary owner even when the caller is an admin",
       admins: "caller@example.test",
       owner: { email: "member@example.test" },
+      tier: "standard",
       resources: { cpu: 2, memory: 4 },
     },
     {
       name: "owner with no configured deployment admins",
       admins: "",
       owner: { email: "admin@example.test" },
+      tier: "standard",
       resources: { cpu: 2, memory: 4 },
     },
     {
       name: "missing owner",
       admins: "admin@example.test",
       owner: null,
+      tier: "standard",
       resources: { cpu: 2, memory: 4 },
     },
-  ])("passes the tier for a $name to provision", async ({ admins, owner, resources }) => {
+  ])("passes the tier for a $name to provision", async ({ admins, owner, tier, resources }) => {
     vi.stubEnv("RAKAZO_ADMIN_EMAILS", admins);
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-resource-tier-"));
     const ref: ComputerRef = {
@@ -112,7 +116,7 @@ describe("Daytona computer resource tiers", () => {
         expect(findOwner).not.toHaveBeenCalled();
       }
       expect(provision).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ botId: "home-1", resources }),
+        expect.objectContaining({ botId: "home-1", tier, resources }),
         context,
       );
     } finally {

@@ -53,6 +53,7 @@ export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
       apiKey,
       sdk,
       template: E2B_COMPUTER_TEMPLATE,
+      templatesByTier: { large: E2B_DESKTOP_TEMPLATE, standard: E2B_COMPUTER_TEMPLATE },
       fallbackTemplate: E2B_DESKTOP_TEMPLATE,
       isTimeoutError: (error) => error instanceof Error && error.name === "TimeoutError",
     });

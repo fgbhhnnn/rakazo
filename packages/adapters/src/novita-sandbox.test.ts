@@ -65,6 +65,21 @@ describe("Novita computer backend", () => {
     });
   });
 
+  it.each(["large", "standard"] as const)(
+    "uses the same configured template for tier %s",
+    async (tier) => {
+      const { sdk } = fakeNovita();
+      const provider = new NovitaSandboxProvider(
+        { apiKey: "test-key", template: "custom-desktop" },
+        sdk,
+      );
+
+      await provider.provision({ ...request, tier }, ctx);
+
+      expect(sdk.create).toHaveBeenCalledExactlyOnceWith("custom-desktop", expect.anything());
+    },
+  );
+
   it("uses a configured template and never silently provisions the larger stock desktop", async () => {
     const { sdk } = fakeNovita();
     const missing = new Error("404: template not found");
