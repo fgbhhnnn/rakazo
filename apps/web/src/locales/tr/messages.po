@@ -2667,6 +2667,10 @@ msgstr ""
 msgid "Dictation failed. Try again."
 msgstr "Dikte başarısız oldu. Tekrar deneyin."
 
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "<0>{emailSuggestion}</0> mi demek istediniz?"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Bir aracı devre dışı bırak"

@@ -2668,6 +2668,10 @@ msgstr ""
 msgid "Dictation failed. Try again."
 msgstr "語音輸入失敗，請重試。"
 
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "你是指 <0>{emailSuggestion}</0> 嗎？"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "停用工具"
