@@ -116,7 +116,11 @@ export class ComputerBrowserProvider implements BrowserProvider {
     if (this.canUseInProcess(computer)) {
       return this.fake.snapshot(computer, request, context);
     }
-    const live = await this.runLive(computer, { command: "snapshot" }, context);
+    const live = await this.runLive(
+      computer,
+      { command: "snapshot", ...(request.query ? { query: request.query } : {}) },
+      context,
+    );
     if (live?.ok !== true || live.fallback === "computer_act" || live.error) {
       return {
         url: "",
