@@ -21,6 +21,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
+import { sanitizePortableFiles } from "./portable-file-names.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const STAGING_PREFIX = "rakazo-workspace-";
@@ -169,7 +170,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const expected = safeJoin(home, directory);
     const root = await resolveExportPath(expected);
     if (root !== expected) return;
-    yield* walkFiles(root, root, skipHidden);
+    yield* sanitizePortableFiles(walkFiles(root, root, skipHidden));
   }
 
   async readFile(

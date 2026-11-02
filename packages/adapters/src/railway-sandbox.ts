@@ -35,6 +35,7 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
 import {
@@ -326,6 +327,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    file = new PortableFileNames().file(file);
     const sandbox = await this.connect(computer, context);
     await sandbox.files.write(workspacePath(WORKSPACE, file.path), file.content, {
       mode: file.executable ? 0o700 : 0o600,
@@ -449,7 +451,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       batch = [];
       batchBytes = 0;
     };
-    for await (const file of files) {
+    for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       context.signal.throwIfAborted();
       if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)

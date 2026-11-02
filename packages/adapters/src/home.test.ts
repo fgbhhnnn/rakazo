@@ -82,6 +82,18 @@ async function exported(store: LocalAgentHomeStore, directory = "") {
 }
 
 describe("LocalAgentHomeStore path containment", () => {
+  it("exports legacy unsafe names using consistent safe paths without changing the source", async () => {
+    const { store, home } = await fixture();
+    await mkdir(path.join(home, "\x7fdir"));
+    await writeFile(path.join(home, "\x7fdir/\x01name.txt"), "renamed");
+    await writeFile(path.join(home, "\x7fdir/你好😀.txt"), "unicode");
+    expect(await exported(store)).toEqual([
+      { path: "dir/name.txt", content: "renamed" },
+      { path: "dir/你好😀.txt", content: "unicode" },
+    ]);
+    expect(await readFile(path.join(home, "\x7fdir/\x01name.txt"), "utf8")).toBe("renamed");
+  });
+
   it.each([false, true])(
     "excludes caches from commits without descending into them (staged: %s)",
     async (staged) => {

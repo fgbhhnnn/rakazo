@@ -48,6 +48,33 @@ afterEach(async () => {
 });
 
 describe("provider-neutral computer workspace", () => {
+  it("sanitizes remote paths before saving both buffered and streamed files to the home", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const provider: SandboxProvider = new FakeSandboxProvider();
+    const computer = await provider.provision({ botId: "portable", homePath: "/ignored" }, context);
+    vi.spyOn(provider, "exportWorkspace").mockImplementation(async function* () {
+      yield { path: "file.txt", content: Buffer.from("ordinary") };
+      yield { path: "\x7ffile.txt", content: Buffer.from("renamed"), executable: true };
+      yield {
+        path: "\x7fdir/\x01nested/你好😀.txt",
+        body: (async function* () {
+          yield Buffer.from("streamed");
+        })(),
+      };
+    });
+
+    await checkpointComputerWorkspace(home, provider, "portable", computer, context);
+
+    const saved = home.pathFor("portable");
+    expect(await readFile(path.join(saved, "file.txt"), "utf8")).toBe("ordinary");
+    expect(await readFile(path.join(saved, "file-1.txt"), "utf8")).toBe("renamed");
+    expect((await stat(path.join(saved, "file-1.txt"))).mode & 0o100).toBe(0o100);
+    expect(await readFile(path.join(saved, "dir/nested/你好😀.txt"), "utf8")).toBe("streamed");
+    await expect(access(path.join(saved, "\x7ffile.txt"))).rejects.toThrow();
+  });
+
   it("keeps signed-in browser state but not components the browser downloads again", () => {
     const profile = ".browser-profiles/chromium-bot-1";
     for (const kept of [

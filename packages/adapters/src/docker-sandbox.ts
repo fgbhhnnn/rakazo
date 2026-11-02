@@ -30,6 +30,7 @@ import {
   computerObservation,
   normalizeWorkspacePath,
 } from "./computer-support.js";
+import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
@@ -491,6 +492,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    file = new PortableFileNames().file(file);
     const res = await fetch(this.url(`/computers/${computer.id}/files`), {
       method: "POST",
       headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
@@ -513,7 +515,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ) {
-    for await (const file of files) {
+    for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       await this.writeFile(computer, file, context);
     }

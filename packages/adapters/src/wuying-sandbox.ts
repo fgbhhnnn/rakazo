@@ -27,6 +27,7 @@ import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { boundedComputerActions, computerObservation } from "./computer-support.js";
 import { normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import { McpSession } from "./mcp-transport.js";
+import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import type { WuyingControlPlane } from "./wuying-openapi.js";
 import { WuyingOpenApi } from "./wuying-openapi.js";
 
@@ -840,6 +841,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    file = new PortableFileNames().file(file);
     if (file.content.byteLength > MAX_FILE_BYTES)
       throw new Error(`computer file exceeds ${MAX_FILE_BYTES} bytes`);
     const target = await this.target(computer, file.path, context.signal);
@@ -921,7 +923,8 @@ export class WuyingSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file, context);
+    for await (const file of sanitizePortableFiles(files))
+      await this.writeFile(computer, file, context);
   }
 
   async snapshot(): Promise<never> {

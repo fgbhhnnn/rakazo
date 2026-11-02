@@ -5,6 +5,7 @@ import path from "node:path";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
 import { isContained } from "./home.js";
+import { PortableFileNames } from "./portable-file-names.js";
 import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 /**
@@ -67,7 +68,15 @@ export async function* packHome(
   const counts = { bytes: 0, entries: 0, files: 0 };
   async function* entries() {
     yield MAGIC;
-    yield* packDirectory(resolvedRoot, resolvedRoot, "", new Set([resolvedRoot]), counts, limits);
+    yield* packDirectory(
+      resolvedRoot,
+      resolvedRoot,
+      "",
+      new Set([resolvedRoot]),
+      counts,
+      limits,
+      new PortableFileNames(),
+    );
     yield Buffer.from([END]);
   }
   // Entry headers are tiny; batching keeps a home of many small files to few, large writes.
@@ -92,6 +101,7 @@ async function* packDirectory(
   visited: Set<string>,
   counts: { bytes: number; entries: number; files: number },
   limits: HomeArchiveLimits,
+  names: PortableFileNames,
 ): AsyncGenerator<Buffer> {
   const entries = await readdir(directory).catch(skipVanished([] as string[]));
   for (const name of entries.sort()) {
@@ -101,10 +111,11 @@ async function* packDirectory(
     if (!resolved || !isContained(root, resolved) || resolved === root) continue;
     const info = await lstat(resolved).catch(skipVanished(undefined));
     if (!info || shouldSkipPortableWorkspaceFile(relative, info.isDirectory())) continue;
+    const portable = names.path(relative);
     if (info.isDirectory()) {
       if (visited.has(resolved)) continue;
       countEntry(counts, 0, limits);
-      yield entryHeader(DIRECTORY, relative);
+      yield entryHeader(DIRECTORY, portable);
       yield* packDirectory(
         root,
         resolved,
@@ -112,6 +123,7 @@ async function* packDirectory(
         new Set([...visited, resolved]),
         counts,
         limits,
+        names,
       );
     } else if (info.isFile()) {
       if (++counts.files > WORKSPACE_SAVE_LIMITS.maxFiles)
@@ -121,7 +133,7 @@ async function* packDirectory(
       try {
         const opened = await handle.stat();
         countEntry(counts, opened.size, limits);
-        const header = entryHeader(FILE, relative);
+        const header = entryHeader(FILE, portable);
         const meta = Buffer.alloc(10);
         meta.writeUInt16BE(opened.mode & 0o777, 0);
         meta.writeBigUInt64BE(BigInt(opened.size), 2);

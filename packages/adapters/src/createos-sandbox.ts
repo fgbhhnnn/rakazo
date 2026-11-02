@@ -32,6 +32,7 @@ import {
   workspacePath,
 } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { shellExportScript } from "./sandbox-shell-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -668,6 +669,7 @@ print(json.dumps(out))
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    file = new PortableFileNames().file(file);
     await this.putFile(computer, file, context);
   }
 
@@ -694,7 +696,7 @@ print(json.dumps(out))
     context: AdapterContext,
   ): Promise<void> {
     let batchBytes = 0;
-    for await (const file of files) {
+    for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (batchBytes > PORTABLE_TRANSFER_BATCH_BYTES) batchBytes = 0;
       await this.putFile(computer, file, context);

@@ -69,6 +69,23 @@ function archive(...entries: Buffer[]) {
 }
 
 describe("home archive", () => {
+  it("stores safe names for files and empty directories, retaining colliding file contents", async () => {
+    const source = await tempDir();
+    await mkdir(path.join(source, "\x7fdir/\x01empty"), { recursive: true });
+    await writeFile(path.join(source, "\x7fdir/name.txt"), "ordinary");
+    await writeFile(path.join(source, "\x7fdir/\x7fname.txt"), "renamed");
+    const dest = await tempDir();
+
+    await unpackHome(packHome(source), dest);
+
+    expect(await tree(dest)).toEqual({
+      "dir/": "",
+      "dir/empty/": "",
+      "dir/name.txt": "ordinary",
+      "dir/name-1.txt": "renamed",
+    });
+  });
+
   it("round-trips files, empty directories, hidden files and permissions", async () => {
     const source = await tempDir();
     await mkdir(path.join(source, ".browser-profiles/default"), { recursive: true });

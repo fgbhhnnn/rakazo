@@ -39,6 +39,7 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { withAbort } from "./web-ssrf.js";
@@ -360,6 +361,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, _context: AdapterContext) {
+    file = new PortableFileNames().file(file);
     const sandbox = await this.box(computer);
     await this.writeFiles(sandbox, [file]);
   }
@@ -388,7 +390,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       batch = [];
       batchBytes = 0;
     };
-    for await (const file of files) {
+    for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
       if (

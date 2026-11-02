@@ -34,6 +34,7 @@ import {
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
+import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { shellExportScript } from "./sandbox-shell-environment.js";
 import {
@@ -411,6 +412,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
+    file = new PortableFileNames().file(file);
     context.signal.throwIfAborted();
     await this.write(this.id(computer), file);
   }
@@ -471,7 +473,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       batch = [];
       batchBytes = 0;
     };
-    for await (const file of files) {
+    for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
         await flush();
