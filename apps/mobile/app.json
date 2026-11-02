@@ -99,7 +99,19 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "817666eb-4d1b-4269-a429-ce6e129f8dd8"
+        "projectId": "817666eb-4d1b-4269-a429-ce6e129f8dd8",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "RakazoWidgets",
+                  "bundleIdentifier": "com.ccxxyy.rakazo.widgets"
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "runtimeVersion": {
