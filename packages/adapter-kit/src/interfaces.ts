@@ -122,6 +122,8 @@ export interface SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      /** Requested vCPU and GiB of memory, for providers that support sizing. */
+      resources?: { cpu: number; memory: number };
       /**
        * When the saved workspace a replacement would restore was read from the computer. A
        * provider that can only bring `providerRef` back from an older snapshot of its own
