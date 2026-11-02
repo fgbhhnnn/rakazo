@@ -794,6 +794,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   : messageToAgentHistoryText(m),
                 runSecrets,
               ),
+              waiting: m.steeringMessages.length > 0,
             })),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -812,12 +813,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           role,
           content,
         }));
-        const historyMessages = messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          runId: message.runId,
-          blocks: message.blocks as MessageBlock[],
-        }));
+        const historyMessages = messages
+          .filter((message) => message.steeringMessages.length === 0)
+          .map((message) => ({
+            id: message.id,
+            role: message.role,
+            runId: message.runId,
+            blocks: message.blocks as MessageBlock[],
+          }));
         const currentTurnMessage = userTurnMessageForRun(
           run.trigger,
           runId,
