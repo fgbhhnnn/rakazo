@@ -34,6 +34,9 @@ model User {
   allowBotPasswordReveal      Boolean                      @default(false)
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
+  /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
+  /// emails then follow the language of the browser that asked for them.
+  locale                      String?
   marketingEmailOptOutAt      DateTime?
   sessions                    Session[]
   accounts                    Account[]

@@ -44,6 +44,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         email: true,
         name: true,
         timezone: true,
+        locale: true,
         signupSurvey: { select: { userId: true } },
       },
     }),
@@ -84,6 +85,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       }),
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
+    locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),
     // Admins come from RAKAZO_ADMIN_EMAILS, else the stored owner; app accounts carry no authority.
     memberSettingsLocked: lockedForActor(memberSettingsPolicy(setup.settings), actor),

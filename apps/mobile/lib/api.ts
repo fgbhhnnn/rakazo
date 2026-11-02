@@ -63,7 +63,7 @@ import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
-import { t } from "./i18n";
+import { getActiveUiLocale, t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
 import {
@@ -569,9 +569,11 @@ async function postAuth(
     `${currentApiBase()}/api/auth/${path}`,
     {
       method: "POST",
+      // Emails sent before an account has a language follow the one this app shows.
       headers: {
         "content-type": "application/json",
         origin: "rakazo://",
+        "accept-language": getActiveUiLocale(),
         ...extraHeaders,
       },
       body: JSON.stringify(input),
@@ -652,7 +654,11 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     `${currentApiBase()}/api/auth/request-password-reset`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        "accept-language": getActiveUiLocale(),
+      },
       body: JSON.stringify({ email, redirectTo }),
     },
     {},

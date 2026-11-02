@@ -51,6 +51,7 @@ import {
   subscribeThread,
   updateAccountName,
 } from "./api.js";
+import { resetI18nForTests } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import { threadRefreshDelayMs } from "./refresh";
 import {
@@ -240,7 +241,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-in/email",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({ email: "ada@example.com", password: "correct horse" }),
       }),
     );
@@ -276,7 +281,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-up/email",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({
           email: "new@example.com",
           password: "correct horse",
@@ -285,6 +294,28 @@ describe("mobile API authentication", () => {
       }),
     );
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "signup-token");
+  });
+
+  it("sends the app language alongside CAPTCHA headers for signup and sign-in codes", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ token: "signup-token" }));
+    vi.stubGlobal("fetch", fetchMock);
+    resetI18nForTests("zh-CN");
+    try {
+      await signUp("new@example.test", "password", "New User", "fake-captcha-token");
+      await sendSignInCode("new@example.test", "fake-captcha-token");
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const call of fetchMock.mock.calls) {
+        const [, init] = call as unknown as [string, RequestInit];
+        expect(init.headers).toMatchObject({
+          origin: "rakazo://",
+          "accept-language": "zh-CN",
+          "x-captcha-response": "fake-captcha-token",
+        });
+      }
+    } finally {
+      resetI18nForTests();
+    }
   });
 
   it("emails a sign-in code and persists the session the code returns", async () => {
@@ -302,7 +333,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/email-otp/send-verification-otp",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({ email: "ada@example.test", type: "sign-in" }),
       }),
     );
@@ -311,7 +346,11 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-in/email-otp",
       expect.objectContaining({
         method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://" },
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          "accept-language": "en",
+        },
         body: JSON.stringify({ email: "ada@example.test", otp: "123456", name: "Ada" }),
       }),
     );

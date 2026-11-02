@@ -53,6 +53,24 @@ export const TimeZoneSchema = z
   .min(1)
   .max(64)
   .refine(isValidTimeZone, { message: "Unknown timezone" });
+
+/** An app language code, such as "es", "pt-BR" or "zh-TW". */
+export const AppLocaleSchema = z.enum([
+  "en",
+  "de",
+  "ko",
+  "tr",
+  "hi",
+  "pt-BR",
+  "zh-CN",
+  "zh-TW",
+  "es",
+  "ru",
+  "fr",
+  "he",
+  "nl",
+  "ja",
+]);
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
 export { AGENT_SECRET_NAME_PATTERN };
@@ -1817,6 +1835,11 @@ export const MeSchema = z.object({
    * Absent from servers that predate it.
    */
   timezone: z.string().nullable().optional(),
+  /**
+   * The app language last reported for the user, or null until an app reports it.
+   * Absent from servers that predate it.
+   */
+  locale: z.string().nullable().optional(),
   billingEnabled: z.boolean(),
   /** The owner manages models, voice and integrations; hide those settings. */
   memberSettingsLocked: z.boolean().optional(),
