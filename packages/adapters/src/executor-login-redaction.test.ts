@@ -128,6 +128,7 @@ async function runAfterFill(
       findMany: vi.fn(async () => []),
     },
     attempt: {
+      findMany: vi.fn(async () => []),
       create: vi.fn(async () => ({ id: "attempt-1" })),
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -148,6 +149,7 @@ async function runAfterFill(
               {
                 id: "user-message",
                 role: "user",
+                steeringMessages: [],
                 seq: 1,
                 createdAt: new Date(),
                 blocks: [{ kind: "text", text: options.userText }],

@@ -181,7 +181,7 @@ async function runDispatcherTurn(options: {
       }),
       findMany: vi.fn(async ({ where }: { where: { runId?: string; threadId?: string } }) =>
         where.runId === undefined && where.threadId === run.threadId
-          ? (options.threadMessages ?? [])
+          ? (options.threadMessages ?? []).map((message) => ({ steeringMessages: [], ...message }))
           : [],
       ),
       findUnique: vi.fn(async () =>

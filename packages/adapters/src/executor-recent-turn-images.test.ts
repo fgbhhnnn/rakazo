@@ -164,6 +164,7 @@ async function runWithModel(
     yield { type: "done" as const, text: "Done" };
   });
   const prisma = {
+    $queryRaw: vi.fn(async () => []),
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
@@ -175,6 +176,7 @@ async function runWithModel(
       }),
     },
     chatGroup: {
+      findFirst: vi.fn(async () => null),
       findMany: vi.fn(async () => []),
       findUnique: vi.fn(async () => ({
         name: "Planning",
@@ -200,6 +202,7 @@ async function runWithModel(
       ),
     },
     attempt: {
+      findMany: vi.fn(async () => []),
       create: vi.fn(async () => ({ id: "attempt-1" })),
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),

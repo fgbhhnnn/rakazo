@@ -35,6 +35,7 @@ describe("structured login failures", () => {
     async (name) => {
       const ctx = {
         context,
+        run: { trigger: "user" },
         state: {},
         bot: {},
         tools: { disabled: new Set() },

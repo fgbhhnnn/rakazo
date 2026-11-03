@@ -28,15 +28,24 @@ function computerFile(name: string): string {
 const asRoot = 'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi';
 
 /**
- * Installs the pinned agent-browser into /usr/local/bin with the computer image's own script.
+ * Installs the pinned agent-browser with the computer image's own script. The default needs root;
+ * an explicit directory installs as the current user for computers without elevated permissions.
  * It changes only when the pinned version does, so a provider's saved base image can carry it.
  */
-export function installAgentBrowserCommand(): string {
+export function installAgentBrowserCommand(directory?: string): string {
   return [
     "set -eu",
-    asRoot,
-    `$root sh -c ${shellQuote(computerFile("install-agent-browser.sh"))} sh /usr/local/bin >/dev/null`,
+    ...(directory ? [] : [asRoot]),
+    `${directory ? "" : "$root "}sh -c ${shellQuote(computerFile("install-agent-browser.sh"))} sh ${shellQuote(directory ?? "/usr/local/bin")} >/dev/null`,
   ].join("\n");
+}
+
+export function pageBrowserFiles() {
+  return {
+    "rakazo-page-browser": computerFile("rakazo-page-browser"),
+    "page_secrets.py": computerFile("page_secrets.py"),
+    "rakazo_page_browser_recovery.py": computerFile("rakazo_page_browser_recovery.py"),
+  };
 }
 
 /**
@@ -45,9 +54,10 @@ export function installAgentBrowserCommand(): string {
  * so a hosted computer always runs the helper its API was released with.
  */
 export function installPageBrowserFilesCommand(): string {
-  const wrapper = computerFile("rakazo-page-browser");
-  const secrets = computerFile("page_secrets.py");
-  const recovery = computerFile("rakazo_page_browser_recovery.py");
+  const files = pageBrowserFiles();
+  const wrapper = files["rakazo-page-browser"];
+  const secrets = files["page_secrets.py"];
+  const recovery = files["rakazo_page_browser_recovery.py"];
   const version = createHash("sha256")
     .update(wrapper)
     .update("\0")
@@ -56,14 +66,7 @@ export function installPageBrowserFilesCommand(): string {
     .update(recovery)
     .digest("hex");
   // One archive, so all files change together.
-  const archive = gzipSync(
-    JSON.stringify({
-      "rakazo-page-browser": wrapper,
-      "page_secrets.py": secrets,
-      "rakazo_page_browser_recovery.py": recovery,
-    }),
-    { level: 9 },
-  ).toString("base64");
+  const archive = gzipSync(JSON.stringify(files), { level: 9 }).toString("base64");
   const unpack = [
     "import gzip, json, os, sys",
     "files = json.loads(gzip.decompress(sys.stdin.buffer.read()))",

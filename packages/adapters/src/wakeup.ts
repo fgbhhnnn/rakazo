@@ -194,15 +194,12 @@ function abandonment() {
 }
 
 /**
- * How long a stopping worker lets its running jobs finish. The slowest job is a computer sleep that
- * saves the home; on Boat its own timeouts (a 9-minute archive, then a 30-minute download) fit
- * inside. Other providers bound each request but not a whole save, so a longer one is cut off as
- * if the worker had crashed: its suspend claim keeps the retried job from starting a second save,
- * and the idle sweep sleeps the computer once the claim is ABANDONED_SUSPEND_CLAIM_MS old. Stays
- * below the worker's stop_grace_period in Compose, and below that claim age so the sweep never
- * replaces a sleep that is still draining.
+ * How long a stopping worker lets its running jobs finish. Computer sleep is bounded by the
+ * checkpoint and stop deadlines (20 and 5 minutes), with room for cleanup. This stays below the
+ * 30-minute suspend claim age so the idle sweep cannot replace a sleep that is still draining,
+ * and below the worker's stop_grace_period in Compose.
  */
-export const JOB_DRAIN_TIMEOUT_MS = 45 * 60_000;
+export const JOB_DRAIN_TIMEOUT_MS = 28 * 60_000;
 
 export class GraphileJobWorkerHost implements JobWorkerHost {
   private runner: Runner | undefined;
