@@ -4388,13 +4388,13 @@ msgstr "一次性"
 msgid "One-time purchase. Credits do not expire."
 msgstr "单次购买，额度不会过期。"
 
-#: src/components/MemberAccessSettings.tsx
-msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
-msgstr "仅由我管理模型、语音和 MCP 服务器（成员使用我的配置且无法修改）"
-
 #: src/components/AskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr ""
+
+#: src/components/MemberAccessSettings.tsx
+msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
+msgstr "仅由我管理模型、语音和 MCP 服务器（成员使用我的配置且无法修改）"
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
