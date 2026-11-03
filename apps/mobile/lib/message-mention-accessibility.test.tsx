@@ -59,10 +59,15 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/file-viewer", () => ({ hasMobileFileViewer: () => false }));
 vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
-vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
+vi.mock("../components/change-undo", () => ({
+  ChangeUndo: () => null,
+  isUndoableChange: () => false,
+}));
 vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/page-card", () => ({ PageCard: () => null }));
 
 import { MessageBubble } from "../components/thread/message-bubble";
 
@@ -79,7 +84,7 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onAnswer={async () => undefined}
       onOpenBot={() => undefined}
       onOpenComputer={() => undefined}
-      onPreviewMarkdown={() => undefined}
+      onPreviewFile={() => undefined}
       onPreviewImage={() => undefined}
       onOpenPeerChat={() => undefined}
       actionProps={{}}
