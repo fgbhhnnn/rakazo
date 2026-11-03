@@ -46,6 +46,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Welcome to Rakazo": "Welkom bij Gose Bot",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME}-tegoed",
   "Your administrator manages this setting.": "Je beheerder beheert deze instelling.",
+  "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",

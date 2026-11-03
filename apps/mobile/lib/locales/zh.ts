@@ -42,6 +42,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Welcome to Rakazo": "欢迎使用 Gose Bot",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME} 点数",
   "Your administrator manages this setting.": "此设置由管理员统一管理。",
+  "Daily check-ins on unfinished work": "每天跟进未完成的工作",
   "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
   "{count} files": "{count} 个文件",

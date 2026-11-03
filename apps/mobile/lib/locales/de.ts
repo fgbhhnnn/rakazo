@@ -47,6 +47,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Welcome to Rakazo": "Willkommen bei Gose Bot",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME}-Guthaben",
   "Your administrator manages this setting.": "Dein Administrator verwaltet diese Einstellung.",
+  "Daily check-ins on unfinished work": "Tägliche Rückfragen zu offenen Aufgaben",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",

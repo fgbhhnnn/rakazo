@@ -33,6 +33,7 @@ import {
   userComputerObserve,
   userComputerShell,
 } from "./run-tools-user-computer.js";
+import { strategicInitiativeToolAllowed } from "./strategic-initiative.js";
 import { argumentGiven } from "./update-bot-patch.js";
 import { workerNestingRefusal } from "./worker-nesting.js";
 import { workerUserFacingRefusal } from "./worker-user-facing-tools.js";
@@ -92,6 +93,9 @@ async function dispatchTool(
   observer: AgentToolExecutionObserver | undefined,
 ) {
   ctx.context.signal.throwIfAborted();
+  if (!strategicInitiativeToolAllowed(name, ctx.run)) {
+    return { error: "Daily check-ins can only ask or message the user." };
+  }
   if (ctx.state.handedOff) {
     return refusedTool(ctx.state, {
       error: ctx.state.askedTeammate

@@ -57,6 +57,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "{count} done": "{count} terminadas",
   "{count} not finished": "{count} sin terminar",
   "{count} running": "{count} en curso",
+  "Daily check-ins on unfinished work": "Seguimiento diario del trabajo pendiente",
   "How other bots see it": "Cómo lo ven otros bots",
   "Share to": "Compartir en",
   "{count} files": "{count} archivos",

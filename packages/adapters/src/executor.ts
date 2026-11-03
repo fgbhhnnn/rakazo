@@ -245,6 +245,10 @@ import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
 import {
+  filterStrategicInitiativeTools,
+  isStrategicInitiativeRun,
+} from "./strategic-initiative.js";
+import {
   continueRunClaimFence,
   refreshTakeoverContinuePlan,
   takeoverCheckpointOf,
@@ -1357,13 +1361,21 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           // refusals cover every work tool, including ones not selected for this trigger.
           [...builtinAgentTools, ...agentConnectionTools],
         );
+        const strategicBuiltins = filterStrategicInitiativeTools(builtins, {
+          trigger: run.trigger,
+          clientNonce: run.clientNonce,
+        });
         const exposedConnectorTools = dispatcherRun
           ? []
           : discovered.filter(
               (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
             );
+        const strategicConnectorTools = filterStrategicInitiativeTools(exposedConnectorTools, {
+          trigger: run.trigger,
+          clientNonce: run.clientNonce,
+        });
         const connectorTools = new Map(
-          exposedConnectorTools.map((tool) => [tool.name, tool] as const),
+          strategicConnectorTools.map((tool) => [tool.name, tool] as const),
         );
         const trustLoaders = createRunTrustLoaders(deps, {
           run,
@@ -1393,12 +1405,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either. Dispatcher/worker policy still applies.
         const tools = [
-          ...builtins.filter(
+          ...strategicBuiltins.filter(
             (tool) =>
               !disabledBuiltinTools.has(tool.name) &&
               (!dispatcherRun || DISPATCHER_TOOL_NAMES.has(tool.name)),
           ),
-          ...(run.trigger === "created" ? [] : exposedConnectorTools),
+          ...(run.trigger === "created" ? [] : strategicConnectorTools),
         ];
         // A turn answering a teammate's question only answers it (group-consult.ts): no handoff,
         // no team-run role, no question of its own.
@@ -1602,7 +1614,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           },
           tools: {
             offered: tools,
-            builtins,
+            builtins: strategicBuiltins,
             connector: connectorTools,
             disabled: disabledBuiltinTools,
             connectedPlugins,
@@ -1940,8 +1952,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 agentSkillsLine,
                 taughtSkillsLine,
                 replyGuidance: runReplyGuidance(run.trigger),
-                disabledBuiltinTools,
-                offeredFleetTools: offeredFleetTools(builtins),
+                disabledBuiltinTools: isStrategicInitiativeRun(run)
+                  ? new Set(
+                      builtinAgentTools
+                        .map((tool) => tool.name)
+                        .filter((name) => !strategicBuiltins.some((tool) => tool.name === name)),
+                    )
+                  : disabledBuiltinTools,
+                offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 dispatcherRun,
                 workerPageBrowserAllowed: dispatcherRun ? credentialPageCapability : undefined,
                 askUserOffered: tools.some((tool) => tool.name === "ask_user"),

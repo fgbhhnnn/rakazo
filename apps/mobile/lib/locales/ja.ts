@@ -46,6 +46,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.":
     "ブラウザで開くのと同じHTTPSのURLで、セルフホストのGose Botオリジンを指定してください。",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME}クレジット",
+  "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",

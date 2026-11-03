@@ -41,6 +41,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "What do you most want Rakazo to help with?": "你最希望 Gose Bot 幫你做什麼？",
   "Welcome to Rakazo": "歡迎使用 Gose Bot",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME} 點數",
+  "Daily check-ins on unfinished work": "每天追蹤未完成的工作",
   "How other bots see it": "其他機器人如何瞭解它",
   "Share to": "分享到",
   "{count} files": "{count} 個檔案",
