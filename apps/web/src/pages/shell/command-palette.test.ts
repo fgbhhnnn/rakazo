@@ -18,6 +18,18 @@ function keyEvent(partial: Partial<KeyboardEvent> & Pick<KeyboardEvent, "key">):
   } as KeyboardEvent;
 }
 
+describe("keydown without a key", () => {
+  it.each([undefined, ""])("ignores autofill events with key %s", (key) => {
+    for (const modifier of ["metaKey", "ctrlKey"] as const) {
+      const event = keyEvent({ key: key as unknown as string, [modifier]: true });
+      expect(isCommandPaletteHotkey(event)).toBe(false);
+      expect(isCreateMenuHotkey(event)).toBe(false);
+      expect(isSwitchBotHotkey(event)).toBe(false);
+      expect(isSwitchBotBackHotkey(event)).toBe(false);
+    }
+  });
+});
+
 describe("isCommandPaletteHotkey", () => {
   it("matches Cmd/Ctrl-K", () => {
     expect(isCommandPaletteHotkey(keyEvent({ key: "k", metaKey: true }))).toBe(true);

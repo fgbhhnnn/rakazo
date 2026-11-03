@@ -32,6 +32,7 @@ import {
   userTurnMessageForRun,
   withoutWorkerSlot,
 } from "@rakazo/core";
+import type { ThreadEvents } from "@rakazo/db";
 import {
   effectiveMemoryScope,
   isHiddenBot,
@@ -58,6 +59,7 @@ import {
   commandCredentialRedactions,
   loadBotCommandEnvironment,
   loadLoginPasswordRedactions,
+  loadRunCodeRedactions,
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
@@ -139,6 +141,12 @@ import {
   MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
 } from "./history-compaction.js";
+import {
+  historySpeaker,
+  loadThreadSpeakers,
+  neutralizeSpeakerLabels,
+  USER_SPEAKER,
+} from "./history-speakers.js";
 import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
@@ -197,11 +205,11 @@ import {
 } from "./run-lifecycle.js";
 import { publishMessage, withRunLease } from "./run-messages.js";
 import {
-  cloudflareRunFields,
   isTerminalModelSetupError,
   modelCreditBillingEnabled,
   resolveConnectedModelKey,
   resolveConnectedRunModel,
+  resolvedModelRunFields,
   resolveModelKey,
   resolveRunModel,
   runtimeFallbackModel,
@@ -236,6 +244,10 @@ import {
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
+import {
+  filterStrategicInitiativeTools,
+  isStrategicInitiativeRun,
+} from "./strategic-initiative.js";
 import {
   continueRunClaimFence,
   refreshTakeoverContinuePlan,
@@ -272,19 +284,41 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
     executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
   const cloudAgent = executorDeps.cloudAgent;
   const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
+
+  // Run-scoped connector state (installed MCP sessions) outlives one attempt
+  // but not its run, so the session side owns the lifetime: the connector ends
+  // it when this worker observes the run's end, and bounds the rest itself.
+  const endRunConnectorState = (runId: string) => executorDeps.connector?.endRun?.(runId);
+  // Every terminal outcome funnels through finalizeRun — completion, failure,
+  // the tool-loop stop and pre-turn failures — but only the attempt that still
+  // owns the run finalizes it. A fenced-out attempt must not end the run's
+  // state while a newer attempt of this run still needs it; whether it may end
+  // it depends on the run row, not on this attempt. A rejected finalizeRun left
+  // the run unfinished, so its state survives the retry.
+  const events: ThreadEvents = {
+    ...executorDeps.events,
+    finalizeRun: async (input) => {
+      const result = await executorDeps.events.finalizeRun(input);
+      if (result || (await runEndedForThisWorker(executorDeps.prisma, input))) {
+        endRunConnectorState(input.runId);
+      }
+      return result;
+    },
+  };
+  const baseDeps: ExecutorDeps = { ...executorDeps, events };
   return {
     resolveConnectedModel,
     contextStrategy,
-    resolveModel: resolveRunModel.bind(undefined, executorDeps),
-    wakeRoutine: wakeRoutine.bind(undefined, executorDeps),
+    resolveModel: resolveRunModel.bind(undefined, baseDeps),
+    wakeRoutine: wakeRoutine.bind(undefined, baseDeps),
     notifyRoutineRetryAttemptsExhausted: notifyRoutineRetryAttemptsExhausted.bind(
       undefined,
-      executorDeps,
+      baseDeps,
     ),
-    retryRoutineRun: retryRoutineRun.bind(undefined, executorDeps),
+    retryRoutineRun: retryRoutineRun.bind(undefined, baseDeps),
 
     async continueRun(runId: string, workerId: string, onRunStarted?: () => void) {
-      let deps = executorDeps;
+      let deps = baseDeps;
       // A stopping process must not claim work it cannot finish. The row stays
       // queued or expired for a worker that is still running.
       if (deps.shutdownSignal?.aborted) return;
@@ -298,7 +332,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         "space.id": run.spaceId,
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
-      if (isTerminal(run.status as RunStatus)) return;
+      if (isTerminal(run.status as RunStatus)) {
+        // Finalized elsewhere (cancelled while waiting, another worker): this
+        // worker's run-scoped state for it may end now; until a next touch, the
+        // connector's own idle bound holds it.
+        endRunConnectorState(runId);
+        return;
+      }
       if (deps.dispatcherMode && run.trigger === "bot_message" && run.status === "queued") {
         // A worker result wakes the dispatcher. Wakes for one chat run one at a time, oldest
         // first, so each turn sees the relays already written and never repeats or contradicts them.
@@ -583,6 +623,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           savedLoginPasswordRedactions,
           purchaseRedactions,
           runLoginRedactions,
+          runCodeRedactions,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -621,6 +662,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, secretScope),
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
+          loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
         if (
           await refuseStoppedTeamRunWork(deps.prisma, run.id, { ...run, groupId: thread.groupId })
@@ -652,6 +694,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ...savedLoginPasswordRedactions,
           ...purchaseRedactions,
           ...runLoginRedactions,
+          ...runCodeRedactions,
         );
         runSecrets.push(...chatPasswordRunRedactions(task.prompt, messages));
         const protectedTaskPrompt = redactSecrets(task.prompt, runSecrets);
@@ -748,24 +791,37 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           deps.connector && !dispatcherTurn
             ? deps.connector.discoverTools(context)
             : Promise.resolve([]);
+        // Group threads only: who wrote each message, so the model can tell the bots and the
+        // user apart. Direct chats stay plain user/assistant turns.
+        const speakers = await loadThreadSpeakers(
+          deps.prisma,
+          thread,
+          { spaceId: run.spaceId, bot },
+          messages,
+        );
         const threadContext = threadContextForRun(
           run.trigger,
           {
-            messages: [...messages].reverse().map((m) => ({
-              id: m.id,
-              createdAt: m.createdAt?.toISOString(),
-              seq: m.seq,
-              role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
-                | "user"
-                | "assistant"
-                | "system",
-              content: redactSecrets(
-                isPartialReplyClientNonce(m.clientNonce)
-                  ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
-                  : messageToAgentHistoryText(m),
-                runSecrets,
-              ),
-            })),
+            messages: [...messages].reverse().map((m) => {
+              const speaker = historySpeaker(speakers, m);
+              const messageText = redactSecrets(messageToAgentHistoryText(m), runSecrets);
+              // In a group, turns from several speakers are joined, so no line may pose as a label.
+              const text = speakers ? neutralizeSpeakerLabels(messageText) : messageText;
+              return {
+                id: m.id,
+                createdAt: m.createdAt?.toISOString(),
+                seq: m.seq,
+                role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
+                  | "user"
+                  | "assistant"
+                  | "system",
+                ...(speaker ? { speaker } : {}),
+                waiting: m.steeringMessages.length > 0,
+                content: isPartialReplyClientNonce(m.clientNonce)
+                  ? `${text}\n\n${PARTIAL_REPLY_NOTE}`
+                  : text,
+              };
+            }),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
           },
@@ -777,18 +833,21 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           summary: threadContext.summary,
           historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
         });
-        let history = compactedHistory.history.map(({ id, role, content, createdAt }) => ({
+        let history = compactedHistory.history.map(({ id, role, content, createdAt, speaker }) => ({
           id,
           createdAt,
           role,
           content,
+          ...(speaker ? { speaker } : {}),
         }));
-        const historyMessages = messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          runId: message.runId,
-          blocks: message.blocks as MessageBlock[],
-        }));
+        const historyMessages = messages
+          .filter((message) => message.steeringMessages.length === 0)
+          .map((message) => ({
+            id: message.id,
+            role: message.role,
+            runId: message.runId,
+            blocks: message.blocks as MessageBlock[],
+          }));
         const currentTurnMessage = userTurnMessageForRun(
           run.trigger,
           runId,
@@ -1101,10 +1160,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           () => runAbortController?.abort(),
         );
         const computerKind = (await deps.sandbox.provisionKind?.()) ?? storedComputer.kind;
-        const workspaceCheckpoint = createRunWorkspaceCheckpoint(async () => {
-          if (!runComputer.ready) return;
-          await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
-        }, context.signal);
+        const workspaceCheckpoint = createRunWorkspaceCheckpoint(
+          async () => {
+            if (!runComputer.ready) return;
+            await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
+          },
+          { id: storedComputer.id, kind: computerKind },
+          context.signal,
+        );
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
         // Every attachment message of this turn, steering included; unlike pendingTurnFiles it is
         // never drained, so a background_task launched later still forwards them.
@@ -1298,13 +1361,21 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           // refusals cover every work tool, including ones not selected for this trigger.
           [...builtinAgentTools, ...agentConnectionTools],
         );
+        const strategicBuiltins = filterStrategicInitiativeTools(builtins, {
+          trigger: run.trigger,
+          clientNonce: run.clientNonce,
+        });
         const exposedConnectorTools = dispatcherRun
           ? []
           : discovered.filter(
               (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
             );
+        const strategicConnectorTools = filterStrategicInitiativeTools(exposedConnectorTools, {
+          trigger: run.trigger,
+          clientNonce: run.clientNonce,
+        });
         const connectorTools = new Map(
-          exposedConnectorTools.map((tool) => [tool.name, tool] as const),
+          strategicConnectorTools.map((tool) => [tool.name, tool] as const),
         );
         const trustLoaders = createRunTrustLoaders(deps, {
           run,
@@ -1334,12 +1405,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
         // so it gets no connector tools either. Dispatcher/worker policy still applies.
         const tools = [
-          ...builtins.filter(
+          ...strategicBuiltins.filter(
             (tool) =>
               !disabledBuiltinTools.has(tool.name) &&
               (!dispatcherRun || DISPATCHER_TOOL_NAMES.has(tool.name)),
           ),
-          ...(run.trigger === "created" ? [] : exposedConnectorTools),
+          ...(run.trigger === "created" ? [] : strategicConnectorTools),
         ];
         // A turn answering a teammate's question only answers it (group-consult.ts): no handoff,
         // no team-run role, no question of its own.
@@ -1460,7 +1531,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           overLimitActionCalls: 0,
           toolResults: new Map(),
           tainted: initiallyTainted,
+          ownerSettingsRefused: false,
+          // A resumed turn replaces this with the baseline its saved prompt was built from.
+          ownInstructionsBaseline: bot.instructions ?? "",
           earlierAttempt: undefined,
+          walletHosts: new Set(),
           handedOff: false,
           handoffTargets: [],
           terminalCheckpointComplete: false,
@@ -1540,7 +1615,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           },
           tools: {
             offered: tools,
-            builtins,
+            builtins: strategicBuiltins,
             connector: connectorTools,
             disabled: disabledBuiltinTools,
             connectedPlugins,
@@ -1842,6 +1917,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 });
               },
               prompt: protectedTurn.prompt,
+              ...(speakers &&
+              (run.trigger === "user" ||
+                (run.trigger === "follow_up" && sourceMessage?.role === "user"))
+                ? { promptSpeaker: USER_SPEAKER }
+                : {}),
               // Keep an explicit executor override, but let the runtime select
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
@@ -1873,8 +1953,14 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 agentSkillsLine,
                 taughtSkillsLine,
                 replyGuidance: runReplyGuidance(run.trigger),
-                disabledBuiltinTools,
-                offeredFleetTools: offeredFleetTools(builtins),
+                disabledBuiltinTools: isStrategicInitiativeRun(run)
+                  ? new Set(
+                      builtinAgentTools
+                        .map((tool) => tool.name)
+                        .filter((name) => !strategicBuiltins.some((tool) => tool.name === name)),
+                    )
+                  : disabledBuiltinTools,
+                offeredFleetTools: offeredFleetTools(strategicBuiltins),
                 dispatcherRun,
                 workerPageBrowserAllowed: dispatcherRun ? credentialPageCapability : undefined,
                 askUserOffered: tools.some((tool) => tool.name === "ask_user"),
@@ -1897,28 +1983,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 provider: runModelProvider,
                 id: runModelId,
                 ...(credential ? { connectionId: credential.id } : {}),
-                apiKey: resolved.oauth ? undefined : resolved.apiKey,
-                callObserver: resolved.callObserver,
-                ...cloudflareRunFields(resolved),
-                baseUrl: resolved.baseUrl,
-                apiProtocol: resolved.apiProtocol,
-                headers: resolved.headers,
-                allowPrivateEndpoint: resolved.allowPrivateEndpoint,
-                cacheCapabilities: resolved.cacheCapabilities,
-                contextWindow: resolved.contextWindow,
-
-                reasoning: resolved.reasoning,
-                maxTokens: resolved.maxTokens,
-                acceptsImages: resolved.acceptsImages,
-                maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+                ...resolvedModelRunFields(resolved),
                 thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
-                oauth: resolved.oauth
-                  ? {
-                      credential: resolved.oauth,
-                      persist: resolved.persistOAuth,
-                      retire: resolved.retireOAuth,
-                    }
-                  : undefined,
               },
               lane: isHiddenBot(bot) ? "background" : "main",
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
@@ -2142,6 +2208,16 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         detachShutdown?.();
         clearInterval(heartbeat);
         stopCancelWatch();
+        // This attempt stopped working on the run. Whether it paused, lost the
+        // lease, was invalidated by the heartbeat or never finalised, the run
+        // row decides whether this worker's run-scoped state may end: a
+        // terminal run, or one another worker owns, never resumes here, while a
+        // paused or requeued run keeps its sessions for its next attempt. A
+        // successful finalisation already ended the state, and the terminal row
+        // this reads then only repeats that.
+        if (await runEndedForThisWorker(deps.prisma, { runId, leaseOwner: workerId })) {
+          endRunConnectorState(runId);
+        }
         if (!lease.retainComputer) {
           if (computerUse.screenRelease) {
             const releaseContext = computerUse.screenRelease.keepWarm
@@ -2176,4 +2252,26 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       }
     },
   };
+}
+
+/** Whether a run this attempt could not finalize is over for this worker: it
+ * reached a terminal state or another worker owns it, so its run-scoped state
+ * may end. A run re-claimed by this worker under a newer fence — recovered, or
+ * requeued after a pause — keeps its state for its next attempt. */
+async function runEndedForThisWorker(
+  prisma: ExecutorDeps["prisma"],
+  input: { runId: string; leaseOwner: string },
+): Promise<boolean> {
+  try {
+    const run = await prisma.run.findUnique({
+      where: { id: input.runId },
+      select: { status: true, leaseOwner: true },
+    });
+    if (!run) return true;
+    if (isTerminal(run.status as RunStatus)) return true;
+    return run.leaseOwner !== null && run.leaseOwner !== input.leaseOwner;
+  } catch {
+    // Unknown keeps the state; the connector's idle bound still ends it.
+    return false;
+  }
 }

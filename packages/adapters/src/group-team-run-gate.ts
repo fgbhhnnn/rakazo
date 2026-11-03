@@ -1,10 +1,5 @@
-import {
-  type HandoffFailureReason,
-  nextLeaderStreak,
-  type TeamRunStatus,
-  teamRunBudget,
-  teamRunWithinBudget,
-} from "@rakazo/core";
+import type { HandoffFailureReason, TeamRunStatus } from "@rakazo/core";
+import { nextLeaderStreak, teamRunBudget, teamRunWithinBudget } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { humanAnchorForRun } from "./group-team-run-anchor.js";
 import { leaderSendIsRevision } from "./group-team-run-revisions.js";

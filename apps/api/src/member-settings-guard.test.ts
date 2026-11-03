@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { ApprovalRulesLockedError, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { ApprovalRulesLockedError } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const locked = vi.hoisted(() => vi.fn<() => Promise<boolean>>());

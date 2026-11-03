@@ -1,5 +1,5 @@
 function isCommandChord(event: KeyboardEvent, key: string) {
-  if (event.repeat || event.altKey || event.shiftKey) return false;
+  if (event.repeat || event.altKey || event.shiftKey || !event.key) return false;
   if (!(event.metaKey || event.ctrlKey)) return false;
   return event.key.toLowerCase() === key;
 }

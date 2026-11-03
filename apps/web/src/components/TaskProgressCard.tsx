@@ -1,13 +1,13 @@
 import { Trans } from "@lingui/react/macro";
+import type { TaskProgressBlock, TaskProgressEntry } from "@rakazo/contracts";
 import {
   formatTaskRunTime,
   isTaskProgressActive,
-  type TaskProgressBlock,
-  type TaskProgressEntry,
   taskProgressCounts,
   taskProgressDetailStep,
   taskProgressRunSeconds,
 } from "@rakazo/contracts";
+import type { LucideIcon } from "lucide-react";
 import {
   CircleCheck,
   CircleMinus,
@@ -17,7 +17,6 @@ import {
   History,
   Layers,
   LoaderCircle,
-  type LucideIcon,
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useState } from "react";

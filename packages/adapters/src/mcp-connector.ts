@@ -47,6 +47,7 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
+import { closeMcpResource } from "./mcp-close.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
@@ -67,7 +68,7 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { ConnectorRedirectError } from "./remote-mcp.js";
+import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { mcpScopeBotId } from "./worker-owner-scope.js";
 
@@ -145,6 +146,7 @@ const UNREACHABLE_CODES = new Set([
 function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined {
   if (depth > 5 || !(error instanceof Error)) return undefined;
   if (error instanceof McpConnectFailure) return error.expected;
+  if (error instanceof McpDiscoveryTimeoutError) return "unreachable";
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
   if (error instanceof StreamableHTTPError) {
@@ -278,18 +280,6 @@ function unavailableTool(server: McpServer, reason: string): ConnectorTool {
   };
 }
 
-/** Whether the server rejected the request because it no longer knows the session. */
-function sessionGone(error: unknown): boolean {
-  if (!(error instanceof StreamableHTTPError)) return false;
-  return (
-    error.code === 404 ||
-    (error.code === 400 &&
-      /\bBad Request: (?:Server not initialized|No valid session ID(?: provided| or initialization request)?|Mcp-Session-Id header is required)(?="|$)/i.test(
-        error.message,
-      ))
-  );
-}
-
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
 /**
  * Stale allowlist entries are filtered out below with no error. Discovery already has the
@@ -361,11 +351,15 @@ function credentialContentSecrets(content: string): string[] {
 
 /** Stop the process, then remove the credential files it was launched with. */
 async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
-  try {
-    await entry.session.close();
-  } finally {
-    if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
-  }
+  await closeMcpResource(() =>
+    entry.session.close(async () => {
+      if (entry.credentialDir)
+        await rm(entry.credentialDir, { recursive: true, force: true }).catch(() => {
+          // Filesystem errors can include credential paths; report only the failure.
+          getLogger().warn("MCP credential file cleanup failed");
+        });
+    }),
+  );
 }
 
 export class McpConnector implements ConnectorProvider {
@@ -545,7 +539,8 @@ export class McpConnector implements ConnectorProvider {
             ? "it is still installing its package; its tools will be available on a later turn"
             : sanitizeConnectorError(error, secrets);
           // A single unavailable server must not hide tools from other connectors.
-          const expected = expectedFailure(error);
+          // A cancelled run says nothing about the server.
+          const expected = context.signal.aborted ? "unreachable" : expectedFailure(error);
           if (expected)
             getLogger().warn(`mcp discovery failed for server ${assignment.server.slug}`, {
               reason,
@@ -901,7 +896,7 @@ export class McpConnector implements ConnectorProvider {
       try {
         return await use(session);
       } catch (error) {
-        if (attempt !== 0 || !sessionGone(error)) throw error;
+        if (attempt !== 0 || !isMcpSessionGoneError(error)) throw error;
         // Stop reusing the expired session immediately, but let its other requests
         // receive their own responses before closing the shared SDK client.
         if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);
@@ -1238,7 +1233,7 @@ export class McpConnector implements ConnectorProvider {
         } catch (error) {
           if (!authProvider || !isRejectedTokenError(error)) throw error;
           await authProvider.replaceRejectedToken();
-          await session.close();
+          await closeMcpResource(() => session.close());
           session = new McpSession({ name: `rakazo-${server.slug}` });
           await connect();
         }

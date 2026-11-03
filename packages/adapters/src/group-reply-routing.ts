@@ -1,9 +1,9 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import type { HandoffFailureReason } from "@rakazo/core";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   failedHandoffNotice,
   HANDOFF_CHAIN_LIMIT_NOTICE,
-  type HandoffFailureReason,
   handoffClaims,
   mentionedMembersInOrder,
   replyMentionTarget,

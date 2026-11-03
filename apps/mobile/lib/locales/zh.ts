@@ -42,6 +42,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Welcome to Rakazo": "欢迎使用 Gose Bot",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME} 点数",
   "Your administrator manages this setting.": "此设置由管理员统一管理。",
+  "Daily check-ins on unfinished work": "每天跟进未完成的工作",
   "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
   "{count} files": "{count} 个文件",
@@ -101,7 +102,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Search bots": "搜索 Bot",
   "{count} messages with {peer}": "与 {peer} 的 {count} 条消息",
   "About {label}": "关于{label}",
-  "Manage the bots it creates": "管理它创建的机器人",
+  "Manage other bots": "管理其他机器人",
   "Allow cross-space bot communication": "允许跨空间机器人通信",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理侧边栏并编辑机器人。更改群组、指令、模型和例行任务需要你的批准。",
@@ -303,6 +304,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "批准此服务器后，Agent 才能使用它的工具。",
   "Answered: {answer}": "已回答：{answer}",
+  "Only enter a code {host} sent you.": "仅输入 {host} 发给你的验证码。",
   Archive: "归档",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "归档会保留全部内容，可以撤销。删除不可恢复。",
@@ -439,6 +441,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not share image": "无法分享图片",
   "Loading image…": "正在加载图片…",
   "Open image {name}": "打开图片 {name}",
+  "Open {name}": "打开 {name}",
   "Tap to open": "点按打开",
   "Could not open message": "无法打开消息",
   "Could not play a sample": "无法播放示例",
@@ -523,6 +526,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Failed to send message": "发送消息失败",
   "Failed to stop work": "停止工作失败",
   File: "文件",
+  "Did you mean {email}?": "你是不是想输入 {email}？",
   "Forgot password?": "忘记密码？",
   "Find models": "查找模型",
   "Finding…": "正在查找…",
@@ -1316,6 +1320,19 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Won't do": "不做",
   "Could not move the ticket": "无法移动工单",
   "No tickets yet.": "还没有工单。",
+  "Bot models": "Bot 模型",
+  "1 bot has its own model:": "1 个 Bot 使用自己的模型：",
+  "{count} bots have their own model:": "{count} 个 Bot 使用自己的模型：",
+  "Use space default": "使用空间默认",
+  "Switching…": "正在切换…",
+  "Switch 1 bot to the space default?": "将 1 个 Bot 切换为空间默认？",
+  "Switch {count} bots to the space default?": "将 {count} 个 Bot 切换为空间默认？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "将清除它们各自的模型。你可以在每个 Bot 里重新选择。",
+  Switch: "切换",
+  "1 bot now uses the space default.": "1 个 Bot 已改用空间默认。",
+  "{count} bots now use the space default.": "{count} 个 Bot 已改用空间默认。",
+  "Could not switch {failedNames}. Try again.": "无法切换 {failedNames}。请重试。",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

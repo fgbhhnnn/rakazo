@@ -1,4 +1,5 @@
-import { type GroupMemberRef, mentionedMembersInOrder } from "./group-mentions.js";
+import type { GroupMemberRef } from "./group-mentions.js";
+import { mentionedMembersInOrder } from "./group-mentions.js";
 import { TEAM_RUN_LOOP_NOTICE } from "./group-team-run.js";
 
 /**

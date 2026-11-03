@@ -109,6 +109,14 @@ describe("connectorToolRequiresApproval", () => {
     expect(connectorToolRequiresApproval("send_message")).toBe(true);
   });
 
+  it("reads words separated by hyphens", () => {
+    expect(connectorToolRequiresApproval("gmail-find-email", true)).toBe(false);
+    expect(connectorToolRequiresApproval("google_calendar-list-events", true)).toBe(false);
+    expect(connectorToolRequiresApproval("gmail-send-email", true)).toBe(true);
+    expect(connectorToolRequiresApproval("google_sheets-get-or-create-row", true)).toBe(true);
+    expect(connectorToolRequiresApproval("hubspot-find-and-update-contact", true)).toBe(true);
+  });
+
   it("requires approval for a declared write whatever its name says", () => {
     expect(connectorToolRequiresApproval("read_profile_card", false)).toBe(true);
     expect(connectorToolRequiresApproval("find_validator_record", false)).toBe(true);
@@ -416,6 +424,15 @@ describe("planActionGate", () => {
       expect(gate(mode, { resolved: blocked })).toBe("deny");
       expect(gate(mode, { resolved: blocked, mandatory: true })).toBe("deny");
       expect(gate(mode, { resolved: blocked, consequential: false })).toBe("deny");
+    }
+  });
+
+  it("asks for a purchase in every mode, past an allow rule, and still refuses a block", () => {
+    for (const mode of ["never", "auto", "ask"] as const) {
+      expect(gate(mode, { purchase: true, consequential: false })).toBe("ask");
+      expect(gate(mode, { purchase: true, resolved: allowed })).toBe("ask");
+      expect(gate(mode, { purchase: true, mandatory: true, steerable: true })).toBe("ask");
+      expect(gate(mode, { purchase: true, resolved: blocked })).toBe("deny");
     }
   });
 

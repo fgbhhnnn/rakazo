@@ -46,6 +46,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.":
     "ブラウザで開くのと同じHTTPSのURLで、セルフホストのGose Botオリジンを指定してください。",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME}クレジット",
+  "Daily check-ins on unfinished work": "未完了の作業を毎日確認",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",
@@ -115,7 +116,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "例: Project Falcon",
   "Search bots": "ボットを検索",
   "About {label}": "{label}について",
-  "Manage the bots it creates": "作成したボットを管理",
+  "Manage other bots": "他のボットを管理",
   "Allow cross-space bot communication": "スペースをまたいだボット間の通信を許可",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "サイドバーの整理とボットの編集ができます。指示、モデル、ルーティン、グループの編集には承認が必要です。",
@@ -241,6 +242,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Custom server {host}": "カスタムサーバー {host}",
   "Don’t have an account?": "アカウントをお持ちでないですか？",
   Email: "メールアドレス",
+  "Did you mean {email}?": "{email} のことですか？",
   "Forgot password?": "パスワードをお忘れですか？",
   "Loading…": "読み込み中…",
   Password: "パスワード",
@@ -300,6 +302,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "このサーバーを承認すると、エージェントがそのツールを使用できるようになります。",
   "Answered: {answer}": "回答済み: {answer}",
+  "Only enter a code {host} sent you.": "{host} から送られたコードだけを入力してください。",
   Archive: "アーカイブ",
   Attach: "添付",
   "Attach file": "ファイルを添付",
@@ -327,6 +330,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not share image": "画像を共有できませんでした",
   "Loading image…": "画像を読み込み中…",
   "Open image {name}": "画像{name}を開く",
+  "Open {name}": "{name}を開く",
   "Tap to open": "タップして開く",
   "Could not open message": "メッセージを開けませんでした",
   "Could not send answer": "回答を送信できませんでした",
@@ -1336,6 +1340,23 @@ export const JA_MESSAGES: Record<string, string> = {
   "Won't do": "対応しない",
   "Could not move the ticket": "チケットを移動できませんでした",
   "No tickets yet.": "チケットはまだありません。",
+  "Bot models": "ボットのモデル",
+  "1 bot has its own model:": "1個のボットが独自のモデルを使用しています:",
+  "{count} bots have their own model:": "{count}個のボットが独自のモデルを使用しています:",
+  "Use space default": "スペースのデフォルトを使用",
+  "Switching…": "切り替え中…",
+  "Switch 1 bot to the space default?": "1個のボットをスペースのデフォルトに切り替えますか？",
+  "Switch {count} bots to the space default?":
+    "{count}個のボットをスペースのデフォルトに切り替えますか？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "個別のモデル設定は解除されます。各ボットで再度選択できます。",
+  Switch: "切り替え",
+  "1 bot now uses the space default.":
+    "1個のボットがスペースのデフォルトを使用するようになりました。",
+  "{count} bots now use the space default.":
+    "{count}個のボットがスペースのデフォルトを使用するようになりました。",
+  "Could not switch {failedNames}. Try again.":
+    "{failedNames}を切り替えられませんでした。もう一度お試しください。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

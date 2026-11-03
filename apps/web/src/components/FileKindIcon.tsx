@@ -1,4 +1,6 @@
-import { type FileIcon, fileKindOf } from "@rakazo/chat-ui/file-kinds";
+import type { FileIcon } from "@rakazo/chat-ui/file-kinds";
+import { fileKindOf } from "@rakazo/chat-ui/file-kinds";
+import type { LucideIcon } from "lucide-react";
 import {
   File,
   FileArchive,
@@ -11,7 +13,6 @@ import {
   FileType,
   FileVideo,
   Globe,
-  type LucideIcon,
   Presentation,
 } from "lucide-react";
 

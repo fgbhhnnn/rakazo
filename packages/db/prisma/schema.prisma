@@ -34,6 +34,9 @@ model User {
   allowBotPasswordReveal      Boolean                      @default(false)
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
+  /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
+  /// emails then follow the language of the browser that asked for them.
+  locale                      String?
   marketingEmailOptOutAt      DateTime?
   sessions                    Session[]
   accounts                    Account[]
@@ -62,6 +65,7 @@ model User {
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
   trustedLinkSites            TrustedLinkSite[]
+  feedbackReports             FeedbackReport[]
   emailSends                  EmailSend[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
@@ -305,10 +309,15 @@ model PluginSubmission {
   email        String
   name         String
   website      String?
-  logo         String
-  source       String
+  logo         String?
+  /// The integration page slug this claims; claims have no source or testing.
+  claim        String?
+  /// Hash of the emailed link that moves an unconfirmed claim into review.
+  confirmToken     String?   @unique
+  confirmExpiresAt DateTime?
+  source       String?
   description  String
-  testing      String
+  testing      String?
   status       String    @default("pending")
   reason       String?
   // Set on approval.
@@ -321,6 +330,7 @@ model PluginSubmission {
 
   @@index([status, createdAt])
   @@index([source])
+  @@index([claim, status])
   @@map("plugin_submissions")
 }
 
@@ -410,6 +420,7 @@ model Space {
   mcpOAuthSessions            McpOAuthSession[]
   modelOAuthSessions          ModelOAuthSession[]
   purchases                   Purchase[]
+  feedbackReports             FeedbackReport[]
   botMcpServers              BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
   actionApprovalRules         ActionApprovalRule[]
@@ -598,6 +609,27 @@ model UserModelCredential {
 
 /// A site one user opens from chat links without the external-link prompt, in every space.
 /// Never consulted for what a bot may fetch: those are action approval rules.
+/// A problem or suggestion a user asked their bot to send to the people who run this server.
+/// The ids point at where it happened; the description is written to leave out personal details.
+model FeedbackReport {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId     String
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId       String
+  threadId    String
+  runId       String
+  /// "bug" or "feedback".
+  kind        String
+  description String
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("feedback_reports")
+}
+
 model TrustedLinkSite {
   id        String   @id @default(cuid())
   userId    String
@@ -704,6 +736,7 @@ model Bot {
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
   crossSpaceCommunication Boolean @default(true)
+  dailyCheckIns Boolean @default(true)
   fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
@@ -1206,6 +1239,7 @@ model ScratchpadItem {
 
   @@index([spaceId, botId, status])
   @@index([spaceId, botId, updatedAt])
+  @@index([botId, status, updatedAt, id])
   @@map("scratchpad_items")
 }
 

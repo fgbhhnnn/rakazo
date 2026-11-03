@@ -1,9 +1,9 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
+import type { GroupQuestionRefusal } from "@rakazo/core";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   GROUP_QUESTION_SENT_NOTE,
-  type GroupQuestionRefusal,
   groupAnswerNonce,
   groupQuestionAskerRunId,
   groupQuestionLimits,

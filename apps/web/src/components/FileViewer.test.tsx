@@ -2,7 +2,8 @@
 import { FILE_KIND_COLORS } from "@rakazo/chat-ui/file-kinds";
 import type { ReactNode } from "react";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 

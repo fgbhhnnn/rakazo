@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
 import { act, createElement, forwardRef, useImperativeHandle } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -95,7 +96,8 @@ vi.mock("../lib/artifact-open", () => ({
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("../lib/document-viewer-assets", () => ({ documentViewerHtml: mocks.viewerHtml }));
 
-import { FILE_KIND_COLORS, type FileIcon } from "@rakazo/chat-ui/file-kinds";
+import type { FileIcon } from "@rakazo/chat-ui/file-kinds";
+import { FILE_KIND_COLORS } from "@rakazo/chat-ui/file-kinds";
 import { FileArtifactViewer } from "../components/file-artifact-viewer";
 import { FILE_ICON_SYMBOLS, FileKindIcon } from "../components/file-kind-icon";
 import { FileViewerBody, hasMobileFileViewer } from "../components/file-viewer";

@@ -1,18 +1,20 @@
+import type {
+  MessageBlock,
+  TaskProgressBlock,
+  TaskProgressEntry,
+  TaskProgressState,
+} from "@rakazo/contracts";
 import {
   isTaskProgressActive,
-  type MessageBlock,
   TASK_PROGRESS_MAX_TASKS,
   TASK_PROGRESS_STEP_MAX_LENGTH,
-  type TaskProgressBlock,
   TaskProgressBlockSchema,
-  type TaskProgressEntry,
-  type TaskProgressState,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
-  type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";

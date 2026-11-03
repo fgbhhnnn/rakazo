@@ -8,12 +8,7 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import {
-  isBackgroundTaskStartCard,
-  isPeerReceiptBlocks,
-  isSecretAskBlock,
-  isToolActivityBlock,
-} from "@rakazo/core";
+import { isBackgroundTaskStartCard, isPeerReceiptBlocks, isToolActivityBlock } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
@@ -576,10 +571,7 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "ask") {
             return (
-              <div
-                key={i}
-                className={`relative w-full min-w-0 ${isSecretAskBlock(block) ? "" : "max-w-xl"}`}
-              >
+              <div key={i} className="relative w-full min-w-0">
                 <AskCard
                   block={block}
                   canAnswer={canAnswer}

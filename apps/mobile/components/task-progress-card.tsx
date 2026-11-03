@@ -1,8 +1,7 @@
+import type { TaskProgressBlock, TaskProgressEntry } from "@rakazo/contracts";
 import {
   formatTaskRunTime,
   isTaskProgressActive,
-  type TaskProgressBlock,
-  type TaskProgressEntry,
   taskProgressCounts,
   taskProgressDetailStep,
   taskProgressRunSeconds,

@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBrowserProvider } from "./browser-provider-factory.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
+import { pageBrowserFiles } from "./page-browser-install.js";
 import { PAGE_BROWSER_RECOVERY_SOURCE } from "./page-browser-recovery-source.js";
 import { remoteDesktopPageBrowser } from "./remote-desktop-page-browser.js";
 import { pageBrowserDesktop } from "./remote-desktop-page-browser-command.js";
@@ -89,9 +91,15 @@ it("keeps local validation identical to the supervisor route", () => {
     "utf8",
   );
   const route = supervisor.slice(supervisor.indexOf('app.post("/computers/:id/browser"'));
+  const downloadFolder = supervisor.slice(
+    supervisor.indexOf("const downloadFolder = "),
+    supervisor.indexOf('app.post("/computers/:id/browser"'),
+  );
+  expect(route).toContain("const parsed = ");
+  expect(route).toContain(".safeParse(await c.req.json())");
   const expression = route.slice(
-    route.indexOf("const body = ") + "const body = ".length,
-    route.indexOf(".parse(await c.req.json())"),
+    route.indexOf("const parsed = ") + "const parsed = ".length,
+    route.indexOf(".safeParse(await c.req.json())"),
   );
   const local = readFileSync(
     new URL("./remote-desktop-page-browser-request.ts", import.meta.url),
@@ -103,21 +111,22 @@ it("keeps local validation identical to the supervisor route", () => {
       .replace(/\s/g, "")
       .replace(/,([)\]}])/g, "$1")
       .replace(/;$/, "");
-  expect(normalize(local.slice(local.indexOf("export const")))).toBe(
-    normalize(`export const remotePageBrowserRequest = ${expression};`),
+  expect(normalize(local.slice(local.indexOf("const downloadFolder = ")))).toBe(
+    normalize(`${downloadFolder}export const remotePageBrowserRequest = ${expression};`),
   );
 });
 
 describe("remote page browser", () => {
-  it("installs once per connection, verifies the content hash, and writes only helper source", async () => {
+  it("installs once per connection, verifies the content hash, and writes only browser assets", async () => {
     const f = fixture();
     expect(await f.call()).toEqual(success);
     expect(await f.call()).toEqual(success);
     expect(f.desktop.files.write).toHaveBeenCalledTimes(1);
     const written = vi.mocked(f.desktop.files.write).mock.calls[0]![0][0]!;
     expect(new TextDecoder().decode(written.data)).toBe(PAGE_BROWSER_SOURCE);
-    expect(f.run.mock.calls.filter(([command]) => command.includes("sha256sum"))).toHaveLength(2);
-    expect(f.run.mock.calls[1]![0]).toContain("install -o root -g root -m 755");
+    expect(f.run.mock.calls[0]![0]).toContain("page_secrets.py");
+    expect(f.run.mock.calls[1]![0]).toContain("agent-browser-linux-");
+    expect(f.run.mock.calls[2]![0]).toContain("install -o root -g root -m 755");
     expect(f.start).toHaveBeenCalledTimes(2);
     expect(f.start.mock.calls[0]![1]).toMatchObject({
       timeoutMs: 25_000,
@@ -134,23 +143,34 @@ describe("remote page browser", () => {
     expect(f.handle.disconnect).toHaveBeenCalledTimes(2);
   });
 
-  it("installs the recovery module beside the helper and the watchdog can import it outside that directory", async () => {
+  it("installs the helper's modules and the watchdog can import them outside that directory", async () => {
     const f = fixture();
     await f.call({ command: "restart" });
     expect(f.handle.sendStdin).toHaveBeenCalledWith('{"command":"restart"}\n', expect.anything());
     const assets = vi.mocked(f.desktop.files.write).mock.calls[0]![0];
     expect(new TextDecoder().decode(assets[1]!.data)).toBe(PAGE_BROWSER_RECOVERY_SOURCE);
-    expect(f.run.mock.calls[1]![0]).toContain("rakazo_page_browser_recovery.py");
-    const helper = fileURLToPath(
-      new URL("../../../infra/sandboxes/computer/rakazo-page-browser", import.meta.url),
-    );
-    const command = f.start.mock.calls[0]![0].replace(
-      "/usr/local/bin/rakazo-page-browser",
-      helper,
-    ).replace(/ restart$/, "");
-    const process = spawnSync("bash", ["-c", command], { cwd: "/tmp", encoding: "utf8" });
-    expect(process.status, process.stderr).toBe(2);
-    expect(JSON.parse(process.stdout).error).toContain("usage: rakazo-page-browser");
+    expect(new TextDecoder().decode(assets[2]!.data)).toBe(pageBrowserFiles()["page_secrets.py"]);
+    expect(f.run.mock.calls[2]![0]).toContain("rakazo_page_browser_recovery.py");
+    expect(f.run.mock.calls[2]![0]).toContain("page_secrets.py");
+    const directory = mkdtempSync(path.join(tmpdir(), "remote-page-browser-"));
+    try {
+      for (const [index, name] of [
+        "rakazo-page-browser",
+        "rakazo_page_browser_recovery.py",
+        "page_secrets.py",
+      ].entries()) {
+        writeFileSync(path.join(directory, name), Buffer.from(assets[index]!.data));
+      }
+      const command = f.start.mock.calls[0]![0].replace(
+        "/usr/local/bin/rakazo-page-browser",
+        path.join(directory, "rakazo-page-browser"),
+      ).replace(/ restart$/, "");
+      const process = spawnSync("bash", ["-c", command], { cwd: tmpdir(), encoding: "utf8" });
+      expect(process.status, process.stderr).toBe(2);
+      expect(JSON.parse(process.stdout).error).toContain("usage: rakazo-page-browser");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("allows navigation enough time for its longer budget and one recovery", async () => {
@@ -169,7 +189,7 @@ describe("remote page browser", () => {
     });
     await f.call();
     expect(f.desktop.files.write).not.toHaveBeenCalled();
-    expect(f.run).toHaveBeenCalledTimes(1);
+    expect(f.run).toHaveBeenCalledTimes(2);
   });
 
   it("installs without root under the remote user's local directory", async () => {
@@ -180,9 +200,27 @@ describe("remote page browser", () => {
       stderr: "",
     });
     expect(await f.call()).toEqual(success);
-    expect(f.run.mock.calls[1]![0]).toContain("install -m 755");
+    expect(f.run.mock.calls[1]![0]).toContain("agent-browser-linux-");
     expect(f.run.mock.calls[1]![0]).not.toContain("sudo");
+    expect(f.run.mock.calls[2]![0]).toContain("install -m 755");
+    expect(f.run.mock.calls[2]![0]).not.toContain("sudo");
     expect(f.start.mock.calls[0]![0]).toContain("/home/user/.local/lib/rakazo/rakazo-page-browser");
+    expect(f.start.mock.calls[0]![1].envs).toMatchObject({
+      RAKAZO_AGENT_BROWSER: "/home/user/.local/lib/rakazo/agent-browser",
+    });
+  });
+
+  it("refuses page work when the pinned browser cannot be installed", async () => {
+    const f = fixture();
+    f.run.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "INSTALL=/usr/local/bin/rakazo-page-browser\n",
+      stderr: "",
+    });
+    f.run.mockResolvedValueOnce({ exitCode: 1, stdout: "", stderr: "unavailable" });
+    expect(await f.call()).toMatchObject({ ok: false, uncertain: false });
+    expect(f.start).not.toHaveBeenCalled();
+    expect(f.run.mock.calls.at(-1)![0]).toMatch(/^rm -rf/);
   });
 
   it("retries failed installation and checks again on a new connection", async () => {

@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "@rakazo/contracts/brand";
+import { translate } from "@rakazo/core";
 import { useSyncExternalStore } from "react";
 import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
 import { ES_MESSAGES, PEER_MESSAGE_FORMS as ES_PEER_FORMS } from "./locales/es";
@@ -43,12 +44,8 @@ export function dateLocaleForUi(locale: UiLocale = activeLocale): string {
 }
 
 export function t(message: string, values?: Record<string, string | number>): string {
-  const template = catalogs[activeLocale]?.[message] ?? message;
   // Every message may name the product as {PRODUCT_NAME}; callers do not pass it.
-  const filled: Record<string, string | number> = { PRODUCT_NAME, ...values };
-  return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) =>
-    Object.hasOwn(filled, key) ? String(filled[key]) : match,
-  );
+  return translate(catalogs[activeLocale], message, { PRODUCT_NAME, ...values });
 }
 
 export function useI18n(): { locale: UiLocale; t: typeof t } {

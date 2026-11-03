@@ -46,6 +46,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Welcome to Rakazo": "Welkom bij Gose Bot",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME}-tegoed",
   "Your administrator manages this setting.": "Je beheerder beheert deze instelling.",
+  "Daily check-ins on unfinished work": "Dagelijks navragen over onafgemaakt werk",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",
@@ -106,7 +107,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Search bots": "Bots zoeken",
   "{count} messages with {peer}": "{count} berichten met {peer}",
   "About {label}": "Over {label}",
-  "Manage the bots it creates": "De bots beheren die deze bot maakt",
+  "Manage other bots": "Andere bots beheren",
   "Allow cross-space bot communication":
     "Communicatie tussen bots in verschillende ruimtes toestaan",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -253,6 +254,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigen server {host}",
   "Don’t have an account?": "Heb je geen account?",
   Email: "E-mail",
+  "Did you mean {email}?": "Bedoelde je {email}?",
   "Forgot password?": "Wachtwoord vergeten?",
   "Loading…": "Bezig met laden…",
   Password: "Wachtwoord",
@@ -313,6 +315,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Keur deze server goed zodat je agent zijn tools kan gebruiken.",
   "Answered: {answer}": "Beantwoord: {answer}",
+  "Only enter a code {host} sent you.": "Voer alleen een code in die {host} je heeft gestuurd.",
   Archive: "Archiveren",
   Attach: "Bijvoegen",
   "Attach file": "Bestand bijvoegen",
@@ -340,6 +343,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not share image": "Afbeelding delen mislukt",
   "Loading image…": "Afbeelding laden…",
   "Open image {name}": "Afbeelding {name} openen",
+  "Open {name}": "{name} openen",
   "Tap to open": "Tik om te openen",
   "Could not open message": "Bericht openen mislukt",
   "Could not send answer": "Antwoord verzenden mislukt",
@@ -1303,6 +1307,20 @@ export const NL_MESSAGES: Record<string, string> = {
   "Won't do": "Wordt niet gedaan",
   "Could not move the ticket": "Kon ticket niet verplaatsen",
   "No tickets yet.": "Nog geen tickets.",
+  "Bot models": "Botmodellen",
+  "1 bot has its own model:": "1 bot heeft een eigen model:",
+  "{count} bots have their own model:": "{count} bots hebben een eigen model:",
+  "Use space default": "Spacestandaard gebruiken",
+  "Switching…": "Bezig met wisselen…",
+  "Switch 1 bot to the space default?": "1 bot naar de spacestandaard overzetten?",
+  "Switch {count} bots to the space default?": "{count} bots naar de spacestandaard overzetten?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Hun eigen model wordt gewist. Je kunt in elke bot opnieuw een model kiezen.",
+  Switch: "Overzetten",
+  "1 bot now uses the space default.": "1 bot gebruikt nu de spacestandaard.",
+  "{count} bots now use the space default.": "{count} bots gebruiken nu de spacestandaard.",
+  "Could not switch {failedNames}. Try again.":
+    "Kon {failedNames} niet overzetten. Probeer het opnieuw.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

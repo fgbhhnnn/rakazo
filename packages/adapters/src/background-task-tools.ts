@@ -1,4 +1,5 @@
-import { BUILTIN_TOOL_NAMES, type MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock } from "@rakazo/contracts";
+import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { backgroundTaskCard } from "./background-task-cards.js";
 import { refreshTaskProgressCard } from "./background-task-progress.js";

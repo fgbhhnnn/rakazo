@@ -68,7 +68,7 @@ describe("sendWelcomeEmail", () => {
     const url = unsubscribeUrl(origin, secret, "user-1");
     expect(email.sent[0]).toMatchObject({
       to: "new@example.test",
-      subject: "Welcome to Rakazo",
+      subject: "Welcome to Gose Bot",
       headers: {
         "List-Unsubscribe": `<${url}>`,
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
@@ -76,6 +76,14 @@ describe("sendWelcomeEmail", () => {
     });
     expect(email.sent[0]!.text).toContain(url);
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("writes the welcome in the language of the browser that signed up", async () => {
+    const { email, deps: welcome } = deps(true);
+    await sendWelcomeEmail(welcome, "user-1", new Headers({ "accept-language": "es-CL,es" }));
+    await vi.waitFor(() => expect(email.sent).toHaveLength(1));
+    expect(email.sent[0]!.subject).toBe("Te damos la bienvenida a Gose Bot");
+    expect(email.sent[0]!.text).toMatch(/Windows \S+ y Linux/);
   });
 
   it("sends nothing when another sign-in already claimed the welcome", async () => {

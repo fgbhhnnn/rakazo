@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { AdapterContext, PageBrowserCommand, PageBrowserResult } from "@rakazo/adapter-kit";
 import { shellQuote } from "./computer-support.js";
+import { installAgentBrowserCommand, pageBrowserFiles } from "./page-browser-install.js";
 import { PAGE_BROWSER_RECOVERY_SOURCE } from "./page-browser-recovery-source.js";
 import type { PageBrowserCommandHandle } from "./remote-desktop-page-browser-command.js";
 import { remotePageBrowserRequest } from "./remote-desktop-page-browser-request.js";
@@ -23,7 +24,7 @@ type PageBrowserScreen = {
   env: { workspaceDir: string };
 };
 
-/** The helper ships as TS data so the API's esbuild bundle needs no runtime infra files. */
+/** Keep each remote connection on this release's helper and its supporting modules. */
 async function install(desktop: RemoteDesktop, signal: AbortSignal): Promise<string> {
   const cached = installed.get(desktop);
   if (cached) return cached;
@@ -38,6 +39,8 @@ async function install(desktop: RemoteDesktop, signal: AbortSignal): Promise<str
 }
 
 async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promise<string> {
+  const secretsSource = pageBrowserFiles()["page_secrets.py"];
+  const secretsHash = createHash("sha256").update(secretsSource).digest("hex");
   // A private staging directory also keeps parallel connections' installations independent.
   const stage = `/tmp/rakazo-page-browser-${randomUUID()}`;
   const setup = await desktop.commands.run(
@@ -47,7 +50,7 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
         'if [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then',
         "  target=/usr/local/bin/rakazo-page-browser",
         'else target="$HOME/.local/lib/rakazo/rakazo-page-browser"; fi',
-        `if [ -f "$target" ] && [ "$(sha256sum "$target" | cut -d ' ' -f1)" = ${HELPER_HASH} ] && [ "$(sha256sum "$(dirname "$target")/rakazo_page_browser_recovery.py" 2>/dev/null | cut -d ' ' -f1)" = ${RECOVERY_HASH} ]; then`,
+        `if [ -f "$target" ] && [ "$(sha256sum "$target" | cut -d ' ' -f1)" = ${HELPER_HASH} ] && [ "$(sha256sum "$(dirname "$target")/rakazo_page_browser_recovery.py" 2>/dev/null | cut -d ' ' -f1)" = ${RECOVERY_HASH} ] && [ "$(sha256sum "$(dirname "$target")/page_secrets.py" 2>/dev/null | cut -d ' ' -f1)" = ${secretsHash} ]; then`,
         '  printf "READY=%s\\n" "$target"',
         "else",
         `  (umask 077; mkdir ${shellQuote(stage)})`,
@@ -61,11 +64,21 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
   const match = setup.stdout.trim().match(/^(READY|INSTALL)=(\/[^\n]+)$/);
   if (!match) throw new Error(UNAVAILABLE);
   const target = match[2]!;
-  if (match[1] === "READY") return target;
+  const directory = target.slice(0, target.lastIndexOf("/"));
   const next = `${target}.${randomUUID()}`;
-  const recoveryTarget = `${target.slice(0, target.lastIndexOf("/"))}/rakazo_page_browser_recovery.py`;
+  const recoveryTarget = `${directory}/rakazo_page_browser_recovery.py`;
   const recoveryNext = `${recoveryTarget}.${randomUUID()}`;
+  const secretsTarget = `${directory}/page_secrets.py`;
+  const secretsNext = `${secretsTarget}.${randomUUID()}`;
   try {
+    const browser = await desktop.commands.run(
+      installAgentBrowserCommand(
+        target === "/usr/local/bin/rakazo-page-browser" ? undefined : directory,
+      ),
+      { signal, timeoutMs: TIMEOUT_MS },
+    );
+    if (browser.exitCode !== 0) throw new Error(UNAVAILABLE);
+    if (match[1] === "READY") return target;
     await desktop.files.write(
       [
         { path: `${stage}/helper`, data: new TextEncoder().encode(PAGE_BROWSER_SOURCE).buffer },
@@ -73,6 +86,7 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
           path: `${stage}/recovery`,
           data: new TextEncoder().encode(PAGE_BROWSER_RECOVERY_SOURCE).buffer,
         },
+        { path: `${stage}/secrets`, data: new TextEncoder().encode(secretsSource).buffer },
       ],
       { signal },
     );
@@ -83,19 +97,24 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
           `trap 'rm -rf ${stage}' EXIT`,
           `test "$(sha256sum ${stage}/helper | cut -d ' ' -f1)" = ${HELPER_HASH}`,
           `test "$(sha256sum ${stage}/recovery | cut -d ' ' -f1)" = ${RECOVERY_HASH}`,
+          `test "$(sha256sum ${stage}/secrets | cut -d ' ' -f1)" = ${secretsHash}`,
           ...(target === "/usr/local/bin/rakazo-page-browser"
             ? [
                 'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
                 `$root install -o root -g root -m 755 ${stage}/helper ${shellQuote(next)}`,
                 `$root install -o root -g root -m 644 ${stage}/recovery ${shellQuote(recoveryNext)}`,
+                `$root install -o root -g root -m 644 ${stage}/secrets ${shellQuote(secretsNext)}`,
                 `$root mv -f -- ${shellQuote(recoveryNext)} ${shellQuote(recoveryTarget)}`,
+                `$root mv -f -- ${shellQuote(secretsNext)} ${shellQuote(secretsTarget)}`,
                 `$root mv -f -- ${shellQuote(next)} ${shellQuote(target)}`,
               ]
             : [
-                `mkdir -p -- ${shellQuote(target.slice(0, target.lastIndexOf("/")))}`,
+                `mkdir -p -- ${shellQuote(directory)}`,
                 `install -m 755 ${stage}/helper ${shellQuote(next)}`,
                 `install -m 644 ${stage}/recovery ${shellQuote(recoveryNext)}`,
+                `install -m 644 ${stage}/secrets ${shellQuote(secretsNext)}`,
                 `mv -f -- ${shellQuote(recoveryNext)} ${shellQuote(recoveryTarget)}`,
+                `mv -f -- ${shellQuote(secretsNext)} ${shellQuote(secretsTarget)}`,
                 `mv -f -- ${shellQuote(next)} ${shellQuote(target)}`,
               ]),
         ].join("\n"),
@@ -106,9 +125,11 @@ async function installHelper(desktop: RemoteDesktop, signal: AbortSignal): Promi
     return target;
   } finally {
     // Use an independent request after cancellation; no credentials ever enter this directory.
-    await desktop.commands
-      .run(`rm -rf -- ${shellQuote(stage)}`, { timeoutMs: 5_000 })
-      .catch(() => undefined);
+    if (match[1] === "INSTALL") {
+      await desktop.commands
+        .run(`rm -rf -- ${shellQuote(stage)}`, { timeoutMs: 5_000 })
+        .catch(() => undefined);
+    }
   }
 }
 
@@ -145,6 +166,7 @@ async function runHelper(
         signal: combined,
         timeoutMs,
         envs: {
+          RAKAZO_AGENT_BROWSER: `${helper.slice(0, helper.lastIndexOf("/"))}/agent-browser`,
           DISPLAY: screen.layout.display,
           RAKAZO_CDP_PORT: String(screen.layout.debugPort),
           // Upload paths and trusted roots are relative to Rakazo's portable workspace.

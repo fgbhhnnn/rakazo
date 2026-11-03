@@ -1,4 +1,5 @@
-import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
+import type { JobPublisher } from "@rakazo/adapter-kit";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 
 /**

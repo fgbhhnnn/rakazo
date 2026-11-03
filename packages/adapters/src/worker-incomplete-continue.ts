@@ -6,19 +6,18 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { clampBotMessage } from "@rakazo/core";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
-  type Prisma,
-  type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { backgroundTaskForWorkerRun } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
+import type { IncompleteReason } from "./worker-incomplete-result.js";
 import {
   buildIncompleteContinueMessage,
-  type IncompleteReason,
   incompleteContinueCount,
   incompleteExhaustedLead,
   incompleteExhaustedNote,

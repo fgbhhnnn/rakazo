@@ -463,6 +463,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "구독 인증 정보가 안전하게 저장되어 있습니다."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "{label} 정보"
@@ -879,6 +883,10 @@ msgstr "승인"
 msgid "Approve"
 msgstr "승인"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "화면에서 승인하거나 거부하세요."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "이 서버를 승인하면 Bot이 제공되는 도구를 사용할 수 있습니다."
@@ -1177,7 +1185,6 @@ msgid "Can't reach the server."
 msgstr "서버에 연결할 수 없습니다."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "이미지를 읽을 수 없음"
@@ -1507,10 +1514,6 @@ msgstr "열 {index}"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "준비 중"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -2476,6 +2479,10 @@ msgstr "{label} 맞춤설정"
 msgid "Customize bot avatar"
 msgstr "봇 아바타 맞춤설정"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "미완료 작업 매일 확인"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2658,6 +2665,10 @@ msgstr ""
 #: src/components/composer/DictateButton.tsx
 msgid "Dictation failed. Try again."
 msgstr "음성 입력에 실패했습니다. 다시 시도하세요."
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "<0>{emailSuggestion}</0>을(를) 입력하려고 하셨나요?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3099,7 +3110,6 @@ msgid "Forgot password?"
 msgstr "비밀번호를 잊으셨나요?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "무료"
 
@@ -3534,10 +3544,6 @@ msgstr "MEMORY.md와 함께 봇이 의미를 기준으로 사실을 저장하고
 msgid "Light"
 msgstr "라이트"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear 이슈"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3696,8 +3702,8 @@ msgid "Manage MCP servers"
 msgstr "MCP 서버 관리"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "이 봇이 만든 봇 관리"
+msgid "Manage other bots"
+msgstr "다른 봇 관리"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3916,7 +3922,6 @@ msgstr "모드"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3937,7 +3942,7 @@ msgstr "모델 연결"
 msgid "Model id"
 msgstr "모델 ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "모델 선택지"
@@ -3952,8 +3957,8 @@ msgstr "AI 모델"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "서버에서 찾은 모델"
 
@@ -4186,7 +4191,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4384,6 +4388,10 @@ msgstr "한 번"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 msgstr ""
@@ -4485,8 +4493,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "원본 메시지를 사용할 수 없습니다"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "다른 모델 직접 입력…"
 
@@ -4510,10 +4518,6 @@ msgstr ""
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "페이지를 찾을 수 없습니다"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDuty 인시던트"
 
 #: src/components/pages/PagesShelf.tsx
 msgid "Pages"
@@ -4927,6 +4931,7 @@ msgid "Release control"
 msgstr "제어권 넘기기"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "새로고침"
 
@@ -5356,8 +5361,8 @@ msgstr "범위 (선택 사항)"
 msgid "Screen not connected"
 msgstr "화면이 연결되지 않음"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5390,8 +5395,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5478,10 +5483,6 @@ msgstr "보내는 중…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentry 알림"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5935,10 +5936,6 @@ msgstr "팀 컴퓨터"
 msgid "Teams message"
 msgstr "Teams 메시지"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr ""
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
 msgstr "시험 실행"
@@ -6289,6 +6286,7 @@ msgstr "신뢰할 수 있는 사이트"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "다시 시도"
 
@@ -6381,6 +6379,10 @@ msgstr "지침을 업데이트할까요?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "업데이트가 필요합니다"
 
 #: src/components/pages/PageReader.tsx
 #: src/components/VaultSettings.tsx

@@ -463,6 +463,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Zugangsdaten für das Abonnement sind sicher gespeichert."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "Über {label}"
@@ -879,6 +883,10 @@ msgstr "Freigaben"
 msgid "Approve"
 msgstr "Genehmigen"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Genehmige oder lehne es auf dem Bildschirm ab."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Genehmige diesen Server, damit dein Agent seine Tools verwenden kann."
@@ -1177,7 +1185,6 @@ msgid "Can't reach the server."
 msgstr "Server nicht erreichbar."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "Kann keine Bilder lesen"
@@ -1506,10 +1513,6 @@ msgstr "Spalte {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -2476,6 +2479,10 @@ msgstr "{label} anpassen"
 msgid "Customize bot avatar"
 msgstr "Bot-Avatar anpassen"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Tägliche Rückfragen zu offenen Aufgaben"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2658,6 +2665,10 @@ msgstr ""
 #: src/components/composer/DictateButton.tsx
 msgid "Dictation failed. Try again."
 msgstr "Diktat fehlgeschlagen. Erneut versuchen."
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "Meintest du <0>{emailSuggestion}</0>?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3099,7 +3110,6 @@ msgid "Forgot password?"
 msgstr "Passwort vergessen?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Kostenlos"
 
@@ -3193,11 +3203,11 @@ msgstr "Auflegen"
 
 #: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
-msgstr ""
+msgstr "Lege zuerst auf und gib dann den Code auf dem Bildschirm ein."
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
-msgstr ""
+msgstr "Lege auf und gib dann den Code auf dem Bildschirm ein."
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"
@@ -3534,10 +3544,6 @@ msgstr "Bots können Fakten nach Bedeutung speichern und abrufen, zusätzlich zu
 msgid "Light"
 msgstr "Hell"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr ""
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3696,8 +3702,8 @@ msgid "Manage MCP servers"
 msgstr "MCP-Server verwalten"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "Die von ihm erstellten Bots verwalten"
+msgid "Manage other bots"
+msgstr "Andere Bots verwalten"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3916,7 +3922,6 @@ msgstr "Modus"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3937,7 +3942,7 @@ msgstr "Modellverbindungen"
 msgid "Model id"
 msgstr "Modell-ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Modelloptionen"
@@ -3952,8 +3957,8 @@ msgstr "Modelle"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Modelle vom Server"
 
@@ -4186,7 +4191,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4384,6 +4388,10 @@ msgstr "Einmalig"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 msgstr ""
@@ -4485,8 +4493,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "Originalnachricht nicht verfügbar"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Anderes Modell…"
 
@@ -4510,10 +4518,6 @@ msgstr "Markdown der Seite"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Seite nicht gefunden"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr ""
 
 #: src/components/pages/PagesShelf.tsx
 msgid "Pages"
@@ -4927,6 +4931,7 @@ msgid "Release control"
 msgstr "Kontrolle abgeben"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Neu laden"
 
@@ -5356,8 +5361,8 @@ msgstr "Bereiche (optional)"
 msgid "Screen not connected"
 msgstr "Bildschirm nicht verbunden"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5390,8 +5395,8 @@ msgstr ""
 msgid "Search integrations.sh"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5477,10 +5482,6 @@ msgstr "Wird gesendet…"
 
 #: src/components/AskCard.tsx
 msgid "Sent"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
 msgstr ""
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -5935,10 +5936,6 @@ msgstr "Team-Computer"
 msgid "Teams message"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr ""
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
 msgstr "Test"
@@ -6289,6 +6286,7 @@ msgstr "Vertrauenswürdige Websites"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "Erneut versuchen"
 
@@ -6381,6 +6379,10 @@ msgstr "Anweisungen aktualisieren?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Update erforderlich"
 
 #: src/components/pages/PageReader.tsx
 #: src/components/VaultSettings.tsx

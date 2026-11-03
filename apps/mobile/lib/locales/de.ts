@@ -47,6 +47,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Welcome to Rakazo": "Willkommen bei Gose Bot",
   "{PRODUCT_NAME} credits": "{PRODUCT_NAME}-Guthaben",
   "Your administrator manages this setting.": "Dein Administrator verwaltet diese Einstellung.",
+  "Daily check-ins on unfinished work": "Tägliche Rückfragen zu offenen Aufgaben",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",
@@ -110,7 +111,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Search bots": "Bots suchen",
   "{count} messages with {peer}": "{count} Nachrichten mit {peer}",
   "About {label}": "Über {label}",
-  "Manage the bots it creates": "Die von ihm erstellten Bots verwalten",
+  "Manage other bots": "Andere Bots verwalten",
   "Allow cross-space bot communication":
     "Kommunikation zwischen Bots in verschiedenen Spaces erlauben",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -259,6 +260,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigener Server {host}",
   "Don’t have an account?": "Du hast noch kein Konto?",
   Email: "E-Mail",
+  "Did you mean {email}?": "Meintest du {email}?",
   "Forgot password?": "Passwort vergessen?",
   "Loading…": "Wird geladen…",
   Password: "Passwort",
@@ -319,6 +321,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Genehmige diesen Server, damit dein Agent seine Tools nutzen kann.",
   "Answered: {answer}": "Beantwortet: {answer}",
+  "Only enter a code {host} sent you.": "Gib nur einen Code ein, den {host} dir geschickt hat.",
   Archive: "Archivieren",
   Attach: "Anhängen",
   "Attach file": "Datei anhängen",
@@ -346,6 +349,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not share image": "Bild konnte nicht geteilt werden",
   "Loading image…": "Bild wird geladen…",
   "Open image {name}": "Bild {name} öffnen",
+  "Open {name}": "{name} öffnen",
   "Tap to open": "Zum Öffnen tippen",
   "Could not open message": "Nachricht konnte nicht geöffnet werden",
   "Could not send answer": "Antwort konnte nicht gesendet werden",
@@ -1313,6 +1317,20 @@ export const DE_MESSAGES: Record<string, string> = {
   "Won't do": "Wird nicht gemacht",
   "Could not move the ticket": "Ticket konnte nicht verschoben werden",
   "No tickets yet.": "Noch keine Tickets.",
+  "Bot models": "Bot-Modelle",
+  "1 bot has its own model:": "1 Bot hat ein eigenes Modell:",
+  "{count} bots have their own model:": "{count} Bots haben ein eigenes Modell:",
+  "Use space default": "Space-Standard verwenden",
+  "Switching…": "Wird gewechselt…",
+  "Switch 1 bot to the space default?": "1 Bot auf den Space-Standard umstellen?",
+  "Switch {count} bots to the space default?": "{count} Bots auf den Space-Standard umstellen?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Ihr eigenes Modell wird entfernt. Du kannst in jedem Bot wieder eines wählen.",
+  Switch: "Umstellen",
+  "1 bot now uses the space default.": "1 Bot verwendet jetzt den Space-Standard.",
+  "{count} bots now use the space default.": "{count} Bots verwenden jetzt den Space-Standard.",
+  "Could not switch {failedNames}. Try again.":
+    "{failedNames} konnte nicht umgestellt werden. Versuche es erneut.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

@@ -463,6 +463,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Учётные данные подписки надежно сохранены."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "О настройке «{label}»"
@@ -879,6 +883,10 @@ msgstr "Подтверждения"
 msgid "Approve"
 msgstr "Утвердить"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "Утвердите или запретите это на экране."
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Одобрите этот сервер, чтобы ваш агент мог использовать его инструменты."
@@ -1177,7 +1185,6 @@ msgid "Can't reach the server."
 msgstr "Не удаётся связаться с сервером."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "Не может читать изображения"
@@ -1507,10 +1514,6 @@ msgstr "столбец {index}"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "Скоро"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -2476,6 +2479,10 @@ msgstr "Настроить: {label}"
 msgid "Customize bot avatar"
 msgstr "Настроить аватар бота"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "Ежедневные напоминания о незавершённой работе"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2658,6 +2665,10 @@ msgstr ""
 #: src/components/composer/DictateButton.tsx
 msgid "Dictation failed. Try again."
 msgstr "Не удалось выполнить диктовку. Попробуйте ещё раз."
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "Вы имели в виду <0>{emailSuggestion}</0>?"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3099,7 +3110,6 @@ msgid "Forgot password?"
 msgstr "Забыли пароль?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Бесплатно"
 
@@ -3534,10 +3544,6 @@ msgstr "Позволяет ботам сохранять и находить ф�
 msgid "Light"
 msgstr "Светлая"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Задача Linear"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3696,8 +3702,8 @@ msgid "Manage MCP servers"
 msgstr "Управление серверами MCP"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "Управлять созданными им ботами"
+msgid "Manage other bots"
+msgstr "Управлять другими ботами"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3916,7 +3922,6 @@ msgstr "Режим"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3937,7 +3942,7 @@ msgstr "Подключения моделей"
 msgid "Model id"
 msgstr "Идентификатор модели"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Варианты модели"
@@ -3952,8 +3957,8 @@ msgstr "Модели"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Модели с сервера"
 
@@ -4186,7 +4191,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4384,6 +4388,10 @@ msgstr "Один раз"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 msgstr ""
@@ -4485,8 +4493,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "Исходное сообщение недоступно"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Другая модель…"
 
@@ -4510,10 +4518,6 @@ msgstr "Markdown страницы"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "Страница не найдена"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "Инцидент PagerDuty"
 
 #: src/components/pages/PagesShelf.tsx
 msgid "Pages"
@@ -4927,6 +4931,7 @@ msgid "Release control"
 msgstr "Передать управление"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "Перезагрузить"
 
@@ -5356,8 +5361,8 @@ msgstr "Области доступа (необязательно)"
 msgid "Screen not connected"
 msgstr "Экран не подключён"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5390,8 +5395,8 @@ msgstr "Поиск по домену"
 msgid "Search integrations.sh"
 msgstr "Поиск integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5478,10 +5483,6 @@ msgstr "Отправка…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Оповещение Sentry"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5935,10 +5936,6 @@ msgstr "Командный компьютер"
 msgid "Teams message"
 msgstr "Сообщение Teams"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "Teams не настроен"
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
 msgstr "Тест"
@@ -6289,6 +6286,7 @@ msgstr "Доверенные сайты"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr ""
 
@@ -6381,6 +6379,10 @@ msgstr "Обновить инструкции?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "Ход обновления"
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "Требуется обновление"
 
 #: src/components/pages/PageReader.tsx
 #: src/components/VaultSettings.tsx

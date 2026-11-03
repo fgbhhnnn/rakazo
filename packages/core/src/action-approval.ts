@@ -51,6 +51,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "create_group",
   "update_group",
   "create_child_routine",
+  "feedback",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",
@@ -80,10 +81,10 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "web_search",
 ]);
 
-const READ_ONLY_CONNECTOR_PATTERN = /(^|_)(get|list|search|find|read)(_|$)/i;
+const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
 const MUTATING_CONNECTOR_PATTERN =
-  /(^|_)(accept|add|approve|archive|assign|buy|cancel|charge|checkout|close|commit|copy|create|delete|deploy|disable|enable|execute|forward|grant|invite|link|mark|merge|modify|move|patch|pay|post|publish|purchase|put|register|reject|remove|rename|replace|reply|reset|revoke|run|schedule|send|set|share|start|stop|submit|subscribe|trigger|unassign|unlink|unsubscribe|update|upload|upsert|write)(_|$)/i;
-const COMPOUND_CONNECTOR_ACTION_PATTERN = /_(and|or|then)_/i;
+  /(^|[_-])(accept|add|approve|archive|assign|buy|cancel|charge|checkout|close|commit|copy|create|delete|deploy|disable|enable|execute|forward|grant|invite|link|mark|merge|modify|move|patch|pay|post|publish|purchase|put|register|reject|remove|rename|replace|reply|reset|revoke|run|schedule|send|set|share|start|stop|submit|subscribe|trigger|unassign|unlink|unsubscribe|update|upload|upsert|write)([_-]|$)/i;
+const COMPOUND_CONNECTOR_ACTION_PATTERN = /[_-](and|or|then)[_-]/i;
 
 const EMAIL_CONNECTOR_SLUGS = new Set(["gmail", "outlook", "microsoft_outlook"]);
 const PURCHASE_CONNECTOR_SLUGS = new Set(["stripe", "shopify", "paypal", "square"]);
@@ -218,6 +219,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "attach_file",
   "edit_page",
   "end_call",
+  "feedback",
   "generate_secret",
   "list_fleet",
   "list_secrets",
@@ -297,6 +299,12 @@ export function newSiteOutcome(input: {
 export function truthyFlag(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
 }
+
+/**
+ * These send data to the site their url names, so a site the run was not given is gated, and
+ * "Always allow" on a card naming that site allows the site, never the tool.
+ */
+export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "paid_request"]);
 
 export function siteAlwaysAllowed(rules: ActionApprovalRule[], site: string): boolean {
   return rules.some(
@@ -535,7 +543,8 @@ export function approvalPreferenceFromMode(mode: ApprovalMode): {
 export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**
- * The gate after rule resolution. A block refuses in every mode. An approval a person must give
+ * The gate after rule resolution. A block refuses in every mode. A purchase asks in every mode, Never
+ * ask included, and no allow rule or review passes it. An approval a person must give
  * asks, except in Never ask, which never waits: there it runs, unless `steerable` says outside
  * text could have asked for it. Otherwise Never ask runs it, an ask rule asks, and anything that
  * would ask goes to the approval model in Auto, falling back to asking when no model is set up.
@@ -556,8 +565,11 @@ export function planActionGate(input: {
   checkerConfigured: boolean;
   /** A fetch to a site the run was not given (see outboundSiteGate). */
   newDestination?: boolean;
+  /** A click that completes a purchase: a person approves it each time, in every mode. */
+  purchase?: boolean;
 }): "ask" | "allow" | "judge" | "deny" {
   if (input.resolved.decision === "deny") return "deny";
+  if (input.purchase) return "ask";
   if (input.mandatory) {
     if (input.mode !== "never") return "ask";
     return input.steerable ? "deny" : "allow";

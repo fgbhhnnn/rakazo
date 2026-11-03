@@ -1,10 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import {
-  ARTIFACT_NAME_MAX_LENGTH,
-  ATTACHMENT_MAX_BYTES,
-  type MessageBlock,
-} from "@rakazo/contracts";
+import type { MessageBlock } from "@rakazo/contracts";
+import { ARTIFACT_NAME_MAX_LENGTH, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import type { parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";

@@ -1,7 +1,8 @@
 import { File } from "expo-file-system";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import type { WebViewMessageEvent } from "react-native-webview";
+import { WebView } from "react-native-webview";
 import { mobileTokens } from "../lib/appearance";
 import { documentViewerHtml } from "../lib/document-viewer-assets";
 import { useI18n } from "../lib/i18n";

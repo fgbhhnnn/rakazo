@@ -1,4 +1,5 @@
-import { type ComponentType, useEffect, useState } from "react";
+import type { ComponentType } from "react";
+import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { rpc } from "./api";
 import { useI18n } from "./i18n";

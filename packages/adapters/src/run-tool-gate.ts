@@ -22,6 +22,7 @@ import {
   redactSecrets,
   repeatsDeniedAction,
   resolveActionApprovalForTools,
+  SITE_SENDING_TOOLS,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   truthyFlag,
@@ -33,7 +34,7 @@ import type { AuditEventInput } from "@rakazo/db";
 import { isHiddenBot, recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
-import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
+import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
 import {
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,
@@ -48,6 +49,7 @@ import { runAutoReviewCheckerConfigured } from "./auto-review-checker-configured
 import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { paidRequestEffect } from "./paid-request.js";
+import { PURCHASE_CHECKED_TOOLS, purchaseApprovalOf } from "./purchase-gate.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
 import {
@@ -238,8 +240,10 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
+  const { purchase } = request;
   const requiresApprovalByDefault =
     request.heldForApproval ||
+    Boolean(purchase) ||
     commandWatch ||
     requiresUnattendedApproval ||
     siteGate === "new" ||
@@ -250,6 +254,7 @@ export async function gateToolCall(
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
   const requiresMandatoryApproval =
+    Boolean(purchase) ||
     commandWatch ||
     scheduleNamesNewSite ||
     requiresUnattendedApproval ||
@@ -310,7 +315,18 @@ export async function gateToolCall(
         reviewOnly: connectorReadGated,
         checkerConfigured,
         newDestination: siteGate === "new",
+        purchase: Boolean(purchase),
       });
+  // Nobody is there to approve a purchase a webhook run reaches.
+  if (purchase && run.trigger === "webhook" && plan !== "deny") {
+    await auditToolCall(ctx, name, "denied", { reason: "purchase_unattended" });
+    return {
+      result: {
+        error:
+          "This would complete a purchase, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.",
+      },
+    };
+  }
   if (plan === "deny") {
     await auditToolCall(ctx, name, "denied", {
       reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
@@ -332,9 +348,11 @@ export async function gateToolCall(
     nextApprovedTool || name === "request_secret" || needsApprovalEarly || gated;
   // Count before choosing a key so an approved replay (occurrence 0 / base
   // key) cannot collide with a later identical-args call in this attempt.
-  // request_secret stays single-use: retries must reuse the same card.
+  // request_secret stays single-use: retries must reuse the same card. A code is the exception:
+  // a wrong or expired one needs a new card, so each request counts, and a retry still finds its
+  // own through the saved turn.
   const occurrence =
-    name === "request_secret" || name === "connect_app"
+    (name === "request_secret" && args.oneTimeCode === undefined) || name === "connect_app"
       ? 0
       : nextMutatingEffectOccurrence(
           ctx,
@@ -373,6 +391,9 @@ export async function gateToolCall(
   // so only real denies match. A stored row is checked only while it still waits for an
   // answer. web_fetch and secret_request target one site per call; request_secret and
   // connect_app name their own target.
+  // Browsing goes on after a denied purchase: a purchase is checked against earlier denied purchases
+  // on the same site, and other page work against earlier denied page work that bought nothing.
+  const pageAction = PURCHASE_CHECKED_TOOLS.has(name);
   const repeatChecked =
     applied &&
     (!applied.duplicate || applied.effect.status === "intended") &&
@@ -384,7 +405,11 @@ export async function gateToolCall(
           select: { request: true, result: true },
         })
       ).flatMap((effect) =>
-        effect.result == null
+        effect.result == null &&
+        (!pageAction ||
+          purchaseApprovalOf(
+            (effect.request as { purchaseApproval?: unknown } | null)?.purchaseApproval,
+          )?.site === purchase?.site)
           ? [
               boundDirectApprovalDetails(effect.request, CATALOG_APPROVAL_TOOL)?.args ??
                 effect.request,

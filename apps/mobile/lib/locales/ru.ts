@@ -46,6 +46,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Welcome to Rakazo": "Добро пожаловать в Gose Bot",
   "{PRODUCT_NAME} credits": "Кредиты {PRODUCT_NAME}",
   "Your administrator manages this setting.": "Этим параметром управляет администратор.",
+  "Daily check-ins on unfinished work": "Ежедневные напоминания о незавершённой работе",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",
@@ -106,7 +107,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Search bots": "Поиск ботов",
   "{count} messages with {peer}": "{count} сообщения с {peer}",
   "About {label}": "О настройке «{label}»",
-  "Manage the bots it creates": "Управлять созданными им ботами",
+  "Manage other bots": "Управлять другими ботами",
   "Allow cross-space bot communication": "Разрешить общение ботов из разных пространств",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
@@ -329,6 +330,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Одобрите сервер, чтобы агент мог использовать его инструменты.",
   "Answered: {answer}": "Отвечено: {answer}",
+  "Only enter a code {host} sent you.": "Вводите только код, который вам прислал {host}.",
   Archive: "Архивировать",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "Архивирование сохраняет всё и обратимо. Удаление необратимо.",
@@ -464,6 +466,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not share image": "Не удалось поделиться изображением",
   "Loading image…": "Загрузка изображения…",
   "Open image {name}": "Открыть изображение {name}",
+  "Open {name}": "Открыть {name}",
   "Tap to open": "Нажмите, чтобы открыть",
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
@@ -544,6 +547,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Failed to send message": "Не удалось отправить сообщение",
   "Failed to stop work": "Не удалось остановить работу",
   File: "Файл",
+  "Did you mean {email}?": "Вы имели в виду {email}?",
   "Forgot password?": "Забыли пароль?",
   "Find models": "Найти модели",
   "Finding…": "Поиск…",
@@ -1345,6 +1349,22 @@ export const RU_MESSAGES: Record<string, string> = {
   "Won't do": "Не будем делать",
   "Could not move the ticket": "Не удалось переместить тикет",
   "No tickets yet.": "Тикетов пока нет.",
+  "Bot models": "Модели ботов",
+  "1 bot has its own model:": "1 бот использует свою модель:",
+  "{count} bots have their own model:": "Своя модель у ботов ({count}):",
+  "Use space default": "Использовать модель пространства по умолчанию",
+  "Switching…": "Переключение…",
+  "Switch 1 bot to the space default?": "Переключить 1 бота на модель пространства по умолчанию?",
+  "Switch {count} bots to the space default?":
+    "Переключить ботов на модель пространства по умолчанию ({count})?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Их собственная модель будет сброшена. Её можно снова выбрать в каждом боте.",
+  Switch: "Переключить",
+  "1 bot now uses the space default.": "1 бот теперь использует модель пространства по умолчанию.",
+  "{count} bots now use the space default.":
+    "Ботов переведено на модель пространства по умолчанию: {count}.",
+  "Could not switch {failedNames}. Try again.":
+    "Не удалось переключить {failedNames}. Попробуйте снова.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

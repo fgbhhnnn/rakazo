@@ -5,8 +5,8 @@ import {
   BACKGROUND_LANE_GUIDANCE,
   withholdComputerToolsFromThinkWorker,
 } from "./background-task-lanes.js";
+import type { DispatcherWatchdog } from "./dispatcher-idle-watchdog.js";
 import {
-  type DispatcherWatchdog,
   dispatcherTurnHardCapMs,
   startDispatcherIdleWatchdog,
 } from "./dispatcher-idle-watchdog.js";

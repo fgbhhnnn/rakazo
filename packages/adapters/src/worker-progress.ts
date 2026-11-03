@@ -1,6 +1,7 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
-import { isHiddenBot, type PrismaClient, type ThreadEvents } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { isHiddenBot } from "@rakazo/db";
 import { redactSensitiveText } from "@rakazo/logging";
 
 /**

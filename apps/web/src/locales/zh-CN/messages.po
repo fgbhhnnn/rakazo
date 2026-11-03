@@ -463,6 +463,10 @@ msgstr "已在 <0>{0}</0> 打开登录页。请在那里输入验证码，这个
 msgid "A subscription credential is stored securely."
 msgstr "订阅凭据已安全存储。"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "About {kb} KB of memory no longer reaches the bot."
+msgstr ""
+
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "关于{label}"
@@ -879,6 +883,10 @@ msgstr "审批"
 msgid "Approve"
 msgstr "批准"
 
+#: src/lib/call-session.ts
+msgid "Approve or deny it on screen."
+msgstr "请在屏幕上批准或拒绝。"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "批准此服务器后，Agent 才能使用它的工具。"
@@ -1177,7 +1185,6 @@ msgid "Can't reach the server."
 msgstr "无法连接服务器。"
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "无法读取图像"
@@ -1507,10 +1514,6 @@ msgstr "第 {index} 列"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
 msgstr "舒适"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "即将推出"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -2476,6 +2479,10 @@ msgstr "自定义{label}"
 msgid "Customize bot avatar"
 msgstr "自定义机器人头像"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Daily check-ins on unfinished work"
+msgstr "每天跟进未完成的工作"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Dark"
@@ -2658,6 +2665,10 @@ msgstr ""
 #: src/components/composer/DictateButton.tsx
 msgid "Dictation failed. Try again."
 msgstr "语音输入失败，请重试。"
+
+#: src/pages/Auth.tsx
+msgid "Did you mean <0>{emailSuggestion}</0>?"
+msgstr "你是不是想输入 <0>{emailSuggestion}</0>？"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -3099,7 +3110,6 @@ msgid "Forgot password?"
 msgstr "忘记密码？"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "免费"
 
@@ -3534,10 +3544,6 @@ msgstr "让机器人在 MEMORY.md 之外，按语义保存和回忆事实。"
 msgid "Light"
 msgstr "浅色"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear 工单"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -3696,8 +3702,8 @@ msgid "Manage MCP servers"
 msgstr "管理 MCP 服务器"
 
 #: src/pages/shell/bot-panel.tsx
-msgid "Manage the bots it creates"
-msgstr "管理它创建的机器人"
+msgid "Manage other bots"
+msgstr "管理其他机器人"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3916,7 +3922,6 @@ msgstr "模式"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3937,7 +3942,7 @@ msgstr "模型连接"
 msgid "Model id"
 msgstr "模型 ID"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "模型选项"
@@ -3952,8 +3957,8 @@ msgstr "模型"
 msgid "Models at provider cost"
 msgstr "按提供方成本计费的模型"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "来自服务器的模型"
 
@@ -4186,7 +4191,6 @@ msgid "No matching artifacts on this page."
 msgstr "这一页没有匹配的产物。"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4384,6 +4388,10 @@ msgstr "一次性"
 msgid "One-time purchase. Credits do not expire."
 msgstr "单次购买，额度不会过期。"
 
+#: src/components/AskCard.tsx
+msgid "Only enter a code {codeHost} sent you."
+msgstr ""
+
 #: src/components/MemberAccessSettings.tsx
 msgid "Only I manage models, voice and MCP servers (members use mine and cannot change them)"
 msgstr "仅由我管理模型、语音和 MCP 服务器（成员使用我的配置且无法修改）"
@@ -4485,8 +4493,8 @@ msgstr "原始"
 msgid "Original message unavailable"
 msgstr "原消息不可用"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "其他模型…"
 
@@ -4510,10 +4518,6 @@ msgstr "页面 Markdown"
 #: src/pages/NotFound.tsx
 msgid "Page not found"
 msgstr "找不到页面"
-
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDuty 事件"
 
 #: src/components/pages/PagesShelf.tsx
 msgid "Pages"
@@ -4927,6 +4931,7 @@ msgid "Release control"
 msgstr "交还控制权"
 
 #: src/components/InstructionSettings.tsx
+#: src/lib/client-update.ts
 msgid "Reload"
 msgstr "重新加载"
 
@@ -5356,8 +5361,8 @@ msgstr "范围（可选）"
 msgid "Screen not connected"
 msgstr "屏幕未连接"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5390,8 +5395,8 @@ msgstr "按域名搜索"
 msgid "Search integrations.sh"
 msgstr "搜索 integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
@@ -5478,10 +5483,6 @@ msgstr "正在发送…"
 #: src/components/AskCard.tsx
 msgid "Sent"
 msgstr "已发送"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentry 告警"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
@@ -5935,10 +5936,6 @@ msgstr "团队电脑"
 msgid "Teams message"
 msgstr "Teams 消息"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "未启用 Teams"
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
 msgstr "测试"
@@ -6289,6 +6286,7 @@ msgstr "受信任的网站"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Try again"
 msgstr "重试"
 
@@ -6381,6 +6379,10 @@ msgstr "更新指令？"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "更新进度"
+
+#: src/lib/client-update.ts
+msgid "Update required"
+msgstr "需要更新"
 
 #: src/components/pages/PageReader.tsx
 #: src/components/VaultSettings.tsx

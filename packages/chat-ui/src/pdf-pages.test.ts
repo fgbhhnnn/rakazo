@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type PdfJsLike, renderPdfPages } from "./pdf-pages";
+import type { PdfJsLike } from "./pdf-pages";
+import { renderPdfPages } from "./pdf-pages";
 
 function fakePdfJs(numPages: number, fail?: Error) {
   const rendered: number[] = [];

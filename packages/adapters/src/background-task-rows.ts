@@ -1,5 +1,6 @@
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import { closeWorkerApprovalMirrors, type Prisma, type PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
+import { closeWorkerApprovalMirrors } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { incompleteContinueCount, withIncompleteContinueArgs } from "./worker-incomplete-result.js";
 

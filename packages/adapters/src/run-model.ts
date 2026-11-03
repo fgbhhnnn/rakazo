@@ -141,7 +141,9 @@ function assertCompatibleModelEnabled(
   }
 }
 
-export async function modelCreditBillingEnabled(deps: ExecutorDeps): Promise<boolean> {
+export async function modelCreditBillingEnabled(
+  deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
+): Promise<boolean> {
   if (deps.billingEnabled !== undefined) return deps.billingEnabled;
   return (
     (
@@ -394,13 +396,32 @@ async function resolveModelKeyMaterial(
   return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
 }
 
-export function cloudflareRunFields(resolved: { accountId?: string; gatewayId?: string }): {
-  accountId?: string;
-  gatewayId?: string;
-} {
+/** Translate resolved credentials and capabilities consistently for every run path. */
+export function resolvedModelRunFields(
+  resolved: Awaited<ReturnType<typeof resolveModelKey>>,
+): Omit<AgentRunRequest["model"], "provider" | "id" | "connectionId" | "thinkingLevel"> {
   return {
+    apiKey: resolved.oauth ? undefined : resolved.apiKey,
+    callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
+    baseUrl: resolved.baseUrl,
+    apiProtocol: resolved.apiProtocol,
+    headers: resolved.headers,
+    allowPrivateEndpoint: resolved.allowPrivateEndpoint,
+    cacheCapabilities: resolved.cacheCapabilities,
+    contextWindow: resolved.contextWindow,
+    reasoning: resolved.reasoning,
+    maxTokens: resolved.maxTokens,
+    acceptsImages: resolved.acceptsImages,
+    maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+    oauth: resolved.oauth
+      ? {
+          credential: resolved.oauth,
+          persist: resolved.persistOAuth,
+          retire: resolved.retireOAuth,
+        }
+      : undefined,
   };
 }
 
@@ -477,20 +498,7 @@ export async function resolveConnectedRunModel(
     provider,
     id: modelId,
     ...(credentialId ? { connectionId: credentialId } : {}),
-    apiKey: resolved.oauth ? undefined : resolved.apiKey,
-    callObserver: resolved.callObserver,
-    ...cloudflareRunFields(resolved),
-    baseUrl: resolved.baseUrl,
-    apiProtocol: resolved.apiProtocol,
-    headers: resolved.headers,
-    allowPrivateEndpoint: resolved.allowPrivateEndpoint,
-    cacheCapabilities: resolved.cacheCapabilities,
-    contextWindow: resolved.contextWindow,
-
-    reasoning: resolved.reasoning,
-    maxTokens: resolved.maxTokens,
-    acceptsImages: resolved.acceptsImages,
-    maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+    ...resolvedModelRunFields(resolved),
     thinkingLevel:
       ((thinkingLevel !== undefined
         ? thinkingLevel
@@ -499,13 +507,6 @@ export async function resolveConnectedRunModel(
           : null) as AgentRunRequest["model"]["thinkingLevel"]) ??
       resolved.thinkingLevel ??
       null,
-    oauth: resolved.oauth
-      ? {
-          credential: resolved.oauth,
-          persist: resolved.persistOAuth,
-          retire: resolved.retireOAuth,
-        }
-      : undefined,
   };
 }
 
@@ -584,27 +585,7 @@ export async function resolveRunModel(
   return {
     provider,
     id,
-    apiKey: resolved.oauth ? undefined : resolved.apiKey,
-    callObserver: resolved.callObserver,
-    ...cloudflareRunFields(resolved),
-    baseUrl: resolved.baseUrl,
-    apiProtocol: resolved.apiProtocol,
-    headers: resolved.headers,
-    allowPrivateEndpoint: resolved.allowPrivateEndpoint,
-    cacheCapabilities: resolved.cacheCapabilities,
-    contextWindow: resolved.contextWindow,
-
-    reasoning: resolved.reasoning,
-    maxTokens: resolved.maxTokens,
-    acceptsImages: resolved.acceptsImages,
-    maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+    ...resolvedModelRunFields(resolved),
     thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
-    oauth: resolved.oauth
-      ? {
-          credential: resolved.oauth,
-          persist: resolved.persistOAuth,
-          retire: resolved.retireOAuth,
-        }
-      : undefined,
   };
 }

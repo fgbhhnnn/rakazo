@@ -57,6 +57,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "{count} done": "{count} terminadas",
   "{count} not finished": "{count} sin terminar",
   "{count} running": "{count} en curso",
+  "Daily check-ins on unfinished work": "Seguimiento diario del trabajo pendiente",
   "How other bots see it": "Cómo lo ven otros bots",
   "Share to": "Compartir en",
   "{count} files": "{count} archivos",
@@ -127,7 +128,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Ex: Project Falcon": "Ej.: Proyecto Halcón",
   "Search bots": "Buscar bots",
   "About {label}": "Acerca de {label}",
-  "Manage the bots it creates": "Gestionar los bots que crea",
+  "Manage other bots": "Gestionar otros bots",
   "Allow cross-space bot communication":
     "Permitir la comunicación entre bots de distintos espacios",
   Headers: "Encabezados",
@@ -254,6 +255,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Servidor personalizado {host}",
   "Don’t have an account?": "¿No tienes una cuenta?",
   Email: "Correo",
+  "Did you mean {email}?": "¿Quisiste decir {email}?",
   "Forgot password?": "¿Olvidaste la contraseña?",
   "Loading…": "Cargando…",
   Password: "Contraseña",
@@ -313,6 +315,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Aprueba este servidor para que tu agente use sus herramientas.",
   "Answered: {answer}": "Respondido: {answer}",
+  "Only enter a code {host} sent you.": "Introduce solo un código que te haya enviado {host}.",
   Archive: "Archivar",
   "Attach file": "Adjuntar archivo",
   Attachment: "Archivo adjunto",
@@ -339,6 +342,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not share image": "No se pudo compartir la imagen",
   "Loading image…": "Cargando imagen…",
   "Open image {name}": "Abrir imagen {name}",
+  "Open {name}": "Abrir {name}",
   "Tap to open": "Toca para abrir",
   "Could not open message": "No se pudo abrir el mensaje",
   "Could not send answer": "No se pudo enviar la respuesta",
@@ -1229,6 +1233,22 @@ export const ES_MESSAGES: Record<string, string> = {
   "Won't do": "No se hará",
   "Could not move the ticket": "No se pudo mover el ticket",
   "No tickets yet.": "Aún no hay tickets.",
+  "Bot models": "Modelos de los bots",
+  "1 bot has its own model:": "1 bot tiene su propio modelo:",
+  "{count} bots have their own model:": "{count} bots tienen su propio modelo:",
+  "Use space default": "Usar el predeterminado del espacio",
+  "Switching…": "Cambiando…",
+  "Switch 1 bot to the space default?": "¿Cambiar 1 bot al modelo predeterminado del espacio?",
+  "Switch {count} bots to the space default?":
+    "¿Cambiar {count} bots al modelo predeterminado del espacio?",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "Se quitará su modelo propio. Puedes volver a elegir uno en cada bot.",
+  Switch: "Cambiar",
+  "1 bot now uses the space default.": "1 bot ahora usa el modelo predeterminado del espacio.",
+  "{count} bots now use the space default.":
+    "{count} bots ahora usan el modelo predeterminado del espacio.",
+  "Could not switch {failedNames}. Try again.":
+    "No se pudo cambiar {failedNames}. Vuelve a intentarlo.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {

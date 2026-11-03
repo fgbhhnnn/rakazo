@@ -203,6 +203,7 @@ async function runMainTurn(options: {
           ? [
               {
                 role: "user",
+                steeringMessages: [],
                 blocks: [
                   { kind: "bot_message_received", fromBotName: "Assistant · 后台1", text: "done" },
                   { kind: "file", artifactId: options.relayedPage.id },

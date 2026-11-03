@@ -1,14 +1,14 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, PageEdit } from "@rakazo/contracts";
 import {
   applyPageEdits,
   PAGE_EDITS_MAX,
   PAGE_MARKDOWN_MAX_LENGTH,
   PAGE_TITLE_MAX_LENGTH,
-  type PageEdit,
 } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import { createPage, type PageDeps, PageError, readPage, updatePage } from "./pages.js";
+import type { PageDeps } from "./pages.js";
+import { createPage, PageError, readPage, updatePage } from "./pages.js";
 
 export const WRITE_PAGE_TOOL = "write_page";
 export const EDIT_PAGE_TOOL = "edit_page";

@@ -14,8 +14,17 @@ import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key"
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ApprovalPausedToolResult, ApprovedEffectReplayQueue } from "./approval-effect.js";
-import { approvalPausedToolResult, approvedEffectOccurrence } from "./approval-effect.js";
+import type {
+  ApprovalPausedToolResult,
+  ApprovedEffectReplayQueue,
+  TerminatingToolResult,
+} from "./approval-effect.js";
+import {
+  approvalPausedToolResult,
+  approvedEffectOccurrence,
+  OWNER_SETTINGS_REFUSAL_REPLY,
+  terminatingToolResult,
+} from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
@@ -188,7 +197,26 @@ export interface RunState {
    * and so does a later attempt, including one with restored untrusted tool results.
    */
   tainted: boolean;
+  /**
+   * The taint refusal for owner settings was returned in this attempt. A model that calls
+   * again gets the turn ended instead of the same error a second time.
+   */
+  ownerSettingsRefused: boolean;
+  /**
+   * The instructions this attempt's model works from: the attempt-start snapshot its prompt
+   * was built with, restored from the turn checkpoint on resume, and advanced only after a
+   * successful own-instruction write in this attempt. Own instruction writes guard on it, so
+   * a change that landed since the model last saw the text conflicts instead of being
+   * overwritten. Undefined when an older checkpoint predates the baseline: such a resumed
+   * attempt refuses own instruction writes rather than guessing.
+   */
+  ownInstructionsBaseline: string | undefined;
   earlierAttempt: Promise<boolean> | undefined;
+  /**
+   * Hosts of the sites this run typed an approved wallet purchase into (fill_card, fill_pay_token):
+   * the wallet owner approved paying there, so the pay click there asks nothing more.
+   */
+  walletHosts: Set<string>;
   handedOff: boolean;
   /** Bots this turn really handed work to (the handoff tool's delivered results). */
   handoffTargets: string[];
@@ -373,6 +401,22 @@ export async function neverAsks(ctx: RunContext) {
   return (await ctx.trust.loadAutoReviewPreference()).skipApprovals;
 }
 
+/**
+ * Refuse an owner-settings change in a run that read outside content. The first refusal
+ * explains the block; a repeat ends the turn, because a model that ignored the explanation
+ * would otherwise retry the same call without a bound.
+ */
+export function refuseOwnerSettingsChange(
+  ctx: RunContext,
+  error: string,
+): { error: string } | TerminatingToolResult {
+  if (ctx.state.ownerSettingsRefused) {
+    return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
+  }
+  ctx.state.ownerSettingsRefused = true;
+  return { error };
+}
+
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
   if (state.tainted) return true;
@@ -383,6 +427,14 @@ export async function isRunTainted(ctx: RunContext) {
     state.tainted = true;
   return state.tainted;
 }
+
+/** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
+export const OWN_INSTRUCTIONS_CHANGED_ERROR =
+  "Instructions changed since this run started, so your instructions were not saved. Ask the user to send their request again so a new run starts from the current instructions.";
+
+/** An older checkpoint predates the baseline; a resumed attempt must not guess. */
+export const OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR =
+  "This resumed run cannot safely change its own instructions. Ask the user to send their request again so a new run starts from the current instructions.";
 
 export function nextMutatingEffectOccurrence(
   ctx: RunContext,
@@ -414,6 +466,7 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
   if (capture) {
     const saved = JSON.parse(capture());
     saved.effectOccurrences = effects.occurrences;
+    saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
     await saveRunTurnCheckpoint(
       deps.prisma,
       run,
@@ -482,7 +535,9 @@ export function restoreTurnCheckpointEffects(
         for (const call of message.content) {
           if (call.type !== "toolCall" || unresolved.has(call)) continue;
           const tool = namedTools.find((tool) => tool.name === call.name)?.tool;
-          if (tool && tool.name !== "request_secret" && tool.name !== "connect_app")
+          // A code request counts like any tool: each one is its own card.
+          const single = tool?.name === "connect_app" || tool?.name === "request_secret";
+          if (tool && (!single || call.arguments.oneTimeCode !== undefined))
             nextMutatingEffectOccurrence(
               ctx,
               tool.name,
@@ -492,6 +547,10 @@ export function restoreTurnCheckpointEffects(
         }
       }
     }
+    // The restored system prompt still carries the instructions it was built from; the
+    // baseline must match it, not the current row. Checkpoints without one (older saves)
+    // leave it undefined, which refuses own instruction writes in this attempt.
+    ctx.state.ownInstructionsBaseline = saved.ownInstructionsBaseline;
     return turnCheckpoint;
   } catch {
     // Incompatible transcripts use the existing canonical approval replay.
