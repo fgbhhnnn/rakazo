@@ -6,10 +6,10 @@ import {
   taskProgressRunSeconds,
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import type { TaskSnapshot } from "./background-task-progress.js";
 import {
   latestStep,
   TASK_STUCK_MS,
-  type TaskSnapshot,
   takeMilestones,
   taskProgressEntry,
 } from "./background-task-progress.js";

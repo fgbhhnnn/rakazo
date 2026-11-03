@@ -1,5 +1,6 @@
 import type { TeamRunStatus } from "@rakazo/core";
-import { cancelRunsInTransaction, type Prisma, type PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
+import { cancelRunsInTransaction } from "@rakazo/db";
 import { CLAIM_RECHECK_MARKER } from "./dispatcher-reply-guard.js";
 import { humanAnchorForRun } from "./group-team-run-anchor.js";
 

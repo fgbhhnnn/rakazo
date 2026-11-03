@@ -12,8 +12,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { announceQueuedTaskStart } from "./background-task-cards.js";
+import type { BackgroundTaskLane } from "./background-task-lanes.js";
 import {
-  type BackgroundTaskLane,
   laneComputer,
   laneDisabledTools,
   laneHeads,
@@ -42,7 +42,8 @@ import { formatInstantForUser, resolveRunTimeZone } from "./current-time.js";
 import type { ExecutorDeps } from "./executor.js";
 import { createTeamBackgroundTask, refuseStoppedTeamRunWork } from "./group-team-run-stop.js";
 import { QUEUE_AFTER_CANCEL_NOTE, queueChangeAfterCancel } from "./queue-after-cancel.js";
-import { type AttachmentBlock, attachmentBlocks } from "./task-attachments.js";
+import type { AttachmentBlock } from "./task-attachments.js";
+import { attachmentBlocks } from "./task-attachments.js";
 import { backgroundTaskHash, newTaskRef, taskTitle } from "./task-identity.js";
 import { stopThreadRunsForBots } from "./thread-stop.js";
 import { WORKER_ACTIVITY_NOTE, workerActivityFields } from "./worker-activity.js";

@@ -1,7 +1,7 @@
 import { Asset } from "expo-asset";
 import { File } from "expo-file-system";
-
-import { DOCUMENT_VIEWER_MODULES, type DocumentViewerAsset } from "./document-viewer-modules";
+import type { DocumentViewerAsset } from "./document-viewer-modules";
+import { DOCUMENT_VIEWER_MODULES } from "./document-viewer-modules";
 
 const pages = new Map<DocumentViewerAsset, Promise<string>>();
 

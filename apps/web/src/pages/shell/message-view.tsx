@@ -8,11 +8,7 @@ import type {
   ThreadMessage,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
-import {
-  isBackgroundTaskStartCard,
-  isPeerReceiptBlocks,
-  isToolActivityBlock,
-} from "@rakazo/core";
+import { isBackgroundTaskStartCard, isPeerReceiptBlocks, isToolActivityBlock } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";

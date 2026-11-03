@@ -2,7 +2,8 @@ import { createRouterClient, isProcedure } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRouter, type RouterDeps } from "./router.js";
+import type { RouterDeps } from "./router.js";
+import { createRouter } from "./router.js";
 
 /**
  * Every owner/admin guard the router carries, checked by calling the real procedures.

@@ -23,7 +23,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
-import { type createRepos, type PrismaClient, VISIBLE_BOT_WHERE } from "@rakazo/db";
+import type { createRepos, PrismaClient } from "@rakazo/db";
+import { VISIBLE_BOT_WHERE } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {

@@ -103,12 +103,7 @@ describe("live page helper saved-login fill", () => {
       html,
     );
     const fill = () =>
-      browser.fill(
-        "Password",
-        "fake-apple-secret",
-        savedOrigin as string,
-        "password",
-      );
+      browser.fill("Password", "fake-apple-secret", savedOrigin as string, "password");
     if (allowed) {
       fill();
       expect(fieldValue(domWindow, "Password")).toBe("fake-apple-secret");

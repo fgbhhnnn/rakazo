@@ -1,11 +1,8 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Modal, SafeAreaView, Text, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import {
-  artifactFileUri,
-  type MobileArtifactTarget,
-  openMobileArtifact,
-} from "../lib/artifact-open";
+import type { MobileArtifactTarget } from "../lib/artifact-open";
+import { artifactFileUri, openMobileArtifact } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
 import { iosAtLeast } from "../lib/native-controls";
 import { errorText } from "../lib/user-error";

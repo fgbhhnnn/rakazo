@@ -1,4 +1,5 @@
-import { type FileIcon, fileKindOf } from "@rakazo/chat-ui/file-kinds";
+import type { FileIcon } from "@rakazo/chat-ui/file-kinds";
+import { fileKindOf } from "@rakazo/chat-ui/file-kinds";
 import type { ComponentProps } from "react";
 import { Text, View } from "react-native";
 import { NativeSymbol } from "./native-symbol";

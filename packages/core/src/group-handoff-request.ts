@@ -1,4 +1,5 @@
-import { type GroupMemberRef, mentionedMembersInOrder } from "./group-mentions.js";
+import type { GroupMemberRef } from "./group-mentions.js";
+import { mentionedMembersInOrder } from "./group-mentions.js";
 
 /**
  * A human's explicit "pass it on" instruction in a group message, for any kind of team:

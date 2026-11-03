@@ -65,10 +65,8 @@ import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { supersedeSecretRequests } from "./secret-request-policy.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
-import {
-  type MirrorEvent,
-  settleWorkerApprovalMirrorsInTransaction,
-} from "./worker-approval-mirror.js";
+import type { MirrorEvent } from "./worker-approval-mirror.js";
+import { settleWorkerApprovalMirrorsInTransaction } from "./worker-approval-mirror.js";
 
 export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
 

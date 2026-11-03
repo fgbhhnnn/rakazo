@@ -1,9 +1,9 @@
 import type { AdapterContext, PortableFile } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import type { E2BWorkspaceFiles } from "./e2b-workspace-walk.js";
 import {
   E2B_LIST_CONCURRENCY,
   E2B_READ_CONCURRENCY,
-  type E2BWorkspaceFiles,
   walkE2BWorkspaceConcurrently,
 } from "./e2b-workspace-walk.js";
 

@@ -2,7 +2,8 @@ import { createRouterClient } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRouter, lockedForActor, type RouterDeps } from "./router.js";
+import type { RouterDeps } from "./router.js";
+import { createRouter, lockedForActor } from "./router.js";
 
 const OWNER = "owner-1";
 const MEMBER = "member-1";

@@ -5,7 +5,8 @@ import { HIDDEN_BOT_SPAWN_PREFIX } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { backgroundTaskForWorkerRun } from "./background-task-rows.js";
 import type { ExecutorDeps } from "./executor.js";
-import { type AttachmentBlock, attachmentBlocks } from "./task-attachments.js";
+import type { AttachmentBlock } from "./task-attachments.js";
+import { attachmentBlocks } from "./task-attachments.js";
 import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
 import { slotFree } from "./worker-slot-mentions.js";
 

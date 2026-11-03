@@ -3,7 +3,8 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertMemberSettingsUnlocked } from "./member-settings-guard.js";
-import { createRouter, type RouterDeps } from "./router.js";
+import type { RouterDeps } from "./router.js";
+import { createRouter } from "./router.js";
 
 const ADMIN = { userId: "admin-1", email: "Admin@Example.com" };
 const SECOND = { userId: "admin-2", email: "second@example.com" };

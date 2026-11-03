@@ -404,7 +404,8 @@ async function main() {
         const hostStopped = jobHost.stop();
         await releaseWorkerRunLeases({ prisma, jobs }, workerId)
           .then((released) => {
-            if (released.length) logger.info(`released ${released.length} run lease(s) on shutdown`);
+            if (released.length)
+              logger.info(`released ${released.length} run lease(s) on shutdown`);
           })
           .catch((error) => logger.error("release run leases on shutdown", error));
         await hostStopped;
