@@ -18,6 +18,8 @@ vi.mock("expo-modules-core", () => ({
   requireNativeModule: () => legacy,
   requireOptionalNativeModule: () => legacy,
 }));
+vi.mock("./server-headers", () => ({ serverHeaders: () => ({}) }));
+vi.mock("./i18n", () => ({ getActiveUiLocale: () => "en", t: (text: string) => text }));
 vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
 
@@ -41,7 +43,7 @@ describe("OTA on 1.0.7 native builds", () => {
 
   it("resumes live notifications through the three-argument bridge", async () => {
     const { resumeLiveNotifications } = await import("./live-notifications");
-    await expect(resumeLiveNotifications(endpoint, "token", "space-1")).resolves.toBeUndefined();
+    await expect(resumeLiveNotifications(endpoint, "token", "space-1")).resolves.toBe(true);
     expect(legacy.resume.mock.calls.map((args) => args.length)).toEqual([5, 4, 3]);
     expect(legacy.resume).toHaveBeenLastCalledWith(endpoint, "token", "space-1");
   });

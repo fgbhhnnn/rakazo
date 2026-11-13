@@ -1,3 +1,4 @@
+import { LISTED_ARTIFACT } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   alreadyPostedFile,
@@ -64,6 +65,7 @@ describe("postedAttachmentHashes", () => {
         botId: "main",
         runId: { in: ["timed-out", "retry"] },
         createdAt: { gte: at("00:39:03") },
+        ...LISTED_ARTIFACT,
       },
       select: { hash: true },
     });
@@ -112,7 +114,7 @@ describe("postedAttachmentHashes", () => {
       new Set(["sha256:1ff09a4f", "sha256:a2debda7", "page:大道出海 expo 迁移进度"]),
     );
     expect(prisma.artifact.findMany).toHaveBeenCalledWith({
-      where: { spaceId: "s", id: { in: ["page-1"] } },
+      where: { spaceId: "s", id: { in: ["page-1"] }, ...LISTED_ARTIFACT },
       select: { hash: true, kind: true, name: true },
     });
     expect(alreadyPostedFile(keys, "sha256:a2debda7", "/x/whatever.md")).toBe(true);

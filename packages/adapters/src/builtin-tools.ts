@@ -28,7 +28,6 @@ import {
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
-import { browserRestartTool } from "./page-browser-restart.js";
 import { pageTools } from "./page-tools.js";
 import { revealSecretTool } from "./reveal-secret-tool.js";
 import { SCHEDULE_TIMING_FIELDS } from "./schedule-tools.js";
@@ -346,7 +345,12 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
 
-  browserRestartTool,
+  {
+    name: "browser_restart",
+    description:
+      "Restart the page browser on this computer using its existing profile, keeping saved cookies and logins. Use after two consecutive page-browser timeouts, then navigate to the site again. Old element refs are invalid.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
   {
     name: "browser_navigate",
     description:

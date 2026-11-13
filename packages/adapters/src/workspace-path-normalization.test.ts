@@ -89,6 +89,9 @@ describe("workspace filesystem path normalization", () => {
         expect(await readFileFromTool({ readFile } as never, workspace, { path: file })).toEqual({
           path: file,
           content: "fixture content",
+          totalLines: 1,
+          startLine: 1,
+          endLine: 1,
         });
       }
       expect(readFile).toHaveBeenCalledTimes(3);

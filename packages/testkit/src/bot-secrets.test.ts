@@ -983,8 +983,8 @@ describeIntegration("reusable credential lifecycle", () => {
     const stopped = await row();
     expect(stopped.codesStoppedAt).not.toBeNull();
     expect(stopped.updatedAt).toEqual(before.updatedAt);
-    expect(await code()).toEqual({ error: LOGIN_CODES_USED_UP });
-    expect(await code("another-run")).toEqual({ error: LOGIN_CODES_USED_UP });
+    expect(await code()).toEqual({ error: LOGIN_CODES_USED_UP, reason: "unknown" });
+    expect(await code("another-run")).toEqual({ error: LOGIN_CODES_USED_UP, reason: "unknown" });
     // The bot asks for the login again and the person types its password on the card: the card
     // shows no key, so the saved one stays, and the stop with it.
     const runtime = vi
@@ -1029,7 +1029,7 @@ describeIntegration("reusable credential lifecycle", () => {
       otp: TEST_KEY,
     });
     expect(answered.codesStoppedAt).toEqual(stopped.codesStoppedAt);
-    expect(await code("another-run")).toEqual({ error: LOGIN_CODES_USED_UP });
+    expect(await code("another-run")).toEqual({ error: LOGIN_CODES_USED_UP, reason: "unknown" });
     // Only the owner's own save in the Vault lifts it.
     await rpc(seeded.cookie, "vault/put", { destination: { ...login, name: saved.name }, value });
     expect((await row()).codesStoppedAt).toBeNull();

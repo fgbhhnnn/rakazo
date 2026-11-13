@@ -1,4 +1,5 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
+import type * as DbModule from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { notifyMemberMessage, notifyRun } from "./run-notifications.js";
@@ -6,7 +7,8 @@ import { notifyMemberMessage, notifyRun } from "./run-notifications.js";
 vi.mock("./notification-identity.js", () => ({ notificationIdentity: async () => undefined }));
 // Each person's own unread count: Ada has 2 unread chats, Bea 5.
 const snoozing = vi.hoisted(() => new Set<string>());
-vi.mock("@rakazo/db", () => ({
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbModule>()),
   countUnreadInboxChats: async (_: unknown, { userId }: { userId: string }) =>
     userId === "user-1" ? 2 : 5,
   membersSnoozing: async (_: unknown, _threadId: string, userIds: string[]) =>

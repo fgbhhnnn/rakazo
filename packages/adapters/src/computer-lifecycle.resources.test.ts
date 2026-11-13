@@ -67,6 +67,7 @@ describe("computer provisioning tiers", () => {
     );
     const prisma = {
       user: { findUnique: findOwner },
+      space: { findUnique: vi.fn(async () => null) },
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           ...ref,
@@ -107,14 +108,10 @@ describe("computer provisioning tiers", () => {
         ),
       ).resolves.toBe(ref);
 
-      if (admins) {
-        expect(findOwner).toHaveBeenCalledExactlyOnceWith({
-          where: { id: "owner-1" },
-          select: { email: true },
-        });
-      } else {
-        expect(findOwner).not.toHaveBeenCalled();
-      }
+      expect(findOwner.mock.calls.map(([query]) => query)).toEqual([
+        { where: { id: "owner-1" }, select: { timezone: true, locale: true } },
+        ...(admins ? [{ where: { id: "owner-1" }, select: { email: true } }] : []),
+      ]);
       expect(provision).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ botId: "home-1", tier, resources }),
         context,

@@ -92,6 +92,8 @@ async function runDispatcherTurn(options: {
   const savedEvents: AppendEventInput[] = [];
   let failMessage = false;
   const prisma = {
+    space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "membership-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async (args?: { where?: { id?: string } }) =>
@@ -244,6 +246,7 @@ async function runDispatcherTurn(options: {
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
+    $executeRaw: vi.fn(async () => 1),
     $queryRaw: vi.fn(async () => [{ id: "row-1", scope: "dedicated" }]),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => {
       const messageCount = messages.length;

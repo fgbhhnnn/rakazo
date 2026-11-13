@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as GroupHandoffModule from "./group-handoff.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
@@ -9,7 +10,10 @@ const mocks = vi.hoisted(() => ({
     name: "Servo",
     note: "Sent",
   })),
-  handoffToGroupBot: vi.fn(async (..._args: unknown[]) => ({ ok: true as const })),
+  handoffToGroupBot: vi.fn(async (..._args: unknown[]) => ({
+    ok: true as const,
+    botId: "bot-servo",
+  })),
   readWorkspaceFile: vi.fn(async (..._args: unknown[]) => ({
     bytes: new Uint8Array([1]),
   })) as ReturnType<typeof vi.fn>,
@@ -25,7 +29,10 @@ const mocks = vi.hoisted(() => ({
   })),
 }));
 vi.mock("./bot-messages.js", () => ({ messageBot: mocks.messageBot }));
-vi.mock("./group-handoff.js", () => ({ handoffToGroupBot: mocks.handoffToGroupBot }));
+vi.mock("./group-handoff.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof GroupHandoffModule>()),
+  handoffToGroupBot: mocks.handoffToGroupBot,
+}));
 vi.mock("./run-tools-files.js", () => ({
   readWorkspaceFile: mocks.readWorkspaceFile,
   saveWorkspaceFile: mocks.saveWorkspaceFile,
@@ -59,7 +66,7 @@ function context(servoComputerId: string) {
     computer: { mode: "team", get: vi.fn(async () => ({ id: "computer-team" })) },
     context: {},
     secrets: [],
-    state: {},
+    state: { handoffTargets: [] },
   } as unknown as RunContext;
   return { ctx, listFiles, findMany };
 }

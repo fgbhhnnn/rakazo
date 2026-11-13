@@ -10,7 +10,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({ listSpace: vi.fn() }));
 // The Pages shelf above the list reads its own endpoint; these tests cover the artifact list.
 const pagesApi = vi.hoisted(() => ({ list: vi.fn(async () => []) }));
-const rpcClient = vi.hoisted(() => ({ artifacts: api, pages: pagesApi, bootstrap: vi.fn() }));
+const rpcClient = vi.hoisted(() => ({ artifacts: api, reportPages: pagesApi, bootstrap: vi.fn() }));
 vi.mock("../lib/rpc", () => ({
   rpc: rpcClient,
   rpcForSpace: () => rpcClient,

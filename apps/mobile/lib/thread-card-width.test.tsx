@@ -438,11 +438,7 @@ describe("thread cards", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]!.textContent).not.toContain("📎");
     act(() => rows[0]!.click());
-    expect(onPreviewFile).toHaveBeenCalledExactlyOnceWith({
-      artifactId: "pdf-1",
-      name: "plan.pdf",
-      mimeType: "application/pdf",
-    });
+    expect(onPreviewFile).toHaveBeenCalledExactlyOnceWith("pdf-1");
     act(() => rows[1]!.click());
     expect(onPreviewFile).toHaveBeenCalledOnce();
   });

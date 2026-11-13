@@ -136,6 +136,8 @@ describe("authenticated secret requests", () => {
     const ctx = {
       deps: { prisma: input.prisma, secretStore, secretHttp: input.remote },
       run: { ...scope, id: "run-1" },
+      secretScope: scope,
+      computer: { pageBrowserAllowed: false },
       runId: "run-1",
       bot: { id: "bot-1", name: "Research bot" },
       thread: { id: "thread-1" },
@@ -219,6 +221,8 @@ describe("authenticated secret requests", () => {
       const ctx = {
         deps: { prisma: input.prisma, secretStore, secretHttp: input.remote },
         run: { ...scope, id: "run-1" },
+        secretScope: scope,
+        computer: { pageBrowserAllowed: false },
         runId: "run-1",
         bot: { id: "bot-1", name: "Research bot" },
         thread: { id: "thread-1" },
@@ -1453,6 +1457,7 @@ describe("logins kept for one run", () => {
     };
     expect(await resolveLoginFill({ ...input, runId: "run-1" })).toEqual({
       error: "This login has no authenticator key. Use request_secret with oneTimeCode.",
+      reason: "unknown",
     });
     expect(await resolveLoginFill({ ...input, runId: "run-2" })).toMatchObject({
       text: expect.stringMatching(/^\d{6}$/),

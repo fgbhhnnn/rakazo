@@ -391,8 +391,10 @@ it("keeps a failed save's error when a read that was pending then succeeds", asy
 
 it("hides models and voice from a member of a locked deployment", async () => {
   state.locked = true;
+  queryClient.clear();
   state.overrides = ["models", "voice"];
   await act(async () => root.render(createElement(SpaceSettings, { key: "locked" })));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   expect(control("Customize Models")).toBeNull();
   expect(control("Customize Voice")).toBeNull();
   expect(container.querySelector("button")).toBeNull();
@@ -406,9 +408,11 @@ it("hides models and voice from a member of a locked deployment", async () => {
 
 it("keeps a locked member’s Space rules readable and their approval mode editable", async () => {
   state.locked = true;
+  queryClient.clear();
   state.overrides = ["confirmations"];
   state.rules = [{ id: "rule-1" }];
   await act(async () => root.render(createElement(SpaceSettings, { key: "locked" })));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   expect(control("Customize Approvals")?.checked).toBe(true);
   expect(control("Customize Approvals")?.disabled).toBe(true);
   await act(async () =>

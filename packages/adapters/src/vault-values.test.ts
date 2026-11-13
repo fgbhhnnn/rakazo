@@ -345,6 +345,7 @@ describe("vault values under the envelope keys", () => {
         events: { append: async () => {} },
       },
       run: { ...scope, id: "run-1", botId: "bot-1" },
+      secretScope: { ...scope, botId: "bot-1" },
       runId: "run-1",
       bot: { id: "bot-1" },
       thread: { id: "thread-1" },

@@ -285,7 +285,7 @@ export function savePage(input: {
   markdown: string;
   baseVersion: number;
 }): Promise<Page> {
-  return rpc("pages/update", input);
+  return rpc("reportPages/update", input);
 }
 
 /** Where a page card in chat or the Pages list opens. */

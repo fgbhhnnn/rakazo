@@ -103,7 +103,7 @@ export function TaskProgressCard({
           <Layers size={19} strokeWidth={1.8} aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14.5px] leading-5 font-semibold">
+          <span className="block truncate text-body-lg leading-5 font-semibold">
             {block.closed ? (
               <Trans>Background tasks finished</Trans>
             ) : (
@@ -111,7 +111,7 @@ export function TaskProgressCard({
             )}
           </span>
           <span
-            className="mt-0.5 block truncate text-[13px] leading-5 text-muted-foreground"
+            className="mt-0.5 block truncate text-body-sm leading-5 text-muted-foreground"
             data-testid="task-progress-counts"
           >
             {active ? <Trans>{active} running</Trans> : null}
@@ -137,19 +137,19 @@ export function TaskProgressCard({
               />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[14px] leading-5" dir="auto">
+                  <span className="min-w-0 flex-1 truncate text-body leading-5" dir="auto">
                     {entry.name} <span className="text-muted-foreground">#{entry.ref}</span>
                   </span>
                   {seconds !== undefined ? (
                     <span
-                      className="shrink-0 text-[12.5px] text-muted-foreground tabular-nums"
+                      className="shrink-0 text-body-sm text-muted-foreground tabular-nums"
                       data-testid="task-progress-time"
                     >
                       {formatTaskRunTime(seconds)}
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-0.5 line-clamp-2 block text-[12.5px] leading-[18px]" dir="auto">
+                <span className="mt-0.5 line-clamp-2 block text-body-sm leading-[18px]" dir="auto">
                   <span className={STATE_TONE[entry.state]}>
                     <StateLabel entry={entry} />
                   </span>

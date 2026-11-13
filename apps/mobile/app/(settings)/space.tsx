@@ -166,11 +166,7 @@ export default function SpaceSettings() {
         ) : null}
         {overrides?.includes("confirmations") ? (
           <SettingsGroup>
-            <ApprovalModeRow
-              key="approvals"
-              approvals={approvals}
-              disabled={pending || membersLocked}
-            />
+            <ApprovalModeRow key="approvals" approvals={approvals} disabled={pending} />
             {approvals.ruleCount ? (
               <ApprovalRulesRow
                 key="approval-rules"

@@ -226,6 +226,6 @@ it("uses the borderless chat-card shell (BuiCard), like every other card in the 
     '[data-testid="task-progress-card"]',
   )!;
   const classes = card.className.split(/\s+/);
-  expect(classes).toEqual(expect.arrayContaining(["rounded-[20px]", "bg-card"]));
+  expect(classes).toEqual(expect.arrayContaining(["rounded-2xl", "bg-card"]));
   expect(classes.filter((name) => /^border(-|$)/.test(name))).toEqual([]);
 });

@@ -87,7 +87,7 @@ it("bundles exactly the deployed Python helper bytes", () => {
 
 it("keeps local validation identical to the supervisor route", () => {
   const supervisor = readFileSync(
-    new URL("../../../infra/sandboxes/supervisor/src/index.ts", import.meta.url),
+    new URL("../../../infra/sandboxes/supervisor/src/routes.ts", import.meta.url),
     "utf8",
   );
   const route = supervisor.slice(supervisor.indexOf('app.post("/computers/:id/browser"'));

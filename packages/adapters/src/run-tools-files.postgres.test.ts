@@ -112,6 +112,7 @@ postgres("attach_file (PostgreSQL)", () => {
         signal: new AbortController().signal,
       },
       secrets: [],
+      attachedFilePaths: new Set<string>(),
       computer: {
         mode: "personal",
         get: async () => ({ id: "computer" }),

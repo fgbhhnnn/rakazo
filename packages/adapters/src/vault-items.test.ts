@@ -613,6 +613,8 @@ describe("an item bots may not use", () => {
     const ctx = {
       deps: { prisma: db.prisma, secretStore },
       run: { ...bot, id: "run-1", trigger: "user" },
+      secretScope: bot,
+      computer: { pageBrowserAllowed: true },
       runId: "run-1",
       bot: { id: "bot-1" },
       thread: { id: "thread-1" },
@@ -1294,6 +1296,8 @@ describe("what a save leaves of a login's key, its stop, its other sites and its
           {
             deps: { prisma: db.prisma, secretStore },
             run: { ...bot, id: "run-1" },
+            secretScope: bot,
+            computer: { pageBrowserAllowed: true },
             secrets: [],
             state: { reply: { pendingProgress: "" } },
           } as never,

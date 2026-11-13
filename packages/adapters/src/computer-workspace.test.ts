@@ -307,7 +307,7 @@ describe("Team run checkpoints", () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const deps = {
       home,
-      sandbox: { hasMountedHome: async () => true, exportWorkspace },
+      sandbox: { exportWorkspace },
       prisma: {
         computer: {
           updateMany,
@@ -318,7 +318,7 @@ describe("Team run checkpoints", () => {
     const revision = await checkpointRunComputerWorkspace(
       deps as never,
       { id: "team", homeKey: "team", scope: "team", spaceId: "space" },
-      { id: "pod", providerRef: "pod", kind: "kubernetes", botId: "team" },
+      { id: "container", providerRef: "container", kind: "docker", botId: "team" },
       context,
     );
     expect(revision).toMatch(/^rev-/);

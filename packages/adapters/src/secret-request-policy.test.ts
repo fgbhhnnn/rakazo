@@ -37,6 +37,7 @@ function fixture() {
   const ctx = {
     deps: { prisma: client, secretStore: { load }, events: { pauseRunForInput } },
     run: { id: "current", threadId: "thread", botId: "bot", userId: "user", spaceId: "space" },
+    secretScope: { userId: "user", spaceId: "space" },
     runId: "current",
     computer: { pageBrowserAllowed: true },
     state: {},

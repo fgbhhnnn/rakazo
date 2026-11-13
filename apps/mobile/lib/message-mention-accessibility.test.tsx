@@ -69,6 +69,8 @@ vi.mock("../components/ComputerCard", () => ({
   },
 }));
 // Cards this file doesn't exercise; each has its own tests.
+vi.mock("../components/page-card", () => ({ PageCard: () => null }));
+vi.mock("../components/file-viewer", () => ({ hasMobileFileViewer: () => false }));
 vi.mock("../components/thread/ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../components/AskActions", () => ({ AskActions: () => null }));
 vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));

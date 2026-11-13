@@ -31,6 +31,12 @@ postgres("background task progress card (PostgreSQL)", () => {
         data: { id: organizationId, name: "Progress", slug: id, createdAt: new Date() },
       });
       await system.space.create({ data: { id: spaceId, organizationId, name: "Progress" } });
+      await system.member.create({
+        data: { id: `${id}-member`, userId, organizationId, role: "owner", createdAt: t0 },
+      });
+      await system.spaceMember.create({
+        data: { id: `${id}-space-member`, spaceId, userId, organizationId, createdAt: t0 },
+      });
       const main = await system.bot.create({
         data: { spaceId, userId, name: "main", color: "ink" },
       });
@@ -147,9 +153,13 @@ postgres("background task progress card (PostgreSQL)", () => {
         ["TPA00001", "running"],
         ["TPB00002", "queued"],
       ]);
-      expect((await system.thread.findUniqueOrThrow({ where: { id: mainThread.id } })).unread).toBe(
-        false,
-      );
+      expect(
+        (
+          await system.threadRead.findUnique({
+            where: { threadId_userId: { threadId: mainThread.id, userId } },
+          })
+        )?.unread ?? false,
+      ).toBe(false);
       // Nothing changed: no write at all.
       const seqBefore = (await system.event.findFirst({
         where: { threadId: mainThread.id },
@@ -194,9 +204,13 @@ postgres("background task progress card (PostgreSQL)", () => {
       });
       expect(updateEvent?.payload).toMatchObject({ messageId: card!.id });
 
-      expect((await system.thread.findUniqueOrThrow({ where: { id: mainThread.id } })).unread).toBe(
-        false,
-      );
+      expect(
+        (
+          await system.threadRead.findUnique({
+            where: { threadId_userId: { threadId: mainThread.id, userId } },
+          })
+        )?.unread ?? false,
+      ).toBe(false);
 
       // Quiet past the threshold: stuck on the card and one plain message, said once.
       const later = new Date(Date.now() + STUCK + 60_000);
@@ -207,9 +221,13 @@ postgres("background task progress card (PostgreSQL)", () => {
       expect(block(card!).tasks[0]).toMatchObject({ state: "stuck", notified: ["stuck"] });
       expect(await texts()).toHaveLength(1);
       // A milestone is worth a badge.
-      expect((await system.thread.findUniqueOrThrow({ where: { id: mainThread.id } })).unread).toBe(
-        true,
-      );
+      expect(
+        (
+          await system.threadRead.findUnique({
+            where: { threadId_userId: { threadId: mainThread.id, userId } },
+          })
+        )?.unread ?? false,
+      ).toBe(true);
       expect((await texts())[0]).toContain("「竞品调研 #TPA00001」已经约 11 分钟没有新进展");
       expect(
         await taskStuckFields(

@@ -326,13 +326,16 @@ describe("CJK mentions", () => {
   });
 
   it("keeps Latin boundaries strict", () => {
-    // Nothing mentioned falls back to the first member (Amy).
+    // Nothing mentioned falls back to every member (Amy).
     const latin = [
       { id: "amy", name: "Amy" },
       { id: "bob", name: "Bob" },
     ];
-    expect(resolveGroupTargetBotIds({ text: "@Bobby hi", members: latin })).toEqual(["amy"]);
-    expect(resolveGroupTargetBotIds({ text: "mail x@Bob.com", members: latin })).toEqual(["amy"]);
+    expect(resolveGroupTargetBotIds({ text: "@Bobby hi", members: latin })).toEqual(["amy", "bob"]);
+    expect(resolveGroupTargetBotIds({ text: "mail x@Bob.com", members: latin })).toEqual([
+      "amy",
+      "bob",
+    ]);
     expect(hasMentionToken("mail x@Bob.com", "Bob")).toBe(false);
     expect(resolveGroupTargetBotIds({ text: "@Bob请看", members: latin })).toEqual(["bob"]);
   });

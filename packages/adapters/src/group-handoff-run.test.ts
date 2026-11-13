@@ -27,6 +27,8 @@ function harness(existingTarget = true) {
   } | null = null;
   let recordedEvent: { seq: number; payload?: unknown } = { seq: 1 };
   const tx = {
+    $executeRaw: vi.fn(async () => 1),
+    space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
     $queryRaw: vi.fn(async () => [{ id: "group" }]),
     chatGroup: {
       findFirst: vi.fn(async () => ({

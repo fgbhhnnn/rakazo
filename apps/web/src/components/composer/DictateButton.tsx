@@ -113,7 +113,7 @@ export function DictateButton({
       {notice || snapshot.status !== "idle" ? (
         <div
           role={notice ? "alert" : "status"}
-          className="absolute bottom-full end-0 mb-2 w-64 rounded-lg border border-border bg-popover p-2 text-sm text-popover-foreground shadow-sm"
+          className="absolute bottom-full end-0 mb-2 w-64 rounded-lg border border-border bg-popover p-2 text-body-sm text-popover-foreground shadow-sm"
           dir="auto"
         >
           {notice ?? (transcribing ? t`Transcribing…` : snapshot.transcript || t`Listening…`)}

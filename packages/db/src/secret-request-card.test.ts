@@ -33,6 +33,7 @@ function fixture() {
   let messageSeq = 0;
   let eventSeq = 0;
   const tx = {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async (..._args: unknown[]) => []),
     run: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>

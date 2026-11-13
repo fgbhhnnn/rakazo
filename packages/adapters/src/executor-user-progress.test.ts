@@ -166,6 +166,12 @@ async function runTurn(
       }),
     },
     chatGroup: {
+      findFirst: vi.fn(async () => ({
+        members: [
+          { bot: { id: "bot-1", name: "Assistant" } },
+          { bot: { id: "bot-2", name: "Other" } },
+        ],
+      })),
       findMany: vi.fn(async () => []),
       findUnique: vi.fn(async () => ({
         name: "Team",
@@ -1852,7 +1858,7 @@ describe("dispatcher text before ask_user", () => {
     expect(posted).toBeLessThan(pauseRunForInput.mock.invocationCallOrder[0]!);
   });
 
-  it("is unchanged for bots outside dispatcher mode", async () => {
+  it("posts the narration before asking outside dispatcher mode too", async () => {
     const { messages, pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
       trigger: "user",
       runtimeEvents: askEvents,
@@ -1860,7 +1866,7 @@ describe("dispatcher text before ask_user", () => {
     expect(pauseRunForInput).toHaveBeenCalledOnce();
     expect(
       messages.flatMap((message) => message.blocks.filter((block) => block.kind === "text")),
-    ).toEqual([]);
+    ).toEqual([{ kind: "text", text: "Task #A1 finished: 3 files changed, tests pass." }]);
   });
 });
 

@@ -568,6 +568,7 @@ describe("a shell command's use of its variables", () => {
         events: { append: async () => undefined },
       },
       run: { ...scope, botId, id: "run-1" },
+      secretScope: { ...scope, botId },
       runId: "run-1",
       bot: { id: botId, name: "Deployer" },
       thread: { id: "thread-1" },

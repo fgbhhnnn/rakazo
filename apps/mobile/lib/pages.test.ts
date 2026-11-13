@@ -184,9 +184,9 @@ it("calls the owner-only page procedures", async () => {
   await getPage("page-1");
   await savePage({ pageId: "page-1", markdown: "# Plan", baseVersion: 2 });
   expect(api.rpc.mock.calls).toEqual([
-    ["pages/list", { botId: "bot-1", limit: 30 }],
-    ["pages/get", { pageId: "page-1" }],
-    ["pages/update", { pageId: "page-1", markdown: "# Plan", baseVersion: 2 }],
+    ["reportPages/list", { botId: "bot-1", limit: 30 }],
+    ["reportPages/get", { pageId: "page-1" }],
+    ["reportPages/update", { pageId: "page-1", markdown: "# Plan", baseVersion: 2 }],
   ]);
 });
 

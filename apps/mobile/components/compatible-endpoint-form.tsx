@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import { PRODUCT_NAME } from "@rakazo/contracts/brand";
 import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
@@ -138,7 +139,7 @@ export function CompatibleEndpointForm({
           {showEndpointHelp ? (
             <Text
               style={styles.hint}
-            >{t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}</Text>
+            >{t`Paste the OpenAI-compatible address from your server. ${PRODUCT_NAME} adds /v1 if needed.`}</Text>
           ) : null}
         </>
       ) : null}

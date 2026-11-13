@@ -30,6 +30,7 @@ describe("group send targets", () => {
   it("keeps the default group target and structured mentions", () => {
     expect(groupSendTargetBotIds({ text: "Hello", members, explicitMentions: [] })).toEqual([
       "plan",
+      "write",
     ]);
     expect(groupSendTargetBotIds({ text: "Hello", members, explicitMentions: ["write"] })).toEqual([
       "write",

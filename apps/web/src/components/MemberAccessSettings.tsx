@@ -59,11 +59,11 @@ export function MemberAccessSettings() {
       data-testid="member-access-settings"
       className="group rounded-xl border border-border"
       summary={<Trans>Members and sign-up</Trans>}
-      summaryClassName="w-full flex items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75"
+      summaryClassName="w-full flex items-center justify-between gap-4 px-4 py-4 text-body text-foreground/75"
     >
       <div className="space-y-4 border-t border-border px-4 pt-5 pb-5">
         {!settings && !error ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-body-sm text-muted-foreground">
             <Trans>Loading…</Trans>
           </p>
         ) : null}
@@ -78,7 +78,7 @@ export function MemberAccessSettings() {
                 checked={settings.lockMemberSettings}
                 onCheckedChange={(checked) => void save({ lockMemberSettings: checked })}
               />
-              <Label htmlFor={lockId} className="text-[14px] font-normal text-foreground/75">
+              <Label htmlFor={lockId} className="text-body font-normal text-foreground/75">
                 <Trans>
                   Only I manage models, voice and MCP servers (members use mine and cannot change
                   them)
@@ -94,7 +94,7 @@ export function MemberAccessSettings() {
                 checked={settings.shareOwnerModels || settings.lockMemberSettings}
                 onCheckedChange={(checked) => void save({ shareOwnerModels: checked })}
               />
-              <Label htmlFor={shareId} className="text-[14px] font-normal text-foreground/75">
+              <Label htmlFor={shareId} className="text-body font-normal text-foreground/75">
                 <Trans>Members without their own model or voice use my defaults</Trans>
               </Label>
             </div>
@@ -107,7 +107,7 @@ export function MemberAccessSettings() {
                 checked={settings.turnstileEnabled}
                 onCheckedChange={(checked) => void save({ turnstileEnabled: checked })}
               />
-              <Label htmlFor={turnstileId} className="text-[14px] font-normal text-foreground/75">
+              <Label htmlFor={turnstileId} className="text-body font-normal text-foreground/75">
                 <Trans>Require a Cloudflare Turnstile check to create an account</Trans>
               </Label>
             </div>
@@ -122,7 +122,7 @@ export function MemberAccessSettings() {
               }}
             >
               <div className="space-y-1.5">
-                <Label htmlFor={siteKeyId} className="text-[13px]">
+                <Label htmlFor={siteKeyId} className="text-body-sm">
                   <Trans>Turnstile site key</Trans>
                 </Label>
                 <Input
@@ -133,7 +133,7 @@ export function MemberAccessSettings() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor={secretId} className="text-[13px]">
+                <Label htmlFor={secretId} className="text-body-sm">
                   <Trans>Turnstile secret key</Trans>
                 </Label>
                 <Input
@@ -152,12 +152,12 @@ export function MemberAccessSettings() {
           </>
         ) : null}
         {saved ? (
-          <p className="text-[12.5px] text-muted-foreground">
+          <p className="text-body-sm text-muted-foreground">
             <Trans>Saved.</Trans>
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="text-[12.5px] text-destructive">
+          <p role="alert" className="text-body-sm text-destructive">
             {error}
           </p>
         ) : null}

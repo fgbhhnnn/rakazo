@@ -22,7 +22,7 @@ describe("background coordinating line", () => {
       new URL("../components/thread/thread-screen.tsx", import.meta.url),
       "utf8",
     );
-    expect(screen).toContain('t("Coordinating background tasks")');
+    expect(screen).toContain('mobileT("Coordinating background tasks")');
     expect(screen).not.toContain("Background tasks running");
     const transcript = readFileSync(new URL("./thread-transcript.ts", import.meta.url), "utf8");
     expect(transcript).toContain("withoutBackgroundTaskCards(messages");

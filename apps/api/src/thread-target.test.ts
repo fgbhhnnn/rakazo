@@ -729,6 +729,7 @@ describe("threadSnapshot", () => {
     }));
     const findManyEvents = vi.fn().mockResolvedValue([]);
     const tx = {
+      ...noBackgroundTasks,
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -786,6 +787,7 @@ describe("threadSnapshot", () => {
         },
       ]);
       const tx = {
+        ...noBackgroundTasks,
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
@@ -876,6 +878,7 @@ describe("threadSnapshot", () => {
     const findManyEvents = vi.fn();
     const findFirstRun = botRunFindFirst([run]);
     const tx = {
+      ...noBackgroundTasks,
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -961,6 +964,7 @@ describe("threadSnapshot", () => {
           ...noBackgroundTasks,
           $transaction: vi.fn(async (callback: (client: unknown) => unknown) =>
             callback({
+              ...noBackgroundTasks,
               spaceMember: { count: vi.fn().mockResolvedValue(1) },
               $executeRaw: vi.fn(async () => 0),
               $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
@@ -1011,6 +1015,7 @@ describe("threadSnapshot", () => {
             ...noBackgroundTasks,
             $transaction: vi.fn(async (callback: (client: unknown) => unknown) =>
               callback({
+                ...noBackgroundTasks,
                 spaceMember: { count: vi.fn().mockResolvedValue(1) },
                 $executeRaw: vi.fn(async () => 0),
                 $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
@@ -1074,6 +1079,7 @@ describe("threadSnapshot", () => {
     };
     const findFirstRun = botRunFindFirst([failed, completed]);
     const tx = {
+      ...noBackgroundTasks,
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -1114,6 +1120,7 @@ describe("threadSnapshot", () => {
     const findManyEvents = vi.fn();
     const findFirstRun = botRunFindFirst([]);
     const tx = {
+      ...noBackgroundTasks,
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
       $executeRaw: vi.fn(async () => 0),
@@ -1645,6 +1652,7 @@ function groupRunFindMany(input: { active?: unknown[]; terminals?: unknown[] }) 
 
 function groupPrisma(findManyRuns: ReturnType<typeof groupRunFindMany>) {
   const tx = {
+    ...noBackgroundTasks,
     user: { findMany: vi.fn().mockResolvedValue([]) },
     spaceMember: { count: vi.fn().mockResolvedValue(1) },
     $executeRaw: vi.fn(async () => 0),
@@ -1678,6 +1686,7 @@ describe("sendThreadMessage", () => {
     async (scenario) => {
       const olderReply = scenario === "reply";
       const tx = {
+        ...noBackgroundTasks,
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -1825,6 +1834,10 @@ describe("sendThreadMessage", () => {
       blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
     };
     const tx = {
+      ...noBackgroundTasks,
+      ...noBackgroundTasks,
+      ...noBackgroundTasks,
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
@@ -2300,6 +2313,7 @@ describe("sendThreadMessage", () => {
           ],
         };
         const tx = {
+          ...noBackgroundTasks,
           space: { findUnique: vi.fn(async () => null) },
           externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
           user: { findMany: vi.fn().mockResolvedValue([]) },
@@ -2419,6 +2433,7 @@ describe("sendThreadMessage", () => {
 
   it("waits for the creation intro instead of starting a second run", async () => {
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2510,6 +2525,7 @@ describe("sendThreadMessage", () => {
       let messageSeq = 0;
       let eventSeq = 0;
       const tx = {
+        ...noBackgroundTasks,
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2696,6 +2712,7 @@ describe("sendThreadMessage", () => {
 
   it("steers a waiting-takeover run instead of refusing the message", async () => {
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2794,6 +2811,7 @@ describe("sendThreadMessage", () => {
       let messageSeq = 0;
       let eventSeq = 0;
       const tx = {
+        ...noBackgroundTasks,
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2899,6 +2917,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -2997,6 +3016,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(2) },
@@ -3112,6 +3132,7 @@ describe("sendThreadMessage", () => {
       let eventSeq = 0;
       let nextRun = 0;
       const tx = {
+        ...noBackgroundTasks,
         space: { findUnique: vi.fn(async () => null) },
         thread: {
           update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
@@ -3510,6 +3531,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -3614,6 +3636,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -3756,6 +3779,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -3856,6 +3880,7 @@ describe("sendThreadMessage", () => {
     let eventSeq = 0;
     const clientNonce = callClientNonce("call-7");
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -3932,6 +3957,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4000,6 +4026,7 @@ describe("sendThreadMessage", () => {
       let messageSeq = 0;
       let eventSeq = 0;
       const tx = {
+        ...noBackgroundTasks,
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4085,6 +4112,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4166,6 +4194,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4254,6 +4283,7 @@ describe("sendThreadMessage", () => {
       let messageSeq = 0;
       let eventSeq = 0;
       const tx = {
+        ...noBackgroundTasks,
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4370,6 +4400,7 @@ describe("sendThreadMessage", () => {
       let messageSeq = 0;
       let eventSeq = 0;
       const tx = {
+        ...noBackgroundTasks,
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4461,6 +4492,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4555,6 +4587,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -4631,6 +4664,7 @@ describe("sendThreadMessage", () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
+      ...noBackgroundTasks,
       space: { findUnique: vi.fn(async () => null) },
       user: { findMany: vi.fn().mockResolvedValue([]) },
       spaceMember: { count: vi.fn().mockResolvedValue(1) },
@@ -5233,7 +5267,7 @@ describe("stopThreadRuns", () => {
   });
 });
 
-/** Snapshot reads the bot's background-worker counts outside the transaction; none here. */
+/** Snapshot reads background-worker counts in the same transaction; none here. */
 const noBackgroundTasks = {
   bot: { findFirst: vi.fn().mockResolvedValue(null) },
   backgroundTaskQueue: { groupBy: vi.fn().mockResolvedValue([]) },
@@ -5272,6 +5306,7 @@ describe("helper snapshot settlement", () => {
         { ...previous, seq: 3 },
       ];
       const tx = {
+        ...noBackgroundTasks,
         spaceMember: { count: vi.fn().mockResolvedValue(1) },
         $executeRaw: vi.fn(async () => 0),
         $queryRaw: vi.fn().mockResolvedValue([]),

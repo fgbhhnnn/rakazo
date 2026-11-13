@@ -121,7 +121,9 @@ async function runTool(
   };
   const calls: unknown[] = [];
   const toolResults: unknown[] = [];
-  const pauseRunForInput = vi.fn(async (_input: { blocks: unknown[] }) => true);
+  const pauseRunForInput = vi.fn(async (_input: { blocks: unknown[] }) => ({
+    continuationRunId: null,
+  }));
   const runtimeRun = vi.fn(async function* (request: { executeTool?: ExecuteTool }) {
     toolResults.push(
       await request

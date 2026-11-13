@@ -854,7 +854,7 @@ describe("PipedreamConnector", () => {
     expect(accounts).toEqual([]);
   });
 
-  it("runs a connection that stores only the app on its one remote account", async () => {
+  it("requires reconnecting an app-only connection even with one remote account", async () => {
     const calls: Array<{ app: string | null; name: string; args: unknown }> = [];
     const { tools, events, accounts } = await runGmail(
       pipedreamMcpFetch({ gmail: ["send_email"] }, calls, ["apn_legacy"]),
@@ -862,11 +862,11 @@ describe("PipedreamConnector", () => {
       { text: "hello" },
     );
 
-    expect(tools).toHaveLength(1);
-    expect(tools[0]?.inputSchema).not.toHaveProperty("properties.connected_account");
-    expect(events).toEqual([expect.objectContaining({ type: "result" })]);
-    expect(calls).toHaveLength(1);
-    expect(new Set(accounts)).toEqual(new Set(["apn_legacy"]));
+    // Remote discovery cannot prove which account an app-only local row approved.
+    expect(tools).toEqual([]);
+    expect(events).toEqual([expect.objectContaining({ type: "error" })]);
+    expect(calls).toEqual([]);
+    expect(accounts).toEqual([]);
   });
 
   it("refuses a connection that stores only the app when several remote accounts exist", async () => {

@@ -7,7 +7,7 @@ import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { checkpointComputerWorkspace, restoreComputerWorkspace } from "./computer-workspace.js";
 import { LocalAgentHomeStore } from "./home.js";
 import {
   createAgentHomeStore,

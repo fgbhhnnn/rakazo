@@ -28,7 +28,7 @@ export function PagesShelf({ botId }: { botId?: string }) {
   if (pages.length === 0) return null;
   return (
     <section className="shrink-0 border-b border-border px-4 py-4 md:px-6">
-      <h2 className="mb-3 text-[13px] font-semibold text-muted-foreground">
+      <h2 className="mb-3 text-body-sm font-semibold text-muted-foreground">
         <Trans>Pages</Trans>
       </h2>
       <ul className="flex gap-3 overflow-x-auto pb-1">

@@ -45,7 +45,7 @@ function TextPane({ bytes, name, mimeType }: FileRef & { bytes: Uint8Array }) {
 function MarkdownPane({ markdown }: { markdown: string }) {
   return (
     <div className="h-full overflow-auto bg-background" data-testid="file-viewer-markdown">
-      <article className="mx-auto w-full max-w-[1100px] px-6 py-8 text-[15px] leading-7 text-foreground sm:px-10">
+      <article className="mx-auto w-full max-w-[1100px] px-6 py-8 text-body-lg leading-7 text-foreground sm:px-10">
         <ChatMarkdown>{markdown}</ChatMarkdown>
       </article>
     </div>

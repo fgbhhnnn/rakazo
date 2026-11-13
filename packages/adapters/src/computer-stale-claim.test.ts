@@ -24,7 +24,7 @@ function staleClaimHarness(answer: ProviderAnswer, options: { claimChanged?: boo
     controlLeaseId: null as string | null,
     controlLeaseExpiresAt: null as Date | null,
     controlBotId: null as string | null,
-    controlRunId: null as string | null,
+    controlUserId: "former-controller" as string | null,
     runningSince: new Date(Date.now() - 17 * 60 * 60 * 1000) as Date | null,
     homeRevisionAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
     updatedAt: staleAt,
@@ -127,6 +127,7 @@ describe("stale suspend claim settled with the provider", () => {
       controlHolder: "none",
       controlLeaseId: null,
       controlBotId: null,
+      controlUserId: null,
       providerRef: "izl0ucema1g3ro5v5jwmm",
     });
     // Not a failed check: the count resets and the restart card is let go.

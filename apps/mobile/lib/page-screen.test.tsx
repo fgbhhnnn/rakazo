@@ -445,7 +445,7 @@ describe("editable Markdown pages", () => {
       mock.mockReset();
     mocks.share.mockReset().mockResolvedValue({ action: "sharedAction" });
     mocks.rpc.mockReset().mockImplementation(async (proc: string) => {
-      if (proc === "pages/get") return PAGE;
+      if (proc === "reportPages/get") return PAGE;
       throw new Error(`unexpected ${proc}`);
     });
     container = document.createElement("div");
@@ -486,7 +486,7 @@ describe("editable Markdown pages", () => {
 
   it("reads a page with its title once, an On this page list, and anchored jumps", async () => {
     await renderScreen();
-    expect(mocks.rpc).toHaveBeenCalledWith("pages/get", { pageId: "page-1" });
+    expect(mocks.rpc).toHaveBeenCalledWith("reportPages/get", { pageId: "page-1" });
     expect(container.querySelector('rn-text[role="header"]')?.textContent).toBe("Launch plan");
     expect([...container.querySelectorAll("rn-markdown")].map((node) => node.textContent)).toEqual([
       "Why now.",
@@ -524,7 +524,7 @@ describe("editable Markdown pages", () => {
 
     const markdown = `${PAGE.markdown}\n\n## Owners\n\nAda.`;
     mocks.rpc.mockImplementation(async (proc: string) => {
-      if (proc === "pages/update") return { ...PAGE, version: 3, markdown };
+      if (proc === "reportPages/update") return { ...PAGE, version: 3, markdown };
       throw new Error(`unexpected ${proc}`);
     });
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
@@ -538,7 +538,7 @@ describe("editable Markdown pages", () => {
     );
     await tap(save);
 
-    expect(mocks.rpc).toHaveBeenLastCalledWith("pages/update", {
+    expect(mocks.rpc).toHaveBeenLastCalledWith("reportPages/update", {
       pageId: "page-1",
       markdown,
       baseVersion: 2,

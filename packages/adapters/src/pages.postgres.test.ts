@@ -7,8 +7,7 @@ import { runPageTool } from "./page-tools.js";
 import { createPage, listPages, PageError, readPage, runPageBlocks, updatePage } from "./pages.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("pages (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;

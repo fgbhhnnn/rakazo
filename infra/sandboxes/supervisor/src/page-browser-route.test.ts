@@ -316,7 +316,7 @@ it.each([
 });
 
 it.each([
-  [{ command: "snapshot" }, "Call browser_restart"],
+  [{ command: "snapshot" }, "use browser_restart"],
   [{ command: "act", actions: [{ kind: "click", ref: "e1" }] }, "Inspect the screen"],
 ])("reports a helper that exceeds its deadline as a timeout: %j", async (body, advice) => {
   const defaultExec = mock.exec.getMockImplementation()!;
@@ -685,7 +685,8 @@ describe("a helper that refuses the command (exit 2)", () => {
     helperExits(2, "Traceback (most recent call last):");
     expect(await (await purchaseCheck("computer-refusal-garbled")).json()).toMatchObject({
       ok: false,
-      error: "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+      error:
+        "Page browser unavailable or interrupted. Use browser_restart, then inspect the screen before continuing.",
     });
   });
 });

@@ -15,10 +15,13 @@ describe("1.0.8 OTA native configuration", () => {
         (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-sharing",
     );
     expect(plugins).toEqual(["expo-sharing"]);
+    expect(expo.plugins).not.toContain("./plugins/with-share-extension");
   });
 
   it("keeps Spanish translations in JS without adding Android native resources", () => {
-    expect(existsSync(new URL("lib/locales/es.ts", mobileRoot))).toBe(true);
+    expect(existsSync(new URL("../../packages/i18n/locales/es/messages.po", mobileRoot))).toBe(
+      true,
+    );
     for (const file of ["strings.xml", "call_strings.xml"]) {
       expect(
         existsSync(

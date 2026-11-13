@@ -164,7 +164,7 @@ export async function reserveModelCredits(
     await prepareCreditLots(tx, organizationId, now);
     await expireCreditLots(tx, organizationId, now);
     const reserved = await tx.modelCreditAccount.updateMany({
-      where: { organizationId, mode: "credits", balanceMicros: { gte: amountMicros } },
+      where: { organizationId, balanceMicros: { gte: amountMicros } },
       data: { balanceMicros: { decrement: amountMicros } },
     });
     if (reserved.count !== 1) throw new Error(MODEL_CREDITS_EXHAUSTED_ERROR);

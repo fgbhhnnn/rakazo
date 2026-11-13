@@ -16,7 +16,7 @@ vi.mock("@lingui/react/macro", () => {
 });
 
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock("../../lib/rpc", () => ({ rpc: { pages: { get: mocks.get, update: vi.fn() } } }));
+vi.mock("../../lib/rpc", () => ({ rpc: { reportPages: { get: mocks.get, update: vi.fn() } } }));
 vi.mock("@rakazo/chat-ui/web", () => ({
   useExternalLinkOpener: () => ({ open: vi.fn(), dialog: null }),
   ChatMarkdown: ({ children }: { children: string }) => <div data-markdown>{children}</div>,

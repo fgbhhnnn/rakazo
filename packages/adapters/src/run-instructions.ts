@@ -231,9 +231,6 @@ function secretGuidance(pageBrowserAllowed: boolean, disabled?: ReadonlySet<stri
     builtinOffered(disabled, "request_secret") &&
     builtinOffered(disabled, "browser_act")
   ) {
-    clauses.push();
-  }
-  if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
       "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; otherwise request_secret oneTimeCode and fill_code, never chat.",
     );

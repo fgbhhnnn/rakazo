@@ -21,6 +21,8 @@ const run = { id: "run-1", spaceId: "s", threadId: "group-thread", botId: "be", 
 function prisma(options: { existingNotice?: boolean } = {}) {
   const created: unknown[] = [];
   const tx = {
+    $executeRaw: vi.fn(async () => 1),
+    space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
     $queryRaw: vi.fn(async () => []),
     message: {
       findUnique: vi.fn(async () => (options.existingNotice ? { id: "m0" } : null)),

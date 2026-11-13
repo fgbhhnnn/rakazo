@@ -59,6 +59,7 @@ describeJourneys("required product journeys", () => {
   let executor: Awaited<ReturnType<typeof createApp>>["executor"];
   let jobs: Awaited<ReturnType<typeof createApp>>["jobs"];
   let sandbox: Awaited<ReturnType<typeof createApp>>["sandbox"];
+  let runtime: Awaited<ReturnType<typeof createApp>>["runtime"];
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 
@@ -153,6 +154,7 @@ describeJourneys("required product journeys", () => {
     executor = handles.executor;
     jobs = handles.jobs;
     sandbox = handles.sandbox;
+    runtime = handles.runtime;
     botIntroHarness = handles;
   });
 
@@ -3283,7 +3285,9 @@ describeJourneys("required product journeys", () => {
     expect(remainingBotIds).not.toContain(artifactOwnerId);
   });
 
-  it("54b: a group team carries a request to the end on its own, for any kind of team", async () => {
+  it("54b: a group team carries a request to the end on its own, for any kind of team", async ({
+    onTestFinished,
+  }) => {
     const ada = await signup(app, `ada-team-${stamp}@rakazo.test`, "Ada Team");
     const bot = (name: string, description: string) =>
       rpc<Bot>(app, ada, "bots/create", {
@@ -3296,6 +3300,23 @@ describeJourneys("required product journeys", () => {
     // A writing desk, not a dev team; one member has no description at all.
     const planner = await bot("Planner", "Plans the piece and checks it against the brief");
     const drafter = await bot("Drafter", "");
+    // Keep these stage fixtures complete. The generic scripted reply abbreviates its prompt,
+    // which can cut the closing instruction out of a nested handoff before it reaches Planner.
+    const runRuntime = runtime.run.bind(runtime);
+    const stages = vi.spyOn(runtime, "run").mockImplementation((request, context) => {
+      const teamMember = request.botId === planner.id || request.botId === drafter.id;
+      const genericReply = request.script?.some((turn) => turn.files?.length);
+      return runRuntime(
+        teamMember && genericReply
+          ? {
+              ...request,
+              script: [{ assistant: `Stage output:\n${request.prompt}`, complete: true }],
+            }
+          : request,
+        context,
+      );
+    });
+    onTestFinished(() => stages.mockRestore());
     const desk = async (name: string) =>
       rpc<{ id: string; threadId: string }>(app, ada, "groups/create", {
         name,

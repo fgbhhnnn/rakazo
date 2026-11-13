@@ -1,7 +1,7 @@
 import { i18n } from "@lingui/core";
 import { t as translate } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { hasInAppFileViewer } from "@rakazo/chat-ui/file-kinds";
+import { fileKindOf, hasInAppFileViewer } from "@rakazo/chat-ui/file-kinds";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { fileSizeParts } from "@rakazo/core";
@@ -162,7 +162,7 @@ function FilePreview({
     void fetchArtifactBytes(artifactTarget, artifactId)
       .then((bytes) => {
         if (cancelled) return;
-        if (!isTextPreview(mimeType)) {
+        if (fileKindOf({ name, mimeType }).table || !isTextPreview(mimeType)) {
           setState({ status: "ready", bytes });
           return;
         }
@@ -183,7 +183,7 @@ function FilePreview({
     return () => {
       cancelled = true;
     };
-  }, [artifactId, targetBotId, targetGroupId, mimeType, t]);
+  }, [artifactId, targetBotId, targetGroupId, mimeType, name, t]);
   const kind = artifactPreviewKind(mimeType);
 
   return (

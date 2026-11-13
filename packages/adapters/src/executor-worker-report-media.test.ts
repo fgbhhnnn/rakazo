@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AgentRunRequest, ComputerRef } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import type { AppendEventInput, Prisma } from "@rakazo/db";
+import type { AppendEventInput, Artifact, Prisma } from "@rakazo/db";
 import { appendEventInTransaction } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadBotMessageContext } from "./bot-messages.js";
@@ -69,6 +69,15 @@ async function runMainTurn(options: {
   vi.mocked(attachWorkspaceFileToThread).mockImplementation(async (_deps, input) => {
     artifactCount += 1;
     const name = input.filePath.split("/").at(-1)!;
+    await input.onAttached?.(
+      _deps.prisma as unknown as Prisma.TransactionClient,
+      {
+        id: `artifact-${artifactCount}`,
+        name,
+        mimeType: "image/jpeg",
+        size: input.bytes.byteLength,
+      } as Artifact,
+    );
     return {
       artifactId: `artifact-${artifactCount}`,
       block: {
@@ -115,6 +124,8 @@ async function runMainTurn(options: {
     return bytes;
   });
   const prisma = {
+    space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "membership-1" })) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
@@ -240,6 +251,7 @@ async function runMainTurn(options: {
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
+    $executeRaw: vi.fn(async () => 1),
     $queryRaw: vi.fn(async () => [{ id: "row-1", scope: "team" }]),
     $transaction: vi.fn(
       async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prismaProxy),

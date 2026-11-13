@@ -68,6 +68,7 @@ vi.mock("./api", () => ({
   captureApiRequestContext: requestContext,
 }));
 vi.mock("./session", () => ({
+  registerSessionDiskCache: vi.fn(),
   loadSessionToken: async () => "token",
   currentSessionGeneration: () => session.generation,
 }));

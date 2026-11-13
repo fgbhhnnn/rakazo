@@ -129,6 +129,7 @@ describe("credential tools without a page browser", () => {
         computer: { pageBrowserAllowed },
         deps: { prisma: db.prisma, secretStore: { load } },
         run: { userId: "user-1", spaceId: "space-1" },
+        secretScope: { userId: "user-1", spaceId: "space-1" },
         runId: "run",
         state: {},
       } as never,
@@ -181,7 +182,9 @@ describe("credential tools without a page browser", () => {
   it("keeps page identifiers out of one-shot password guidance without the capability", () => {
     expect(passwordSubmissionNote(false)).not.toMatch(/fill_secret|browser_act/);
     expect(passwordSubmissionNote(true)).toContain("browser_act fill_secret");
-    expect(dockerComputerToolInstruction("docker", undefined, false)).not.toContain("browser_act");
+    expect(dockerComputerToolInstruction("docker", undefined, undefined, false)).not.toContain(
+      "browser_act",
+    );
   });
 });
 

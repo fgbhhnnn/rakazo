@@ -35,7 +35,7 @@ function fixture() {
     controlLeaseId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
+    controlUserId: null,
   };
   const updateMany = vi.fn(async ({ where, data }) => {
     if (
@@ -60,6 +60,7 @@ function fixture() {
   const deps = {
     prisma: {
       computer: { findUniqueOrThrow, updateMany },
+      space: { findUnique: vi.fn(async () => null) },
       run: { findFirst: findRun },
       computerHealth: { findUnique: vi.fn(async () => null) },
       computerRun: {

@@ -27,7 +27,8 @@ export const revealSecret: ToolHandler = async (ctx, call) => {
   if (ctx.computer.heldForTakeover) return fail("The computer is held for user takeover.");
   try {
     const { name, field, origin } = parsed.data;
-    const destination = await findBotSecret(ctx.deps.prisma, ctx.secretScope, name);
+    const found = await findBotSecret(ctx.deps.prisma, ctx.secretScope, name);
+    const destination = found && !("hidden" in found) ? found.destination : undefined;
     if (destination?.auth.type !== "login") {
       return fail("This saved website login is unavailable.");
     }
