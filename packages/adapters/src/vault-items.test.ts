@@ -248,8 +248,14 @@ describe("what the bot sees", () => {
     const db = await vaultWithCard();
     const fill = (name: string) =>
       resolveLoginFill({ prisma: db.prisma, secretStore, scope, runId: "run-1", name, field: "x" });
-    expect(await fill("visa")).toEqual({ error: expect.stringContaining("fill_card") });
-    expect(await fill("home")).toEqual({ error: expect.stringContaining("list_secrets") });
+    expect(await fill("visa")).toEqual({
+      error: expect.stringContaining("fill_card"),
+      reason: "unknown",
+    });
+    expect(await fill("home")).toEqual({
+      error: expect.stringContaining("list_secrets"),
+      reason: "unknown",
+    });
   });
 });
 
@@ -626,7 +632,10 @@ describe("an item bots may not use", () => {
     for (const name of ["site", "visa", "deploy", "ci-token"]) row(name).policy = "off";
     row("stripe").policy = "off";
     expect(await uses.list()).toEqual(["home"]);
-    expect(await uses.fill()).toEqual({ error: expect.stringContaining("unavailable") });
+    expect(await uses.fill()).toEqual({
+      error: expect.stringContaining("unavailable"),
+      reason: "unknown",
+    });
     expect(await uses.card()).toEqual({ error: expect.stringContaining("No card") });
     expect(await uses.send()).toEqual({ error: expect.stringContaining("unavailable") });
     expect(await uses.env()).toEqual({});
@@ -1430,7 +1439,10 @@ describe("a login that asks first, on its other sites and with its code", () => 
         approval: given,
         ...(code && { code }),
       });
-    const refused = { error: "The user has not approved signing in with this login here." };
+    const refused = {
+      error: "The user has not approved signing in with this login here.",
+      reason: "unknown",
+    };
     // Approved on its own site: it is sent for that site only, so the page browser refuses the
     // page on its other one.
     expect(await fill("Password", approval({ site }))).toMatchObject({ origin: site });
@@ -1488,7 +1500,10 @@ describe("a login that asks first, on its other sites and with its code", () => 
         approval,
         ...(code && { code: true as const }),
       });
-    const refused = { error: "The user has not approved signing in with this login here." };
+    const refused = {
+      error: "The user has not approved signing in with this login here.",
+      reason: "unknown",
+    };
     expect(await fill(approvedFor("fill_secret"), false)).toMatchObject({
       text: "fake-backup-code",
     });

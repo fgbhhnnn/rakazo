@@ -1,20 +1,20 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import { DE_MESSAGES } from "./locales/de";
-import { JA_MESSAGES } from "./locales/ja";
-import { NL_MESSAGES } from "./locales/nl";
-import { RU_MESSAGES } from "./locales/ru";
-import { ZH_MESSAGES } from "./locales/zh";
+import { afterEach, describe, expect, it } from "vitest";
+import { resetI18nForTests, t } from "./i18n";
+
+afterEach(() => resetI18nForTests());
 
 describe("background coordinating line", () => {
   it("is localized everywhere and never carries a task count", () => {
-    for (const messages of [DE_MESSAGES, JA_MESSAGES, NL_MESSAGES, RU_MESSAGES, ZH_MESSAGES]) {
-      const label = messages["Coordinating background tasks"];
+    for (const locale of ["de", "ja", "nl", "ru", "zh-CN"] as const) {
+      resetI18nForTests(locale);
+      const label = t("Coordinating background tasks");
       expect(label).toBeTruthy();
+      expect(label).not.toBe("Coordinating background tasks");
       expect(label).not.toMatch(/\{count\}|\d/);
-      expect(messages["Background tasks running ({count})"]).toBeUndefined();
+      expect(t("Background tasks running ({count})")).toBe("Background tasks running ({count})");
     }
-    expect(ZH_MESSAGES["Coordinating background tasks"]).toBe("正在协调后台任务");
+    expect(t("Coordinating background tasks")).toBe("正在协调后台任务");
   });
 
   it("is what the chat's working row says while only background tasks run", () => {

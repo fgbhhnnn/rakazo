@@ -16,11 +16,12 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { INVALID_BROWSER_REQUEST, 
+import {
   INVALID_BROWSER_REQUEST,
-  SandboxDamagedError,SandboxRequestRejectedError, 
+  SandboxDamagedError,
   SandboxRequestRejectedError,
-  SandboxUnresponsiveError,} from "@rakazo/adapter-kit";
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import {
   boundedSandboxCommandTimeoutMs,

@@ -132,16 +132,6 @@ describeIntegration("background task queue: soft max, FIFO overflow, auto-start"
     expect(t5.workerBotId).toBeNull();
   }, 120_000);
 
-  async function relayMessages(botId: string) {
-    const wakes = await db.run.findMany({
-      where: { botId, trigger: "bot_message" },
-      select: { id: true },
-    });
-    return db.message.findMany({
-      where: { role: "bot", botId, runId: { in: wakes.map((r) => r.id) } },
-      select: { id: true },
-    });
-  }
   async function activeRuns(botIds: string[]) {
     return db.run.count({
       where: { botId: { in: botIds }, status: { in: [...ACTIVE_RUN_STATUSES] } },

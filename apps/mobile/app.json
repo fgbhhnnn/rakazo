@@ -4,7 +4,7 @@
     "slug": "bot",
     "owner": "ccxxyys-team",
     "scheme": "rakazo",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -133,7 +133,7 @@
         "monochromeImage": "./assets/monochrome-icon.png",
         "backgroundImage": "./assets/icon-background.png"
       },
-      "runtimeVersion": "1.0.8"
+      "runtimeVersion": "1.0.10"
     },
     "web": {
       "favicon": "./assets/favicon.png"

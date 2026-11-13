@@ -2,14 +2,11 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ZH_MESSAGES } from "./locales/zh";
-import { ZH_TW_MESSAGES } from "./locales/zh-TW";
+import { resetI18nForTests, t } from "./i18n";
 import { SavedPasswordSettings } from "./saved-password-settings";
 
 const api = vi.hoisted(() => ({ rpc: vi.fn() }));
-const translate = (text: string) => text;
 vi.mock("./api", () => ({ rpc: api.rpc }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: translate }) }));
 vi.mock("./user-error", () => ({ errorText: () => "Could not save" }));
 vi.mock("expo-router", () => ({ useFocusEffect: (fn: () => void) => useEffect(fn, [fn]) }));
 vi.mock("../components/settings-group", () => ({
@@ -43,6 +40,7 @@ vi.mock("../components/settings-group", () => ({
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
+  resetI18nForTests();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.rpc
     .mockReset()
@@ -54,6 +52,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  resetI18nForTests();
   vi.unstubAllGlobals();
 });
 const toggle = () => container.querySelector<HTMLButtonElement>('[role="switch"]')!;
@@ -87,12 +86,14 @@ it("withholds the control until a successful read", async () => {
   expect(toggle().disabled).toBe(true);
 });
 it("includes Chinese labels and warnings", () => {
-  for (const catalog of [ZH_MESSAGES, ZH_TW_MESSAGES]) {
-    expect(catalog["Allow bots to use saved passwords directly"]).toBeTruthy();
-    expect(
-      catalog[
-        "Passwords go to your model provider and may appear in history. Enable only if needed."
-      ],
-    ).toBeTruthy();
+  for (const locale of ["zh-CN", "zh-TW"] as const) {
+    resetI18nForTests(locale);
+    for (const message of [
+      "Allow bots to use saved passwords directly",
+      "Passwords go to your model provider and may appear in history. Enable only if needed.",
+    ]) {
+      expect(t(message)).toBeTruthy();
+      expect(t(message)).not.toBe(message);
+    }
   }
 });

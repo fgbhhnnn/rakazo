@@ -54,7 +54,6 @@ import {
   installedMessaging,
   isMessagingSurfaceEnabled,
   messagingPlatformsFromEnv,
-  ObjectAgentHomeStore,
   PiAgentRuntime,
   PiOAuthLogins,
   PostgresRealtimeFanout,
