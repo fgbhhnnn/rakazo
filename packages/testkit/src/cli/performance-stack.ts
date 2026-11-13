@@ -37,6 +37,9 @@ export function benchmarkEnvironment(options: {
     OPENROUTER_API_KEY: "",
     E2B_API_KEY: "",
     DAYTONA_API_KEY: "",
+    STRIPE_SECRET_KEY: "",
+    STRIPE_WEBHOOK_SECRET: "",
+    STRIPE_PRICE_ID: "",
     SENTRY_DSN: "",
     SENTRY_BROWSER_DSN: "",
     BETTER_AUTH_SECRET: "rakazo-benchmark-auth-secret-over-32-characters",
@@ -138,11 +141,13 @@ export async function waitForUrl(url: string) {
 }
 
 export async function stopProcess(child: ChildProcess) {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   child.kill("SIGTERM");
-  await Promise.race([exited, abortableDelay(5_000)]);
-  if (child.exitCode === null) {
+  const timeout = new AbortController();
+  await Promise.race([exited, abortableDelay(5_000, timeout.signal)]);
+  timeout.abort();
+  if (child.exitCode === null && child.signalCode === null) {
     child.kill("SIGKILL");
     await exited;
   }

@@ -1,12 +1,13 @@
+import { BillingPaymentNotCompletedError } from "@rakazo/adapter-kit";
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
 
-const dbTests =
-  process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
+const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("model credit billing service", () => {
   const stamp = `${process.pid}-${Date.now()}`;
   const userId = `credit-owner-${stamp}`,
@@ -78,7 +79,7 @@ dbTests("model credit billing service", () => {
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       funding: null,
-      byokPriceCents: 1000,
+      byokPriceCents: BYOK_TIERS.standard.monthlyPriceCents,
       byokFreeUntil: null,
     });
   });
@@ -167,5 +168,14 @@ dbTests("model credit billing service", () => {
       code: "CONFLICT",
     });
     await expect(service.status(actor)).resolves.toMatchObject({ state: "canceled" });
+  });
+  it("answers payment required when the card is not charged for an upgrade", async () => {
+    vi.spyOn(provider, "setMonthlyCredits").mockRejectedValueOnce(
+      new BillingPaymentNotCompletedError(),
+    );
+    await expect(service.setMonthlyCredits(actor, 5000)).rejects.toMatchObject({
+      code: "PAYMENT_REQUIRED",
+      status: 402,
+    });
   });
 });

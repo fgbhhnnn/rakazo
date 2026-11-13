@@ -1,8 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Bot } from "@rakazo/contracts";
+import { PageIcon } from "@rakazo/chat-ui/web";
+import type { Bot, PageSummary } from "@rakazo/contracts";
 import {
-  Badge,
   BotAvatar,
   Command,
   CommandDialog,
@@ -17,6 +17,11 @@ import {
 import { Check } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { formatRelativeTime } from "../../lib/relative-time";
+import { isApplePlatform } from "./shell-shortcuts";
+
+/** Pages listed before anything is typed. */
+const RECENT_PAGES = 5;
 
 export type CommandPaletteAction = {
   id: string;
@@ -25,12 +30,6 @@ export type CommandPaletteAction = {
   checked?: boolean;
   onSelect: () => void;
 };
-
-function isApplePlatform() {
-  if (typeof navigator === "undefined") return false;
-  // platform is deprecated but still the most reliable Apple check in browsers.
-  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
-}
 
 function botSearchText(bot: Bot) {
   return `${bot.name} ${bot.description} ${bot.preview}`.toLowerCase();
@@ -46,14 +45,23 @@ export function CommandPalette({
   bots,
   onSelectBot,
   actions,
+  pages = [],
+  onSelectPage,
+  onSearchChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bots: Bot[];
   onSelectBot: (botId: string) => void;
   actions: CommandPaletteAction[];
+  /** Pages bots built in this Space. */
+  pages?: PageSummary[];
+  onSelectPage?: (page: PageSummary) => void;
+  /** The typed search, so pages beyond the first loaded can be asked for. */
+  onSearchChange?: (search: string) => void;
 }) {
   const [search, setSearch] = useState("");
+  useEffect(() => onSearchChange?.(search), [search, onSearchChange]);
   const [modKey, setModKey] = useState("⌘");
 
   useEffect(() => {
@@ -76,6 +84,46 @@ export function CommandPalette({
     return actions.filter((action) => action.label.toLowerCase().includes(needle));
   }, [actions, search]);
 
+  // Without a search only the latest few pages show, so actions stay in reach; with one, titles
+  // that start with it come first, and if one does the pages lead the menu.
+  const needle = search.trim().toLowerCase();
+  const filteredPages = useMemo(() => {
+    if (!needle) return pages.slice(0, RECENT_PAGES);
+    const starts = (page: PageSummary) => page.title.toLowerCase().startsWith(needle);
+    return pages
+      .filter((page) => page.title.toLowerCase().includes(needle))
+      .sort((a, b) => Number(starts(b)) - Number(starts(a)));
+  }, [pages, needle]);
+  const pagesFirst =
+    needle !== "" && filteredPages.some((page) => page.title.toLowerCase().startsWith(needle));
+  const pagesGroup =
+    filteredPages.length > 0 && onSelectPage ? (
+      <CommandGroup heading={t`Pages`}>
+        {filteredPages.map((page) => (
+          <CommandItem
+            key={page.id}
+            value={`page:${page.id}`}
+            onSelect={() => {
+              onOpenChange(false);
+              onSelectPage(page);
+            }}
+            className="items-center gap-3 rounded-xl! px-2.5 py-2.5"
+          >
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-muted">
+              <PageIcon className="h-[17px] w-[13px]" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground" dir="auto">
+                {page.title}
+              </span>
+              <span className="mt-0.5 block truncate text-body-sm text-muted-foreground">
+                {formatRelativeTime(page.updatedAt)}
+              </span>
+            </span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    ) : null;
   useEffect(() => {
     if (!open) return;
     function onKey(event: KeyboardEvent) {
@@ -116,6 +164,7 @@ export function CommandPalette({
           <CommandEmpty>
             <Trans>No results</Trans>
           </CommandEmpty>
+          {pagesFirst ? pagesGroup : null}
           <CommandGroup>
             {filteredBots.map((bot, index) => {
               const subtitle = botSubtitle(bot);
@@ -143,7 +192,10 @@ export function CommandPalette({
                       {bot.name}
                     </div>
                     {subtitle ? (
-                      <div className="mt-0.5 truncate text-[13px] text-muted-foreground" dir="auto">
+                      <div
+                        className="mt-0.5 truncate text-body-sm text-muted-foreground"
+                        dir="auto"
+                      >
                         {subtitle}
                       </div>
                     ) : null}
@@ -157,6 +209,7 @@ export function CommandPalette({
               );
             })}
           </CommandGroup>
+          {pagesFirst ? null : pagesGroup}
           {filteredActions.length > 0 ? (
             <CommandGroup>
               {filteredActions.map((action) => (
@@ -194,5 +247,3 @@ export function CommandPalette({
     </CommandDialog>
   );
 }
-
-export { isCommandPaletteHotkey } from "./command-palette-hotkey";

@@ -1,6 +1,35 @@
 (() => {
   const bridge = window.rakazoSetup;
   document.documentElement.dataset.platform = bridge?.platform ?? "browser";
+  const messages = bridge?.locale?.messages ?? {};
+
+  /** Core's `translate`, which this plain page cannot import: English-keyed, `{name}` placeholders. */
+  function t(message, values) {
+    const template = Object.hasOwn(messages, message) ? messages[message] : message;
+    if (!values) return template;
+    return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key) =>
+      Object.hasOwn(values, key) ? String(values[key]) : match,
+    );
+  }
+
+  /** The page is written in English; it switches to the app's language before it first paints. */
+  function translatePage() {
+    document.documentElement.lang = bridge?.locale?.lang ?? "en";
+    document.documentElement.dir = bridge?.locale?.dir ?? "ltr";
+    document.title = t(document.title);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const text = node.nodeValue.trim();
+      if (text !== "") node.nodeValue = node.nodeValue.replace(text, () => t(text));
+    }
+    for (const element of document.querySelectorAll("[title], [aria-label], [placeholder]")) {
+      for (const name of ["title", "aria-label", "placeholder"]) {
+        const value = element.getAttribute(name);
+        if (value !== null) element.setAttribute(name, t(value));
+      }
+    }
+  }
+  translatePage();
 
   const form = document.getElementById("setup");
   const serverUrl = document.getElementById("server-url");
@@ -15,20 +44,26 @@
   const stackDetails = document.getElementById("stack-details");
   const stackProgress = document.getElementById("stack-progress");
   const stackProgressFill = document.getElementById("stack-progress-fill");
-  const stackDockerHelp = document.getElementById("stack-docker-help");
+  const stackHint = document.getElementById("stack-hint");
+  const stackWaiting = document.getElementById("stack-waiting");
+  const stackWaitingText = document.getElementById("stack-waiting-text");
   const status = document.getElementById("status");
   const checkButton = document.getElementById("check");
   const continueButton = document.getElementById("continue");
   const quitButton = document.getElementById("quit");
 
   const STACK_POLL_MS = 1000;
+  /** How often setup looks for Docker again while it waits for the person to install or open it. */
+  const DOCKER_RECHECK_MS = 3000;
+  // Linux has Docker Engine and no single installer; macOS and Windows get Docker Desktop.
+  const dockerDesktop = bridge?.platform !== "linux";
   const PHASE_LABELS = {
-    "checking-docker": "Getting ready…",
-    preparing: "Getting ready…",
-    pulling: "Downloading Rakazo…",
-    starting: "Starting Rakazo…",
-    "waiting-healthy": "Almost ready…",
-    ready: "Rakazo is ready.",
+    "checking-docker": t("Getting ready…"),
+    preparing: t("Getting ready…"),
+    pulling: t("Downloading Rakazo…"),
+    starting: t("Starting Rakazo…"),
+    "waiting-healthy": t("Almost ready…"),
+    ready: t("Rakazo is ready."),
   };
   const TERMINAL_PHASES = new Set([
     "idle",
@@ -63,6 +98,9 @@
   let detailsOpenedByFailure = false;
   /** Resolves the poll wait early when the main process pushes a new state. */
   let wakePoll = null;
+  let dockerRecheckTimer = null;
+  /** True from a background look for Docker until it reports something other than its own check. */
+  let dockerRechecking = false;
 
   function selectedMode() {
     const checked = form.querySelector('input[name="mode"]:checked');
@@ -92,7 +130,9 @@
     panelNew.hidden = mode !== "new";
     panelExisting.hidden = mode !== "existing";
     checkButton.hidden = mode !== "existing";
-    if (mode !== "new") continueButton.textContent = "Continue";
+    // Only This computer can be waiting on Docker, where setup looks again on its own.
+    continueButton.hidden = false;
+    if (mode !== "new") continueButton.textContent = t("Continue");
     setStatus("");
   }
 
@@ -137,7 +177,7 @@
 
   function renderDetails(stack) {
     const bytes = stack.phase === "pulling" ? downloadedBytes(stack) : 0;
-    stackDetail.textContent = bytes > 0 ? `${formatBytes(bytes)} downloaded` : "";
+    stackDetail.textContent = bytes > 0 ? t("{size} downloaded", { size: formatBytes(bytes) }) : "";
 
     // A new attempt clears the output, so drop an expansion the person did not ask for.
     if (stack.phase === "checking-docker" && detailsOpenedByFailure) {
@@ -160,27 +200,72 @@
   }
 
   function renderStack(stack) {
-    lastStack = stack;
     const { phase } = stack;
+    // A background re-check for Docker would flash "Getting ready…"; keep the waiting view until it
+    // either finds Docker (and moves on) or settles back on a Docker phase.
+    if (phase === "checking-docker" && dockerRechecking) return;
+    dockerRechecking = false;
+    lastStack = stack;
     stackSection.hidden = phase === "idle";
+    continueButton.hidden = phase === "docker-not-running";
     if (phase === "idle") {
-      continueButton.textContent = "Continue";
+      continueButton.textContent = t("Continue");
       return;
     }
-    const failed = isDockerPhase(phase) || phase === "failed";
-    stackPhase.textContent = (failed ? stack.message : PHASE_LABELS[phase]) ?? "";
-    if (failed) stackPhase.setAttribute("data-tone", "error");
+    const waitingForDocker = isDockerPhase(phase);
+    stackPhase.textContent =
+      (waitingForDocker || phase === "failed" ? stack.message : PHASE_LABELS[phase]) ?? "";
+    // Waiting for Docker is a step the person takes, not an error.
+    if (phase === "failed") stackPhase.setAttribute("data-tone", "error");
     else if (phase === "ready") stackPhase.setAttribute("data-tone", "ok");
     else stackPhase.removeAttribute("data-tone");
 
     renderProgress(stack);
     renderDetails(stack);
-    stackDockerHelp.hidden = !isDockerPhase(phase);
+    renderDockerHelp(phase);
 
-    if (isDockerPhase(phase)) continueButton.textContent = "Check again";
-    else if (phase === "failed") continueButton.textContent = "Retry";
-    else continueButton.textContent = "Continue";
+    if (phase === "docker-missing")
+      continueButton.textContent = dockerDesktop
+        ? t("Download Docker Desktop")
+        : t("Install Docker");
+    else if (phase === "failed") continueButton.textContent = t("Retry");
+    else continueButton.textContent = t("Continue");
     setBusy(!TERMINAL_PHASES.has(phase));
+    if (waitingForDocker) scheduleDockerRecheck();
+  }
+
+  function renderDockerHelp(phase) {
+    stackHint.hidden = phase !== "docker-missing";
+    stackHint.textContent = dockerDesktop
+      ? t(
+          "Docker Desktop is a free app that runs Rakazo in the background. Install it and open it once.",
+        )
+      : t("Install Docker Engine and start it.");
+    stackWaiting.hidden = !isDockerPhase(phase);
+    stackWaitingText.textContent = dockerDesktop
+      ? t("Waiting for Docker Desktop…")
+      : t("Waiting for Docker…");
+  }
+
+  /** Looks for Docker again on a timer, so installing or opening it is all the person has to do. */
+  function scheduleDockerRecheck() {
+    if (dockerRecheckTimer !== null) return;
+    dockerRecheckTimer = setTimeout(() => {
+      dockerRecheckTimer = null;
+      if (selectedMode() !== "new" || !isDockerPhase(lastStack?.phase)) return;
+      dockerRechecking = true;
+      // Rendering the settled phase schedules the next look while Docker is still unavailable;
+      // a look whose start or state read failed schedules its own, so polling never just stops.
+      bridge.stack
+        .start()
+        .then(() => followStack())
+        .catch(() => undefined)
+        .finally(() => {
+          if (stackPolling || selectedMode() !== "new" || !isDockerPhase(lastStack?.phase)) return;
+          dockerRechecking = false;
+          scheduleDockerRecheck();
+        });
+    }, DOCKER_RECHECK_MS);
   }
 
   /** One "Name: value" per line; null when a line has no name. The main process validates the rest. */
@@ -201,12 +286,12 @@
     const focused = document.activeElement;
     setBusy(true);
     lockChoice(true);
-    setStatus("Connecting…");
+    setStatus(t("Connecting…"));
     try {
       const saved = await bridge.save({ mode, serverUrl: url, ...(headers ? { headers } : {}) });
-      if (!saved.ok) setStatus(saved.error ?? "Could not save that address.", "error");
+      if (!saved.ok) setStatus(saved.error ?? t("Could not save that address."), "error");
     } catch {
-      setStatus("Could not save that address. Try again.", "error");
+      setStatus(t("Could not save that address. Try again."), "error");
     } finally {
       lockChoice(false);
       if (focused instanceof HTMLElement && document.activeElement === document.body)
@@ -260,7 +345,7 @@
     } catch {
       // Only report a follow the person still sees; leaving "new" already handed the form back.
       if (selectedMode() === "new") {
-        setStatus("Could not follow the local stack. Try again.", "error");
+        setStatus(t("Could not follow the local stack. Try again."), "error");
         setBusy(false);
       }
     } finally {
@@ -280,7 +365,7 @@
       if (started !== null && started.phase !== "idle") renderStack(started);
     } catch {
       if (generation === requestGeneration) {
-        setStatus("Could not start the local stack. Try again.", "error");
+        setStatus(t("Could not start the local stack. Try again."), "error");
         setBusy(false);
       }
       return;
@@ -291,33 +376,33 @@
   async function check() {
     const value = serverUrl.value;
     if (value.trim() === "") {
-      setStatus("Enter a server address first.", "error");
+      setStatus(t("Enter a server address first."), "error");
       return null;
     }
     const headers = readHeaders();
     if (headers === null) {
-      setStatus("Invalid custom headers", "error");
+      setStatus(t("Invalid custom headers"), "error");
       return null;
     }
 
     const generation = ++requestGeneration;
     activeCheck = generation;
     setBusy(true);
-    setStatus("Checking…");
+    setStatus(t("Checking…"));
     try {
       const result = await bridge.test(value, headers);
       // The address or the mode changed under the test, so its result speaks for neither.
       if (generation !== requestGeneration) return result;
       if (result.ok) {
         serverUrl.value = result.url;
-        setStatus(`Rakazo answered at ${result.url}.`, "ok");
+        setStatus(t("Rakazo answered at {url}.", { url: result.url }), "ok");
       } else {
-        setStatus(result.error ?? "Could not reach that address.", "error");
+        setStatus(result.error ?? t("Could not reach that address."), "error");
       }
       return result;
     } catch {
       if (generation === requestGeneration) {
-        setStatus("Could not run the connection check. Try again.", "error");
+        setStatus(t("Could not run the connection check. Try again."), "error");
       }
       return null;
     } finally {
@@ -337,6 +422,11 @@
       // Unlock immediately when nothing on this mode owns the controls; followStack exits on its
       // next poll.
       if (selectedMode() !== "new" || interruptedCheck) setBusy(false);
+      // Coming back to a stack still waiting for Docker resumes the look for it. Any other stack
+      // waits for Continue, which follows it again and saves it once it is ready.
+      if (selectedMode() === "new" && lastStack !== null && isDockerPhase(lastStack.phase)) {
+        renderStack(lastStack);
+      }
     }
   });
 
@@ -362,11 +452,6 @@
     if (lastStack !== null) renderDetails(lastStack);
   });
 
-  stackDockerHelp.addEventListener("click", (event) => {
-    const link = event.target instanceof HTMLElement ? event.target.dataset.link : undefined;
-    if (link) void bridge.openLink(link);
-  });
-
   quitButton.addEventListener("click", () => {
     if (bridge === undefined) {
       window.close();
@@ -378,12 +463,15 @@
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const mode = selectedMode();
-    if (mode === "new") void runStack();
+    // Without Docker the main button is the download; setup keeps looking for Docker meanwhile.
+    if (mode === "new" && lastStack?.phase === "docker-missing")
+      void bridge.openLink("docker-download");
+    else if (mode === "new") void runStack();
     // Cloud is an existing server at a fixed address.
     else if (mode === "cloud") void save("existing", cloudUrl);
     else {
       const headers = readHeaders();
-      if (headers === null) setStatus("Invalid custom headers", "error");
+      if (headers === null) setStatus(t("Invalid custom headers"), "error");
       else void save("existing", serverUrl.value, headers);
     }
   });
@@ -395,7 +483,8 @@
       // A follow that ended on an error restarts here instead of leaving the panel frozen;
       // hold the controls until it has rendered the state it is restarting on.
       if (!stackPolling && selectedMode() === "new") {
-        setBusy(true);
+        // A background look for Docker keeps the download button usable.
+        if (!dockerRechecking) setBusy(true);
         void followStack();
       }
     });
@@ -403,7 +492,7 @@
 
   async function init() {
     if (bridge === undefined) {
-      setStatus("Setup bridge unavailable.", "error");
+      setStatus(t("Setup bridge unavailable."), "error");
       setBusy(true);
       return;
     }
@@ -446,7 +535,7 @@
         continueButton.focus();
       }
     } catch {
-      setStatus("Setup could not start. Quit Rakazo and try again.", "error");
+      setStatus(t("Setup could not start. Quit Rakazo and try again."), "error");
       setBusy(true);
     }
   }

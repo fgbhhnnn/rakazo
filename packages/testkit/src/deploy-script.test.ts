@@ -27,7 +27,7 @@ const rolloutSteps = (revision: string) => [
   `${WORKERS} worker-old`,
   // Only this container gets the database owner login; the old API keeps serving meanwhile.
   `${COMPOSE} config --services`,
-  `${COMPOSE} run --rm -T migrate`,
+  `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
   ...["api", "web"].flatMap((service) => [
     `${COMPOSE} ps --all --quiet ${service}`,
     ...startBeside(service),
@@ -43,7 +43,7 @@ const rolloutSteps = (revision: string) => [
   "docker update --restart no worker-old",
   "docker kill --signal SIGTERM worker-old",
   `${COMPOSE} config --services`,
-  `${COMPOSE} up -d --remove-orphans api migrate`,
+  `${COMPOSE} up -d --no-deps --remove-orphans api`,
 ];
 // After a healthy deploy, the deploy waits for the old worker to finish and removes it.
 const finishDraining = [
@@ -92,7 +92,7 @@ function rollout(commands: string[]) {
     .filter(
       (line) =>
         / (config|build|up|ps) /.test(`${line} `) ||
-        line.endsWith(" run --rm -T migrate") ||
+        line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=") ||
         /^docker (inspect|stop|rm|update|kill) /.test(line),
     );
 }
@@ -133,11 +133,15 @@ if [[ "$*" == *" ps --quiet api" && -z "\${FRESH:-}" ]]; then echo api-old; fi
 if [[ "$*" == *" run --rm --no-deps -T --entrypoint sh postgres "* && -n "\${POSTGRES_16:-}" ]]; then
   echo upgrade
 fi
-if [[ "$*" == *" config --services" ]]; then
+if [[ "$*" == *" config --services" && -n "\${MIGRATE_LISTED_FIRST:-}" ]]; then
+  echo migrate
+  sleep 0.2
+  echo api
+elif [[ "$*" == *" config --services" ]]; then
   echo api
   [[ "$revision" == "\${NO_MIGRATE_REVISION:-}" ]] || echo migrate
 fi
-if [[ "$*" == *" run --rm -T migrate" && ( -n "\${FAIL_MIGRATE:-}" || "$revision" == "\${NO_MIGRATE_REVISION:-}" ) ]]; then exit 1; fi
+if [[ "$*" == *" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS="* && ( -n "\${FAIL_MIGRATE:-}" || "$revision" == "\${NO_MIGRATE_REVISION:-}" ) ]]; then exit 1; fi
 if [[ "$1" == pull && -n "\${FAIL_PULL:-}" ]]; then exit 1; fi
 if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
 if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
@@ -154,9 +158,14 @@ if [[ "$*" == *" ps --all --quiet "* ]]; then
   awk -v prefix="$service-" 'index($1, prefix) == 1 { print $1 }' "$containers"
 fi
 if [[ "$*" == *" --scale "* ]]; then
+  target="$*"
+  target="\${target#*--scale $service=}"
+  target="\${target%% *}"
   name="$service-new"
-  while grep -q "^$name " "$containers"; do name="\${name}x"; done
-  echo "$name unless-stopped running" >>"$containers"
+  for (( count = $(grep -c "^$service-" "$containers"); count < target; count++ )); do
+    while grep -q "^$name " "$containers"; do name="\${name}x"; done
+    echo "$name unless-stopped running" >>"$containers"
+  done
 fi
 if [[ "$1" == rm ]]; then
   for name in "\${@:2}"; do sed -i.bak "/^$name /d" "$containers"; done
@@ -300,7 +309,7 @@ describe("production deploy script", () => {
     expect(deploy.commands().some((line) => line.includes(" caddy"))).toBe(false);
     const commands = deploy.commands().map((line) => line.split(" @ ")[0]!);
     expect(
-      commands.slice(commands.findIndex((line) => line.includes(" up -d --remove-orphans")) + 1),
+      commands.slice(commands.findIndex((line) => line.includes("--remove-orphans")) + 1),
     ).toEqual([
       "curl https://app.example.test/health",
       "docker image ls --format {{.Repository}}:{{.Tag}} rakazo-rollback",
@@ -310,6 +319,15 @@ describe("production deploy script", () => {
       "docker builder prune --force --keep-storage 3GB",
       ...finishDraining,
     ]);
+  });
+
+  it("runs migrations when Compose is still listing services after migrate", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ MIGRATE_LISTED_FIRST: "1" }).status).toBe(0);
+    expect(rollout(deploy.commands())).toContain(
+      `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
+    );
   });
 
   it("refuses malformed size settings before deploying", () => {
@@ -368,7 +386,7 @@ describe("production deploy script", () => {
     ]);
     expect(commands).toContain(`docker tag sha256:previous ${APP_IMAGE}`);
     expect(deploy.commands()).toContainEqual(
-      expect.stringMatching(/ up -d --remove-orphans api migrate @ first$/),
+      expect.stringMatching(/ up -d --no-deps --remove-orphans api @ first$/),
     );
     expect(commands.slice(-2)).toEqual(["docker stop worker-old", "docker rm worker-old"]);
   });
@@ -408,7 +426,7 @@ describe("production deploy script", () => {
         `docker tag ${published(next)} ${APP_IMAGE}`,
         `docker rmi ${published(next)}`,
       ]);
-      const up = commands.indexOf(`${COMPOSE} up -d --remove-orphans api migrate`);
+      const up = commands.indexOf(`${COMPOSE} up -d --no-deps --remove-orphans api`);
       expect(up).toBeGreaterThan(pull);
       expect(commands.slice(up + 1)).toEqual([
         "curl https://app.example.test/health",
@@ -484,9 +502,55 @@ describe("production deploy script", () => {
     commit(deploy.upstream, "next");
     expect(deploy.run({ FRESH: "1" }).status).toBe(0);
     const commands = rollout(deploy.commands());
-    expect(commands).toContain(`${COMPOSE} up -d --wait api`);
-    expect(commands).toContain(`${COMPOSE} up -d --wait web`);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait api`);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait web`);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
+    expect(
+      commands.filter((line) => line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=")),
+    ).toHaveLength(1);
     expect(commands.some((line) => line.includes("--scale"))).toBe(false);
+  });
+
+  it("uses only successful release migrations after rollback, retry and a later release", () => {
+    const deploy = fixture();
+    const migrations = "packages/db/prisma/migrations";
+    write(path.join(deploy.upstream, migrations, "001_add", "migration.sql"), "SELECT 1;\n");
+    git(deploy.upstream, "add", migrations);
+    commit(deploy.upstream, "release-a");
+    expect(deploy.run().status).toBe(0);
+
+    write(
+      path.join(deploy.upstream, migrations, "002_drop", "migration.sql"),
+      "-- deferred\nSELECT 1;\n",
+    );
+    git(deploy.upstream, "add", migrations);
+    commit(deploy.upstream, "release-b");
+    let start = deploy.commands().length;
+    expect(deploy.run({ FAIL_HEALTH: "1" }).status).toBe(1);
+    const migrationCommands = () =>
+      deploy
+        .commands()
+        .slice(start)
+        .filter((line) => line.includes(" run --rm -T -e "));
+    // Both the failed rollout and its rollback retain the last healthy release's eligibility.
+    expect(migrationCommands()).toHaveLength(2);
+    for (const line of migrationCommands()) {
+      expect(line).toContain("RAKAZO_DEPLOYED_MIGRATIONS=001_add migrate");
+    }
+    start = deploy.commands().length;
+    expect(deploy.run({ FAIL_HEALTH: "1" }).status).toBe(1);
+    for (const line of migrationCommands()) {
+      expect(line).toContain("RAKAZO_DEPLOYED_MIGRATIONS=001_add migrate");
+    }
+    commit(deploy.upstream, "release-c");
+    start = deploy.commands().length;
+    expect(deploy.run().status).toBe(0);
+    expect(migrationCommands()[0]).toContain("RAKAZO_DEPLOYED_MIGRATIONS=001_add migrate");
+
+    commit(deploy.upstream, "release-d");
+    start = deploy.commands().length;
+    expect(deploy.run().status).toBe(0);
+    expect(migrationCommands()[0]).toContain("RAKAZO_DEPLOYED_MIGRATIONS=001_add,002_drop migrate");
   });
 
   it("starts no new container and keeps the old one serving when migrations fail", () => {
@@ -494,7 +558,7 @@ describe("production deploy script", () => {
     commit(deploy.upstream, "next");
     expect(deploy.run({ FAIL_MIGRATE: "1" }).status).toBe(1);
     const commands = rollout(deploy.commands());
-    expect(commands).toContain(`${COMPOSE} run --rm -T migrate`);
+    expect(commands).toContain(`${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`);
     expect(commands.some((line) => line.includes(" up "))).toBe(false);
     expect(commands.some((line) => line.startsWith("docker stop"))).toBe(false);
     expect(deploy.head()).toBe(deploy.first);
@@ -507,7 +571,10 @@ describe("production deploy script", () => {
     expect(result.status).toBe(1);
     expect(deploy.head()).toBe(deploy.first);
     const commands = rollout(deploy.commands());
-    expect(commands.filter((line) => line.endsWith(" run --rm -T migrate"))).toHaveLength(1);
+    expect(
+      commands.filter((line) => line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=")),
+    ).toHaveLength(1);
+    expect(commands).toContain(`${COMPOSE} up -d --wait postgres`);
     // The rollback still replaces the failed release's containers.
     expect(commands.filter((line) => line.startsWith("docker stop --time 30 api-"))).toEqual([
       "docker stop --time 30 api-old",
@@ -518,11 +585,13 @@ describe("production deploy script", () => {
     const failed = commands.indexOf("docker kill --signal SIGTERM worker-new");
     expect(failed).toBeGreaterThan(commands.indexOf("docker kill --signal SIGTERM worker-old"));
     expect(
-      commands.slice(failed).filter((line) => /^docker (stop|rm) |up -d --wait worker$/.test(line)),
+      commands
+        .slice(failed)
+        .filter((line) => /^docker (stop|rm) |up -d --no-deps --wait worker$/.test(line)),
     ).toEqual([
       "docker stop worker-old worker-new",
       "docker rm worker-old worker-new",
-      `${COMPOSE} up -d --wait worker`,
+      `${COMPOSE} up -d --no-deps --wait worker`,
     ]);
   });
 
@@ -531,7 +600,9 @@ describe("production deploy script", () => {
     commit(deploy.upstream, "next");
     expect(deploy.run({ EXTRA_WORKER: "running" }).status).toBe(0);
     const commands = rollout(deploy.commands());
-    const migrate = commands.indexOf(`${COMPOSE} run --rm -T migrate`);
+    const migrate = commands.indexOf(
+      `${COMPOSE} run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS= migrate`,
+    );
     expect(commands.slice(migrate - 4, migrate)).toEqual([
       `${WORKERS} worker-old worker-older`,
       "docker stop worker-older",
@@ -549,7 +620,51 @@ describe("production deploy script", () => {
     const removed = commands.indexOf("docker rm worker-old worker-new");
     expect(removed).toBeGreaterThan(replaced);
     expect(commands.slice(replaced).some((line) => line.includes("--scale worker"))).toBe(false);
-    expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --wait worker`);
+    expect(commands.slice(removed)).toContain(`${COMPOSE} up -d --no-deps --wait worker`);
+  });
+
+  it("starts the configured number of API and worker containers beside the old ones", () => {
+    const deploy = fixture();
+    write(
+      path.join(deploy.checkout, ".env"),
+      "RAKAZO_HOST=app.example.test\nRAKAZO_API_REPLICAS=2\nRAKAZO_WORKER_REPLICAS=3\n",
+    );
+    commit(deploy.upstream, "next");
+    expect(deploy.run().status).toBe(0);
+    const commands = rollout(deploy.commands());
+    const health = (name: string) =>
+      `docker inspect --format {{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}} ${name}`;
+    const apiStarted = commands.indexOf(
+      `${COMPOSE} up -d --no-deps --no-recreate --scale api=3 api`,
+    );
+    expect(commands.slice(apiStarted + 2, apiStarted + 5)).toEqual([
+      health("api-new"),
+      health("api-newx"),
+      "docker stop --time 30 api-old",
+    ]);
+    expect(commands).toContain(`${COMPOSE} up -d --no-deps --no-recreate --scale web=2 web`);
+    const workerStarted = commands.indexOf(
+      `${COMPOSE} up -d --no-deps --no-recreate --scale worker=4 worker`,
+    );
+    expect(commands.slice(workerStarted + 2, workerStarted + 6)).toEqual([
+      health("worker-new"),
+      health("worker-newx"),
+      health("worker-newxx"),
+      "docker update --restart no worker-old",
+    ]);
+  });
+
+  it("refuses a replica count below one before deploying", () => {
+    const deploy = fixture();
+    write(
+      path.join(deploy.checkout, ".env"),
+      "RAKAZO_HOST=app.example.test\nRAKAZO_API_REPLICAS=0\n",
+    );
+    commit(deploy.upstream, "next");
+    const result = deploy.run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("must be whole numbers of at least 1");
+    expect(deploy.commands().some((line) => line.includes(" up "))).toBe(false);
   });
 
   it("keeps the old container serving when the new one fails its health check", () => {

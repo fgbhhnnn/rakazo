@@ -264,6 +264,16 @@ describe("reduceStackState", () => {
     expect(reduceStackState(state, { type: "check-start" }).layerBytes).toEqual({});
   });
 
+  it("counts direct downloads by name without adding output lines", () => {
+    let state = reduceStackState(start, { type: "check-start" });
+    state = reduceStackState(state, { type: "pull-start" });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 4e7 });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 1e7 });
+    state = reduceStackState(state, { type: "download", name: "database", bytes: 2e7 });
+    expect(state.layerBytes).toEqual({ server: 4e7, database: 2e7 });
+    expect(state.output).toEqual([]);
+  });
+
   it("keeps only the last lines of output", () => {
     let state = reduceStackState(start, { type: "check-start" });
     state = reduceStackState(state, { type: "pull-start" });
@@ -272,6 +282,18 @@ describe("reduceStackState", () => {
     }
     expect(state.output).toHaveLength(STACK_OUTPUT_LINES);
     expect(state.output[0]).toBe("line 5");
+  });
+
+  it("bounds diagnostics attached to a failed Docker check and clears them on retry", () => {
+    const checking = reduceStackState(start, { type: "check-start" });
+    const failed = reduceStackState(checking, {
+      type: "failed",
+      message: "Check failed",
+      output: Array.from({ length: STACK_OUTPUT_LINES + 5 }, (_, index) => `line ${index}`),
+    });
+    expect(failed.output).toHaveLength(STACK_OUTPUT_LINES);
+    expect(failed.output[0]).toBe("line 5");
+    expect(reduceStackState(failed, { type: "check-start" }).output).toEqual([]);
   });
 
   it("holds terminal phases until the next check-start clears them", () => {
@@ -290,11 +312,11 @@ describe("reduceStackState", () => {
   it("records why Docker is unavailable", () => {
     const state = reduceStackState(reduceStackState(start, { type: "check-start" }), {
       type: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
     expect(state).toMatchObject({
       phase: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
   });
 });
@@ -408,6 +430,7 @@ describe("LocalStackController", () => {
       expect(call.env.SANDBOX_COMPUTER_EGRESS).toBe("open");
       // The laptop's disk encryption covers content; a lost key must not lose it.
       expect(call.env.CONTENT_ENCRYPTION).toBe("off");
+      expect(call.env.MCP_ALLOW_PRIVATE_ENDPOINT).toBe("true");
     }
     expect(
       await controller({
@@ -621,22 +644,86 @@ describe("LocalStackController", () => {
     const state = await stack.start();
     expect(state).toMatchObject({
       phase: "docker-missing",
-      message: "Docker is not installed on this computer.",
+      message: "Rakazo needs Docker to run on this computer.",
     });
     expect(calls).toEqual([]);
     await expect(stat(path.join(root, "stack", STACK_ENV_FILE))).rejects.toThrow();
   });
 
-  it("reports a missing Compose plugin as docker-missing", async () => {
+  it("reports a missing Compose plugin as a failure, not a missing Docker", async () => {
     const stack = controller({}, (args) =>
       args[1] === "version"
         ? { code: 1, stderr: "docker: 'compose' is not a docker command" }
         : ok(args),
     );
     const state = await stack.start();
-    expect(state.phase).toBe("docker-missing");
+    expect(state.phase).toBe("failed");
     expect(state.message).toContain("Docker Compose is missing");
     expect(calls).toHaveLength(1);
+  });
+
+  it.each(["5.6.1\r\n", "Docker Compose version v5.6.1\r\n"])(
+    "starts on Windows with Compose output %j and an absolute Docker override",
+    async (stdout) => {
+      const binary = "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe";
+      const stack = controller(
+        {
+          platform: "win32",
+          env: {
+            ProgramFiles: "C:\\Program Files",
+            PATH: "C:\\Windows\\System32;C:\\custom-helpers",
+            USERPROFILE: "C:\\Users\\example",
+            RAKAZO_DOCKER_BINARY: binary,
+          },
+          exists: (file) => file === binary,
+        },
+        (args) => (args[1] === "version" ? { stdout } : ok(args)),
+      );
+      expect((await stack.start()).phase).toBe("ready");
+      expect(calls[0]?.args).toEqual(["compose", "version", "--short"]);
+      for (const call of calls) {
+        expect(call.binary).toBe(binary);
+        expect(call.env.ProgramFiles).toBe("C:\\Program Files");
+        expect(call.env.USERPROFILE).toBe("C:\\Users\\example");
+        expect(call.env.PATH).toBe(
+          "C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Windows\\System32;C:\\custom-helpers",
+        );
+      }
+      expect(calls.at(-1)?.args.slice(7)).toEqual([
+        "up",
+        "-d",
+        "--wait",
+        "--wait-timeout",
+        String(COMPOSE_WAIT_TIMEOUT_S),
+      ]);
+      expect(await stat(path.join(root, "stack", STACK_COMPOSE_FILE))).toBeDefined();
+    },
+  );
+
+  it.each([
+    { code: 1, stdout: "", stderr: "spawn docker.exe ENOENT" },
+    { code: 7, stdout: "plugin diagnostic\r\n", stderr: "Access is denied.\r\n" },
+    { code: 124, stdout: "", stderr: "" },
+  ])("keeps an unsuccessful Compose check distinct from a missing plugin: %j", async (reply) => {
+    const stack = controller({}, () => reply);
+    const state = await stack.start();
+    expect(state).toMatchObject({
+      phase: "failed",
+      message: "Could not check Docker Compose. Check the output below, then retry.",
+      output: [
+        ...`${reply.stdout}\n${reply.stderr}`.split(/\r?\n/).filter(Boolean),
+        `docker compose version --short exited with code ${reply.code}.`,
+      ],
+    });
+    expect(calls).toHaveLength(1);
+    await expect(stat(path.join(root, "stack", STACK_COMPOSE_FILE))).rejects.toThrow();
+  });
+
+  it("names Docker Desktop when it is missing on macOS and Windows", async () => {
+    const stack = controller({ platform: "darwin", exists: () => false });
+    expect((await stack.start()).message).toBe(
+      "Rakazo needs Docker Desktop to run on this computer.",
+    );
   });
 
   it("waits for the daemon when docker info fails", async () => {
@@ -648,9 +735,81 @@ describe("LocalStackController", () => {
     const state = await stack.start();
     expect(state).toMatchObject({
       phase: "docker-not-running",
-      message: "Docker is installed but not running. Start Docker, then check again.",
+      message: "Docker is installed but not running. Start the Docker service to continue.",
     });
     expect(calls).toHaveLength(2);
+  });
+
+  it("opens the Docker app once while it is not running, and again after it was up", async () => {
+    let daemonUp = false;
+    const launched: string[] = [];
+    const stack = controller(
+      {
+        launchDockerApp: async (binary) => {
+          launched.push(binary);
+          return "Docker Desktop";
+        },
+      },
+      (args) =>
+        args[0] === "info" && !daemonUp
+          ? {
+              code: 1,
+              stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            }
+          : ok(args),
+    );
+    expect(await stack.start()).toMatchObject({
+      phase: "docker-not-running",
+      message: "Starting Docker Desktop…",
+    });
+    // A re-check while it boots must not bring the app back to the front.
+    expect((await stack.start()).message).toBe("Starting Docker Desktop…");
+    expect(launched).toEqual(["/usr/bin/docker"]);
+
+    daemonUp = true;
+    expect((await stack.start()).phase).toBe("ready");
+    daemonUp = false;
+    await stack.start();
+    expect(launched).toHaveLength(2);
+  });
+
+  it("does not open a local Docker app for a daemon chosen by DOCKER_HOST", async () => {
+    const launched: string[] = [];
+    const stack = controller(
+      {
+        platform: "darwin",
+        env: { PATH: "/usr/bin", HOME: "/Users/me", DOCKER_HOST: "ssh://build-box" },
+        launchDockerApp: async (binary) => {
+          launched.push(binary);
+          return "Docker Desktop";
+        },
+      },
+      (args) =>
+        args[0] === "info" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),
+    );
+    expect((await stack.start()).message).toBe(
+      "Docker is installed but not running. Open it to continue.",
+    );
+    expect(launched).toEqual([]);
+  });
+
+  it("asks the person to open Docker once the app setup opened has not come up", async () => {
+    let clock = 0;
+    const stack = controller(
+      { platform: "darwin", launchDockerApp: async () => "Docker Desktop", now: () => clock },
+      (args) =>
+        args[0] === "info"
+          ? {
+              code: 1,
+              stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            }
+          : ok(args),
+    );
+    expect((await stack.start()).message).toBe("Starting Docker Desktop…");
+    clock = 90_000;
+    expect((await stack.start()).message).toBe(
+      "Docker is installed but not running. Open it to continue.",
+    );
   });
 
   it("explains the docker group when the socket is not accessible", async () => {

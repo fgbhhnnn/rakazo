@@ -1,6 +1,12 @@
 import { ORPCError } from "@orpc/server";
-import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
+  isSignInRetryRequest,
+  isTransientModelError,
+  SecretStoreUnavailableError,
+} from "@rakazo/adapter-kit";
+import type { PiOAuthPersist } from "@rakazo/adapters";
+import {
+  compatibleEndpointPreset,
   listPiCatalog,
   ModelSignInError,
   modelCredentialDto,
@@ -16,11 +22,10 @@ import {
   storedOpenAiCompatibleProbeKey,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
 } from "@rakazo/adapters";
-import type { ThinkingLevel } from "@rakazo/contracts";
+import type { Actor, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import {
   backupChoiceKey,
   canonicalPiProviderId,
-  isOllamaCloudBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   usableModelId,
 } from "@rakazo/contracts";
@@ -42,8 +47,11 @@ import {
   sharedModelScope,
   updateModelRole,
   withinScope,
+  withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
@@ -53,7 +61,6 @@ import {
   throwIfAborted,
 } from "../model-credentials.js";
 import { assertCompatibleDefaultChange } from "../model-pins.js";
-import { withSerializableRetry } from "../serializable-retry.js";
 import type { RouterContext } from "./context.js";
 
 export function modelsRoutes(ctx: RouterContext) {
@@ -64,11 +71,47 @@ export function modelsRoutes(ctx: RouterContext) {
     refreshExpiredCredential,
     chatCatalog,
     withDeploymentDefault,
+    withImageInput,
     modelRoleCatalog,
     validateRoleChoices,
     authed,
     ownerManaged,
   } = ctx;
+  const saveSignIn =
+    (actor: Actor): PiOAuthPersist<ModelCredential> =>
+    async (login) => {
+      try {
+        // Read before the save: it only counts a member's first connection.
+        const record = await firstModelConnectAnalytics(deps, actor, "oauth");
+        const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
+        const saved = await persistModelCredential(
+          deps,
+          actor,
+          {
+            provider: login.provider,
+            credentialId: target?.id ?? null,
+            plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
+            // A second account is told apart by the email it signed in with.
+            label:
+              oauthCredentialEmail(login.credential) ??
+              login.label ??
+              listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
+            modelId: login.modelId,
+            thinkingLevel: login.thinkingLevel,
+            makeDefault: login.makeDefault,
+            scope: login.settingsScope,
+            signal: login.signal,
+          },
+          codexCatalog,
+        );
+        record(login.provider, { name: "model_connected" });
+        return saved;
+      } catch (error) {
+        // The member is told why a save was refused; anything else is reported generically.
+        if (error instanceof ORPCError) throw new ModelSignInError(error.message);
+        throw error;
+      }
+    };
   return {
     models: {
       list: authed.models.list.handler(async ({ context }) => {
@@ -158,12 +201,16 @@ export function modelsRoutes(ctx: RouterContext) {
       role: authed.models.role.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
-        return withDeploymentDefault(
+        return withImageInput(
+          context.actor,
           input.role,
-          await getModelRole(
-            deps.prisma,
-            await modelRoleTarget(deps.prisma, context.actor, input.scope),
+          await withDeploymentDefault(
             input.role,
+            await getModelRole(
+              deps.prisma,
+              await modelRoleTarget(deps.prisma, context.actor, input.scope),
+              input.role,
+            ),
           ),
         );
       }),
@@ -175,13 +222,17 @@ export function modelsRoutes(ctx: RouterContext) {
           ...(primary ? [primary] : []),
           ...(backups ?? []),
         ]);
-        return withDeploymentDefault(
+        return withImageInput(
+          context.actor,
           role,
-          await updateModelRole(
-            deps.prisma,
-            { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
+          await withDeploymentDefault(
             role,
-            { primary, backups },
+            await updateModelRole(
+              deps.prisma,
+              { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
+              role,
+              { primary, backups },
+            ),
           ),
         );
       }),
@@ -268,7 +319,7 @@ export function modelsRoutes(ctx: RouterContext) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              isOllamaCloudBaseUrl(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
@@ -318,15 +369,24 @@ export function modelsRoutes(ctx: RouterContext) {
             label: input.label,
             codePage: input.codePage,
             signal: context.signal,
+            persist: saveSignIn(context.actor),
           })
           .catch((error: unknown) => {
             record(input.provider, { name: "model_connect_failed", error });
+            // The provider's sign-in service is down or overloaded; the user tries again later.
+            if (isTransientModelError(error) || isSignInRetryRequest(error)) {
+              getLogger().warn("rpc models/beginOAuth provider unavailable", {
+                reason: error instanceof Error ? error.message : String(error),
+              });
+              markExpectedFailure();
+              throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
+            }
             throw error;
           });
       }),
       submitOAuthCode: ownerManaged.models.submitOAuthCode.handler(async ({ context, input }) => {
         return deps.oauthLogins
-          .submit(input.loginId, context.actor, input.code)
+          .submit(input.loginId, context.actor, input.code, saveSignIn(context.actor))
           .catch((error: unknown) => {
             if (error instanceof ModelSignInError)
               throw new ORPCError("BAD_REQUEST", { message: error.message, cause: error });
@@ -334,10 +394,7 @@ export function modelsRoutes(ctx: RouterContext) {
           });
       }),
       completeOAuth: ownerManaged.models.completeOAuth.handler(async ({ context, input }) => {
-        const result = await deps.oauthLogins.complete(input.loginId, {
-          userId: context.actor.userId,
-          spaceId: context.actor.spaceId,
-        });
+        const result = await deps.oauthLogins.complete(input.loginId, context.actor);
         if (result.status === "error") {
           const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
@@ -347,50 +404,16 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       finishOAuth: ownerManaged.models.finishOAuth.handler(async ({ context, input }) => {
         throwIfAborted(context.signal);
-        let provider: string | undefined;
-        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
-        const result = await deps.oauthLogins
-          .finish(input.loginId, context.actor, async (login) => {
-            provider = login.provider;
-            const target = await modelConnectionTarget(
-              deps,
-              context.actor,
-              login.provider,
-              login.credentialId,
-            );
-            return persistModelCredential(
-              deps,
-              context.actor,
-              {
-                provider: login.provider,
-                credentialId: target?.id ?? null,
-                plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
-                // A second account is told apart by the email it signed in with.
-                label:
-                  oauthCredentialEmail(login.credential) ??
-                  login.label ??
-                  listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
-                modelId: login.modelId,
-                thinkingLevel: login.thinkingLevel,
-                makeDefault: login.makeDefault,
-                scope: login.settingsScope,
-                signal: login.signal,
-              },
-              codexCatalog,
-            );
-          })
-          .catch((error: unknown) => {
-            record(provider, { name: "model_connect_failed", error });
-            throw error;
-          });
+        const result = await deps.oauthLogins.finish(input.loginId, context.actor);
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
-          record(provider, { name: "model_connect_failed", error: new Error(result.error) });
+          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }
-        record(provider, { name: "model_connected" });
+        // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
@@ -442,7 +465,7 @@ export function modelsRoutes(ctx: RouterContext) {
             }),
           };
         };
-        await withSerializableRetry(async () => {
+        await withTransactionRetry(async () => {
           const preparedState = await loadModelState(deps.prisma);
           const preparedAuth = new Map(
             await Promise.all(
@@ -598,7 +621,7 @@ export function modelsRoutes(ctx: RouterContext) {
           provider: input.provider,
           credentialId: input.credentialId,
         });
-        await withSerializableRetry(() =>
+        await withTransactionRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
               const provider = modelCredentialProviderFilter(input.provider);

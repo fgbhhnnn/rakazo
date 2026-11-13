@@ -6,15 +6,30 @@ for the sharing and persistence contract.
 
 ## Quick pick
 
-| Goal | Set | Also need |
-| --- | --- | --- |
-| Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
-| UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
-| Managed remote desktop | `e2b` / `novita` / `daytona` / `boat` / `boxd` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| Goal                                                    | Set                                                                      | Also need                                                                                                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Local Docker computers                                  | `SANDBOX_PROVIDER=docker`                                                | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor                                                              |
+| UI only, no computers                                   | `SANDBOX_PROVIDER=none`                                                  | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN`                                            |
+| Managed remote desktop                                  | `e2b` / `novita` / `daytona` / `createos` / `boat` / `boxd` / `instabox` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/CreateOS/Boat)            |
+| One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                                 | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
+| One VM per computer on an Apple silicon Mac             | `SANDBOX_PROVIDER=local-vm`                                              | macOS 26 or newer and Apple's `container` runtime with its system service started                                                     |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
 and remote providers. This stack credential does not replace a remote provider's API key.
+
+## Settings configuration
+
+Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then choose
+**Settings → Computer → New computers run on** and save a supported provider's fields.
+The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
+never returned; a blank secret field keeps its saved value for the same provider and destination.
+Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
+Docker, Incus, desktop, fake, and none remain environment-only. Settings overrides are disabled
+for desktop and fake deployments.
+
+The account form offers only providers that declare support for account-owned computers.
+Team Computers follow their owner's account choice; Private Computers use the deployment choice. See [Wuying setup](./wuying-computers.md) for that adapter's fields and requirements.
 
 ## Choosing a provider
 
@@ -23,7 +38,7 @@ The Electron desktop app is a client of the same API. Docker remains the default
 Native file reads and workspace exports are limited to 8 MiB per file. A larger workspace file fails the checkpoint and preserves the previous saved workspace; local files remain on the computer. Writes are bounded by the 12 MiB encoded request limit.
 
 - **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
-  local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
+  local supervisor and published `ghcr.io/fgbhhnnn/rakazo/computer` image. No E2B account required.
   Optional: set `e2b`, `novita`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
 - **Docker** is the quick-start default for published images and for a source checkout / full local
   Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
@@ -45,9 +60,10 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
 - **Local computer access** in the app-managed Electron instance runs commands on Windows, macOS,
   or Linux through the native bridge. Bots can read/change local files and launch installed apps
   through OS commands, subject to your account and OS permissions. Portable file tools and
-  checkpoints remain scoped to bot workspaces; use commands for other local folders. Graphical
-  screen control is unavailable. Permission is remembered locally and can be revoked from the
-  app menu. Only enable this for a trusted personal instance: every bot on that instance can use
+  checkpoints remain scoped to bot workspaces; use commands for other local folders. On macOS and
+  Windows, the owner's own chats also get the paired-computer screen tools through the same bridge,
+  with the same per-app approval; routines and other people's messages do not. Permission is
+  remembered locally and can be revoked from the app menu. Only enable this for a trusted personal instance: every bot on that instance can use
   your account’s permissions.
 - **Desktop provider** (`SANDBOX_PROVIDER=desktop`) runs commands directly on the API/worker host,
   with only a minimal shell environment (no server secrets). The API and worker refuse it unless
@@ -87,41 +103,158 @@ Resource ceilings, network isolation and shared folders for these computers are 
 
 ### Bot browser
 
-The published computer image uses Chromium. To use Brave instead, build the image with
-`BROWSER=brave` and point Compose at it:
+The published computer image uses Chromium. To use Google Chrome or Brave instead, build the image
+with `BROWSER=chrome` or `BROWSER=brave` and point Compose at it:
 
 ```bash
-docker build --build-arg BROWSER=brave -t rakazo-computer-brave infra/sandboxes/computer
+docker build --build-arg BROWSER=chrome -t rakazo-computer-chrome infra/sandboxes/computer
 ```
 
 ```env
-RAKAZO_COMPUTER_IMAGE=rakazo-computer-brave
+RAKAZO_COMPUTER_IMAGE=rakazo-computer-chrome
 RAKAZO_COMPUTER_IMAGE_TAG=latest
 ```
 
 The image holds one browser, and `rakazo-browser` launches whichever is installed. A locally built
 image is not on a registry, so start the stack with `bash install-images.sh --pull-never` after
 pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are disabled by managed
-policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
+policy.
+
+`BROWSER=chrome` installs Google Chrome stable from Google's apt repository and checks Google's
+signing key by fingerprint. Google publishes Chrome for amd64 only, so the build fails on other
+platforms; build those with the default. Chrome identifies itself as Google Chrome and ships the
+Widevine module that some sites expect, where Debian's Chromium reports a plain Chromium brand and
+has no Widevine. Some payment and sign-in risk checks may count that profile against the device.
+
+Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
+
+## `incus`
+
+Each computer is an [Incus](https://linuxcontainers.org/incus/) application container started
+from the published computer image through Incus's OCI support (Incus 6.11 or newer; the start
+command's uid needs the `oci.uid` and `oci.gid` keys). The API and
+worker call the Incus REST API with a client certificate; no supervisor or Docker socket is
+involved.
+
+| Variable                                                       | Default                                 | Notes                                                                                                                    |
+| -------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `INCUS_SANDBOX_URL`                                            | none                                    | The Incus API, such as `https://incus.example.test:8443`                                                                 |
+| `INCUS_SANDBOX_CLIENT_CERT` / `_CLIENT_KEY`                    | none                                    | PEM client certificate and key; `\n` escapes are accepted. API and worker only                                           |
+| `INCUS_SANDBOX_SERVER_CERT`                                    | unset                                   | The server's own certificate (`incus info` shows it), trusted exactly. Unset uses the system CAs and the URL's host name |
+| `INCUS_SANDBOX_PROJECT`                                        | `default`                               | Use a project of its own, below                                                                                          |
+| `INCUS_SANDBOX_COMPUTER_IMAGE`                                 | `ghcr.io/fgbhhnnn/rakazo/computer:edge` | Pin a release tag or digest in production                                                                                |
+| `INCUS_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` / `_PROCESS_LIMIT` | `2` / `2GiB` / `2048`                   | Incus `limits.cpu`, `limits.memory` and `limits.processes` of each computer                                              |
+
+Computers without the URL, certificate or key fall back to `none`.
+
+Each instance is unprivileged, without nesting, with an isolated id map (its own range of host
+uids) and the limits above, all set on the instance so a profile cannot loosen them. The image's
+own start command and every command run as uid 1000, set on the instance and on each exec rather
+than taken from the image's user, with no privilege
+escalation, the same boundary as a Docker computer, so a custom image must keep that command.
+
+Each start creates a new instance named `rakazo-<uuid>` and labelled `user.rakazo-bot-id=<bot id>`;
+one carrying another bot's id is never reused or deleted. Instances are ephemeral: Incus deletes
+one when it stops, and the saved workspace is the persistence boundary, copied in when a computer
+starts and saved back when it stops, as with remote providers. Only cache paths and the screen size are set
+in the instance environment. Incus computers do not bill while running, so
+`COMPUTER_MAX_ACTIVE_UNBILLED_MS` caps them when set.
+The first computer downloads the image into the project, which can take a few minutes.
+
+The instance's root disk and network come from the project's default profile. Screens use the
+image's desktop gateway on the instance address, so the API, the worker and the web screen proxy
+must reach that network on port `6100`, for example by running them on the Incus host or in an
+instance on a network the host routes to the computers.
+
+### Restricted project and certificate
+
+Give Rakazo a project and a client certificate that can reach nothing else. A restricted
+certificate cannot change its project's restrictions or limits. On the Incus host:
+
+```bash
+incus network create rakazo0
+incus network acl create rakazo-computers
+# Public internet only: no host, LAN, link-local, multicast or cloud-metadata addresses.
+incus network acl rule add rakazo-computers egress action=reject \
+  destination=0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16,198.18.0.0/15,224.0.0.0/3
+incus network acl rule add rakazo-computers egress action=reject protocol=tcp \
+  destination=::1/128,fc00::/7,fe80::/10,ff00::/8
+incus network acl rule add rakazo-computers egress action=reject protocol=udp \
+  destination=::1/128,fc00::/7,fe80::/10,ff00::/8
+incus network acl rule add rakazo-computers egress action=reject protocol=icmp6 icmp_type=128 \
+  destination=::1/128,fc00::/7,fe80::/10
+# Screens, from the address the API, worker and web connect from.
+incus network acl rule add rakazo-computers ingress action=allow protocol=tcp \
+  source=<rakazo-server-address> destination_port=6100
+
+incus project create rakazo -c features.images=true -c features.profiles=true \
+  -c restricted=true -c restricted.networks.access=rakazo0 \
+  -c restricted.images.servers=ghcr.io
+incus profile device add default root disk path=/ pool=default --project rakazo
+incus profile device add default eth0 nic network=rakazo0 --project rakazo \
+  security.acls=rakazo-computers security.acls.default.egress.action=allow \
+  security.ipv4_filtering=true security.ipv6_filtering=true
+
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:secp384r1 -nodes -days 3650 \
+  -subj /CN=rakazo -keyout rakazo.key -out rakazo.crt
+incus config trust add-certificate rakazo.crt --restricted --projects rakazo
+```
+
+The ACL sits on each computer's network device, so it also keeps computers from reaching each
+other and other instances on the bridge; it needs the `nftables` firewall driver. Connections to a
+computer are refused except to the screen port. IPv6 neighbour discovery keeps working because only
+echo requests are refused among ICMPv6 messages to private addresses; DHCP and DNS from the bridge are
+allowed by Incus before any ACL rule. The IP filtering options stop
+a computer from spoofing addresses or sending router advertisements to the host. Set
+`INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
+
+## `local-vm`
+
+Each computer is one lightweight Linux VM on the Mac running Rakazo, started from the published
+computer image by Apple's [`container`](https://github.com/apple/container) runtime
+(Virtualization.framework). It needs Apple silicon and macOS 26 or newer, with the `container`
+system service started; no Docker, supervisor or socket is involved.
+
+| Variable                  | Default                                 | Notes                                        |
+| ------------------------- | --------------------------------------- | -------------------------------------------- |
+| `LOCAL_VM_CLI`            | `container`                             | Path to the `container` CLI                  |
+| `LOCAL_VM_COMPUTER_IMAGE` | `ghcr.io/fgbhhnnn/rakazo/computer:edge` | Must include `nft`; older images are refused |
+| `LOCAL_VM_CPUS`           | `2`                                     | CPUs of each VM                              |
+| `LOCAL_VM_MEMORY`         | `2g`                                    | Memory of each VM                            |
+
+Each start creates a VM and a network of its own, both named `rakazo-<uuid>`, labelled
+`rakazo.bot-id=<bot id>`; one carrying another bot's id is never reused or removed. The image's
+start command and every command run as uid 1000 with no capabilities and no privilege escalation.
+As with Incus, VMs are removed when they stop: the saved workspace is copied in when a computer
+starts and saved back when it stops. The API, worker and web reach the screen on the VM's address.
+
+Before a computer is used, Rakazo loads an nftables firewall into the VM as root and checks it is
+in place; if that fails, the VM is removed and the start fails. The firewall allows the public
+internet and DNS to the VM's gateway, and rejects everything else to the Mac, the LAN,
+link-local and cloud-metadata, CGNAT, multicast and other private addresses (the same list as the
+Incus ACL above). Incoming connections are dropped except from the Mac to the screen ports. The
+bot's uid 1000 cannot change it.
 
 ## `wuying`
 
-Bot computers run on one existing Wuying (无影) cloud computer. Each computer's home is a folder
+Bot computers run on one existing Wuying (无影) cloud computer. An admin can also set this up in
+**Settings → Computer** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
+for the full setup. Each computer's home is a folder
 under the desktop user's profile (`%USERPROFILE%\rakazo\<home>`), and the desktop's own disk
 keeps it between stops, so nothing is copied in or out. Commands run in PowerShell; files,
-screenshots and input go through the desktop's MCP gateway. Stopping the computer powers the
-desktop off; deleting it removes only its home folder, never the desktop.
+screenshots and input go through the desktop's MCP gateway. Stopping the last computer on it
+powers the desktop off; deleting one removes only its home folder, never the desktop.
 
-| Variable | Notes |
-| --- | --- |
+| Variable                                            | Notes                                                                                                                                    |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `WUYING_ACCESS_KEY_ID` / `WUYING_ACCESS_KEY_SECRET` | RAM user allowed `ecd:DescribeDesktops`, `ecd:StartDesktops`, `ecd:StopDesktops` and `appstream-center:GetAuthCode`. API and worker only |
-| `WUYING_REGION_ID` | Defaults to `cn-hangzhou` |
-| `WUYING_DESKTOP_ID` | The cloud computer, assigned to the end user below |
-| `WUYING_END_USER_ID` | Screen logins are issued for this user |
-| `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | The desktop's MCP gateway and its bearer token |
+| `WUYING_REGION_ID`                                  | Defaults to `cn-hangzhou`                                                                                                                |
+| `WUYING_DESKTOP_ID`                                 | The cloud computer, assigned to the end user below                                                                                       |
+| `WUYING_END_USER_ID`                                | Screen logins are issued for this user                                                                                                   |
+| `WUYING_MCP_URL` / `WUYING_MCP_TOKEN`               | The desktop's MCP gateway and its bearer token                                                                                           |
 
-The web and Electron screen is drawn by the Wuying Web SDK in `/wuying/screen.html`, served by
+The web and Electron screen is drawn by the Wuying Web SDK in `/computer-screen/screen.html`, served by
 the web app. Mobile rejects the custom screen URL and does not embed this SDK. The
 SDK is not committed; fetch the pinned release before building the web app:
 
@@ -130,7 +263,7 @@ node scripts/wuying-web-sdk.mjs
 ```
 
 The SDK runs in an opaque-origin sandboxed frame with an in-memory storage shim and a no-op
-cookie accessor in both its launcher and nested runtime. A CSP scoped to `/wuying/` permits
+cookie accessor in both its launcher and nested runtime. A CSP scoped to `/computer-screen/` permits
 the vendor hosts, blob workers and WebAssembly compilation. The one-time login code stays
 only in the URL fragment, outside HTTP requests and Referer.
 
@@ -149,16 +282,17 @@ Runs API/web without provisioning bot computers.
 
 Set `SANDBOX_PROVIDER` to exactly one of:
 
-| Value | Credential | Notes |
-| --- | --- | --- |
-| `e2b` | `E2B_API_KEY` | Hosted sandboxes |
-| `novita` | `NOVITA_API_KEY` | Build the desktop template first; optional `SANDBOX_TEMPLATE` |
-| `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` |
-| `boat` | `BOAT_API_KEY` | Optional `BOAT_API_URL` (see `.env.example`) |
-| `boxd` | `BOXD_API_KEY` | Optional `BOXD_ORG` to create computers in a boxd organization |
-| `createos` | `CREATEOS_SANDBOX_API_KEY` | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS` |
-| `railway` | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
-| `wuying` | `WUYING_*` (below) | One existing Wuying cloud computer (Windows) |
+| Value      | Credential                                       | Notes                                                                                                                                                                                                                                                     |
+| ---------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `e2b`      | `E2B_API_KEY`                                    | Hosted sandboxes                                                                                                                                                                                                                                          |
+| `novita`   | `NOVITA_API_KEY`                                 | Build the desktop template first; optional `SANDBOX_TEMPLATE`                                                                                                                                                                                             |
+| `daytona`  | `DAYTONA_API_KEY`                                | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`                                                                                                                                                                                          |
+| `boat`     | `BOAT_API_KEY`                                   | Optional `BOAT_API_URL` (see `.env.example`)                                                                                                                                                                                                              |
+| `boxd`     | `BOXD_API_KEY`                                   | Optional `BOXD_ORG` to create computers in a boxd organization                                                                                                                                                                                            |
+| `instabox` | `INSTABOX_API_KEY`                               | Computers start in the key's organization; see [instabox computers](#instabox-computers)                                                                                                                                                                  |
+| `createos` | `CREATEOS_SANDBOX_API_KEY`                       | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS`                                                                                                                                                                 |
+| `railway`  | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
+| `wuying`   | `WUYING_*` (below)                               | One existing Wuying cloud computer (Windows)                                                                                                                                                                                                              |
 
 Remote paths still need a working API/worker; they do not replace Postgres or
 the web UI. They require egress to the provider. For air-gapped hosts prefer
@@ -166,15 +300,18 @@ the web UI. They require egress to the provider. For air-gapped hosts prefer
 
 A run starts its computer only when it first uses a computer tool. With idle sleep on,
 a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while running
-(E2B, Daytona, Boat, boxd, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
+(E2B, Daytona, Boat, boxd, instabox, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
 (default 2 hours) up in one stretch, even with background work or an open screen, unless
 a run is executing on it, a user is in control of its screen, or a coding agent CLI (Codex,
 Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An agent waiting
 at its prompt writes nothing, so it does not hold the computer. `0` turns the cap off.
 That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS` still
 applies once nothing holds the computer.
-Docker and this-Mac computers are never capped. The next use resumes it. Asking for
-takeover restarts the idle timer, and on providers that do not bill while running the run
+Docker and Incus computers are capped only when `COMPUTER_MAX_ACTIVE_UNBILLED_MS` is set
+(off by default; minimum 60000), with the same exceptions, so an abandoned background command
+cannot keep one running for days. Like every cap, it needs idle sleep on: `SANDBOX_IDLE_MS=0`
+turns it off too. This-Mac computers are never capped. The next use resumes it.
+Asking for takeover restarts the idle timer, and on providers that do not bill while running the run
 also holds the computer for 30 minutes after asking, so the user can answer the push on
 the same open page.
 
@@ -323,6 +460,24 @@ The desktop is served on the machine's own public HTTPS address; every screen an
 still needs its own token, which the desktop gateway checks. Stopping a computer suspends it
 with its memory, so programs it was running continue when it resumes.
 
+### instabox computers
+
+instabox computers start from instabox's own desktop image, which already has Chromium; the
+first start installs the rest of the desktop tools in a few seconds. They are created without
+the instabox account's vault, so secrets saved on that account never reach a bot's computer.
+
+The desktop is served on the computer's public HTTPS address; every screen and terminal still
+needs its own token, which the desktop gateway checks. Stopping a computer suspends it with its
+memory. instabox also pauses a computer after 30 idle minutes, later than the default
+`SANDBOX_IDLE_MS`, so Rakazo normally stops it first. One key's computers share its account's
+limits on requests at once (API calls, and connections to screens and terminals), so a
+deployment with many active computers at the same time can see them slow down.
+
+New computers start at the computer size of the space's plan. Standard is instabox's default.
+Large and xlarge need an instabox plan that offers that size; otherwise the computer starts at
+the size it can have. A stopped computer moves to its plan's size when it next starts, which
+restarts it, so its running programs end. A running computer keeps its size.
+
 ## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that
@@ -333,7 +488,7 @@ docker compose --env-file .env -f docker-compose.images.yml up -d
 curl -fsS http://127.0.0.1:3100/internal/health
 ```
 
-Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boat`, or `boxd`).
+Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, `boat`, `boxd`, or `instabox`).
 HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
 A present but invalid key still reports the selected provider. Open a bot's computer to verify
 provisioning and desktop access.

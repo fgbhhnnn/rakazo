@@ -47,6 +47,18 @@ if [[ -z "${RAKAZO_HEALTH_URL:-}" ]]; then
   RAKAZO_HEALTH_URL="https://${host}/health"
 fi
 
+# How many API and worker containers to run, the same .env settings Compose reads.
+replicas() {
+  local count
+  count="$(sed -n "s/^$1=//p" .env | tail -n 1)"
+  echo "${count:-1}"
+}
+API_REPLICAS="$(replicas RAKAZO_API_REPLICAS)"
+WORKER_REPLICAS="$(replicas RAKAZO_WORKER_REPLICAS)"
+for count in "${API_REPLICAS}" "${WORKER_REPLICAS}"; do
+  [[ "${count}" =~ ^[1-9][0-9]*$ ]] || { echo "RAKAZO_API_REPLICAS and RAKAZO_WORKER_REPLICAS must be whole numbers of at least 1" >&2; exit 1; }
+done
+
 compose() {
   local limit="$1"
   shift
@@ -153,13 +165,16 @@ wait_for_quiet_background_work() {
   return 1
 }
 
-# Starts one more container of a service beside the given ones and waits for its health check.
+# Starts the given number of new containers of a service beside the running ones and waits for
+# their health checks.
 start_beside() {
-  local service="$1" running="$2" new
+  local service="$1" running="$2" count="$3" new container
   compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate \
-    --scale "${service}=$(($(wc -w <<<"${running}") + 1))" "${service}"
+    --scale "${service}=$(($(wc -w <<<"${running}") + count))" "${service}"
   new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${running}")"
-  container_healthy "${new}"
+  for container in ${new}; do
+    container_healthy "${container}"
+  done
 }
 
 # A replaced worker is not stopped like the API. It stops claiming jobs and finishes the ones it
@@ -209,35 +224,40 @@ replace_worker() {
     live=""
   fi
   if [[ -z "${live}" ]]; then
-    compose "${UP_TIMEOUT}" up -d --wait worker
+    compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
     return
   fi
-  start_beside worker "${live}"
+  start_beside worker "${live}" "${WORKER_REPLICAS}"
   drain_workers "${live}"
 }
 
-# Replaces the API, web and worker without a gap: one new container starts beside the running
-# ones, and the old ones stop only once it passes its health check. Caddy dials whichever container
+# Replaces the API, web and worker without a gap: new containers start beside the running
+# ones, and the old ones stop only once those pass their health checks. Caddy dials whichever container
 # answers, so requests keep flowing through a deploy, and the new worker picks up chat runs while
 # the old one hands back the runs it was executing. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
 # Compose leaves the worker alone there, since it would stop a draining one.
 roll_out() {
-  local service old
+  local service old services count
   # Migrations run first, from their own container: it is the only one given the owner login.
   # The old API keeps serving meanwhile, so each migration must work with the previous release.
-  # A rollback to a release without that service has nothing to run: its API migrates on start.
-  if compose 1m config --services | grep -qx migrate; then
-    compose "${UP_TIMEOUT}" run --rm -T migrate
+  # On older releases the API migrates on start, so only start its database here.
+  # grep -q would exit at the first match and SIGPIPE compose, which pipefail reads as no match.
+  services="$(compose 1m config --services)"
+  if grep -qx migrate <<<"${services}"; then
+    compose "${UP_TIMEOUT}" run --rm -T -e "RAKAZO_DEPLOYED_MIGRATIONS=${deployed_migrations}" migrate
+  else
+    compose "${UP_TIMEOUT}" up -d --wait postgres
   fi
   for service in api web; do
     old="$(compose 1m ps --all --quiet "${service}")"
     if [[ -z "${old}" ]]; then
-      # Nothing to keep serving, so start it with its dependencies (the database on a new host).
-      compose "${UP_TIMEOUT}" up -d --wait "${service}"
+      # The migration run already started the database; do not rerun it through dependencies.
+      compose "${UP_TIMEOUT}" up -d --no-deps --wait "${service}"
       continue
     fi
-    start_beside "${service}" "${old}"
+    if [[ "${service}" == api ]]; then count="${API_REPLICAS}"; else count=1; fi
+    start_beside "${service}" "${old}" "${count}"
     # shellcheck disable=SC2086 # one container ID per word
     sudo docker stop --time 30 ${old} >/dev/null
     # shellcheck disable=SC2086
@@ -245,7 +265,8 @@ roll_out() {
   done
   replace_worker
   # shellcheck disable=SC2046 # one service name per word
-  compose "${UP_TIMEOUT}" up -d --remove-orphans $(compose 1m config --services | grep -vx worker)
+  # A second migration run would consume a deferred drop before the old worker has drained.
+  compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans $(compose 1m config --services | grep -Ev '^(worker|migrate)$')
 }
 
 # Caddy mounts its config as a single file, which keeps the old inode after a git checkout, so a
@@ -289,6 +310,14 @@ fi
 if [[ "${previous_revision}" == "${target_revision}" && "${deployed_revision}" == "${target_revision}" ]] && healthy; then
   echo "Production is already at ${target_revision} and healthy."
   exit 0
+fi
+
+# A failed rollout may have already seen its deferred drops. Only a release that actually ran
+# can make those drops safe; retrying it, or skipping to another release, must keep holding them.
+# Unknown deployment history fails closed until a successful release records its revision.
+deployed_migrations=""
+if [[ "${deployed_revision}" =~ ^[[:xdigit:]]{40}$ ]]; then
+  deployed_migrations="$(git ls-tree --name-only "${deployed_revision}:packages/db/prisma/migrations" 2>/dev/null | paste -sd, -)" || deployed_migrations=""
 fi
 
 app_image=""

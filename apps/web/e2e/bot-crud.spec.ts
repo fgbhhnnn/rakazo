@@ -11,6 +11,8 @@ import {
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
+  // Installed before the shell starts its roster poll, so the focus check below can hold it.
+  await page.clock.install();
   await signup(page, `bot-crud-${stamp}@rakazo.test`, "password12", "Bot CRUD");
   await completeOnboarding(page);
   await page.goto("/app");
@@ -59,8 +61,61 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(botList.getByRole("button", { name: /^New Bot/ })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   const deletedBotPath = new URL(page.url()).pathname;
+  // A focus refresh that no longer knows the current bot redirects away from it; wait for
+  // that refresh's roster response, not a fixed delay an overloaded runner can beat. The
+  // request wait is armed before the event, so an in-flight overlapping poll cannot match
+  // it, and only the response of the matched request releases the wait. That response can
+  // arrive before `runFor` returns, so it is read from the request, which also returns one
+  // already received. The paused clock fires every pending timer now, so the 3 s poll is not
+  // due while the 50 ms focus debounce runs. The poll it fires schedules that same debounce,
+  // so its read is run and settled first; the page counts roster reads itself, so a read
+  // started inside `runFor` is counted when it returns. A fixed date makes the pause target
+  // the clock's current time, so a stalled runner cannot overshoot it.
+  await page.evaluate(() => {
+    const counted = window as typeof window & { rosterReads?: number };
+    counted.rosterReads = 0;
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!url.includes("/rpc/spaces/list")) return original(input, init);
+      counted.rosterReads = (counted.rosterReads ?? 0) + 1;
+      try {
+        const response = await original(input, init);
+        await response
+          .clone()
+          .arrayBuffer()
+          .catch(() => undefined);
+        return response;
+      } finally {
+        counted.rosterReads = (counted.rosterReads ?? 1) - 1;
+      }
+    };
+  });
+  const pausedAt = Date.now();
+  await page.clock.setFixedTime(pausedAt);
+  await page.clock.pauseAt(pausedAt);
+  await page.clock.setSystemTime(pausedAt);
+  await page.clock.fastForward(3_000);
+  await page.clock.runFor(50);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as typeof window & { rosterReads?: number }).rosterReads),
+    )
+    .toBe(0);
+  const nextListRequest = page.waitForRequest((request) =>
+    request.url().includes("/rpc/spaces/list"),
+  );
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await page.waitForTimeout(500);
+  await page.clock.runFor(50);
+  const focusResponse = await (await nextListRequest).response();
+  expect(focusResponse).not.toBeNull();
+  expect(focusResponse?.ok()).toBe(true);
+  // The response resolves on headers; the roster applies only once the body has arrived.
+  expect(await focusResponse?.finished()).toBeNull();
+  await page.clock.resume();
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
   expect(new URL(page.url()).pathname).toBe(deletedBotPath);
   await captureScreenshot(page, testInfo, "27-created-bot");
 
@@ -82,7 +137,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const studio = page.getByTestId("avatar-studio");
   await expect(studio).toBeVisible();
   await expect(studio.getByTestId("avatar-studio-bot-tab")).toBeVisible();
-  await studio.getByRole("button", { name: "Color #EAB308" }).click();
+  await studio.getByRole("button", { name: "Color #FFAF38" }).click();
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   await expect(studio).toBeHidden();
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
@@ -99,7 +154,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const settings = page.getByTestId("bot-settings");
   await settings.getByTestId("avatar-studio-trigger").click();
   await expect(studio).toBeVisible();
-  await expect(studio.getByRole("button", { name: "Color #EAB308" })).toHaveClass(/ring-2/);
+  await expect(studio.getByRole("button", { name: "Color #FFAF38" })).toHaveClass(/ring-2/);
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   const modelSelect = settings.getByRole("combobox", { name: "Model", exact: true });
   const teamComputer = settings.getByRole("button", { name: "Team" });
@@ -154,6 +209,12 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(teamComputer).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
   await expect(settings.getByRole("switch", { name: "Manage other bots" })).toBeVisible();
+  const replyMode = settings.getByRole("combobox", { name: "Replies", exact: true });
+  await replyMode.scrollIntoViewIfNeeded();
+  await expect(replyMode).toHaveValue("chat");
+  await replyMode.selectOption("messages");
+  await expect(replyMode).toHaveValue("messages");
+  await captureScreenshot(page, testInfo, "27d-bot-settings-reply-mode");
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
@@ -171,7 +232,6 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(sidePanel.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Take control" })).toHaveCount(0);
-  await expect(sidePanel.getByTestId("computer-more-button")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27b-computer-panel");
 
   await editName("Atlas");
@@ -189,6 +249,27 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Atlas");
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
+
+  // Long instructions scroll inside their box instead of stretching the narrow panel.
+  const instructionsInput = settings.getByRole("textbox", { name: "Instructions", exact: true });
+  await instructionsInput.fill(
+    Array.from(
+      { length: 80 },
+      (_, index) => `${index + 1}. Cite a primary source for every claim.`,
+    ).join("\n"),
+  );
+  const instructionsSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await instructionsInput.blur();
+  await instructionsSaved;
+  await expect(instructionsInput).toBeEnabled();
+  const scrollsInside = await instructionsInput.evaluate(
+    (field) => field.scrollHeight > field.clientHeight,
+  );
+  expect(scrollsInside).toBe(true);
+  await instructionsInput.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "29a-long-bot-instructions");
 
   // Wrap in the narrow dialog without pushing Delete below the Playwright viewport.
   const longUnbrokenName = "A".repeat(48);

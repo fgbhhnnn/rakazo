@@ -1,5 +1,5 @@
 /**
- * On-device dictation for calls, mirroring the web store's endpoint mode: the recognizer
+ * On-device dictation for calls and the composer, mirroring the web store's endpoint mode: the recognizer
  * reports words, and only a quiet gap measured here ends a turn. The recognizer's own
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
  */
@@ -14,6 +14,7 @@ const RESTART_MIN_MS = 250;
 const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
 const MAX_DEAD_RESTARTS = 5;
+export const QUIET_RESTART_MS = 15_000;
 /** Errors that mean this turn cannot recover; the rest are routine and `end` restarts. */
 const FATAL_ERRORS = new Set([
   "not-allowed",
@@ -27,41 +28,21 @@ const TRANSIENT_ERRORS = new Set(["client", "busy", "network", "unknown", "too-m
 
 export type DictationGiveUp = "idle" | "failed";
 
-/**
- * iOS: the call plays the reply while this session listens, so both share one audio
- * session. The module's default (`measurement` mode) is set again on every restart and
- * flips the session out from under the player, which on iOS cuts or silences the reply.
- * Keep the same `playAndRecord` + speaker route the player uses, and let voice
- * processing cancel the speaker so the reply is not transcribed as the caller.
- */
-export const IOS_CALL_AUDIO = {
-  iosCategory: {
-    category: "playAndRecord",
-    categoryOptions: ["defaultToSpeaker", "allowBluetooth", "mixWithOthers"],
-    mode: "voiceChat",
-  },
-  iosVoiceProcessingEnabled: true,
-} as const;
-
-export type DictationStartOptions = {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  iosCategory?: {
-    category: string;
-    categoryOptions: readonly string[];
-    mode?: string;
-  };
-  iosVoiceProcessingEnabled?: boolean;
-};
-
 type ResultEvent = { isFinal: boolean; results: { transcript: string }[] };
 type ErrorEvent = { error?: string };
 type DictationEventMap = { result: ResultEvent; end: null; error: ErrorEvent };
+type AudioSession = { category: string; categoryOptions: string[]; mode: string };
 
 /** The slice of `expo-speech-recognition` this module needs, so tests can drive the events. */
 export type SpeechRecognizer = {
-  start(options: DictationStartOptions): void;
+  start(options: {
+    lang: string;
+    interimResults: boolean;
+    continuous: boolean;
+    iosCategory?: AudioSession;
+    iosVoiceProcessingEnabled?: boolean;
+  }): void;
+  getAudioSessionCategoryAndOptionsIOS(): AudioSession;
   stop(): void;
   abort(): void;
   isRecognitionAvailable(): boolean;
@@ -76,9 +57,16 @@ export type SpeechRecognizer = {
 type Session = {
   recognizer: SpeechRecognizer;
   lang: string;
+  call: boolean;
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
+  /** Quiet gap that ends the utterance. */
+  endpointMs: number;
+  /** The caller chose the gap, so the silence timer alone ends a quiet session. */
+  ownEndpoint: boolean;
+  /** The words last reported, so a repeated result is not mistaken for new speech. */
+  reported: string;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -86,6 +74,7 @@ type Session = {
   heard: string;
   silence?: ReturnType<typeof setTimeout>;
   restart?: ReturnType<typeof setTimeout>;
+  quiet?: ReturnType<typeof setTimeout>;
   backoff: number;
   deadRestarts: number;
   /** Reset on each native start: only the last attempt classifies empty exhaustion. */
@@ -143,6 +132,7 @@ export function stop(): void {
   if (!session) return;
   clearTimeout(session.silence);
   clearTimeout(session.restart);
+  clearTimeout(session.quiet);
   for (const sub of session.subs) sub.remove();
   try {
     session.recognizer.abort();
@@ -151,13 +141,24 @@ export function stop(): void {
   }
 }
 
-/** Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it. */
+/** Ends the running session now and delivers what it heard. */
+export function finishListening(): void {
+  if (active) finish(active, "idle");
+}
+
+/**
+ * Opens the microphone until a quiet gap ends the utterance, or `signal` aborts it.
+ * A caller's own `endpointMs` also counts from the start, so a mic that never hears
+ * anything closes too.
+ */
 export async function listen(opts: {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
   signal?: AbortSignal;
   lang?: string;
+  endpointMs?: number;
+  call?: boolean;
 }): Promise<void> {
   // A cancelled request can arrive after a newer session started; it must not stop that one.
   if (opts.signal?.aborted) return;
@@ -172,9 +173,13 @@ export async function listen(opts: {
   const session: Session = {
     recognizer,
     lang,
+    call: opts.call ?? false,
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,
+    endpointMs: opts.endpointMs ?? ENDPOINT_SILENCE_MS,
+    ownEndpoint: opts.endpointMs !== undefined,
+    reported: "",
     subs: [],
     carried: "",
     heard: "",
@@ -199,7 +204,15 @@ export async function listen(opts: {
     start(session);
   } catch {
     giveUp(session, "failed", "start-failed");
+    return;
   }
+  if (session.ownEndpoint) armSilence(session);
+}
+
+/** Ends the utterance once nothing new is heard for the session's quiet gap. */
+function armSilence(session: Session): void {
+  clearTimeout(session.silence);
+  session.silence = setTimeout(() => finish(session, "idle"), session.endpointMs);
 }
 
 function start(session: Session): void {
@@ -209,8 +222,27 @@ function start(session: Session): void {
     lang: session.lang,
     interimResults: true,
     continuous: true,
-    ...IOS_CALL_AUDIO,
+    ...(session.call
+      ? {
+          iosCategory: session.recognizer.getAudioSessionCategoryAndOptionsIOS(),
+          // Keep speaker echo cancellation while sharing the call's current audio session.
+          iosVoiceProcessingEnabled: true,
+        }
+      : {}),
   });
+  watchQuiet(session);
+}
+
+function watchQuiet(session: Session): void {
+  clearTimeout(session.quiet);
+  session.quiet = setTimeout(() => {
+    if (active !== session) return;
+    try {
+      session.recognizer.abort();
+    } catch {
+      giveUp(session, "failed", "start-failed");
+    }
+  }, QUIET_RESTART_MS);
 }
 
 function onResult(session: Session, event: ResultEvent): void {
@@ -218,6 +250,7 @@ function onResult(session: Session, event: ResultEvent): void {
   const heard = event.results?.[0]?.transcript ?? "";
   session.backoff = RESTART_MIN_MS;
   session.deadRestarts = 0;
+  if (heard.trim()) watchQuiet(session);
   // Android reports a phrase once and starts over, iOS grows one transcript: folding a
   // final into the carried text and clearing the live one covers both.
   if (event.isFinal) {
@@ -228,15 +261,18 @@ function onResult(session: Session, event: ResultEvent): void {
   }
   const text = join(session.carried, session.heard);
   if (!text) return;
+  // With the caller's own pause limit, only new words count as being heard.
+  if (session.ownEndpoint && text === session.reported) return;
+  session.reported = text;
   session.onInterim?.(text);
   // Any result means the caller was just heard, so the quiet gap restarts here — including
   // a phrase the recognizer finalises after repeating it, whose boundary is a breath.
-  clearTimeout(session.silence);
-  session.silence = setTimeout(() => finish(session), ENDPOINT_SILENCE_MS);
+  armSilence(session);
 }
 
 function onEnd(session: Session): void {
   if (active !== session) return;
+  clearTimeout(session.quiet);
   // iOS ends a session on its own — on a pause, an interruption, or its own cap — and that
   // says nothing about whether the caller finished. Pick the microphone straight back up.
   session.carried = join(session.carried, session.heard);
@@ -244,8 +280,12 @@ function onEnd(session: Session): void {
   session.deadRestarts += 1;
   if (session.deadRestarts > MAX_DEAD_RESTARTS) {
     const failed = session.transientError && !session.carried;
-    giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
-    return;
+    // A recognizer that keeps failing gives up; one that just ended quietly during a pause
+    // keeps restarting when the caller's own silence timer decides when the pause is over.
+    if (failed || !session.ownEndpoint) {
+      giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
+      return;
+    }
   }
   clearTimeout(session.restart);
   const delay = session.backoff;

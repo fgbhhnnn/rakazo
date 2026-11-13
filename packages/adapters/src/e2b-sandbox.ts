@@ -23,14 +23,21 @@ export interface E2BSandboxSdk extends RemoteDesktopSdk {
   ): Promise<{ state: string }>;
 }
 
+// The lifecycle and job runner own retries. The SDK's own would stack under them, hold a call open
+// through its backoff, and replay a create whose 503 may have started a sandbox. A connected
+// sandbox keeps this for its later API calls.
+const noRetries = { retries: 0 };
+
 const e2bSdk: E2BSandboxSdk = {
   create: async (template, options) =>
-    pageBrowserDesktop(await (await e2b()).create(template, options)),
-  connect: async (id, options) => pageBrowserDesktop(await (await e2b()).connect(id, options)),
-  isRunning: async (id, options) => (await (await e2b()).getInfo(id, options)).state === "running",
-  getInfo: async (id, options) => (await e2b()).getInfo(id, options),
-  pause: async (id, options) => (await e2b()).pause(id, options),
-  kill: async (id, options) => (await e2b()).kill(id, options),
+    pageBrowserDesktop(await (await e2b()).create(template, { ...options, ...noRetries })),
+  connect: async (id, options) =>
+    pageBrowserDesktop(await (await e2b()).connect(id, { ...options, ...noRetries })),
+  isRunning: async (id, options) =>
+    (await (await e2b()).getInfo(id, { ...options, ...noRetries })).state === "running",
+  getInfo: async (id, options) => (await e2b()).getInfo(id, { ...options, ...noRetries }),
+  pause: async (id, options) => (await e2b()).pause(id, { ...options, ...noRetries }),
+  kill: async (id, options) => (await e2b()).kill(id, { ...options, ...noRetries }),
 };
 
 export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {

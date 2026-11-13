@@ -1,134 +1,211 @@
 // @vitest-environment jsdom
 
-import type { ComponentProps, ReactNode } from "react";
-import { act, createElement } from "react";
+import { act, useState } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ComposerDictateButton } from "../components/composer-dictate-button";
-import * as dictation from "./dictation";
-import { resetI18nForTests } from "./i18n";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+const app = vi.hoisted(() => ({
+  appState: new Set<(state: string) => void>(),
+  locale: "en",
+  blur: undefined as undefined | (() => void),
+}));
+
+const voice = vi.hoisted(() => ({
+  recordClip: vi.fn(),
+  transcribeClip: vi.fn(),
+}));
+
+vi.mock("expo-router", () => ({
+  useNavigation: () => ({
+    addListener: (event: string, listener: () => void) => {
+      if (event === "blur") app.blur = listener;
+      return () => {
+        if (event === "blur" && app.blur === listener) app.blur = undefined;
+      };
+    },
+  }),
+  useRouter: () => ({ push: vi.fn() }),
+}));
 
 vi.mock("react-native", () => ({
-  StyleSheet: { create: (styles: object) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
-  Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
+  Alert: { alert: vi.fn() },
+  AppState: {
+    addEventListener: (_type: string, listener: (state: string) => void) => {
+      app.appState.add(listener);
+      return { remove: () => app.appState.delete(listener) };
+    },
+  },
 }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("expo-localization", () => ({ getLocales: () => [{ languageTag: "en-US" }] }));
-vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({
-    accessibilityLabel,
-    onPress,
-    disabled,
-  }: {
-    accessibilityLabel: string;
-    onPress: () => void;
-    disabled?: boolean;
-  }) =>
-    createElement("button", {
-      type: "button",
-      "aria-label": accessibilityLabel,
-      onClick: onPress,
-      disabled,
-    }),
+
+vi.mock("expo-audio", () => ({
+  AudioModule: {
+    requestRecordingPermissionsAsync: vi.fn(async () => ({ granted: true })),
+  },
 }));
-vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 
-describe("mobile composer dictation", () => {
-  let container: HTMLDivElement;
-  let root: ReturnType<typeof createRoot>;
-  let options: Parameters<typeof dictation.listen>[0];
-  const onText = vi.fn();
-  async function render(props: Partial<ComponentProps<typeof ComposerDictateButton>> = {}) {
-    await act(async () => root.render(<ComposerDictateButton onText={onText} {...props} />));
-  }
-  async function click(label: string) {
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click(),
-    );
-  }
-  beforeEach(() => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    vi.clearAllMocks();
-    resetI18nForTests("en");
-    vi.mocked(dictation.available).mockResolvedValue(true);
-    vi.mocked(dictation.listen).mockImplementation(async (opts) => {
-      options = opts;
-    });
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-  });
-  afterEach(() => {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  });
+vi.mock("./api", () => ({
+  captureApiRequestContext: vi.fn(async () => ({
+    apiBase: "https://api.test",
+    sessionGeneration: 1,
+    headers: {},
+  })),
+  rpc: vi.fn(),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./voice", () => ({ ensureVoiceConsent: vi.fn(async () => undefined) }));
+vi.mock("./call-session", () => ({
+  recordClip: voice.recordClip,
+  transcribeClip: voice.transcribeClip,
+}));
+vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: vi.fn(async () => false) }));
+vi.mock("./dictation", () => ({
+  available: vi.fn(async () => false),
+  listen: vi.fn(),
+  finishListening: vi.fn(),
+}));
+vi.mock("./i18n", () => ({
+  deviceLanguage: vi.fn(async () => "en"),
+  getActiveUiLocale: () => app.locale,
+}));
+vi.mock("./user-error", () => ({ errorText: (_error: unknown, fallback: string) => fallback }));
+vi.mock("./voice-call-entry", () => ({
+  resolveVoiceCallPlan: vi.fn(async () => ({ kind: "provider", transcribe: true })),
+}));
 
-  it("hides when device dictation is unavailable", async () => {
-    vi.mocked(dictation.available).mockResolvedValue(false);
-    await render();
-    expect(container.querySelector("button")).toBeNull();
-  });
+import { rpc } from "./api";
+import { useComposerDictation } from "./composer-dictation";
+import * as dictation from "./dictation";
+import { resolveVoiceCallPlan } from "./voice-call-entry";
 
-  it("previews interim text and inserts it once on manual stop", async () => {
-    await render();
-    await click("Dictate");
-    act(() => options.onInterim?.("你好"));
-    expect(container.textContent).toBe("你好");
-    expect(onText).not.toHaveBeenCalled();
-    await click("Stop dictation");
-    expect(options.signal?.aborted).toBe(true);
-    expect(onText).toHaveBeenCalledExactlyOnceWith("你好");
-    act(() => options.onFinal("late duplicate"));
-    expect(onText).toHaveBeenCalledOnce();
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
   });
+  return { promise, resolve };
+}
 
-  it("inserts the final text on automatic endpoint", async () => {
-    await render();
-    await click("Dictate");
-    act(() => options.onFinal("review this"));
-    expect(onText).toHaveBeenCalledExactlyOnceWith("review this");
-    expect(container.querySelector('[aria-label="Dictate"]')).not.toBeNull();
-  });
+let root: Root;
+let container: HTMLDivElement;
+let words: Array<{ text: string; final?: boolean }>;
+let toggle: () => void;
+let mounted = false;
 
-  it("uses zh-CN and translated controls for Chinese UI", async () => {
-    resetI18nForTests("zh-CN");
-    await render();
-    await click("语音输入");
-    expect(options.lang).toBe("zh-CN");
-    expect(container.querySelector('[aria-label="停止语音输入"]')).not.toBeNull();
+function Harness() {
+  const [, redraw] = useState(0);
+  const dictation = useComposerDictation({
+    disabled: false,
+    onWords: (text, final) => {
+      words.push({ text, final });
+      redraw((n) => n + 1);
+    },
   });
+  toggle = dictation.toggle;
+  return (
+    <button type="button" onClick={() => dictation.toggle()}>
+      {dictation.status}
+    </button>
+  );
+}
 
-  it.each(["idle", "failed"] as const)("reports %s and allows retry", async (reason) => {
-    await render();
-    await click("Dictate");
-    act(() => options.onGiveUp?.(reason));
-    expect(container.textContent).toContain(reason === "idle" ? "Nothing heard" : "permissions");
-    expect(onText).not.toHaveBeenCalled();
-    await click("Dictate");
-    expect(container.textContent).toBe("Listening…");
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.clearAllMocks();
+  app.appState.clear();
+  app.locale = "en";
+  app.blur = undefined;
+  words = [];
+  voice.recordClip.mockImplementation(async (_cancel: AbortSignal, until: AbortSignal) => {
+    if (!until.aborted) {
+      await new Promise<void>((resolve) => {
+        until.addEventListener("abort", () => resolve(), { once: true });
+      });
+    }
+    return { base64: "clip", mimeType: "audio/m4a" };
   });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  mounted = true;
+  act(() => root.render(<Harness />));
+});
 
-  it("reports start failures", async () => {
-    vi.mocked(dictation.listen).mockRejectedValue(new Error("unavailable"));
-    await render();
-    await click("Dictate");
-    expect(container.textContent).toContain("permissions");
-    expect(onText).not.toHaveBeenCalled();
-  });
+afterEach(() => {
+  if (mounted) act(() => root.unmount());
+  mounted = false;
+  container.remove();
+  vi.unstubAllGlobals();
+});
 
-  it.each(["disabled", "unmount"])("aborts on %s and ignores late callbacks", async (reason) => {
-    await render();
-    await click("Dictate");
-    if (reason === "disabled") await render({ disabled: true });
-    else act(() => root.render(null));
-    expect(options.signal?.aborted).toBe(true);
-    act(() => {
-      options.onInterim?.("late");
-      options.onFinal("late");
-      options.onGiveUp?.("failed");
-    });
-    expect(onText).not.toHaveBeenCalled();
+/** Start a provider dictation and tap Stop, leaving the transcription in flight. */
+async function stopDuringTranscription() {
+  const pending = deferred<string>();
+  voice.transcribeClip.mockReturnValueOnce(pending.promise);
+  await act(async () => {
+    toggle();
   });
+  await vi.waitFor(() => expect(voice.recordClip).toHaveBeenCalled());
+  await act(async () => {
+    toggle();
+  });
+  await vi.waitFor(() => expect(voice.transcribeClip).toHaveBeenCalled());
+  return pending;
+}
+
+async function finishTranscription(pending: ReturnType<typeof deferred<string>>, text: string) {
+  await act(async () => {
+    pending.resolve(text);
+    await pending.promise;
+  });
+}
+
+it("lands dictated words when the app goes to the background during transcription", async () => {
+  const pending = await stopDuringTranscription();
+  act(() => {
+    for (const listener of app.appState) listener("background");
+  });
+  await finishTranscription(pending, "the latest report");
+  expect(words).toEqual([{ text: "the latest report", final: true }]);
+});
+
+it("lands dictated words when the chat blurs during transcription", async () => {
+  const pending = await stopDuringTranscription();
+  act(() => app.blur?.());
+  await finishTranscription(pending, "the latest report");
+  expect(words).toEqual([{ text: "the latest report", final: true }]);
+});
+
+it("drops a transcription when the composer unmounts", async () => {
+  const pending = await stopDuringTranscription();
+  act(() => root.unmount());
+  mounted = false;
+  await finishTranscription(pending, "the latest report");
+  expect(words).toEqual([]);
+});
+
+it("uses Chinese device dictation to update the draft without sending it", async () => {
+  app.locale = "zh-CN";
+  vi.mocked(resolveVoiceCallPlan).mockResolvedValueOnce({ kind: "device", transcribe: false });
+  await act(async () => toggle());
+  await vi.waitFor(() => expect(dictation.listen).toHaveBeenCalled());
+  const options = vi.mocked(dictation.listen).mock.calls[0]![0];
+  expect(options.lang).toBe("zh-CN");
+  act(() => options.onInterim?.("你好"));
+  act(() => options.onFinal("你好，帮我看一下"));
+  expect(words.map((word) => word.text)).toEqual(["你好", "你好，帮我看一下"]);
+  expect(rpc).not.toHaveBeenCalled();
+  expect(voice.recordClip).not.toHaveBeenCalled();
+});
+
+it("ignores device dictation results after the composer unmounts", async () => {
+  vi.mocked(resolveVoiceCallPlan).mockResolvedValueOnce({ kind: "device", transcribe: false });
+  await act(async () => toggle());
+  await vi.waitFor(() => expect(dictation.listen).toHaveBeenCalled());
+  const options = vi.mocked(dictation.listen).mock.calls[0]![0];
+  act(() => root.unmount());
+  mounted = false;
+  expect(options.signal?.aborted).toBe(true);
+  act(() => options.onFinal("late result"));
+  expect(words).toEqual([]);
 });

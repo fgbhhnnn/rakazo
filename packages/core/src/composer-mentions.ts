@@ -132,12 +132,95 @@ export function composerMentionQuery(
     (span) => selectionStart > span.start && selectionStart <= span.end,
   );
   if (recognized) return { ...recognized, query: text.slice(recognized.start + 1, selectionStart) };
-  const match = /(?:^|\s)@([\w-]*)$/.exec(text.slice(0, selectionStart));
+  const match = /(?:^|\s)@((?:[\p{L}\p{M}\p{N}_\u200c\u30fb-]|\u200d)*)$/u.exec(
+    text.slice(0, selectionStart),
+  );
   if (!match) return null;
   const query = match[1] ?? "";
   const start = selectionStart - query.length - 1;
-  const rest = /^[\w-]*/.exec(text.slice(selectionStart))?.[0] ?? "";
-  return { start, end: selectionStart + rest.length, query };
+  const rest =
+    /^(?:[\p{L}\p{M}\p{N}_\u200c\u30fb-]|\u200d)*/u.exec(text.slice(selectionStart))?.[0] ?? "";
+  // CJK prose need not have spaces. Extend into it only as far as a known name matches.
+  const cjk = rest.search(
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u,
+  );
+  if (cjk < 0) return { start, end: selectionStart + rest.length, query };
+  let end = selectionStart + cjk;
+  const typed = text.slice(start + 1, selectionStart + rest.length);
+  for (const { name } of knownMentions) {
+    const candidate = name.trim();
+    let matched = 0;
+    for (const character of typed) {
+      if (
+        candidate.slice(matched, matched + character.length).toLowerCase() !==
+        character.toLowerCase()
+      )
+        break;
+      matched += character.length;
+    }
+    if (matched >= query.length) end = Math.max(end, start + 1 + matched);
+  }
+  return { start, end, query };
+}
+
+function pickerWords(value: string): string[] {
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Picker order for a typed query: every query word must appear in the name, a word that starts
+ * a name word counts more than one inside it, and ties keep the given order. `everyone` also
+ * answers to `all`. An empty query keeps every target in order.
+ */
+export function filterComposerMentionTargets<T extends Pick<ComposerMention, "kind" | "name">>(
+  targets: readonly T[],
+  query: string,
+): T[] {
+  const words = pickerWords(query);
+  if (words.length === 0) return [...targets];
+  const scored = targets.flatMap((target, index) => {
+    const nameWords = pickerWords(target.name);
+    const name = nameWords.join(" ");
+    let score = 0;
+    for (const word of words) {
+      if (
+        target.kind === "everyone" &&
+        ["everyone", "all"].some((alias) => alias.startsWith(word))
+      ) {
+        score += 2;
+      } else if (nameWords.some((nameWord) => nameWord.startsWith(word))) {
+        score += 2;
+      } else if (name.includes(word)) {
+        score += 1;
+      } else {
+        return [];
+      }
+    }
+    return [{ target, index, score }];
+  });
+  return scored.sort((a, b) => b.score - a.score || a.index - b.index).map(({ target }) => target);
+}
+
+/** A sent message's text cut into plain runs and the `@Name` runs that name a known target. */
+export type MentionTextPart<T> = { text: string; target?: T };
+
+export function splitMentionText<T extends MentionName>(
+  text: string,
+  targets: readonly T[],
+): MentionTextPart<T>[] {
+  const spans = composerMentionSpans(text, targets);
+  if (spans.length === 0) return [{ text }];
+  const parts: MentionTextPart<T>[] = [];
+  let index = 0;
+  for (const span of spans) {
+    const target = targets.find((candidate) => candidate.name.trim().toLowerCase() === span.name);
+    if (!target) continue;
+    if (span.start > index) parts.push({ text: text.slice(index, span.start) });
+    parts.push({ text: text.slice(span.start, span.end), target });
+    index = span.end;
+  }
+  if (index < text.length) parts.push({ text: text.slice(index) });
+  return parts;
 }
 
 function pickerWords(value: string): string[] {

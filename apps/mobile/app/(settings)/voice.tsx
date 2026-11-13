@@ -1,8 +1,10 @@
+import { useLingui } from "@lingui/react/macro";
 import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
@@ -24,14 +26,15 @@ import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
 import { mobileTokens } from "../../lib/appearance";
 import {
+  loadCallGreetingEnabled,
   loadCallSoundsEnabled,
   loadWaitSoundEnabled,
   playCallCue,
+  saveCallGreetingEnabled,
   saveCallSoundsEnabled,
   saveWaitSoundEnabled,
 } from "../../lib/call-sounds";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
-import { useI18n } from "../../lib/i18n";
 import { withMemberSettingsGuard } from "../../lib/member-settings-guard";
 import { native, useThemedStyles } from "../../lib/native";
 import { queryClient, rpcQuery } from "../../lib/query";
@@ -91,7 +94,7 @@ function VoiceSettingsScreen() {
   const deviceSettings = scope === "account";
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createVoiceStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const [cached] = useState(() => cachedVoiceSettings(target));
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
@@ -104,8 +107,12 @@ function VoiceSettingsScreen() {
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
-  // Fields typed into since the last load; an opening refresh keeps them.
+  // Fields typed into since the last load; an opening refresh keeps them only while their
+  // provider stays selected.
   const edited = useRef(new Set<VoiceField>());
+  // The provider chosen last, ahead of the render that shows it, so a field still showing the
+  // previous provider cannot type into the next one.
+  const selectedProvider = useRef(provider);
   // Every load and action bumps this, so an older refresh never lands over a newer choice.
   const loadRevision = useRef(0);
   const speechModelSave = useRef<string | null>(null);
@@ -113,6 +120,7 @@ function VoiceSettingsScreen() {
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(!deviceSettings);
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
+  const [callGreeting, setCallGreeting] = useState<boolean | null>(null);
   // Prevent stale reads from overwriting a saved preference.
   const soundPrefsRevision = useRef(0);
   const soundPrefSaving = useRef(false);
@@ -144,9 +152,11 @@ function VoiceSettingsScreen() {
       if (revision !== loadRevision.current) return;
       setLoadError(null);
       const selected = pickProvider(nextCatalog, nextStatus, nextProvider);
+      if (selected !== selectedProvider.current) edited.current.clear();
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
       setStatus(nextStatus);
+      selectedProvider.current = selected;
       setProvider(selected);
       const cred = nextCredentials.find((entry) => entry.provider === selected);
       const fields: [VoiceField, (value: string) => void, string | undefined][] = [
@@ -168,6 +178,7 @@ function VoiceSettingsScreen() {
   );
 
   const edit = (field: VoiceField, set: (value: string) => void) => (value: string) => {
+    if (provider !== selectedProvider.current) return;
     edited.current.add(field);
     set(value);
   };
@@ -176,8 +187,7 @@ function VoiceSettingsScreen() {
     void load(undefined, true)
       .catch((err: unknown) => {
         // A newer read replaced this one and reports for both.
-        if (!isCancelledError(err))
-          setLoadError(errorText(err, t("Could not load voice settings")));
+        if (!isCancelledError(err)) setLoadError(errorText(err, t`Could not load voice settings`));
       })
       .finally(() => setLoading(false));
   }, [load, t]);
@@ -198,20 +208,23 @@ function VoiceSettingsScreen() {
           if (deviceVoiceSaveInFlight.current) return;
           if (deviceVoiceRevision.current !== revision) return;
           setDeviceVoiceReady(true);
-          setError(errorText(err, t("Could not load voice settings")));
+          setError(errorText(err, t`Could not load voice settings`));
         });
       const soundRevision = soundPrefsRevision.current;
-      void Promise.allSettled([loadCallSoundsEnabled(), loadWaitSoundEnabled()]).then(
-        ([calls, waiting]) => {
-          if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
-          setCallSounds(calls.status === "fulfilled" ? calls.value : null);
-          setWaitSound(waiting.status === "fulfilled" ? waiting.value : null);
-          const failed = [calls, waiting].find((result) => result.status === "rejected");
-          if (failed?.status === "rejected") {
-            setError(errorText(failed.reason, t("Could not load voice settings")));
-          }
-        },
-      );
+      void Promise.allSettled([
+        loadCallSoundsEnabled(),
+        loadWaitSoundEnabled(),
+        loadCallGreetingEnabled(),
+      ]).then(([calls, waiting, greeting]) => {
+        if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
+        setCallSounds(calls.status === "fulfilled" ? calls.value : null);
+        setWaitSound(waiting.status === "fulfilled" ? waiting.value : null);
+        setCallGreeting(greeting.status === "fulfilled" ? greeting.value : null);
+        const failed = [calls, waiting, greeting].find((result) => result.status === "rejected");
+        if (failed?.status === "rejected") {
+          setError(errorText(failed.reason, t`Could not load voice settings`));
+        }
+      });
     }, [deviceSettings, open, t]),
   );
 
@@ -230,7 +243,7 @@ function VoiceSettingsScreen() {
       return true;
     } catch {
       show(!next);
-      setError(t("Could not save that preference"));
+      setError(t`Could not save that preference`);
       return false;
     } finally {
       soundPrefSaving.current = false;
@@ -241,6 +254,11 @@ function VoiceSettingsScreen() {
   async function toggleWaitSound(next: boolean) {
     if (waitSound === null) return;
     await saveSoundPref(next, setWaitSound, saveWaitSoundEnabled);
+  }
+
+  async function toggleCallGreeting(next: boolean) {
+    if (callGreeting === null) return;
+    await saveSoundPref(next, setCallGreeting, saveCallGreetingEnabled);
   }
 
   async function toggleCallSounds(next: boolean) {
@@ -259,7 +277,7 @@ function VoiceSettingsScreen() {
       return true;
     } catch (err) {
       setDeviceVoice(!next);
-      setError(errorText(err, t("Could not save that preference")));
+      setError(errorText(err, t`Could not save that preference`));
       return false;
     } finally {
       deviceVoiceSaveInFlight.current = false;
@@ -289,6 +307,7 @@ function VoiceSettingsScreen() {
     if (status) setLoadError(null);
     try {
       if (deviceSettings && !(await saveDeviceVoice(false))) return;
+      selectedProvider.current = nextProvider;
       setProvider(nextProvider);
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
@@ -301,9 +320,10 @@ function VoiceSettingsScreen() {
           setStatus(saved);
           await writeSaved(queryClient, voiceReads(target).status.queryKey, () => saved);
         } catch (err) {
+          selectedProvider.current = previousProvider;
           setProvider(previousProvider);
           if (wasDeviceVoice && !(await saveDeviceVoice(true))) return;
-          setError(errorText(err, t("Could not save that voice")));
+          setError(errorText(err, t`Could not save that voice`));
           return;
         }
       }
@@ -316,7 +336,7 @@ function VoiceSettingsScreen() {
       } catch (err) {
         // A refresh failure must not leave another provider's voices available.
         setVoices([]);
-        setError(errorText(err, t("Could not load voice settings")));
+        setError(errorText(err, t`Could not load voice settings`));
       }
     } finally {
       setPending(null);
@@ -331,7 +351,12 @@ function VoiceSettingsScreen() {
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   const keyless = Boolean(selected?.keyless);
-  const canConnect = keyless || (selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8);
+  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+    entry: selected,
+    credential,
+    apiKey,
+    baseUrl,
+  });
 
   async function connect() {
     if (!selected || !canConnect) return;
@@ -345,7 +370,7 @@ function VoiceSettingsScreen() {
         apiKey: apiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
-        ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
+        ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
         ...(selfHosted
           ? {
               baseUrl: baseUrl.trim(),
@@ -357,7 +382,7 @@ function VoiceSettingsScreen() {
       setApiKey("");
       await load(selected.id);
     } catch (err) {
-      setError(errorText(err, t("Could not connect")));
+      setError(errorText(err, t`Could not connect`));
     } finally {
       setPending(null);
     }
@@ -373,14 +398,14 @@ function VoiceSettingsScreen() {
       setApiKey("");
       await load(providerId);
     } catch (err) {
-      setError(errorText(err, t("Could not disconnect")));
+      setError(errorText(err, t`Could not disconnect`));
     } finally {
       setPending(null);
     }
   }
 
   async function saveSpeechModel() {
-    if (!credential || selected?.id !== "fish-audio" || pending !== null) return;
+    if (!credential || !selected?.speechModel || pending !== null) return;
     const next = speechModel.trim();
     if (next === (credential.speechModel ?? "")) return;
     if (speechModelSave.current === next) return;
@@ -404,7 +429,7 @@ function VoiceSettingsScreen() {
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
       void load(selected.id, true).catch(() => undefined);
     } catch (err) {
-      setError(errorText(err, t("Could not save that speech model")));
+      setError(errorText(err, t`Could not save that speech model`));
     } finally {
       speechModelSave.current = null;
       setPending(null);
@@ -419,7 +444,7 @@ function VoiceSettingsScreen() {
       await rpc("voice/setVoice", { voiceId: nextVoiceId, provider: selected?.id, scope });
       await load(selected?.id);
     } catch (err) {
-      setError(errorText(err, t("Could not save that voice")));
+      setError(errorText(err, t`Could not save that voice`));
     } finally {
       setPending(null);
     }
@@ -430,14 +455,14 @@ function VoiceSettingsScreen() {
     setError(null);
     if (status) setLoadError(null);
     try {
-      const ready = await speakText(t("Hi, this is how I'll sound when I read replies out loud."), {
+      const ready = await speakText(t`Hi, this is how I'll sound when I read replies out loud.`, {
         scope,
       });
       if (!ready) {
-        throw new Error(t("Connect a voice provider first."));
+        throw new Error(t`Connect a voice provider first.`);
       }
     } catch (err) {
-      setError(errorText(err, t("Could not play a sample")));
+      setError(errorText(err, t`Could not play a sample`));
     } finally {
       setPending(null);
     }
@@ -480,7 +505,7 @@ function VoiceSettingsScreen() {
               ]}
             >
               <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t("This device")}</Text>
+                <Text style={styles.cardTitle}>{t`This device`}</Text>
               </View>
               {deviceVoice ? <Checkmark /> : null}
             </Pressable>
@@ -516,7 +541,7 @@ function VoiceSettingsScreen() {
         {/* Connections belong to the account, so a space never removes them. */}
         {hiddenSelfHosted && scope === "account" ? (
           <NativeActionButton
-            label={t("Disconnect Self-hosted")}
+            label={t`Disconnect Self-hosted`}
             prominence="quiet"
             disabled={pending !== null}
             onPress={() => void disconnect(OPENAI_COMPATIBLE_PROVIDER_ID)}
@@ -526,7 +551,7 @@ function VoiceSettingsScreen() {
           <>
             {selfHosted ? (
               <TextInput
-                accessibilityLabel={t("Server URL")}
+                accessibilityLabel={t`Server URL`}
                 autoCapitalize="none"
                 autoComplete="off"
                 autoCorrect={false}
@@ -540,9 +565,9 @@ function VoiceSettingsScreen() {
                 textContentType="URL"
               />
             ) : null}
-            {keyless ? null : (
+            {keyless || linked ? null : (
               <TextInput
-                accessibilityLabel={t("API key")}
+                accessibilityLabel={t`API key`}
                 autoCapitalize="none"
                 autoComplete="off"
                 autoCorrect={false}
@@ -550,11 +575,11 @@ function VoiceSettingsScreen() {
                 value={apiKey}
                 onChangeText={setApiKey}
                 placeholder={
-                  selfHosted
-                    ? t("Optional")
+                  selfHosted || keyOptional
+                    ? t`Optional`
                     : credential
-                      ? t("Paste a replacement key")
-                      : t("Paste your API key")
+                      ? t`Paste a replacement key`
+                      : t`Paste your API key`
                 }
                 placeholderTextColor={native.tertiaryLabel}
                 secureTextEntry
@@ -564,9 +589,9 @@ function VoiceSettingsScreen() {
             )}
             {selfHosted ? (
               <>
-                <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
+                <Text style={styles.fieldLabel}>{t`Speech model`}</Text>
                 <TextInput
-                  accessibilityLabel={t("Speech model")}
+                  accessibilityLabel={t`Speech model`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={ttsModel}
@@ -575,9 +600,9 @@ function VoiceSettingsScreen() {
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
                 />
-                <Text style={styles.fieldLabel}>{t("Transcription model")}</Text>
+                <Text style={styles.fieldLabel}>{t`Transcription model`}</Text>
                 <TextInput
-                  accessibilityLabel={t("Transcription model")}
+                  accessibilityLabel={t`Transcription model`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={sttModel}
@@ -588,15 +613,11 @@ function VoiceSettingsScreen() {
                 />
               </>
             ) : null}
-            {keyless && credential ? null : (
+            {(keyless && credential) || linked ? null : (
               <NativeActionButton
                 disabled={pending !== null || !canConnect}
                 label={
-                  credential && selfHosted
-                    ? t("Reconnect")
-                    : credential
-                      ? t("Replace key")
-                      : t("Connect")
+                  credential && selfHosted ? t`Reconnect` : credential ? t`Replace key` : t`Connect`
                 }
                 onPress={() => void connect()}
               />
@@ -604,16 +625,16 @@ function VoiceSettingsScreen() {
             {credential && scope === "account" ? (
               <NativeActionButton
                 disabled={pending !== null}
-                label={pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
+                label={pending === "disconnect" ? t`Disconnecting…` : t`Disconnect`}
                 onPress={() => void disconnect()}
                 prominence="destructive"
               />
             ) : null}
-            {credential && selected.id === "fish-audio" ? (
+            {credential && selected.speechModel ? (
               <>
-                <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
+                <Text style={styles.fieldLabel}>{t`Speech model`}</Text>
                 <TextInput
-                  accessibilityLabel={t("Speech model")}
+                  accessibilityLabel={t`Speech model`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={pending === null}
@@ -621,7 +642,7 @@ function VoiceSettingsScreen() {
                   onChangeText={edit("speechModel", setSpeechModel)}
                   onBlur={() => void saveSpeechModel()}
                   onSubmitEditing={() => void saveSpeechModel()}
-                  placeholder={t("Optional")}
+                  placeholder={t`Optional`}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
                 />
@@ -654,7 +675,7 @@ function VoiceSettingsScreen() {
         {deviceSettings && (deviceVoice || status?.ready) ? (
           <NativeActionButton
             disabled={pending !== null}
-            label={t("Hear a sample")}
+            label={t`Hear a sample`}
             onPress={() => void testVoice()}
           />
         ) : null}
@@ -662,10 +683,10 @@ function VoiceSettingsScreen() {
           <View style={styles.group}>
             <View style={styles.groupRow}>
               <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t("Call sounds")}</Text>
+                <Text style={styles.cardTitle}>{t`Call sounds`}</Text>
               </View>
               <NativeSwitch
-                accessibilityLabel={t("Call sounds")}
+                accessibilityLabel={t`Call sounds`}
                 value={callSounds === true}
                 disabled={callSounds === null}
                 onValueChange={(next) => void toggleCallSounds(next)}
@@ -673,13 +694,24 @@ function VoiceSettingsScreen() {
             </View>
             <View style={[styles.groupRow, styles.groupDivider]}>
               <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t("Waiting sound")}</Text>
+                <Text style={styles.cardTitle}>{t`Waiting sound`}</Text>
               </View>
               <NativeSwitch
-                accessibilityLabel={t("Waiting sound")}
+                accessibilityLabel={t`Waiting sound`}
                 value={waitSound === true}
                 disabled={waitSound === null}
                 onValueChange={(next) => void toggleWaitSound(next)}
+              />
+            </View>
+            <View style={[styles.groupRow, styles.groupDivider]}>
+              <View style={styles.rowCopy}>
+                <Text style={styles.cardTitle}>{t`Call greeting`}</Text>
+              </View>
+              <NativeSwitch
+                accessibilityLabel={t`Call greeting`}
+                value={callGreeting === true}
+                disabled={callGreeting === null}
+                onValueChange={(next) => void toggleCallGreeting(next)}
               />
             </View>
           </View>

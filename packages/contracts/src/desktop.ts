@@ -53,7 +53,34 @@ export type RakazoDesktopSpeechEvent =
   | { session: number; type: "error"; error: string }
   | { session: number; type: "end" };
 
+/** App menu items the page carries out; each matches a shortcut the page also handles itself. */
+export const DESKTOP_MENU_COMMANDS = [
+  "new",
+  "command-menu",
+  "search",
+  "toggle-sidebar",
+  "back",
+  "forward",
+  "next-bot",
+  "previous-bot",
+  "new-group",
+  "integrations",
+  "chat-panel",
+  "shortcuts",
+  "find",
+] as const;
+
+export type DesktopMenuCommand = (typeof DESKTOP_MENU_COMMANDS)[number];
+
+export function isDesktopMenuCommand(value: unknown): value is DesktopMenuCommand {
+  return (DESKTOP_MENU_COMMANDS as readonly unknown[]).includes(value);
+}
+
 export interface RakazoDesktop {
+  /** Optional for older desktop releases. Returns false when the native write is refused. */
+  clipboard?: {
+    writeText: (text: string) => Promise<boolean>;
+  };
   /** Optional for compatibility with older desktop releases. */
   badge?: {
     set: (count: number) => Promise<boolean>;
@@ -72,14 +99,28 @@ export interface RakazoDesktop {
     /** Turning it on asks with a native prompt the page cannot answer. */
     setAllowed: (allowed: boolean) => Promise<RakazoDesktopDevice | null>;
   };
+  /** Absent on older desktop releases, whose menus carry no app commands. */
+  menu?: {
+    onCommand: (listener: (command: DesktopMenuCommand) => void) => () => void;
+  };
   /** False for local builds, whose errors must not reach production reporting. Absent on older releases. */
   monitoring?: {
     enabled: () => Promise<boolean>;
   };
   /** Optional for compatibility with older desktop releases. */
+  locale?: {
+    /** The language the page shows, so the app's own menus, dialogs and setup window follow it. */
+    set: (locale: string) => Promise<void>;
+  };
+  /** Optional for compatibility with older desktop releases. */
   passkeys?: {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
     rpIds: () => Promise<string[]>;
+  };
+  /** Absent on older desktop releases. */
+  server?: {
+    /** Opens the desktop setup window to pick another Rakazo server. */
+    change: () => Promise<void>;
   };
   /** Absent on older desktop releases, which have no Settings… menu item. */
   settings?: {
@@ -188,7 +229,8 @@ export interface DesktopLocalStackState {
   imageTag: string;
 }
 
-export type DesktopSetupLink = "docker-desktop" | "orbstack" | "docker-engine";
+/** The official Docker download for this platform (an installer, or Linux install docs). */
+export type DesktopSetupLink = "docker-download";
 
 /**
  * Bridge exposed only to the first-run setup window. The app window keeps the
@@ -197,11 +239,13 @@ export type DesktopSetupLink = "docker-desktop" | "orbstack" | "docker-engine";
 export interface RakazoSetup {
   /** Used only to reserve space for native window controls in the local setup UI. */
   platform: string;
+  /** The page's language and its translations, keyed by the English text; empty for English. */
+  locale: { lang: string; dir: "ltr" | "rtl"; messages: Readonly<Record<string, string>> };
   state: () => Promise<DesktopSetupState>;
   test: (url: string, headers?: Record<string, string>) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;
   quit: () => Promise<void>;
-  /** Opens one of the Docker install pages in the system browser. */
+  /** Opens the Docker download in the system browser; the person runs the installer. */
   openLink: (link: DesktopSetupLink) => Promise<void>;
   /** The Docker Compose stack this app installs and runs for mode `new`. */
   stack: {

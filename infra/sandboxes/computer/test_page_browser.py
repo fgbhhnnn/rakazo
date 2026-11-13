@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -160,6 +161,20 @@ def page(browser):
     return helper.PageBrowser(9222, "tab-1", browser)
 
 
+class FakePageLoad:
+    """Chromium's record of the page's load: idle once the page's own requests are done."""
+
+    def __init__(self, idle):
+        self.answers = iter(idle)
+        self.closed = False
+
+    def idle(self):
+        return next(self.answers)
+
+    def close(self):
+        self.closed = True
+
+
 AUTH_SITE = "https://auth.example.test"
 ID_SITE = "https://identity.example.test"
 
@@ -215,20 +230,6 @@ class FrameBrowser:
         browser = FakeAgentBrowser(state={"text": self.frames["main"]["tree"]})
         with patch.object(helper.time, "sleep"):
             return helper.PageBrowser(9222, "tab-1", browser, self.client, "main").snapshot(0.0)
-
-
-class FakePageLoad:
-    """Chromium's record of the page's load: idle once the page's own requests are done."""
-
-    def __init__(self, idle):
-        self.answers = iter(idle)
-        self.closed = False
-
-    def idle(self):
-        return next(self.answers)
-
-    def close(self):
-        self.closed = True
 
 
 class SnapshotTest(unittest.TestCase):
@@ -353,18 +354,6 @@ class SnapshotTest(unittest.TestCase):
         self.assertTrue(result["tree"].startswith('[controls matching "Newsletter"]\n- textbox "Newsletter email"'))
         self.assertIn("https://partner.example.test", result["tree"])
         self.assertNotIn("Archive", result["tree"])
-
-    def test_a_query_keeps_verified_frame_origins_and_excludes_unreadable_frames(self):
-        frames = FrameBrowser()
-        for failing in (False, True):
-            with self.subTest(unreadable=failing), patch.object(helper.time, "sleep"):
-                if failing:
-                    frames.failing.add("auth")
-                result = helper.PageBrowser(9222, "tab-1", self.long_page(), frames.client, "main").snapshot(
-                    0.0, query="Newsletter")
-            self.assertEqual(AUTH_SITE in result["frameOrigins"], not failing)
-            self.assertNotIn("https://partner.example.test", result["frameOrigins"])
-            self.assertNotIn("https://ads.example.test", result["frameOrigins"])
 
     def test_a_query_finds_a_control_by_the_text_near_it_and_says_when_nothing_matches(self):
         browser = self.long_page()
@@ -538,6 +527,18 @@ class SnapshotTest(unittest.TestCase):
         self.assertFalse(busy)
         self.assertEqual(latest, (now - 20) / 1000)
 
+    def test_a_query_keeps_verified_frame_origins_and_excludes_unreadable_frames(self):
+        frames = FrameBrowser()
+        for failing in (False, True):
+            with self.subTest(unreadable=failing), patch.object(helper.time, "sleep"):
+                if failing:
+                    frames.failing.add("auth")
+                result = helper.PageBrowser(9222, "tab-1", self.long_page(), frames.client, "main").snapshot(
+                    0.0, query="Newsletter")
+            self.assertEqual(AUTH_SITE in result["frameOrigins"], not failing)
+            self.assertNotIn("https://partner.example.test", result["frameOrigins"])
+            self.assertNotIn("https://ads.example.test", result["frameOrigins"])
+
 
 class FakePurchases:
     """The tab's purchase checks: a control's box carries what a click on it would buy, under "pay"."""
@@ -639,6 +640,20 @@ class PurchaseTest(unittest.TestCase):
                 "label": "Pay\u200b  $5", "amount": "$5"}
         self.assertTrue(self.act([step], browser)["ok"])
 
+    def test_an_approved_click_is_refused_when_the_page_total_changed(self):
+        approved = {"kind": "click", "ref": "e8", "approved": True, "site": "shop.example.test",
+                    "label": "Pay $5", "amount": "$5"}
+        # The card showed no separate total and the page now shows one; then a total that grew.
+        for shown_total, page_total in (("", "$250"), ("$250", "$900")):
+            browser = pays(FakeAgentBrowser(), "e8", {**PAY, "total": page_total})
+            with self.subTest(shown=shown_total, page=page_total):
+                self.assertEqual(self.act([{**approved, "total": shown_total}], browser)["error"],
+                                 helper.PURCHASE_CHANGED)
+        browser = pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$250"})
+        self.assertTrue(self.act([{**approved, "total": "$250"}], browser)["ok"])
+        # An API that sends no total is not held to one.
+        self.assertTrue(self.act([approved], pays(FakeAgentBrowser(), "e8", {**PAY, "total": "$9"}))["ok"])
+
     def test_an_earlier_click_runs_and_the_purchase_click_after_it_is_refused(self):
         browser = pays(FakeAgentBrowser())
         result = self.act([{"kind": "fill", "ref": "e2", "text": "Grace"}, {"kind": "click", "ref": "e8"}], browser)
@@ -678,6 +693,21 @@ class PurchaseTest(unittest.TestCase):
                                   "title": "Pay", "purchase": {
             "steps": [2], "label": "Pay $5", "amount": "$5", "amountFrom": "button", "reason": "final_step"}})
         self.assertEqual(browser.actions(), [])
+
+    def test_purchase_check_reports_the_page_total_beside_a_button_amount(self):
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "total": "$10"})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["amount"], "$5")
+        self.assertEqual(result["purchase"]["total"], "$10")
+
+    def test_purchase_check_passes_on_the_order_lines_the_page_lists(self):
+        items = [{"name": "Bananas \u00d7 6", "amount": "$3.00"}, {"name": "Delivery", "amount": "$6.00"}]
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": items})
+        result = page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})
+        self.assertEqual(result["purchase"]["items"], items)
+        # A page that lists none sends none, as before.
+        browser = pays(FakeAgentBrowser(), "e7", {**PAY, "items": []})
+        self.assertNotIn("items", page(browser).purchase_check({"actions": [{"kind": "click", "ref": "e7"}]})["purchase"])
 
     def test_one_card_approves_one_purchase_click_of_a_batch(self):
         browser = pays(pays(FakeAgentBrowser(), "e7"), "e8")
@@ -739,6 +769,36 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(json.loads(printed.call_args.args[0]),
                              {"ok": True, "site": "", "purchase": None, "url": listing[0]["url"] if listing else "",
                               "title": ""})
+
+
+class PurchaseSiteTest(unittest.TestCase):
+    """The world a check starts in, while the tab may be replacing its document."""
+
+    GONE = RuntimeError("Runtime.evaluate failed: {'code': -32000, 'message': 'Cannot find context with specified id'}")
+
+    def site(self, worlds):
+        """What site() answers, or raises, when world_in answers `worlds` in turn."""
+        found = object.__new__(RealPurchases)
+        found.client, found.session = Mock(), "page"
+        with patch.object(secrets, "main_frame", return_value={"id": "top"}), \
+                patch.object(secrets, "world_in", side_effect=worlds) as world_in, \
+                patch.object(secrets, "eval_json", return_value="tickets.example.test"), \
+                patch.object(helper.time, "sleep"):
+            try:
+                return found.site(), world_in.call_count
+            except RuntimeError as error:
+                return error, world_in.call_count
+
+    def test_a_document_replaced_while_the_check_starts_is_read_again(self):
+        self.assertEqual(self.site([self.GONE, 7]), ("tickets.example.test", 2))
+
+    def test_a_page_that_keeps_losing_its_document_still_fails_and_asks(self):
+        error, _ = self.site([self.GONE] * 10)
+        self.assertIs(error, self.GONE)
+
+    def test_another_failure_is_not_retried(self):
+        other = RuntimeError("Runtime.evaluate failed: too large")
+        self.assertEqual(self.site([other, 7]), (other, 1))
 
 
 class DesktopPurchaseTest(unittest.TestCase):
@@ -1151,17 +1211,6 @@ class TypeTest(unittest.TestCase):
 
 
 class AgentBrowserTest(unittest.TestCase):
-    def test_agent_browser_timeout_obeys_the_recovery_budget_and_tracks_the_session(self):
-        browser = helper.AgentBrowser(9222)
-        browser.client = Mock(deadline=102.0, last_timeout=None)
-        browser.session_id = "hung"
-        with patch.object(helper.time, "time", return_value=100.0), \
-                patch.object(helper.subprocess, "run", side_effect=subprocess.TimeoutExpired("agent-browser", 2)) as run:
-            with self.assertRaises(TimeoutError):
-                browser.batch([["snapshot"]])
-        self.assertEqual(run.call_args.kwargs["timeout"], 2.0)
-        self.assertEqual(browser.client.last_timeout, "hung")
-
     def test_runs_on_the_screen_s_browser_with_its_own_settings_and_commands_over_stdin(self):
         browser = helper.AgentBrowser(9222)
         self.assertEqual(browser.env["AGENT_BROWSER_CDP"], "9222")
@@ -1174,6 +1223,28 @@ class AgentBrowserTest(unittest.TestCase):
         self.assertNotIn("private text", json.dumps(run.call_args.args))
         self.assertIn("private text", run.call_args.kwargs["input"])
         self.assertEqual(run.call_args.kwargs["cwd"], browser.home)
+
+    def test_replaces_its_settings_whole_while_another_call_reads_them(self):
+        # Every call on the computer, one per screen, writes the same settings file, and agent-browser
+        # refuses one it reads half written: the file another call has open must stay whole.
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            config.write_text('{"before": true}', encoding="utf-8")
+            with config.open(encoding="utf-8") as reading:
+                helper.AgentBrowser(9223)
+                self.assertEqual(reading.read(), '{"before": true}')
+            self.assertEqual(config.read_text(encoding="utf-8"), "{}")
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
+
+    def test_leaves_no_staged_settings_file_when_the_swap_fails(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(helper.tempfile, "gettempdir", return_value=temp):
+            config = Path(helper.AgentBrowser(9222).config)
+            with patch.object(helper.os, "replace", side_effect=PermissionError("denied")):
+                with self.assertRaises(PermissionError):
+                    helper.AgentBrowser(9223)
+            self.assertEqual(os.listdir(config.parent), ["config.json"])
 
     def test_refuses_a_browser_agent_browser_started_itself(self):
         launched = [{"success": True, "result": {"lifecycle": {"launched": True}}}]
@@ -1222,6 +1293,17 @@ class AgentBrowserTest(unittest.TestCase):
             browser.use_tab("front")
         self.assertEqual([call.kwargs["input"] for call in run.call_args_list],
                          [json.dumps([["tab", "front"]])] * 2)
+
+    def test_agent_browser_timeout_obeys_the_recovery_budget_and_tracks_the_session(self):
+        browser = helper.AgentBrowser(9222)
+        browser.client = Mock(deadline=102.0, last_timeout=None)
+        browser.session_id = "hung"
+        with patch.object(helper.time, "time", return_value=100.0), \
+                patch.object(helper.subprocess, "run", side_effect=subprocess.TimeoutExpired("agent-browser", 2)) as run:
+            with self.assertRaises(TimeoutError):
+                browser.batch([["snapshot"]])
+        self.assertEqual(run.call_args.kwargs["timeout"], 2.0)
+        self.assertEqual(browser.client.last_timeout, "hung")
 
 
 class FakeTabs:
@@ -1549,61 +1631,6 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(result, {**reports, "url": "https://portal.example.test/a"})
 
 class RunTest(unittest.TestCase):
-    def test_restart_uses_the_fork_profile_preserving_recovery_without_agent_browser(self):
-        with patch.object(helper.recovery, "restart_browser", return_value={"ok": True}) as restart, \
-                patch.object(helper, "AgentBrowser") as browser, patch("builtins.print") as printed:
-            self.assertEqual(helper.run(["helper", "restart", "{}"]), 0)
-        self.assertEqual(restart.call_args.args[:2], (helper.cdp_port(), helper.wait_for_cdp))
-        browser.assert_not_called()
-        self.assertEqual(json.loads(printed.call_args.args[0]), {"ok": True})
-
-    def test_recovery_rebinds_agent_browser_to_the_replacement_tab(self):
-        client = Mock(deadline=None, last_timeout=None)
-
-        def call(method, params=None, *, session_id=None, **kwargs):
-            if method == "Target.attachToTarget":
-                return {"sessionId": "new" if params["targetId"] == "fresh" else "old"}
-            if method == "Target.getTargetInfo":
-                return {"targetInfo": {"targetId": "fresh" if session_id == "new" else "dead"}}
-            if method == "Runtime.evaluate":
-                raise TimeoutError("hung renderer")
-            if method == "Target.createTarget":
-                return {"targetId": "fresh"}
-            if method == "Target.closeTarget":
-                return {"success": True}
-            return {}
-
-        client.call.side_effect = call
-        browser = Mock()
-        tabs = Mock(closed=0)
-        tabs.end.return_value = ([], [], False)
-        tabs.note.return_value = None
-        with patch.object(helper, "front_tab", return_value=("dead", "https://portal.example.test/")), \
-                patch.object(helper.PageBrowser, "snapshot", side_effect=[TimeoutError("hung"), {"ok": True}]) as snapshot:
-            result = helper.run_operation(client, 9222, browser, "snapshot", {"query": "Newsletter"}, tabs=tabs)
-        self.assertTrue(result["ok"])
-        self.assertEqual(snapshot.call_count, 2)
-        for call in snapshot.call_args_list:
-            self.assertEqual(call.kwargs, {"query": "Newsletter"})
-        self.assertEqual([call.args[0] for call in browser.use_tab.call_args_list], ["dead", "fresh"])
-        self.assertEqual(browser.session_id, "new")
-        tabs.end.assert_called_once_with("fresh", ours=None)
-
-    def test_timed_out_action_preserves_completed_steps_without_replay(self):
-        browser = FakeAgentBrowser()
-        original = browser.answer
-
-        def answer(command):
-            if command == ["click", "@e8"]:
-                raise TimeoutError("hung action")
-            return original(command)
-
-        browser.answer = answer
-        result = page(browser).act([{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}])
-        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 1, True))
-        self.assertEqual(result["error"], helper.recovery.TIMEOUT_MESSAGE)
-        self.assertEqual(browser.actions(), [["click", "@e7"], ["click", "@e8"]])
-
     def test_without_a_browser_falls_back_to_the_desktop_without_doubt(self):
         with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp",
                                                                               side_effect=RuntimeError("CDP not ready on port 1: refused")), \
@@ -1676,6 +1703,36 @@ class RunTest(unittest.TestCase):
         use_tab.assert_called_once_with("site")
         self.assertFalse(any("location.assign(" in " ".join(command) for command in browser.sent))
 
+    def test_navigating_from_a_browser_page_reads_the_tab_it_opened_even_if_a_pop_up_is_in_front(self):
+        listing = [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]
+        browser = FakeAgentBrowser(requests=[])
+        browser.stuck = True
+        original = browser.answer
+        browser.answer = lambda command: {"targetId": "site"} if command[:2] == ["tab", "new"] else original(command)
+        client = Mock(deadline=None, last_timeout=None)
+        client.call.return_value = {"sessionId": "page", "targetInfo": {"targetId": "site"}}
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
+                patch.object(helper, "discover_ws_url", return_value="ws://127.0.0.1:1/test"), \
+                patch.object(helper, "CdpClient", return_value=client), \
+                patch.object(helper, "http_get_json", side_effect=[listing, listing]), \
+                patch.object(helper, "front_tab", side_effect=[("newtab", "chrome://newtab/"), ("pop-up", "x")]), \
+                patch.object(helper.urllib.request, "urlopen"), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True) as use_tab, \
+                patch.object(helper.time, "sleep"), patch("builtins.print") as printed:
+            helper.run(["rakazo-page-browser", "navigate", '{"url": "https://portal.example.test/"}'])
+        self.assertTrue(json.loads(printed.call_args.args[0])["ok"])
+        client.call.assert_any_call("Target.attachToTarget", {"targetId": "site", "flatten": True})
+        use_tab.assert_called_once_with("site")
+
+    def test_a_navigation_that_never_reaches_a_new_page_is_left_to_the_desktop(self):
+        browser = FakeAgentBrowser()
+        browser.stuck = True
+        clock = iter(range(0, 100, 5))
+        with patch.object(helper.time, "sleep"), patch.object(helper.time, "monotonic", lambda: next(clock)):
+            with self.assertRaisesRegex(RuntimeError, "Navigation did not settle"):
+                page(browser).navigate("https://next.example.test/")
+
     def test_navigation_recovery_navigates_the_replacement_tab(self):
         client = Mock(deadline=None, last_timeout=None)
         browser = Mock()
@@ -1738,35 +1795,60 @@ class RunTest(unittest.TestCase):
         client.call.assert_any_call("Network.enable", {"maxPostDataSize": 1}, session_id="old")
         client.call.assert_any_call("Network.enable", {"maxPostDataSize": 1}, session_id="new")
 
-    def test_navigating_from_a_browser_page_reads_the_tab_it_opened_even_if_a_pop_up_is_in_front(self):
-        listing = [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]
-        browser = FakeAgentBrowser(requests=[])
-        browser.stuck = True
-        original = browser.answer
-        browser.answer = lambda command: {"targetId": "site"} if command[:2] == ["tab", "new"] else original(command)
+    def test_recovery_rebinds_agent_browser_to_the_replacement_tab(self):
         client = Mock(deadline=None, last_timeout=None)
-        client.call.return_value = {"sessionId": "page", "targetInfo": {"targetId": "site"}}
-        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
-                patch.object(helper, "discover_ws_url", return_value="ws://127.0.0.1:1/test"), \
-                patch.object(helper, "CdpClient", return_value=client), \
-                patch.object(helper, "http_get_json", side_effect=[listing, listing]), \
-                patch.object(helper, "front_tab", side_effect=[("newtab", "chrome://newtab/"), ("pop-up", "x")]), \
-                patch.object(helper.urllib.request, "urlopen"), \
-                patch.object(helper, "AgentBrowser", return_value=browser), \
-                patch.object(browser, "use_tab", create=True) as use_tab, \
-                patch.object(helper.time, "sleep"), patch("builtins.print") as printed:
-            helper.run(["rakazo-page-browser", "navigate", '{"url": "https://portal.example.test/"}'])
-        self.assertTrue(json.loads(printed.call_args.args[0])["ok"])
-        client.call.assert_any_call("Target.attachToTarget", {"targetId": "site", "flatten": True})
-        use_tab.assert_called_once_with("site")
 
-    def test_a_navigation_that_never_reaches_a_new_page_is_left_to_the_desktop(self):
+        def call(method, params=None, *, session_id=None, **kwargs):
+            if method == "Target.attachToTarget":
+                return {"sessionId": "new" if params["targetId"] == "fresh" else "old"}
+            if method == "Target.getTargetInfo":
+                return {"targetInfo": {"targetId": "fresh" if session_id == "new" else "dead"}}
+            if method == "Runtime.evaluate":
+                raise TimeoutError("hung renderer")
+            if method == "Target.createTarget":
+                return {"targetId": "fresh"}
+            if method == "Target.closeTarget":
+                return {"success": True}
+            return {}
+
+        client.call.side_effect = call
+        browser = Mock()
+        tabs = Mock(closed=0)
+        tabs.end.return_value = ([], [], False)
+        tabs.note.return_value = None
+        with patch.object(helper, "front_tab", return_value=("dead", "https://portal.example.test/")), \
+                patch.object(helper.PageBrowser, "snapshot", side_effect=[TimeoutError("hung"), {"ok": True}]) as snapshot:
+            result = helper.run_operation(client, 9222, browser, "snapshot", {"query": "Newsletter"}, tabs=tabs)
+        self.assertTrue(result["ok"])
+        self.assertEqual(snapshot.call_count, 2)
+        for call in snapshot.call_args_list:
+            self.assertEqual(call.kwargs, {"query": "Newsletter"})
+        self.assertEqual([call.args[0] for call in browser.use_tab.call_args_list], ["dead", "fresh"])
+        self.assertEqual(browser.session_id, "new")
+        tabs.end.assert_called_once_with("fresh", ours=None)
+
+    def test_restart_uses_the_fork_profile_preserving_recovery_without_agent_browser(self):
+        with patch.object(helper.recovery, "restart_browser", return_value={"ok": True}) as restart, \
+                patch.object(helper, "AgentBrowser") as browser, patch("builtins.print") as printed:
+            self.assertEqual(helper.run(["helper", "restart", "{}"]), 0)
+        self.assertEqual(restart.call_args.args[:2], (helper.cdp_port(), helper.wait_for_cdp))
+        browser.assert_not_called()
+        self.assertEqual(json.loads(printed.call_args.args[0]), {"ok": True})
+
+    def test_timed_out_action_preserves_completed_steps_without_replay(self):
         browser = FakeAgentBrowser()
-        browser.stuck = True
-        clock = iter(range(0, 100, 5))
-        with patch.object(helper.time, "sleep"), patch.object(helper.time, "monotonic", lambda: next(clock)):
-            with self.assertRaisesRegex(RuntimeError, "Navigation did not settle"):
-                page(browser).navigate("https://next.example.test/")
+        original = browser.answer
+
+        def answer(command):
+            if command == ["click", "@e8"]:
+                raise TimeoutError("hung action")
+            return original(command)
+
+        browser.answer = answer
+        result = page(browser).act([{"kind": "click", "ref": "e7"}, {"kind": "click", "ref": "e8"}])
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 1, True))
+        self.assertEqual(result["error"], helper.recovery.TIMEOUT_MESSAGE)
+        self.assertEqual(browser.actions(), [["click", "@e7"], ["click", "@e8"]])
 
 
 class CardBrowser:
@@ -2084,7 +2166,8 @@ class SavedLoginTest(unittest.TestCase):
 
     def test_a_field_in_another_site_s_frame_is_refused_and_its_own_site_s_is_filled(self):
         browser = LoginFrameBrowser(focus_in_frame=True)
-        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test"):
+        with self.assertRaisesRegex(secrets.Refused, "in a frame from https://auth.example.test, and this login is "
+                                    "saved for https://portal.example.test,"):
             secrets.fill_focused(browser.client, "page", dict(self.STEP))
         self.assertEqual(browser.filled_in(), [])
         browser = LoginFrameBrowser(focus_in_frame=True, frame_check={"same": True})
@@ -2094,6 +2177,123 @@ class SavedLoginTest(unittest.TestCase):
             browser = LoginFrameBrowser(focus_in_frame=True, frame_check=check)
             with self.subTest(check=check), self.assertRaisesRegex(secrets.Refused, error):
                 secrets.fill_focused(browser.client, "page", dict(self.STEP))
+
+
+class FrameSocket:
+    """A socket that hands out its bytes a few at a time, as a network would."""
+
+    def __init__(self, data, step=1000):
+        self.data, self.step = bytearray(data), step
+
+    def recv(self, size):
+        taken = bytes(self.data[:min(size, self.step)])
+        del self.data[:len(taken)]
+        return taken
+
+    def settimeout(self, _):
+        pass
+
+
+def ws_frame(payload, mask=None):
+    n = len(payload)
+    header = bytearray([0x81])
+    mask_bit = 0x80 if mask else 0
+    if n < 126:
+        header.append(mask_bit | n)
+    elif n < 65536:
+        header += bytes([mask_bit | 126]) + n.to_bytes(2, "big")
+    else:
+        header += bytes([mask_bit | 127]) + n.to_bytes(8, "big")
+    if mask:
+        return bytes(header) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return bytes(header) + payload
+
+
+class CdpFrameTest(unittest.TestCase):
+    BIG = 3 * 1024 * 1024
+
+    def client(self, *frames):
+        client = secrets.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(b"".join(frames))
+        return client
+
+    def event(self, size):
+        return json.dumps({"method": "Network.requestWillBeSent", "params": {"url": "data:image/png;base64," + "A" * size}}).encode()
+
+    def test_an_oversized_event_is_skipped_and_the_next_message_is_read(self):
+        small = json.dumps({"method": "Page.loadEventFired", "params": {}}).encode()
+        for mask in (None, b"\x01\x02\x03\x04"):
+            with self.subTest(masked=bool(mask)):
+                client = self.client(ws_frame(self.event(self.BIG), mask), ws_frame(small, mask))
+                self.assertEqual(client._read_frame(), small)
+                self.assertEqual(len(client._buf), 0)
+
+    def test_a_skipped_frame_is_not_held_in_memory(self):
+        client = self.client(ws_frame(self.event(self.BIG)))
+        client._sock.data.extend(ws_frame(b"{}"))
+        peak = 0
+        original = client._drain
+
+        def drain():
+            nonlocal peak
+            original()
+            peak = max(peak, len(client._buf))
+        client._drain = drain
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertLess(peak, 128 * 1024)
+
+    def test_skipping_resumes_after_a_read_times_out(self):
+        small = b'{"method": "A"}'
+        client = self.client(ws_frame(self.event(self.BIG)), ws_frame(small))
+        real = client._sock
+        calls = [0]
+
+        class Flaky(FrameSocket):
+            def recv(self, size):
+                calls[0] += 1
+                if calls[0] % 7 == 0:
+                    raise socket.timeout()
+                return real.recv(size)
+        client._sock = Flaky(b"")
+        for _ in range(10000):
+            try:
+                self.assertEqual(client._read_frame(), small)
+                break
+            except socket.timeout:
+                continue
+        else:
+            self.fail("never finished")
+
+    def test_an_oversized_reply_fails_only_its_own_request(self):
+        for mask in (None, b"\x09\x08\x07\x06"):
+            with self.subTest(masked=bool(mask)):
+                reply = json.dumps({"id": 7, "result": {"data": "A" * self.BIG}}).encode()
+                client = self.client(ws_frame(reply, mask))
+                client._next_id = 7
+                with patch.object(secrets.os, "urandom", return_value=b"1234"), \
+                        patch.object(client, "_send"), self.assertRaisesRegex(RuntimeError, "Runtime.evaluate failed.*too large"):
+                    client.call("Runtime.evaluate", timeout_s=5)
+
+    def test_an_oversized_download_still_begins(self):
+        begin = json.dumps({"method": "Browser.downloadWillBegin", "params": {
+            "frameId": "F1", "guid": "0a1b-2c3d", "url": "data:text/csv;base64," + "A" * self.BIG,
+            "suggestedFilename": "export.csv"}}, separators=(",", ":")).encode()
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        client._sock = FrameSocket(ws_frame(begin) + ws_frame(b"{}"))
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(list(client.downloads), ["0a1b-2c3d"])
+
+    def test_an_oversized_navigation_counts_for_every_frame(self):
+        navigated = json.dumps({"method": "Page.frameNavigated", "params": {
+            "frame": {"id": "F1", "url": "data:text/html;base64," + "A" * self.BIG}}}, separators=(",", ":")).encode()
+        client = self.client(ws_frame(navigated), ws_frame(b"{}"))
+        before = client.navigations("S1", "F2")
+        self.assertEqual(client._read_frame(), b"{}")
+        self.assertEqual(client.navigations("S1", "F2"), before + 1)
+
+    def test_a_frame_just_under_the_limit_is_still_read(self):
+        payload = self.event(secrets.MAX_FRAME_BYTES - 200)
+        self.assertEqual(self.client(ws_frame(payload))._read_frame(), payload)
 
 
 class DownloadTest(unittest.TestCase):

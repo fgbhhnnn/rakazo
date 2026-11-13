@@ -1,10 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import type { UsageOperationKind } from "@rakazo/adapter-kit";
-import { resolveBotWorkspacePath } from "@rakazo/adapters";
+import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { ExportManifest } from "@rakazo/contracts";
 import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
-import { IsolationError, parseComputerMode } from "@rakazo/db";
+import { IsolationError, LISTED_ARTIFACT, parseComputerMode } from "@rakazo/db";
 import {
   ArtifactListCursorError,
   createOwnedArtifact,
@@ -25,7 +25,7 @@ import type { RouterContext } from "./context.js";
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
 
 export function contentRoutes(ctx: RouterContext) {
-  const { deps, repos, favicons, groupRepos, authed } = ctx;
+  const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
   return {
     pages: {
       list: authed.pages.list.handler(async ({ context, input }) => {
@@ -47,7 +47,7 @@ export function contentRoutes(ctx: RouterContext) {
             botId: input.botId,
             groupId: null,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
+            ...LISTED_ARTIFACT,
           },
         });
         return rows.map((row) => ({
@@ -156,6 +156,15 @@ export function contentRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
+      limits: authed.usage.limits.handler(({ context }) =>
+        readMemberPlanLimits(
+          deps.prisma,
+          deps.secrets,
+          context.actor.userId,
+          deps.planLimits ?? planLimitsReader,
+          (secretId, provider) => refreshExpiredCredential(context.actor, secretId, provider),
+        ),
+      ),
       summary: authed.usage.summary.handler(async ({ context }) => {
         const where = { spaceId: context.actor.spaceId, userId: context.actor.userId };
         const sums = {

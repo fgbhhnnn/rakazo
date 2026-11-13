@@ -10,7 +10,9 @@ import { redactConnectorPayload } from "./connector-safety.js";
 import { MAX_RECALLED_MEMORIES } from "./history-compaction.js";
 import { editMemory } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
+import { markReadOutsideContent } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { argsError } from "./tool-args.js";
 import { recallForRun } from "./worker-owner-scope.js";
 
 /** Cross-chat history requires a surviving direct human request in this app thread. */
@@ -27,6 +29,18 @@ export function historyMyChatsAllowed(
   );
 }
 
+/**
+ * Models often fill optional fields they do not use with "" or null (botId: "", linkedRunId: "").
+ * No history field means anything when blank, so a blank field counts as not given.
+ */
+export function withoutBlankFields(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(args).filter(
+      ([, value]) => value !== null && !(typeof value === "string" && !value.trim()),
+    ),
+  );
+}
+
 async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const { deps, run } = ctx;
   const { name, args } = call;
@@ -39,7 +53,6 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     crossChat && ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
   const scope = {
     spaceId: run.spaceId,
-    userId: run.userId,
     threadId: run.threadId,
     botId: run.botId,
     channelId: ctx.source.channelId,
@@ -47,10 +60,17 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     allowMyChats,
     searchAt: run.createdAt,
   };
-  const response =
-    name === "search_history"
-      ? await searchHistory(deps.prisma, scope, HistorySearchInputSchema.parse(args))
-      : await readHistory(deps.prisma, scope, HistoryReadInputSchema.parse(args));
+  const given = withoutBlankFields(args);
+  let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
+  if (name === "search_history") {
+    const parsed = HistorySearchInputSchema.safeParse(given);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    response = await searchHistory(deps.prisma, scope, parsed.data);
+  } else {
+    const parsed = HistoryReadInputSchema.safeParse(given);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    response = await readHistory(deps.prisma, scope, parsed.data);
+  }
   const redacted = redactConnectorPayload(response, ctx.secrets);
   // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
   if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
@@ -60,6 +80,18 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
         "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
     });
   }
+  // Files the bot can now see are copied before its next computer tool.
+  ctx.computer.copyEarlierFiles(
+    response.messages.flatMap((message) =>
+      (message.attachments ?? []).map((file) => ({
+        kind: "file" as const,
+        artifactId: file.artifactId,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+      })),
+    ),
+  );
   return call.finish(redacted);
 }
 
@@ -135,7 +167,7 @@ export const memoryTools: ToolHandlers = {
     const { bot, thread, context } = ctx;
     const { args } = call;
     // A hidden worker also reads its main bot's memories (see recallForRun).
-    return recallForRun(
+    const response = await recallForRun(
       ctx.memory.semantic!,
       {
         query: String(args.query ?? ""),
@@ -149,6 +181,27 @@ export const memoryTools: ToolHandlers = {
       ctx.memory.owner,
       context,
     );
+    // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
+    if (response.ok && response.value.length > 0) {
+      await markReadOutsideContent(ctx);
+    }
+    return response;
+  },
+  async reflect_memory(ctx, call) {
+    const { bot, context } = ctx;
+    const { args } = call;
+    if (!ctx.memory.semantic?.reflect) {
+      return { error: "This memory provider cannot answer questions from memory." };
+    }
+    const response = await ctx.memory.semantic.reflect(
+      { query: String(args.query ?? ""), botId: bot.id },
+      context,
+    );
+    if (!response.ok) return response;
+    const text = response.value.trim();
+    // Reflection is provider-generated prose; it cannot attest that its answer is clean.
+    if (text) await markReadOutsideContent(ctx);
+    return { ok: true, value: text || "No relevant memories." };
   },
   search_history: readHistoryTool,
   read_history: readHistoryTool,

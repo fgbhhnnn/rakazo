@@ -5,7 +5,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SearchSheet from "../app/search";
-import { selectSpace } from "./api";
+import { selectSpace } from "./api-server";
 import type { InboxSpace } from "./inbox-spaces";
 import { searchKindLabel } from "./search-sheet";
 
@@ -13,8 +13,8 @@ const state = vi.hoisted(() => ({
   search: vi.fn(),
   replace: vi.fn(),
   back: vi.fn(),
-  addListener: vi.fn(),
   lifecycle: new Map<string, () => void>(),
+  transitionStart: undefined as undefined | ((event: { data: { closing: boolean } }) => void),
   selectSpace: vi.fn(),
   selectionSeq: 0,
   spaceId: "space-a" as string | null,
@@ -54,9 +54,17 @@ const message = {
   snippet: "A **matching** line",
   messageId: "message-a",
 };
+const navigation = {
+  addListener: (_event: string, listener: typeof state.transitionStart) => {
+    state.transitionStart = listener;
+    return () => {
+      if (state.transitionStart === listener) state.transitionStart = undefined;
+    };
+  },
+};
 vi.mock("expo-router", () => ({
   useRouter: () => state,
-  useNavigation: () => state,
+  useNavigation: () => navigation,
   useFocusEffect: (effect: () => () => void) =>
     useEffect(() => {
       const cleanup = effect();
@@ -64,11 +72,15 @@ vi.mock("expo-router", () => ({
       return cleanup;
     }, [effect]),
 }));
-vi.mock("./api", () => ({
+vi.mock("./api-server", () => ({
   selectSpace: (id: string) => {
     state.selectionSeq++;
     return state.selectSpace(id);
   },
+}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
+vi.mock("./api", () => ({
   spaceSelectionSeq: () => state.selectionSeq,
   selectedSpaceId: () => state.spaceId,
   currentApiBase: () => state.apiBase,
@@ -84,10 +96,6 @@ vi.mock("./appearance", () => ({
   resolveMobileAppearance: () => "dark",
 }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
-vi.mock("./i18n", () => ({
-  t: (text: string) => text,
-  useI18n: () => ({ t: (text: string) => text, locale: "en" }),
-}));
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardController: { dismiss: state.dismiss },
 }));
@@ -179,10 +187,6 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   state.lifecycle.clear();
-  state.addListener.mockImplementation((event: string, listener: () => void) => {
-    state.lifecycle.set(event, listener);
-    return () => state.lifecycle.delete(event);
-  });
   state.platform.OS = "ios";
   state.search.mockResolvedValue([]);
   state.spaceId = "space-a";
@@ -205,8 +209,11 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+/** A button by its label; a result row's label starts with its title and kind, then the preview. */
 function row(label: string) {
-  return container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  return container.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"], button[aria-label^="${label}, "]`,
+  )!;
 }
 async function type(text: string) {
   await act(async () => {
@@ -235,7 +242,7 @@ it("debounces typing, renders server hits and preserves the message jump destina
   expect(state.search).not.toHaveBeenCalled();
   await act(async () => vi.advanceTimersByTime(1));
   expect(state.search).toHaveBeenCalledWith("matching");
-  expect(container.querySelectorAll('button[aria-label="Found note, Message"]')).toHaveLength(1);
+  expect(container.querySelectorAll('button[aria-label^="Found note, Message, "]')).toHaveLength(1);
   expect(row("Found note, Message").textContent).toContain("Scout: A matching line");
   await act(async () => row("Found note, Message").click());
   expect(state.selectSpace).toHaveBeenCalledWith("space-a");
@@ -252,7 +259,7 @@ it("keeps local name matching and does not duplicate conversation hits", async (
   state.search.mockResolvedValue([{ ...message, kind: "conversation", title: "Scout" }]);
   await type("Scout");
   await act(async () => vi.advanceTimersByTime(200));
-  expect(container.querySelectorAll('button[aria-label="Scout, Bot"]')).toHaveLength(1);
+  expect(container.querySelectorAll('button[aria-label^="Scout, Bot, "]')).toHaveLength(1);
   expect(row("Team, Group")).toBeNull();
 });
 it("opens a group after switching spaces and keeps the sheet on switch failure", async () => {
@@ -418,7 +425,7 @@ it.each(["space switch", "keyboard dismiss"] as const)(
 );
 
 it.each(
-  ["beforeRemove", "blur", "unmount"].flatMap((event) =>
+  ["blur", "unmount"].flatMap((event) =>
     ["space switch", "keyboard dismiss"].map((stage) => ({ event, stage })),
   ),
 )("cancels pending $stage on $event and restores the space", async ({ event, stage }) => {
@@ -447,8 +454,42 @@ it.each(
   expect(state.persistedSpaceId).toBe("space-a");
 });
 
+it.each(["space switch", "keyboard dismiss"])(
+  "cancels a pending %s as soon as a native dismissal starts",
+  async (stage) => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+    if (stage === "space switch") {
+      state.selectSpace.mockImplementationOnce(async (id: string) => {
+        state.spaceId = id;
+        await pending;
+        state.persistedSpaceId = id;
+        return true;
+      });
+    } else {
+      state.dismiss.mockReturnValueOnce(pending);
+    }
+    await act(async () => row("Team, Group").click());
+    // The sheet is still focused: blur only follows once the dismissal animation ends.
+    act(() => state.transitionStart?.({ data: { closing: true } }));
+    await act(async () => resolve());
+    expect(state.replace).not.toHaveBeenCalled();
+    expect(state.spaceId).toBe("space-a");
+    expect(state.persistedSpaceId).toBe("space-a");
+  },
+);
+
+it("opens results again after an abandoned dismissal gesture", async () => {
+  act(() => state.transitionStart?.({ data: { closing: true } }));
+  act(() => state.transitionStart?.({ data: { closing: false } }));
+  await act(async () => row("Team, Group").click());
+  expect(state.replace).toHaveBeenCalledOnce();
+});
+
 it("keeps the selected space when successful navigation removes the sheet", async () => {
-  state.replace.mockImplementationOnce(() => state.lifecycle.get("beforeRemove")!());
+  state.replace.mockImplementationOnce(() => state.lifecycle.get("blur")!());
   await act(async () => row("Team, Group").click());
   expect(state.replace).toHaveBeenCalledOnce();
   expect(state.spaceId).toBe("space-b");

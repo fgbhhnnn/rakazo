@@ -4,17 +4,23 @@ import {
   historyCompactJob,
   ModelAccountError,
   ModelOutputError,
+  memoryRetainTurnJob,
   runContinueJob,
   SandboxAllowanceUsedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import {
+  BACKGROUND_HELPER_TRIGGER,
   containsSecret,
   displayName,
   humanizeToolName,
   isBackgroundRunTrigger,
+  MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  normalizeRunError,
   redactSecrets,
+  redactSecretsAfter,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
   withoutLastToolStepNotes,
@@ -23,11 +29,14 @@ import {
 import { isHiddenBot, RunHistoryWriteError, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
+import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "./approval-ask.js";
 import { isToolPauseResult } from "./approval-effect.js";
+import { returnHelperOutcome } from "./background-helpers.js";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { holdComputerExecutionLeaseForTakeover } from "./computer-lifecycle.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
+import { answeredSteeringMessageIds, retainsConversationTurn } from "./conversation-memory.js";
 import {
   DISPATCHER_RESTART_TRIGGERS,
   DispatcherTurnTimeout,
@@ -45,14 +54,16 @@ import {
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
 import { clampMidTurnNarration } from "./mid-turn-narration.js";
+import { connectorStepNames } from "./pi-runtime-tools.js";
+import { rejectedRequestsOf } from "./provider-request-shape.js";
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
   modelAccountRefusal,
 } from "./routine-backoff.js";
-import type { RunContext } from "./run-context.js";
+import type { RunContext, RunState } from "./run-context.js";
 import { persistTurnCheckpoint } from "./run-context.js";
-import { renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
 import { publishMessage, redactBlocks } from "./run-messages.js";
 import {
   completionMarksUnread,
@@ -66,11 +77,16 @@ import {
   canPublishDurableNarration,
   flushPendingTools,
   flushProgress,
-  nextProgressNonce,
+  mayBeSilentEnding,
+  narrationBecomesMessages,
+  progressHeldForSilence,
+  publishInterimMessage,
   publishMidTurnNarration,
+  publishNarrationBeforeAsk,
   recordExplicitNoResponse,
   showNarrationStatus,
   tryFlushPendingTools,
+  withReplyToolOutcomes,
 } from "./run-progress.js";
 import {
   completionMessageSegments,
@@ -83,21 +99,35 @@ import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
+  isNoResponseReply,
+  isPlaceholderReply,
   peerReplyWithoutSentinel,
   stripNoResponseReply,
   stripStrayNoResponse,
 } from "./silent-reply.js";
 import { isStrategicInitiativeRun } from "./strategic-initiative.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
-import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
+import {
+  appendToolCompletionAudit,
+  logLoopGuardStop,
+  toolCompletionFromResult,
+  toolCompletionOutcome,
+} from "./tool-completion-audit.js";
 import {
   advanceOverLimitActionCalls,
   advanceToolCallLoopGuard,
+  loopGuardStop,
   loopGuardStopText,
   MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS,
   overLimitStopText,
   toolResultFingerprint,
 } from "./tool-loop.js";
+import type { ToolRefusal } from "./tool-refusal.js";
+import {
+  keepToolStepResult,
+  keptToolArguments,
+  saveLatestStepScreenshot,
+} from "./tool-step-calls.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -105,6 +135,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   STEERING_RESET_MIN_GAP_MS,
   STEERING_RESETS_MAX_PER_RUN,
+  USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
 import { visibleBotBlocks, visibleBotText } from "./visible-bot-text.js";
@@ -137,15 +168,24 @@ async function publishDispatcherPreAskReply(ctx: RunContext) {
   const { deps, run, runId } = ctx;
   const { reply } = ctx.state;
   const dispatcherVisible = slotFree(ctx.state.dispatcherTurn);
-  const pending = reply.assembled.trim() ? reply.assembled.trim() : reply.preAskNarration;
+  const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
+  const pending =
+    redactSecretsAfter(reply.narrationSoFar, extracted.text, ctx.secrets).trim() ||
+    reply.preAskNarration;
+  reply.narrationSoFar += extracted.text;
+  const held =
+    ctx.replyMode === "chat" ? reply.workingNotes : pending ? [] : reply.workingNotes.slice(-1);
   reply.preAskNarration = "";
-  const text = clampMidTurnNarration(dispatcherVisible(redactSecrets(pending, ctx.secrets)));
+  const text = clampMidTurnNarration(
+    dispatcherVisible(redactSecrets([...held, pending].filter(Boolean).join("\n\n"), ctx.secrets)),
+  );
   if (text && !reply.midTurnUserTexts.includes(text)) {
     const guarded = guardDispatcherReply(true, [{ kind: "text", text }], ctx.state.turnLedger, {
       wokenByWorker: Boolean(ctx.source.peerMessage),
       runId,
     });
     if (guarded.blocks.length) {
+      reply.steeringReplyPending = false;
       await publishMessage(
         deps,
         run,
@@ -158,9 +198,14 @@ async function publishDispatcherPreAskReply(ctx: RunContext) {
       reply.publishedMidTurnUserMessage = true;
     }
   }
+  reply.messageSegments = extracted.remaining;
+  reply.currentTextSegment = "";
+  reply.workingNotes.length = 0;
+  reply.narrationStatusShowing = false;
   reply.assembled = "";
   reply.hasStreamedText = false;
   reply.pendingProgress = "";
+  reply.redactor.skip();
   await relayWorkerReportIfNeeded(ctx);
 }
 
@@ -196,6 +241,18 @@ export async function consumeRunEvents(
       if (!(error instanceof RunHistoryWriteError)) throw error;
     }
   };
+  // A quiet model call or a long tool streams no events, so Stop would otherwise go unseen
+  // until the next event or heartbeat. The shared throttle keeps this at one read a second.
+  let watching = true;
+  const watch = setInterval(() => {
+    void runLeaseLost(ctx, () => watching)
+      .then((lost) => {
+        // A read still in flight when the turn ended must not cancel the work that follows it.
+        if (lost && watching) ctx.abortController.abort();
+      })
+      .catch(() => {});
+  }, 1_000);
+  watch.unref?.();
   try {
     for await (const event of withRuntimeCleanup(events, ctx.abortController)) {
       if (ctx.state.approval.pausePending) return true;
@@ -273,13 +330,18 @@ export async function consumeRunEvents(
     }
     return false;
   } finally {
+    watching = false;
+    clearInterval(watch);
     // Run completion clears thinking too; never let this replace the turn's own outcome.
     await publishThinking(false).catch(() => {});
   }
 }
 
-/** At most once a second, check the run is still this attempt's and not cancelled or released. */
-async function runLeaseLost(ctx: RunContext) {
+/**
+ * At most once a second, check the run is still this attempt's and not cancelled or released.
+ * A read that answers after `active` turns false acts on nothing.
+ */
+async function runLeaseLost(ctx: RunContext, active = () => true) {
   const { deps, runId, workerId, fence } = ctx;
   const { lease } = ctx.state;
   const now = Date.now();
@@ -289,6 +351,7 @@ async function runLeaseLost(ctx: RunContext) {
     where: { id: runId },
     select: { status: true, leaseOwner: true, leaseFence: true, checkpoint: true },
   });
+  if (!active()) return false;
   if (!still || still.status === "cancelled" || still.leaseOwner !== workerId) {
     lease.valid = false;
     return true;
@@ -303,7 +366,7 @@ async function runLeaseLost(ctx: RunContext) {
   if (ctx.computer.heldForTakeover && releasedHold) {
     await requeueComputerRun(deps, runId, workerId, fence, releasedHold, false);
     lease.valid = false;
-    ctx.abortController.abort();
+    if (active()) ctx.abortController.abort();
     return true;
   }
   return false;
@@ -344,7 +407,7 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   if (event.activity && reply.narrationStatusShowing) return;
   // Flush batched text deltas first so an activity line cannot land
   // ahead of text the model streamed before the tool call.
-  if (reply.pendingProgress) {
+  if (reply.pendingProgress && !progressHeldForSilence(ctx)) {
     await deps.events.append({
       spaceId: run.spaceId,
       threadId: thread.id,
@@ -370,29 +433,44 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
 }
 
 /**
- * The run's person wrote while the bot worked. What the bot wrote before that is posted as
- * its own message instead of running on into the reply to them, and the interim-message
- * budget starts again: the first note may answer them at once. Webhooks, external chats and
- * other members stay on the normal budget, and the restart is capped so a stream of messages
- * can't lift it.
+ * The run's person wrote while the bot worked: the next note may answer them at once, each time.
+ * The budget restart for unprompted updates stays capped. Webhooks, external chats and other
+ * members stay on the normal budget.
  */
 async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
-  const { deps, run } = ctx;
   const { reply } = ctx.state;
   reply.assistantTurnBreakPending = true;
+  if (ctx.replyMode === "messages") {
+    await flushProgress(ctx);
+    await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
+  }
+  if (!event.fromRunUser) return;
   const now = Date.now();
   if (
-    !event.fromRunUser ||
     reply.steeringResets >= STEERING_RESETS_MAX_PER_RUN ||
     now - reply.lastSteeringResetAt < STEERING_RESET_MIN_GAP_MS
-  )
+  ) {
+    // What the bot wrote before may still use an earlier message's allowance. If it can't be
+    // posted now, it stays in the reply.
+    await flushProgress(ctx);
+    const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment).text;
+    const text = redactSecretsAfter(reply.narrationSoFar, before, ctx.secrets).trim();
+    if (
+      text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
+      canPublishDurableNarration(ctx) &&
+      !mayBeSilentEnding(ctx, text)
+    )
+      await publishMidTurnNarration(ctx);
+    reply.steeringReplyPending = true;
     return;
+  }
   reply.steeringResets += 1;
   reply.lastSteeringResetAt = now;
   await flushProgress(ctx);
   const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const text = redactSecrets(before.text, ctx.secrets).trim();
-  if (text && runPromotesMidTurnNarration(run.trigger)) {
+  const text = redactSecretsAfter(reply.narrationSoFar, before.text, ctx.secrets).trim();
+  if (text && narrationBecomesMessages(ctx) && !mayBeSilentEnding(ctx, text)) {
+    reply.narrationSoFar += before.text;
     reply.messageSegments = before.remaining;
     reply.currentTextSegment = "";
     reply.workingNotes.length = 0;
@@ -401,16 +479,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
     reply.pendingProgress = "";
     reply.redactor.skip();
     if (!(await isDuplicateGroupProgress(ctx, text))) {
-      await publishMessage(
-        deps,
-        run,
-        "bot",
-        [{ kind: "text", text }],
-        undefined,
-        nextProgressNonce(ctx),
-      );
-      reply.midTurnUserTexts.push(text);
-      reply.publishedMidTurnUserMessage = true;
+      await publishInterimMessage(ctx, text);
     }
   }
   reply.progressBudgetStart = reply.midTurnProgressCount;
@@ -423,7 +492,10 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
   const safeText = redactSecrets(event.text, ctx.secrets);
-  const safeDetail = event.detail ? redactSecrets(event.detail, ctx.secrets) : event.detail;
+  // The bot's own words under its question, capped like an approval card's detail.
+  const safeDetail = event.detail
+    ? truncate(redactSecrets(event.detail, ctx.secrets), MAX_APPROVAL_DETAIL_LENGTH)
+    : event.detail;
   const safeActions = event.actions?.map((action) => ({
     id: action.id,
     label: redactSecrets(action.label, ctx.secrets),
@@ -433,6 +505,8 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   if (ctx.state.dispatcherTurn) {
     await flushProgress(ctx);
     await publishDispatcherPreAskReply(ctx);
+  } else {
+    await publishNarrationBeforeAsk(ctx);
   }
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, event.executionId);
@@ -450,6 +524,8 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
         kind: "ask",
         text: safeText,
         detail: safeDetail,
+        // A runtime ask's detail is prose the bot wrote, never tool arguments.
+        ...(safeDetail ? { detailFormat: "text" as const } : {}),
         status: "pending",
         actions: safeActions,
       },
@@ -458,11 +534,7 @@ async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
     offeredActions: event.actions,
   });
   if (!paused) return;
-  if (paused.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(paused.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, paused.continuationRunId);
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs an answer`,
@@ -487,16 +559,7 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
       slotFree(ctx.state.dispatcherTurn)(redactSecrets(reply.assembled, ctx.secrets)),
     );
     if (narration && canPublishDurableNarration(ctx)) {
-      await publishMessage(
-        deps,
-        run,
-        "bot",
-        [{ kind: "text", text: narration }],
-        undefined,
-        nextProgressNonce(ctx),
-      );
-      reply.midTurnUserTexts.push(narration);
-      reply.publishedMidTurnUserMessage = true;
+      await publishInterimMessage(ctx, narration);
     } else if (narration) {
       reply.discardedMidTurnNarration = true;
       reply.lastDiscardedMidTurnNarration = narration;
@@ -529,7 +592,6 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
     leaseOwner: workerId,
     leaseFence: fence,
     reason: safeReason,
-    computerId: ctx.computer.stored.id,
   });
   if (!paused) return;
   if (typeof paused === "object") {
@@ -556,13 +618,31 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   // client must see that text before the tool call it describes.
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
-  reply.pendingToolNames.push(event.name);
-  const discardedBefore = reply.discardedNarrationCount;
-  const heldNote = event.name === "message_user" ? undefined : await publishMidTurnNarration(ctx);
-  if (event.name === "ask_user") {
-    reply.preAskNarration =
-      reply.discardedNarrationCount !== discardedBefore ? reply.lastDiscardedMidTurnNarration : "";
+  const stepNames = connectorStepNames(ctx.tools.connector.get(event.name), event.args);
+  const callSteps = stepNames.length > 0 ? stepNames : [event.name];
+  reply.pendingToolNames.push(...callSteps);
+  // A call that shows as its own step keeps what it was called with, for later turns to replay.
+  const ownStep = callSteps.length === 1 && callSteps[0] === event.name;
+  const early = reply.earlyCompletions?.get(event.executionId);
+  reply.earlyCompletions?.delete(event.executionId);
+  if (ownStep) {
+    reply.toolStepCalls.set(event.executionId, {
+      arguments: keptToolArguments(event.args, ctx.secrets),
+    });
+    if (early) keepToolStepResult(reply, early, ctx.secrets);
   }
+  reply.toolCalls.push(
+    ...callSteps.map((name) => ({
+      label: humanizeToolName(name),
+      executionId: event.executionId,
+      ...(ownStep ? { tool: event.name } : {}),
+    })),
+  );
+  // Text before ask_user stays pending: the run pauses next, and the question needs it.
+  const heldNote =
+    event.name === "message_user" || event.name === "ask_user"
+      ? undefined
+      : await publishMidTurnNarration(ctx);
   // A step without a note of its own replaces the earlier one in the live view, so its status
   // lines show again.
   if (!heldNote) reply.narrationStatusShowing = false;
@@ -588,9 +668,16 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     previousResult,
     event.response,
   );
+  // The refusal the previous call of the streak got, read before this call can add its own.
+  const previousRefusal = streak.executionId
+    ? ctx.state.toolRefusals?.get(streak.executionId)
+    : undefined;
   // A call from the same response as the streak's last one leaves it as it was.
   if (loopGuard.streak !== streak) {
-    if (streak.executionId) toolResults.delete(streak.executionId);
+    if (streak.executionId) {
+      toolResults.delete(streak.executionId);
+      ctx.state.toolRefusals?.delete(streak.executionId);
+    }
     ctx.state.toolCallStreak = { ...loopGuard.streak, executionId: event.executionId };
   }
   ctx.state.overLimitActionCalls = advanceOverLimitActionCalls(
@@ -602,7 +689,8 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     loopGuard.stuck ||
     ctx.state.overLimitActionCalls >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS
   ) {
-    await stopStuckToolLoop(ctx, event.name);
+    // An action-limit stop is not about the previous call, which may be another tool's.
+    await stopStuckToolLoop(ctx, event.name, loopGuard.stuck ? previousRefusal : undefined);
     return true;
   }
   if (!ctx.scripted) return false;
@@ -611,21 +699,17 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   try {
     const result = await applyTool(ctx, event.name, event.args, event.executionId);
     toolResults.set(event.executionId, toolResultFingerprint(result));
-    await appendToolCompletionAudit(
-      deps,
-      audit,
-      toolCompletionFromResult(
-        {
-          name: event.name,
-          executionId: event.executionId,
-          durationMs: Date.now() - startedAt,
-        },
-        result,
-      ),
-      ctx.secrets,
+    const completion = toolCompletionFromResult(
+      { name: event.name, executionId: event.executionId, durationMs: Date.now() - startedAt },
+      result,
     );
+    const outcome = toolCompletionOutcome(completion);
+    if (outcome) reply.toolOutcomes.set(event.executionId, outcome);
+    keepToolStepResult(reply, completion, ctx.secrets);
+    await appendToolCompletionAudit(deps, audit, completion, ctx.secrets);
     return isToolPauseResult(result);
   } catch (error) {
+    reply.toolOutcomes.set(event.executionId, "failed");
     await appendToolCompletionAudit(
       deps,
       audit,
@@ -642,11 +726,17 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
 }
 
 /** The model keeps repeating the same call: finish the run with what it has and say why. */
-async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
+async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: ToolRefusal) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   const { reply } = ctx.state;
+  // Otherwise the model keeps calling tools while the stop is saved. The run's own signal stays
+  // live, so the save still finishes.
+  ctx.runtimeAbortController.abort();
   ctx.tools.approvedReplays.assertDrained();
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
+  // Calls that had not finished when the loop was stopped never ran to the end.
+  reply.messageSegments = withReplyToolOutcomes(reply, "stopped");
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
   if (reply.messageSegments.length > 0) {
     await publishMessage(deps, run, "bot", redactBlocks(reply.messageSegments, ctx.secrets));
@@ -660,6 +750,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
       ? overLimitStopText(humanName, overLimit)
       : loopGuardStopText(humanName, ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
+  const answeredMessageIds = await conversationRetentionMessages(ctx);
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -673,15 +764,30 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
   });
   if (!stopped) return;
+  await enqueueConversationRetention(ctx, answeredMessageIds);
+  const stoppedForOverLimit = overLimit >= MAX_CONSECUTIVE_OVER_LIMIT_ACTION_CALLS;
+  logLoopGuardStop(
+    {
+      spaceId: run.spaceId,
+      threadId: thread.id,
+      botId: bot.id,
+      runId,
+      trigger: run.trigger,
+    },
+    {
+      tool: toolName,
+      reason: stoppedForOverLimit ? "over_limit_actions" : "repeated_calls",
+      count: stoppedForOverLimit ? overLimit : loopGuardStop(ctx.state.toolCallStreak).count,
+      failures: ctx.state.toolCallStreak.failures ?? 0,
+      ...(refusal ? { refusal } : {}),
+    },
+    ctx.secrets,
+  );
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
-    await clearRoutineBackoff(deps, run.routineId);
+    await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
-  if (stopped.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(stopped.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, stopped.continuationRunId);
   if (run.trigger === "bot_message") {
     await returnBotMessageOutcome(
       deps,
@@ -754,6 +860,49 @@ async function publishSubagent(ctx: RunContext, event: RuntimeEvent<"subagent">)
   }
 }
 
+/**
+ * Silence needs the send to still call the reply optional (a person who names the member while
+ * it works makes it required) and nothing of this run already in the chat, such as an ask card.
+ */
+async function groupSilenceStillAllowed(ctx: RunContext) {
+  const { prisma } = ctx.deps;
+  const current = await prisma.run.findUnique({
+    where: { id: ctx.runId },
+    select: { groupReplyOptional: true },
+  });
+  if (current?.groupReplyOptional !== true) return false;
+  const earlier = await prisma.message.findFirst({
+    where: { runId: ctx.runId, role: "bot" },
+    select: { id: true },
+  });
+  return !earlier;
+}
+
+/** Finalization deletes steering claims, so collect them before either completion path. */
+async function conversationRetentionMessages(ctx: RunContext): Promise<string[] | undefined> {
+  const { run, thread } = ctx;
+  if (
+    !retainsConversationTurn({
+      trigger: run.trigger,
+      sourceMessageId: run.sourceMessageId,
+      runBotId: run.botId,
+      threadBotId: thread.botId,
+      threadGroupId: thread.groupId,
+      nonOwnerChatRun: ctx.source.messagingChannelRun,
+      provider: ctx.memory.semantic,
+    })
+  )
+    return undefined;
+  return answeredSteeringMessageIds(ctx.deps, ctx.runId);
+}
+
+async function enqueueConversationRetention(ctx: RunContext, messageIds: string[] | undefined) {
+  if (!messageIds) return;
+  await ctx.deps.jobs
+    .enqueue(memoryRetainTurnJob(ctx.runId, messageIds))
+    .catch((error) => getLogger().error("memory.retain-turn enqueue failed", error));
+}
+
 /** The turn ended: apply a scripted runtime's files and memory, then finalize the reply. */
 export async function completeRun(ctx: RunContext) {
   const { deps, run, runId, bot, thread, context } = ctx;
@@ -809,6 +958,9 @@ export async function completeRun(ctx: RunContext) {
   // Persisting peer results here also lets outcome delivery retry after completion.
   recordExplicitNoResponse(reply, reply.lastDiscardedMidTurnNarration);
   // When nothing follows the last step, the notes since the last interim message are the reply.
+  // Messages mode keeps only the latest one; the earlier ones were private working.
+  const fallbackNotes =
+    ctx.replyMode === "messages" ? reply.workingNotes.slice(-1) : reply.workingNotes;
   if (
     !isBackgroundRunTrigger(run.trigger) &&
     !ctx.state.handedOff &&
@@ -817,11 +969,8 @@ export async function completeRun(ctx: RunContext) {
     !reply.textSinceLastStep.trim()
   ) {
     flushPendingTools(reply);
-    reply.messageSegments = withoutLastToolStepNotes(
-      reply.messageSegments,
-      reply.workingNotes.length,
-    );
-    const notes = reply.workingNotes.join("\n\n");
+    reply.messageSegments = withoutLastToolStepNotes(reply.messageSegments, fallbackNotes.length);
+    const notes = fallbackNotes.join("\n\n");
     const separator = assistantTurnSeparator(reply.assembled, notes);
     reply.assembled += separator + notes;
     reply.currentTextSegment += separator + notes;
@@ -838,21 +987,39 @@ export async function completeRun(ctx: RunContext) {
     reply.currentTextSegment = reply.assembled;
   }
   flushPendingTools(reply);
+  await saveLatestStepScreenshot(ctx);
+  reply.messageSegments = withReplyToolOutcomes(reply);
   // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
   // Other runs still drop a stray sentinel at the edges of a real reply.
-  const silentReply = ctx.allowSilentEmptyRun
-    ? stripNoResponseReply(reply.assembled, reply.messageSegments)
-    : (ctx.source.peerMessage?.intent === "request" ||
-          ctx.source.peerMessage?.intent === "question") &&
-        !reply.publishedMidTurnUserMessage
-      ? peerReplyWithoutSentinel(reply.assembled, reply.messageSegments)
-      : stripStrayNoResponse(reply.assembled, reply.messageSegments);
+  // A member a group message named nobody for may end silently with the sentinel, a placeholder
+  // such as a lone dot, or nothing at all, as long as it did no work: tool steps or a posted
+  // message are still shown.
+  const groupSilentEnd =
+    ctx.groupReplyOptional &&
+    !ctx.allowSilentEmptyRun &&
+    (isNoResponseReply(reply.assembled, reply.messageSegments) ||
+      isPlaceholderReply(reply.assembled, reply.messageSegments) ||
+      !(reply.assembled.trim() || reply.messageSegments.length)) &&
+    !reply.publishedMidTurnUserMessage &&
+    !reply.publishedTerminalSubagent &&
+    reply.messageSegments.every((block) => block.kind === "text") &&
+    (await groupSilenceStillAllowed(ctx));
+  const silentReply = groupSilentEnd
+    ? { assembled: "", blocks: [] }
+    : ctx.allowSilentEmptyRun || ctx.groupReplyOptional
+      ? stripNoResponseReply(reply.assembled, reply.messageSegments)
+      : (ctx.source.peerMessage?.intent === "request" ||
+            ctx.source.peerMessage?.intent === "question") &&
+          !reply.publishedMidTurnUserMessage
+        ? peerReplyWithoutSentinel(reply.assembled, reply.messageSegments)
+        : stripStrayNoResponse(reply.assembled, reply.messageSegments);
   let completionBlocks = silentReply.blocks;
   if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
     // Mid-turn progress already posted durable chat messages; skip the empty
     // "…" fallback so we do not add a junk final bubble.
     completionBlocks = completionMessageSegments(completionBlocks, {
-      allowSilentEmpty: ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage,
+      allowSilentEmpty:
+        ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage || groupSilentEnd,
       emptyResponseText: ctx.emptyResponseText,
       suppressOutput: ctx.state.handedOff || isBackgroundRunTrigger(run.trigger),
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
@@ -914,7 +1081,13 @@ export async function completeRun(ctx: RunContext) {
           ? { text: "（任务已结束，没有输出文字。）", intent: "status" as const }
           : null))
       : null;
+  const marksUnread = completionMarksUnread(
+    run.trigger,
+    text,
+    ctx.source.peerMessage?.repliesToRequest === true,
+  );
   await ctx.settleRunningHelpers();
+  const answeredMessageIds = await conversationRetentionMessages(ctx);
   const completed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: thread.id,
@@ -926,24 +1099,16 @@ export async function completeRun(ctx: RunContext) {
     leaseFence: ctx.fence,
     outcome: "completed",
     blocks,
-    markUnread: completionMarksUnread(
-      run.trigger,
-      text,
-      ctx.source.peerMessage?.repliesToRequest === true,
-    ),
+    markUnread: !groupSilentEnd && marksUnread,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
-    await clearRoutineBackoff(deps, run.routineId);
+    await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   const { screenRelease } = ctx.state.computerUse;
   if (screenRelease) screenRelease.keepWarm = true;
-  if (completed.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(completed.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, completed.continuationRunId);
   await routeGroupReply(deps, run, groupReply.plan).catch((error) =>
     getLogger().error("group reply handoff", error),
   );
@@ -976,16 +1141,29 @@ export async function completeRun(ctx: RunContext) {
       ...(ctx.state.finalCutAtOutputLimit ? [{ truncatedOutput: true }] : []),
     ).catch((error) => getLogger().error("bot message result return", error));
   }
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    await returnHelperOutcome(deps, run, { status: "completed", text }).catch((error) =>
+      getLogger().error("background helper result return", error),
+    );
+  }
   const notifyBody = completionNotificationPreview(text);
-  if (runSendsFinishNotification(run.trigger) && notifyBody && !completed.continuationRunId) {
+  // Agent-to-agent work the chat stays read for is not news to the user either.
+  if (
+    runSendsFinishNotification(run.trigger) &&
+    marksUnread &&
+    notifyBody &&
+    !completed.continuationRunId
+  ) {
     await notifyRun(deps, run, {
       kind: "completion",
       title: `${displayName(bot.name, "Bot")} finished`,
       body: notifyBody,
       botId: bot.id,
       threadId: thread.id,
+      runId: run.id,
     });
   }
+  await enqueueConversationRetention(ctx, answeredMessageIds);
   // Last, and never fatal: the run is already finalized, so a failure here must not reach
   // the failure path, where a second finalizeRun would match no rows and silently
   // skip the completion notification.
@@ -1006,11 +1184,35 @@ export async function completeRun(ctx: RunContext) {
         COMPACTION_BATCH_SIZE,
       )
     ) {
-      await deps.jobs.enqueue(historyCompactJob(thread.id));
+      await deps.jobs.enqueue(historyCompactJob(thread.id, run.userId));
     }
   } catch (error) {
     getLogger().error("history.compact enqueue failed", error);
   }
+}
+
+/** A group handoff already gave the work to another member, so the turn needs no reply. */
+export function handoffEndedTurn(state: Pick<RunState, "handedOff">, error: unknown): boolean {
+  return (
+    state.handedOff &&
+    error instanceof ModelOutputError &&
+    error.message === MISSING_TOOL_FINAL_RESPONSE_ERROR
+  );
+}
+
+/**
+ * Groups failures by provider and the kind and status the provider reported, never by message
+ * text, which quotes ids and user content.
+ */
+function runFailureFingerprint(provider: string, message: string): string[] {
+  const { kind, status } = normalizeRunError(message);
+  return ["run.failed", provider || "unknown", kind ?? "unclassified", String(status ?? "none")];
+}
+
+/** The shape of a request the provider rejected for a reason nothing classified. */
+function requestDetails(error: unknown): { "error.details"?: string } {
+  const rejected = rejectedRequestsOf(error);
+  return rejected ? { "error.details": JSON.stringify({ providerRequests: rejected }) } : {};
 }
 
 /** The turn failed: keep the reply streamed so far, record the error, and retry or notify. */
@@ -1033,7 +1235,8 @@ export async function failRun(
   } catch (computerError) {
     if (
       !(computerError instanceof SandboxRateLimitError) &&
-      !(computerError instanceof SandboxAllowanceUsedError)
+      !(computerError instanceof SandboxAllowanceUsedError) &&
+      !(computerError instanceof SandboxProviderAccountError)
     )
       throw computerError;
     error = computerError;
@@ -1110,14 +1313,12 @@ export async function failRun(
       {
         "run.outcome": "failed",
         ...model.active,
+        "error.fingerprint": runFailureFingerprint(model.active["model.provider"], message),
+        ...requestDetails(error),
       },
     );
   }
-  if (failed.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(failed.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, failed.continuationRunId);
   if (ctx.state.dispatcherTurn && DISPATCHER_RESTART_TRIGGERS.has(run.trigger)) {
     // A main turn that hung or failed must not leave the user with silence: restart it
     // on the latest messages (bounded), or say truthfully that it failed.
@@ -1150,19 +1351,38 @@ export async function failRun(
       { forceUnread: true },
     ).catch((returnError) => getLogger().error("bot message failure return", returnError));
   }
+  if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((returnError) =>
+      getLogger().error("background helper failure return", returnError),
+    );
+  }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =
     run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
-  // A spent computer allowance refuses every run that needs the computer until the period resets.
+  // A spent computer allowance or an unusable provider account refuses every run that needs the
+  // computer until someone fixes it.
   if (
     run.trigger === "routine" &&
     run.routineId &&
-    (refusal || error instanceof SandboxAllowanceUsedError)
+    (refusal ||
+      error instanceof SandboxAllowanceUsedError ||
+      error instanceof SandboxProviderAccountError)
   ) {
-    await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal?.resetAt);
+    await backOffRoutineAfterAccountError(
+      deps,
+      { routineId: run.routineId, userId: run.userId },
+      new Date(),
+      refusal?.resetAt,
+    );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
-  if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {
+  // Nobody asked for a check-in, so its failure is not news to the user.
+  if (
+    runSendsFinishNotification(run.trigger) &&
+    !isStrategicInitiativeRun(run) &&
+    !failed.continuationRunId &&
+    !retrying
+  ) {
     await notifyRun(deps, run, {
       kind: "failure",
       title: `${displayName(bot.name, "Bot")} failed`,

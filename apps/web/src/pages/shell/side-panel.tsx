@@ -10,10 +10,10 @@ import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
+import { PagesList } from "../../components/pages/PagesList";
 import { AGENT_IMPORT_ENABLED } from "../../lib/agent-import-flag";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
-import { computerPanelNeedsMaintenance } from "../../lib/thread-events";
 import { CreateGroupForm, GroupSettings } from "../GroupPanel";
 import { ResizableSidePanel } from "../ResizableSidePanel";
 import { RoutineEditor } from "../RoutineEditor";
@@ -40,7 +40,6 @@ export function ShellSidePanel({
   refreshGroupThread,
   computer,
   computerOpen,
-  booting,
   computerPanel,
   routinesPanel,
   routineEditorProps,
@@ -51,6 +50,7 @@ export function ShellSidePanel({
   memoryProviderConfigured,
   setAgentSkills,
   onClearBot,
+  discardChatAttachments,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
@@ -67,7 +67,6 @@ export function ShellSidePanel({
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
   computer: ComputerStatus | null;
   computerOpen: boolean;
-  booting: boolean;
   computerPanel: ReactNode;
   routinesPanel: ReactNode;
   routineEditorProps: ComponentProps<typeof RoutineEditor> | null;
@@ -78,11 +77,15 @@ export function ShellSidePanel({
   memoryProviderConfigured: boolean;
   setAgentSkills: (skills: AgentSkillCatalogEntry[]) => void;
   onClearBot: (bot: Bot) => void;
+  /** Drops a deleted chat's pending attachments with their previews. */
+  discardChatAttachments: (threadKey: string) => void;
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
   const botTab =
-    panel === "computer" || panel === "routines" || panel === "settings" ? panel : null;
+    panel === "computer" || panel === "routines" || panel === "pages" || panel === "settings"
+      ? panel
+      : null;
 
   async function createGroup(input: { name: string; botIds: string[] }) {
     const group = await rpc.groups.create(input);
@@ -104,23 +107,11 @@ export function ShellSidePanel({
           panel !== "import-agent" ? (
             <div className="mb-4 flex items-center justify-between">
               {!active && panel !== "settings" ? (
-                <span className="text-[13.5px] text-muted-foreground">
+                <span className="text-body text-muted-foreground">
                   <Trans>Group</Trans>
                 </span>
               ) : null}
               <div className="ml-auto flex gap-1">
-                {active &&
-                panel === "computer" &&
-                !computerOpen &&
-                computerPanelNeedsMaintenance(computer?.state, booting) ? (
-                  <ComputerMaintenanceActions
-                    botId={active.id}
-                    computer={computer}
-                    onChanged={async () => {
-                      await refreshThread(active.id);
-                    }}
-                  />
-                ) : null}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -148,6 +139,7 @@ export function ShellSidePanel({
               key={activeGroup.id}
               group={activeGroup}
               bots={bots}
+              pages={<PagesList groupId={activeGroup.id} />}
               onSave={async (input) => {
                 const updated = await rpc.groups.update({ groupId: activeGroup.id, ...input });
                 setGroups((current) =>
@@ -159,6 +151,7 @@ export function ShellSidePanel({
               }}
               onRemove={async () => {
                 await rpc.groups.remove({ groupId: activeGroup.id });
+                discardChatAttachments(activeGroup.id);
                 const remainingGroups = groups.filter((group) => group.id !== activeGroup.id);
                 setGroups(remainingGroups);
                 setPanel(null);
@@ -189,6 +182,15 @@ export function ShellSidePanel({
                 if (tab === "computer") void refreshThread(active.id).catch(() => undefined);
               }}
               computer={computerPanel}
+              computerActions={
+                <ComputerMaintenanceActions
+                  botId={active.id}
+                  computer={computer}
+                  onChanged={async () => {
+                    await refreshThread(active.id);
+                  }}
+                />
+              }
               routines={routinesPanel}
               focusModel={modelFocusRequest}
               onOpenConnections={() => openSettings("models")}

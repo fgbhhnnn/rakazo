@@ -16,8 +16,8 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import type { Adapter, Message, PostableMarkdown, Thread } from "chat";
-import { Chat, isLinkNode, parseMarkdown, text, toPlainText, walkAst } from "chat";
+import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
+import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "./lark/text-parts.js";
 
 /**
@@ -27,7 +27,34 @@ import { getLarkTextParts } from "./lark/text-parts.js";
 const webhookDrain = new AsyncLocalStorage<{
   pending: Promise<unknown>[];
   failedKeys: string[];
+  markdownChars: number;
 }>();
+
+/**
+ * Markdown parsing is superlinear on hostile text (unmatched emphasis, deep
+ * quotes), so past this many characters in one webhook the text stays literal.
+ */
+export const INBOUND_MARKDOWN_MAX_CHARS = 8_000;
+
+/** Bound the adapter's inbound text-to-markdown parsing per webhook; sends are untouched. */
+export function boundInboundMarkdown(adapter: Adapter): void {
+  const converter = (adapter as unknown as { formatConverter: { toAst(value: string): Root } })
+    .formatConverter;
+  const toAst = converter.toAst.bind(converter);
+  converter.toAst = (value) => {
+    const drain = webhookDrain.getStore();
+    if (!drain) return toAst(value);
+    drain.markdownChars += value.length;
+    if (drain.markdownChars <= INBOUND_MARKDOWN_MAX_CHARS) {
+      try {
+        return toAst(value);
+      } catch {
+        // Deep nesting overflows the parser's stack.
+      }
+    }
+    return root([paragraph([text(value)])]);
+  };
+}
 
 /** Inbound webhook bodies larger than this are rejected before parsing. */
 export const MESSAGING_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
@@ -67,8 +94,22 @@ export interface MessagingPlatform {
   redeliveryKeys?: (payload: unknown) => string[];
   /** Send errors that retrying cannot fix (unknown channel, blocked bot, revoked token). */
   isPermanentSendError?: (error: unknown) => boolean;
+  /**
+   * Posts with a key the vendor deduplicates on, for platforms whose API takes one, so a send
+   * repeated after a lost answer arrives once. `threadId` is the adapter's own.
+   */
+  postOnce?: (
+    threadId: string,
+    message: string | PostableMarkdown,
+    idempotencyKey: string,
+  ) => Promise<{ id: string }>;
   /** Group roster addresses from the raw inbound payload, excluding our line. */
   participants?: (raw: unknown) => string[];
+  /**
+   * When the raw payload says its roster was current, when the platform reports
+   * a time for the event; null when it reports none, so no comparison happens.
+   */
+  rosterAt?: (raw: unknown) => Date | null;
   /**
    * Member departures one raw payload reports, for platforms that send
    * per-event leave notices instead of a roster (Telegram service messages).
@@ -224,12 +265,17 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return this.dispatchWebhook(mounted, request);
   }
 
+  /**
+   * No Chat SDK adapter's post takes an abort signal, so a post that has started runs to its end
+   * (Slack and Sendblue clients bound it themselves). The signal stops a post that has not.
+   */
   async sendToThread(
     request: MessagingSendRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<MessagingSendResult> {
     const mounted = this.mountedForThread(request.threadId);
     await this.ensureInitialized();
+    context.signal.throwIfAborted();
     // Telegram converts Markdown and retries parse errors as plain text;
     // WhatsApp renders it as its own formatting and Lark posts it as an md
     // block; Photon's iMessage adapter renders it as native styled text. Keep
@@ -254,9 +300,16 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
         ? { markdown: request.body }
         : request.body;
     try {
-      const sent = await mounted.chat
-        .thread(toAdapterThreadId(mounted, request.threadId))
-        .post(message);
+      const threadId = toAdapterThreadId(mounted, request.threadId);
+      const postOnce = mounted.platform.postOnce;
+      const sent =
+        postOnce && request.idempotencyKey && !attachment
+          ? await postOnce(
+              threadId,
+              markdown ? { markdown: request.body } : request.body,
+              request.idempotencyKey,
+            )
+          : await mounted.chat.thread(threadId).post(message);
       const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
       return { handle };
     } catch (error) {
@@ -412,7 +465,11 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // only register the work via waitUntil. Drain that work before ACKing so
     // a vendor 200 cannot race ahead of provision/enqueue, and surface sink
     // failures as 5xx so the vendor retries.
-    const drain = { pending: [] as Promise<unknown>[], failedKeys: [] as string[] };
+    const drain = {
+      pending: [] as Promise<unknown>[],
+      failedKeys: [] as string[],
+      markdownChars: 0,
+    };
     const response = await webhookDrain.run(drain, async () => {
       const adapterResponse = await chat.webhooks[adapterName]!(forwarded, {
         waitUntil: (task) => {
@@ -455,6 +512,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const transport = platform.transport?.(message.raw) ?? null;
     const attachments = inboundAttachments(message);
     const departures = isDirect ? undefined : platform.departures?.(message.raw);
+    const rosterAt = isDirect ? undefined : (platform.rosterAt?.(message.raw) ?? undefined);
     const base: MessagingInboundMessage = {
       type: "message",
       provider: platform.provider,
@@ -469,6 +527,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       fromLabel: fromLabel === message.author.userId ? null : fromLabel,
       channelName: isDirect ? null : (platform.channelName?.(message.raw) ?? null),
       participants: isDirect ? [] : (platform.participants?.(message.raw) ?? []),
+      ...(rosterAt ? { rosterAt } : {}),
       content: [
         plainTextWithLinks(message, platform.provider === "lark"),
         ...(attachments.length

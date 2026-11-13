@@ -5,8 +5,7 @@ import {
   LoginFailureReasonSchema,
 } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName } from "@rakazo/core";
-import { runCodeKind, runLoginKind, runSecretKind } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
 import {
   completeExternalEffect,
   replaceCompletedExternalEffectResult,
@@ -17,13 +16,16 @@ import {
 import {
   allowPrivateHttpSecretOrigins,
   botSecretToolView,
+  canReplaceLoginSite,
   findBotSecret,
   findCommandVariableConflict,
   findRunLogin,
   findSiteLogin,
   forgetBotSecret,
   generateBotSecret,
+  HIDDEN_ITEM,
   listBotSecrets,
+  loginToolHints,
   normalizeSecretDestination,
   oneTimeCodeRedactions,
   readRunCode,
@@ -34,10 +36,15 @@ import {
 } from "./bot-secrets.js";
 import { passwordSubmissionNote, WEBSITE_LOGIN_UNAVAILABLE } from "./credential-page-capability.js";
 import { loginFailure } from "./login-failure.js";
-import { addRunSecrets, pauseForSecret, persistTurnCheckpoint } from "./run-context.js";
+import {
+  addRunSecrets,
+  pauseForSecret,
+  persistTurnCheckpoint,
+  recordVaultUse,
+} from "./run-context.js";
 import { runCredentialPageBrowserAllowed } from "./run-credential-capability.js";
 import { recordEffect } from "./run-effects.js";
-import { renewRunLease } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "./run-notifications.js";
 import {
   commitConsumedRunSecret,
@@ -52,7 +59,8 @@ import { newSecretRequestPolicyError, pauseSecretRequest } from "./secret-reques
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
   async list_secrets(ctx) {
-    return listBotSecrets(ctx.deps.prisma, ctx.secretScope);
+    const { deps } = ctx;
+    return listBotSecrets(deps.prisma, deps.secretStore, ctx.secretScope);
   },
   async forget_secret(ctx, call) {
     const { deps, run } = ctx;
@@ -64,7 +72,7 @@ export const secretTools: ToolHandlers = {
       where: { userId: run.userId, spaceId: run.spaceId, kind: runLoginKind(run.id, parsed.data) },
     });
     if (forgotten.count > 0) return call.finish({ removed: true });
-    return call.finish(await forgetBotSecret(deps.prisma, run, parsed.data));
+    return call.finish(await forgetBotSecret(deps.prisma, ctx.secretScope, parsed.data));
   },
   async generate_secret(ctx, call) {
     const { deps, run } = ctx;
@@ -87,7 +95,7 @@ export const secretTools: ToolHandlers = {
     const { result, redactions } = await generateBotSecret({
       prisma: deps.prisma,
       secretStore: deps.secretStore,
-      scope: run,
+      scope: ctx.secretScope,
       args: call.args,
     });
     if (redactions) addRunSecrets(ctx, redactions);
@@ -106,6 +114,7 @@ export const secretTools: ToolHandlers = {
         remote: deps.secretHttp,
         pageBrowserAllowed: runCredentialPageBrowserAllowed(ctx),
         registerRedactions: (values) => addRunSecrets(ctx, values),
+        recordUse: (item, site) => recordVaultUse(ctx, call.name, item, site),
       });
       return call.finish(result);
     } catch {
@@ -118,7 +127,7 @@ export const secretTools: ToolHandlers = {
     const { reply } = ctx.state;
     const resolvedSecret = resolveRequestSecretDestination(args);
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
-    const destination = resolvedSecret.destination;
+    let destination = resolvedSecret.destination;
     if (!runCredentialPageBrowserAllowed(ctx) && destination?.auth.type === "login") {
       return call.finish(loginFailure(WEBSITE_LOGIN_UNAVAILABLE, "no_page_browser"));
     }
@@ -130,35 +139,65 @@ export const secretTools: ToolHandlers = {
     const loginFields =
       destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
     if (loginFields?.error) return call.finish({ error: loginFields.error });
+    // A saved login whose site was wrong is replaced only from a card answered for this site.
+    let replaces: { id: string; origin: string } | undefined;
     if (destination) {
-      const existing = await findBotSecret(deps.prisma, run, destination.name);
-      if (existing && !sameSecretDestination(existing, destination)) {
-        return call.finish({
-          error: "Remove the existing credential before changing its destination.",
-        });
-      }
-      const conflict = await findCommandVariableConflict(deps.prisma, run, destination);
-      if (conflict) {
-        return call.finish({
-          error: `Invalid credential destination — name: ${conflict} is already exported as the same variable. Choose another name.`,
-        });
-      }
+      const found = await findBotSecret(deps.prisma, ctx.secretScope, destination.name);
+      if (found && "hidden" in found) return call.finish({ error: HIDDEN_ITEM });
+      const saved = found ?? undefined;
+      const existing = saved?.destination;
+      // One of the login's other sites, which only its owner sets, is the same login: it is asked
+      // for and saved at its own site, so a bot can't move it.
+      if (
+        existing &&
+        saved.alsoOn.includes(destination.origin) &&
+        sameSecretDestination({ ...existing, origin: destination.origin }, destination)
+      )
+        destination = existing;
       // A login the person chose not to save stays with this run; the bot is told so it doesn't
       // say it was saved. Field labels only, never values.
       const runLogin =
         destination.auth.type === "login"
           ? await findRunLogin(deps.prisma, deps.secretStore, run, runId, destination.name)
           : undefined;
-      const known =
-        runLogin && runLogin.origin === destination.origin
+      const held = runLogin?.origin === destination.origin ? runLogin : undefined;
+      if (existing && !sameSecretDestination(existing, destination)) {
+        if (!canReplaceLoginSite(existing, destination)) {
+          return call.finish({
+            error: "Remove the existing credential before changing its destination.",
+          });
+        }
+        if (args.replace !== true && !held) {
+          return call.finish({
+            error: `A login named ${existing.name} is saved for ${existing.origin}. For a different site or account, use another name; ask again with replace true only if ${existing.origin} was the wrong site for this same account, which replaces the saved login.`,
+          });
+        }
+        if (saved) replaces = { id: saved.id, origin: existing.origin };
+      }
+      const conflict = await findCommandVariableConflict(deps.prisma, ctx.secretScope, destination);
+      if (conflict) {
+        return call.finish({
+          error: `Invalid credential destination — name: ${conflict} is already exported as the same variable. Choose another name.`,
+        });
+      }
+      const known = held
+        ? {
+            saved: false,
+            ...destination,
+            fields: held.fields.map(({ label, hidden }) => ({ label, hidden })),
+          }
+        : existing && sameSecretDestination(existing, destination)
           ? {
-              saved: false,
-              ...destination,
-              fields: runLogin.fields.map(({ label, hidden }) => ({ label, hidden })),
+              saved: true,
+              ...botSecretToolView(existing),
+              ...(await loginToolHints(
+                deps.prisma,
+                deps.secretStore,
+                ctx.secretScope,
+                existing.name,
+              )),
             }
-          : existing
-            ? { saved: true, ...botSecretToolView(existing) }
-            : undefined;
+          : undefined;
       const submitted = botSecretSubmissionSchema({
         allowPrivateHttpOrigin: allowPrivateHttpSecretOrigins(),
       }).safeParse(applied?.effect.result).data;
@@ -172,9 +211,32 @@ export const secretTools: ToolHandlers = {
       // A login saved for this exact site under another name is the one to fill.
       const siteLogin =
         !known && destination.auth.type === "login" && args.replace !== true
-          ? await findSiteLogin(deps.prisma, run, destination.origin)
+          ? await findSiteLogin(deps.prisma, ctx.secretScope, destination.origin)
           : null;
-      if (siteLogin) return call.finish({ saved: true, ...botSecretToolView(siteLogin) });
+      if (siteLogin)
+        return call.finish({
+          saved: true,
+          ...botSecretToolView(siteLogin),
+          ...(await loginToolHints(deps.prisma, deps.secretStore, ctx.secretScope, siteLogin.name)),
+        });
+      // A card shows neither a login's authenticator key nor its other sites, which only its
+      // owner sets, for the site it has. So a card never moves a login that has them: its
+      // owner changes the site in the Vault, where both are in sight.
+      if (replaces) {
+        const kept = await loginToolHints(
+          deps.prisma,
+          deps.secretStore,
+          ctx.secretScope,
+          destination.name,
+        );
+        if (kept.alsoOn || kept.authenticatorCode)
+          return call.finish({
+            error:
+              `The login ${destination.name} has an authenticator key or other sites, which ` +
+              "only the user sets, so a card can't move it to another site. Ask the user to " +
+              "change its site in the Vault, or use another name for a different account.",
+          });
+      }
       // Action approval authorizes showing the card; it is not a credential submission.
       // Return the claim to intended so the answer transaction can approve the saved value.
       if (call.claimedEffect) {
@@ -378,7 +440,11 @@ export const secretTools: ToolHandlers = {
           input: "secret",
           ...(destination ? { credential: destination } : {}),
           ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
+          ...(replaces ? { replaces } : {}),
           ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
+          ...(loginFields && (await spaceIsShared(deps.prisma, run.spaceId))
+            ? { sharedBrowser: true as const }
+            : {}),
           purpose: codeOrigin
             ? "otp"
             : normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
@@ -393,11 +459,7 @@ export const secretTools: ToolHandlers = {
     for (const resumedRunId of paused.supersededSecretRunIds ?? []) {
       await deps.jobs.enqueue(runContinueJob(resumedRunId));
     }
-    if (paused.continuationRunId) {
-      await deps.jobs
-        .enqueue(runContinueJob(paused.continuationRunId))
-        .catch((error) => getLogger().error("steering continuation enqueue", error));
-    }
+    await enqueueSteeringContinuation(deps, paused.continuationRunId);
     await notifyRun(deps, run, {
       kind: "help",
       ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),

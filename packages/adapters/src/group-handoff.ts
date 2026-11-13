@@ -3,6 +3,7 @@ import { MessageBlock } from "@rakazo/contracts";
 import type { HandoffFailureReason } from "@rakazo/core";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
   formatHandoffBrief,
@@ -16,7 +17,8 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
-  lockOwnedGroup,
+  lockSpaceGroup,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   VISIBLE_BOT_WHERE,
 } from "@rakazo/db";
@@ -72,7 +74,14 @@ export async function handoffToGroupBot(
     userId: string;
   },
   groupId: string,
-  input: { bot_id?: string; confirm_name?: string; message: string; deliveryKey?: string },
+  input: {
+    bot_id?: string;
+    confirm_name?: string;
+    message: string;
+    deliveryKey?: string;
+    /** Saved attachments, shown on the handoff and copied to the next bot's computer. */
+    files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
+  },
   options: {
     /**
      * An "@Name" in the bot's own group reply is routed right after the reply is posted, when
@@ -87,22 +96,24 @@ export async function handoffToGroupBot(
   } = {},
 ): Promise<HandoffResult> {
   const text = input.message.trim();
-  if (!text || text.length > BOT_MESSAGE_MAX_LENGTH) {
+  if (!text) {
     return {
       error: `message must contain 1 to ${BOT_MESSAGE_MAX_LENGTH} characters`,
       reason: "invalid_message",
     } as const;
   }
+  if (text.length > BOT_MESSAGE_MAX_LENGTH)
+    return { error: BOT_MESSAGE_TOO_LONG, reason: "invalid_message" } as const;
   const committed = await deps.prisma.$transaction(async (tx): Promise<CommittedHandoff> => {
     try {
-      await lockOwnedGroup(tx, run, groupId);
+      await lockSpaceGroup(tx, run, groupId);
     } catch (error) {
       if (error instanceof IsolationError)
         return { error: "group is no longer available", reason: "group_unavailable" } as const;
       throw error;
     }
     const group = await tx.chatGroup.findFirst({
-      where: { id: groupId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { id: groupId, spaceId: run.spaceId, archivedAt: null },
       include: {
         thread: { select: { id: true } },
         members: {
@@ -270,7 +281,7 @@ export async function handoffToGroupBot(
     const message = await createThreadMessageInTransaction(tx, {
       threadId: targetThreadId,
       role: "bot",
-      blocks: [handoffBlock],
+      blocks: [handoffBlock, ...(input.files ?? [])],
       botId: run.botId,
       runId: historyRunId,
       clientNonce: deliveryKey,
@@ -315,7 +326,7 @@ export async function handoffToGroupBot(
       held: nextRun.held,
       reused: nextRun.reused,
     } as const;
-  });
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if ("error" in committed) {
     // The reason and target only: never the message, which may quote user content.
     getLogger().info("group handoff refused", {
@@ -403,6 +414,7 @@ export async function loadGroupContext(
   groupId: string,
   self: { id: string; name: string },
   options: { handoffTool?: boolean; askTool?: boolean } = {},
+  sharedSpace = false,
 ): Promise<string | undefined> {
   const group = await prisma.chatGroup.findUnique({
     where: { id: groupId },
@@ -422,17 +434,17 @@ export async function loadGroupContext(
     group.members.map((member) => member.bot),
     self,
     options,
+    sharedSpace,
   );
 }
 
-/** Only the current bot's active groups in the same owner/space are discoverable. */
+/** Only the current bot's active groups in its space are discoverable. */
 export async function loadBotGroupDirectory(
   prisma: PrismaClient,
-  actor: { botId: string; userId: string; spaceId: string },
+  actor: { botId: string; spaceId: string },
 ): Promise<string | undefined> {
   const groups = await prisma.chatGroup.findMany({
     where: {
-      userId: actor.userId,
       spaceId: actor.spaceId,
       archivedAt: null,
       members: { some: { botId: actor.botId, bot: { archivedAt: null } } },

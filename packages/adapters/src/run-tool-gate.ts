@@ -5,10 +5,10 @@ import type {
   ConnectorCall,
   ToolBatch,
 } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   applyJudgeDecision,
   approvalModeFromPreference,
+  BACKGROUND_HELPER_TRIGGER,
   batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
@@ -16,8 +16,10 @@ import {
   decisiveActionApprovalRules,
   displayName,
   humanizeToolName,
+  memoryWriteNeedsApproval,
   newSiteOutcome,
   outboundSiteGate,
+  outsideRunToolRequiresApproval,
   planActionGate,
   redactSecrets,
   repeatsDeniedAction,
@@ -26,13 +28,11 @@ import {
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   truthyFlag,
-  unattendedTriggerToolRequiresApproval,
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { AuditEventInput } from "@rakazo/db";
 import { isHiddenBot, recordAuditEvent, runSecretKind } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
 import {
@@ -48,7 +48,9 @@ import { reviewWithBackups } from "./auto-review-backups.js";
 import { runAutoReviewCheckerConfigured } from "./auto-review-checker-configured.js";
 import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { CATALOG_LOAD, CATALOG_SEARCH } from "./lazy-tool-catalog.js";
 import { paidRequestEffect } from "./paid-request.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
 import { PURCHASE_CHECKED_TOOLS, purchaseApprovalOf } from "./purchase-gate.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
@@ -66,15 +68,18 @@ import {
   recordEffect,
   uncertainEffectError,
 } from "./run-effects.js";
-import { renewRunLease } from "./run-lifecycle.js";
+import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
+import { callPaidService } from "./run-tools-integrations.js";
 import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { watchFromTool } from "./schedule-tools.js";
+import { pagePaymentPrecheck, paysWithWallet } from "./spending-gate.js";
+import { refusal } from "./tool-refusal.js";
 import { mirrorWorkerApproval } from "./worker-needs-user.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
@@ -83,6 +88,7 @@ type ApprovalCard = {
   reviewReason: string | undefined;
   summary: FleetCardSummary | undefined;
   batch: ToolBatch | undefined;
+  onceOnly: boolean;
 };
 
 /** A tool call that passed its approval gate, as tool handlers receive it. */
@@ -99,6 +105,11 @@ export interface ToolCall {
   readonly nextApprovedTool: string | undefined;
   /** A gated call that policy or the reviewer allowed without asking. */
   readonly bypassApproval: boolean;
+  /**
+   * The approved payment this call presses, counted against the user's spending limit just before
+   * the press: the handler records it then, so a call that stops earlier never uses the room.
+   */
+  readonly spend: PurchaseApproval | undefined;
   /** This call moved its effect to executing. request_secret can hand the claim back. */
   claimedEffect: boolean;
   /** Store the result on the effect; false when it could not be stored. */
@@ -112,13 +123,14 @@ export interface ToolCall {
 export type ToolHandler = (ctx: RunContext, call: ToolCall) => Promise<unknown>;
 export type ToolHandlers = Record<string, ToolHandler>;
 
-type GateOutcome = { result: unknown } | { call: ToolCall };
+type GateOutcome = { result: unknown; replayed?: true } | { call: ToolCall };
 
 type ToolReview = {
   name: string;
   args: Record<string, unknown>;
   connectorKind: ReturnType<typeof connectorKindFromToolName>;
   newSite: boolean;
+  memoryWrite: boolean;
   fetchUrl: string | undefined;
   matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
   gated: boolean;
@@ -153,35 +165,58 @@ export async function gateToolCall(
   // check look at each action, never the batch tool. An entry naming no action asks.
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
   const unidentifiedAction = Boolean(batch && !batch.complete);
-  const approvalToolNames = batch?.actions.length ? batch.actions : [name];
+  const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
+  const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
+  // Search and load return a list or a schema. They never call the connector.
+  const catalogControlRead =
+    !connectorCall.route?.connectionId &&
+    !connectorCall.route?.resourceId &&
+    (connectorCall.route?.toolName === CATALOG_SEARCH ||
+      connectorCall.route?.toolName === CATALOG_LOAD);
   // A batch tool declared as a write makes each of its actions one.
   const declaredReadOnlyFor = (toolName: string) =>
-    toolName === name || declaredReadOnly === false
+    toolName === approvalName || toolName === name || declaredReadOnly === false
       ? declaredReadOnly
       : ctx.tools.connector.get(toolName)?.readOnly;
-  const requiresUnattendedApproval =
-    (unidentifiedAction && run.trigger === "webhook") ||
-    approvalToolNames.some((toolName) =>
-      unattendedTriggerToolRequiresApproval(
-        run.trigger,
-        toolName,
-        viaConnector,
-        declaredReadOnlyFor(toolName),
+  // A background helper only reads, whatever the approval mode or rules: a connector call
+  // runs only when every action it names is declared read-only.
+  if (
+    run.trigger === BACKGROUND_HELPER_TRIGGER &&
+    viaConnector &&
+    !catalogControlRead &&
+    (unidentifiedAction ||
+      approvalToolNames.some((toolName) => declaredReadOnlyFor(toolName) !== true))
+  ) {
+    return {
+      result: refusal(
+        "helper_read_only",
+        `${name} can change something, and a background helper may only read. Don't retry; say in your result what the bot should do.`,
       ),
-    );
+    };
+  }
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
-  const connectorKind = connectorKindFromToolName(name, connectorProviders);
+  const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
+  const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
+  const httpWatch = watch?.kind === "http";
   // paid_request with only a purchase id sends the request its approval already named.
   const sendsToSite =
-    SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined);
-  const fetchUrl = sendsToSite ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
+    httpWatch || (SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined));
+  const fetchUrl = sendsToSite
+    ? normalizedHttpUrl(String(httpWatch ? watch.url : (args.url ?? "")))
+    : undefined;
   const fetchSite = fetchUrl ? urlSite(fetchUrl) : undefined;
-  if (sendsToSite && !fetchSite) return { result: { error: "url must be an http(s) URL" } };
+  if (sendsToSite && !fetchSite)
+    return { result: refusal("fetch_url_invalid", "url must be an http(s) URL") };
   if (fetchUrl && fetchUrl.length > MAX_FETCH_URL_LENGTH)
-    return { result: { error: `url must be at most ${MAX_FETCH_URL_LENGTH} characters` } };
+    return {
+      result: refusal(
+        "fetch_url_too_long",
+        `url must be at most ${MAX_FETCH_URL_LENGTH} characters`,
+      ),
+    };
   // The card, the stored effect and the request all use the URL the gate checked.
   if (fetchUrl) {
-    args = { ...args, url: fetchUrl };
+    args = httpWatch ? { ...args, watch: { ...watch, url: fetchUrl } } : { ...args, url: fetchUrl };
     effectRequest = name === "paid_request" ? paidRequestEffect(args) : args;
   }
   const connectorTrusts = connectorTrustKeys(
@@ -202,7 +237,6 @@ export async function gateToolCall(
           trustAll: truthyFlag(process.env.RAKAZO_TRUST_ALL_FETCH_SITES),
         })
       : "allow";
-  const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
   // A tool watch repeats its read unattended, so it passes the read check that call would now.
   const watchedTool = watch?.kind === "tool" ? watch.tool : undefined;
   const readTrusts = watchedTool
@@ -214,9 +248,10 @@ export async function gateToolCall(
       )
     : viaConnector &&
         !unidentifiedAction &&
-        approvalToolNames.every(
-          (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
-        )
+        (catalogControlRead ||
+          approvalToolNames.every(
+            (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
+          ))
       ? connectorTrusts
       : undefined;
   const connectorReadGated =
@@ -227,9 +262,9 @@ export async function gateToolCall(
         .loadTrustedConnectors()
         .then((trusted) => readTrusts.every((trust) => trusted.has(trust))),
     });
-  // This schedules unattended shell execution; require a person to approve
-  // the command once, rather than letting an allow rule or reviewer schedule it.
-  const commandWatch = watch?.kind === "command";
+  // Unattended shell execution or repeated HTTP requests need a person's approval once;
+  // neither an allow rule nor an automatic reviewer may create them.
+  const unattendedWatch = watch?.kind === "command" || httpWatch;
   // A routine's prompt counts as the owner's words when it runs, so the sites it names are
   // ones its runs may fetch. Once outside content entered this run, a routine naming a
   // site this run was not given needs a person: a reviewer would judge it on this run's
@@ -240,32 +275,42 @@ export async function gateToolCall(
       (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
-  const { purchase } = request;
+  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));
+  const { purchase, cardUse, loginUse } = request;
+  // Saved logins that ask first require the owner on every use, like saved cards.
+  const paying = Boolean(purchase) || Boolean(cardUse) || Boolean(loginUse);
   const requiresApprovalByDefault =
     request.heldForApproval ||
-    Boolean(purchase) ||
-    commandWatch ||
-    requiresUnattendedApproval ||
+    paying ||
+    unattendedWatch ||
     siteGate === "new" ||
+    memoryWriteGated ||
     unidentifiedAction ||
-    approvalToolNames.some((toolName) =>
-      toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)),
-    );
+    (!catalogControlRead &&
+      approvalToolNames.some(
+        (toolName) =>
+          toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)) ||
+          (!viaConnector && outsideRunToolRequiresApproval(run.trigger, toolName)),
+      ));
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
-  const requiresMandatoryApproval =
-    Boolean(purchase) ||
-    commandWatch ||
-    scheduleNamesNewSite ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
+  // These ask in every run, whatever started it.
+  const mandatoryInAnyRun =
+    paying || unattendedWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);
+  // No allow rule skips these, and without them the tool needs no approval, so "Always allow"
+  // on their card would save a rule that never takes effect.
+  const asksEveryTime =
+    (unattendedWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);
   // Never ask runs everything else: only another owner's connection could have been steered into it.
   const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
+      aliases: toolName === approvalName && approvalName !== name ? [name] : undefined,
       connectorKind:
-        toolName === name ? connectorKind : connectorKindFromToolName(toolName, connectorProviders),
+        toolName === approvalName
+          ? connectorKind
+          : connectorKindFromToolName(toolName, connectorProviders),
       readOnly: declaredReadOnlyFor(toolName),
     })),
     wrapper: batch ? { name, connectorKind } : undefined,
@@ -277,7 +322,7 @@ export async function gateToolCall(
       ? { ...resolvedRules, decision: "ask" as const }
       : resolvedRules;
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
-  const reviewable = mode === "auto" && !requiresMandatoryApproval;
+  const reviewable = mode === "auto" && !mandatoryInAnyRun;
   const injectedReview = reviewable ? deps.autoReview : undefined;
   const reviewSettings = !reviewable || injectedReview ? null : await ctx.trust.loadApprovalModel();
   const memberChecker = reviewSettings?.primarySource === "member";
@@ -306,7 +351,7 @@ export async function gateToolCall(
     : planActionGate({
         resolved: approvalResolved,
         mode,
-        mandatory: requiresMandatoryApproval,
+        mandatory: mandatoryInAnyRun,
         steerable:
           guardedInNeverAsk && mode === "never"
             ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
@@ -315,16 +360,18 @@ export async function gateToolCall(
         reviewOnly: connectorReadGated,
         checkerConfigured,
         newDestination: siteGate === "new",
-        purchase: Boolean(purchase),
+        purchase: paying,
       });
-  // Nobody is there to approve a purchase a webhook run reaches.
-  if (purchase && run.trigger === "webhook" && plan !== "deny") {
-    await auditToolCall(ctx, name, "denied", { reason: "purchase_unattended" });
+  // Nobody is there to approve a purchase, or a sign-in that asks first, a webhook run reaches.
+  if (paying && run.trigger === "webhook" && plan !== "deny") {
+    await auditToolCall(ctx, name, "denied", {
+      reason: loginUse ? "login_unattended" : "purchase_unattended",
+    });
     return {
-      result: {
-        error:
-          "This would complete a purchase, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.",
-      },
+      result: refusal(
+        loginUse ? "login_needs_approval_unattended" : "purchase_needs_approval_unattended",
+        `This would ${loginUse ? "sign in with a saved login" : "complete a purchase"}, which needs the user's approval, and a webhook run cannot ask. Don't retry; tell the user.`,
+      ),
     };
   }
   if (plan === "deny") {
@@ -332,13 +379,30 @@ export async function gateToolCall(
       reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
     });
     return {
-      result: {
-        error:
-          approvalResolved.decision === "deny"
-            ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
-            : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
-      },
+      result: refusal(
+        "approval_denied",
+        approvalResolved.decision === "deny"
+          ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
+          : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
+      ),
     };
+  }
+  // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
+  // which was counted when it was requested. One the limit refuses is refused before the card; the
+  // handler counts it for good just before the press.
+  const spends = purchase && !paysWithWallet(args) ? purchase : undefined;
+  if (spends && nextApprovedTool !== name) {
+    const spender = {
+      userId: run.userId,
+      spaceId: run.spaceId,
+      botId: ctx.bot.id,
+      threadId: ctx.thread.id,
+    };
+    const refused = await pagePaymentPrecheck(deps.prisma, spender, spends);
+    if (refused) {
+      await auditToolCall(ctx, name, "denied", { reason: "spending_limit" });
+      return { result: refusal("spending_limit", refused) };
+    }
   }
   let reviewReason: string | undefined;
   let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
@@ -425,7 +489,7 @@ export async function gateToolCall(
       where: { id: applied.effect.id, status: "intended" },
       data: { status: "denied", result: { refused: "repeat" } },
     });
-    return { result: { error: DENIED_ACTION_ERROR } };
+    return { result: refusal("action_denied_repeat", DENIED_ACTION_ERROR) };
   }
 
   const runAutoReview = async () => {
@@ -434,6 +498,7 @@ export async function gateToolCall(
       args,
       connectorKind,
       newSite: siteGate === "new",
+      memoryWrite: memoryWriteGated,
       fetchUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
@@ -480,11 +545,29 @@ export async function gateToolCall(
       });
     }
     return {
-      result: { error: `Fetching ${fetchSite} needs approval, and a webhook run cannot ask.` },
+      result: refusal(
+        "fetch_needs_approval_unattended",
+        `Fetching ${fetchSite} needs approval, and a webhook run cannot ask.`,
+      ),
     };
   }
 
   const needsApproval = gateDecision === "ask";
+  // Nobody sees a background helper's thread, so a card there would wait forever.
+  if (needsApproval && run.trigger === BACKGROUND_HELPER_TRIGGER) {
+    if (applied) {
+      await deps.prisma.externalEffect.updateMany({
+        where: { id: applied.effect.id, status: "intended" },
+        data: { status: "denied" },
+      });
+    }
+    return {
+      result: refusal(
+        "helper_cannot_ask_approval",
+        `${name} needs the owner's approval, and a background helper cannot ask. Don't retry; say in your result what the bot should ask for.`,
+      ),
+    };
+  }
   const call = createToolCall(ctx, {
     name,
     args,
@@ -495,8 +578,14 @@ export async function gateToolCall(
     applied,
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
+    spend: spends,
   });
-  const card = { reviewReason, summary: request.fleetSummary, batch: connectorTool?.batch };
+  const card = {
+    reviewReason,
+    summary: request.fleetSummary,
+    batch: connectorTool?.batch,
+    onceOnly: asksEveryTime,
+  };
 
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
@@ -510,7 +599,7 @@ export async function gateToolCall(
           },
           select: { id: true, createdAt: true },
         });
-        if (!replacementSecret) return { result: gate.result };
+        if (!replacementSecret) return { result: gate.result, replayed: true };
         // Crash between persist and delete leaves the same OTP row. Do not
         // resubmit it to the connector; only newer rows are replacements.
         const effectUpdatedAt = applied.effect.updatedAt;
@@ -524,10 +613,10 @@ export async function gateToolCall(
           await deps.prisma.secret.delete({
             where: { id: replacementSecret.id },
           });
-          return { result: gate.result };
+          return { result: gate.result, replayed: true };
         }
       } else {
-        return { result: gate.result };
+        return { result: gate.result, replayed: true };
       }
     }
     if (gate.action === "paused") {
@@ -543,7 +632,7 @@ export async function gateToolCall(
         // recovery after action approval but before the card was committed.
       } else if (!needsApproval) {
         const early = await call.claimOrReturn("intended");
-        if (early !== undefined) return { result: early };
+        if (early !== undefined) return { result: early, replayed: true };
       } else {
         const current = await deps.prisma.run.findUnique({
           where: { id: runId },
@@ -555,16 +644,19 @@ export async function gateToolCall(
         return { result: await requestApproval(ctx, call, card) };
       }
     } else if (gate.action === "uncertain") {
-      return { result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName) };
+      return {
+        result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
+        replayed: true,
+      };
     } else if (gate.action === "execute") {
       const early = await call.claimOrReturn("approved");
-      if (early !== undefined) return { result: early };
+      if (early !== undefined) return { result: early, replayed: true };
     }
   } else if (needsApproval && applied) {
     return { result: await requestApproval(ctx, call, card) };
   } else if (call.bypassApproval && applied) {
     const early = await call.claimOrReturn("intended");
-    if (early !== undefined) return { result: early };
+    if (early !== undefined) return { result: early, replayed: true };
   }
   // Past the gate: this destination is now one the run was given. A search result's exact
   // URL trusts only that URL, never the rest of its site.
@@ -662,6 +754,16 @@ async function settleToolUncertainty(
     )
       return recovered;
   }
+  if (call.name === "service_call") {
+    const recovered = await callPaidService(ctx, call).catch(() => undefined);
+    // Only an answer the provider settled carries a cost; anything else stays uncertain.
+    if (
+      recovered &&
+      "cost_usd" in recovered &&
+      (await completeEffect(ctx.deps, effectId, "executing", recovered))
+    )
+      return recovered;
+  }
   return settleUncertainEffect(ctx.deps.prisma, effectId, toolName, call.args);
 }
 
@@ -709,11 +811,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   if (!paused) {
     throw new Error("Could not pause this run for approval; try sending again.");
   }
-  if (paused.continuationRunId) {
-    await deps.jobs
-      .enqueue(runContinueJob(paused.continuationRunId))
-      .catch((error) => getLogger().error("steering continuation enqueue", error));
-  }
+  await enqueueSteeringContinuation(deps, paused.continuationRunId);
   // A hidden worker's chat is never shown: its card is answered in the main chat.
   const mirrored = isHiddenBot(bot)
     ? await mirrorWorkerApproval(deps, {
@@ -746,27 +844,34 @@ async function reviewToolCall(
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
     const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
-    // A new site is judged on the full URL and the owner's own words only: the task
-    // prompt of a webhook or bot-started run carries text someone else wrote.
-    const reviewRequest: AutoReviewRequest =
-      review.newSite && fetchUrl
-        ? {
-            toolName: name,
-            connectorKind,
-            args: { url: redactSecrets(fetchUrl, ctx.secrets) },
-            userTask: redactSecrets(await ctx.trust.loadOwnerWords(), ctx.secrets),
-            botDescription,
-            matchingRules: review.matchingRules,
-            newSite: true,
-          }
-        : {
-            toolName: name,
-            connectorKind,
-            args: redactToolArgsForReview(args, ctx.secrets),
-            userTask: redactSecrets(ctx.task.prompt, ctx.secrets),
-            botDescription,
-            matchingRules: review.matchingRules,
-          };
+    // A webhook run's task prompt carries the delivery, which someone else wrote, so the checker
+    // gets only the owner's routine. With no routine to judge against, a person decides.
+    const outsideRun = run.trigger === "webhook";
+    const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
+    if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
+    // A new site or a memory save after outside content is judged on the owner's own words only:
+    // the task prompt of a webhook or bot-started run carries text someone else wrote.
+    const ownerWordsOnly = (review.newSite && fetchUrl) || review.memoryWrite;
+    const reviewRequest: AutoReviewRequest = {
+      toolName: name,
+      connectorKind,
+      args:
+        review.newSite && fetchUrl
+          ? { url: redactSecrets(fetchUrl, ctx.secrets) }
+          : redactToolArgsForReview(args, ctx.secrets),
+      userTask: redactSecrets(
+        outsideRun
+          ? ownerWords
+          : ownerWordsOnly
+            ? await ctx.trust.loadOwnerWords()
+            : ctx.task.prompt,
+        ctx.secrets,
+      ),
+      botDescription,
+      matchingRules: review.matchingRules,
+      ...(review.newSite && fetchUrl ? { newSite: true } : {}),
+      ...(review.memoryWrite ? { memoryWrite: true } : {}),
+    };
     const reviewContext: AdapterContext = {
       operationId: `auto-review:${runId}`,
       traceId: `auto-review:${runId}`,

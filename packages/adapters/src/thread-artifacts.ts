@@ -6,22 +6,30 @@ import type {
   ComputerRef,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
+import type { AttachmentImageMimeType, ComputerMode, MessageBlock } from "@rakazo/contracts";
 import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
+  HISTORY_ATTACHMENTS_PER_RESPONSE,
+  MCP_APP_MIME_TYPE,
+  stepScreenshotMimeType,
 } from "@rakazo/contracts";
 import {
-  attachmentExtensionForMimeType,
+  attachmentComputerPath,
   inferAttachmentMimeType,
   messageBlockForArtifact,
   validateAttachmentMimeType,
 } from "@rakazo/core";
 import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
-import { withResolvedArtifactVersion } from "@rakazo/db";
+import {
+  LISTED_ARTIFACT,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+  withResolvedArtifactVersion,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { attachmentDisplayName } from "./attachment-display-name.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
@@ -77,36 +85,43 @@ export async function attachWorkspaceFileToThread(
   };
   const stored = await deps.artifacts.put({ name, mimeType, bytes: input.bytes }, context);
   const hash = createHash("sha256").update(input.bytes).digest("hex");
-  const row = await withResolvedArtifactVersion(
-    deps.prisma,
-    {
-      spaceId: input.spaceId,
-      userId: input.userId,
-      botId: input.botId,
-      groupId: input.groupId,
-      name,
-    },
-    async (tx, { rootArtifactId, version }) => {
-      const artifact = await tx.artifact.create({
-        data: {
-          spaceId: input.spaceId,
-          userId: input.userId,
-          botId: input.botId,
-          groupId: input.groupId,
-          runId: input.runId,
-          name,
-          description: input.description?.trim().slice(0, ARTIFACT_DESCRIPTION_MAX_LENGTH) || null,
-          mimeType,
-          size: input.bytes.byteLength,
-          hash,
-          storageKey: stored.id,
-          rootArtifactId,
-          version,
-        },
-      });
-      await input.onAttached?.(tx, artifact);
-      return artifact;
-    },
+  // Concurrent runs in one thread contend for its sequence counters when onAttached posts
+  // a message; Postgres aborts a deadlock victim, which commits nothing, so retry it.
+  const row = await withTransactionRetry(() =>
+    withResolvedArtifactVersion(
+      deps.prisma,
+      {
+        spaceId: input.spaceId,
+        botId: input.botId,
+        groupId: input.groupId,
+        name,
+      },
+      async (tx, { rootArtifactId, version }) => {
+        const artifact = await tx.artifact.create({
+          data: {
+            spaceId: input.spaceId,
+            userId: input.userId,
+            botId: input.botId,
+            groupId: input.groupId,
+            runId: input.runId,
+            name,
+            description:
+              input.description?.trim().slice(0, ARTIFACT_DESCRIPTION_MAX_LENGTH) || null,
+            mimeType,
+            size: input.bytes.byteLength,
+            hash,
+            storageKey: stored.id,
+            rootArtifactId,
+            version,
+          },
+        });
+        await input.onAttached?.(tx, artifact);
+        return artifact;
+      },
+      // onAttached may post a message, which waits for the thread row; a snapshot read can
+      // hold it longer than Prisma's default budget, and an expired transaction is not retried.
+      THREAD_LOCK_TRANSACTION_OPTIONS,
+    ),
   ).catch(async (error) => {
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
     throw error;
@@ -132,7 +147,6 @@ async function attachedArtifacts(
     where: {
       id: { in: blocks.map((block) => block.artifactId) },
       spaceId: context.spaceId,
-      userId: context.userId,
     },
   });
   return new Map(rows.map((row) => [row.id, row]));
@@ -145,7 +159,7 @@ function threadFileMetadata(
     name: row.name,
     mimeType: row.mimeType,
     size: row.size,
-    path: `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`,
+    path: attachmentComputerPath(row.id, row.mimeType),
   };
 }
 
@@ -246,18 +260,73 @@ export async function materializeRecentThreadFiles(
     maxTurns: number;
   },
 ): Promise<MaterializedThreadFile[]> {
+  // Every computer start copies these again, so they need no checkpoint.
+  return materializeEarlierFiles(
+    deps,
+    recentAttachmentBlocks(history, messages, input),
+    { ...input, markWorkspaceDirty: undefined },
+    ATTACHMENT_MAX_COUNT,
+  );
+}
+
+/** Earlier files waiting to be copied at once: one full history response; older listings give way. */
+export const EARLIER_FILES_PENDING = HISTORY_ATTACHMENTS_PER_RESPONSE;
+
+/**
+ * Files history tools listed since the last computer tool, newest kept. A file copied to the
+ * current computer is not queued again; one whose copy failed is, the next time it is listed.
+ */
+export function createEarlierFileQueue(limit = EARLIER_FILES_PENDING) {
+  type FileBlock = Extract<MessageBlock, { kind: "file" | "image" }>;
+  let pending: FileBlock[] = [];
+  let copied = new Set<string>();
+  return {
+    add(files: ReadonlyArray<FileBlock>) {
+      for (const file of files) {
+        if (copied.has(file.artifactId)) continue;
+        pending = pending.filter((queued) => queued.artifactId !== file.artifactId);
+        pending.push(file);
+      }
+      if (pending.length > limit) {
+        getLogger().warn("earlier files not copied: newer listings replaced them");
+        pending = pending.slice(-limit);
+      }
+    },
+    take() {
+      const taken = pending;
+      pending = [];
+      return taken;
+    },
+    /** Record which taken files reached the computer, by the paths the copy returned. */
+    copiedTo(taken: ReadonlyArray<FileBlock>, files: ReadonlyArray<MaterializedThreadFile>) {
+      const paths = new Set(files.map((file) => file.path));
+      for (const file of taken)
+        if (paths.has(attachmentComputerPath(file.artifactId, file.mimeType)))
+          copied.add(file.artifactId);
+    },
+    /** A newly started computer has none of the earlier copies. */
+    computerStarted() {
+      copied = new Set();
+    },
+  };
+}
+
+/**
+ * Copy files from earlier messages onto the computer, keeping copies already there. Each
+ * file that cannot be copied is logged and skipped so it never blocks the tool that asked.
+ * A new copy marks the workspace dirty when the caller passes markWorkspaceDirty.
+ */
+export async function materializeEarlierFiles(
+  deps: Parameters<typeof materializeCurrentTurnFiles>[0],
+  blocks: ReadonlyArray<Extract<MessageBlock, { kind: "file" | "image" }>>,
+  input: Parameters<typeof materializeCurrentTurnFiles>[2],
+  limit = Number.POSITIVE_INFINITY,
+): Promise<MaterializedThreadFile[]> {
   const materialized: MaterializedThreadFile[] = [];
-  for (const block of recentAttachmentBlocks(history, messages, input)) {
-    if (materialized.length >= ATTACHMENT_MAX_COUNT) break;
+  for (const block of blocks) {
+    if (materialized.length >= limit) break;
     try {
-      materialized.push(
-        ...(await materializeThreadFiles(
-          deps,
-          [block],
-          { ...input, markWorkspaceDirty: undefined },
-          true,
-        )),
-      );
+      materialized.push(...(await materializeThreadFiles(deps, [block], input, true)));
     } catch (error) {
       if (input.context.signal.aborted) throw error;
       getLogger().warn("earlier thread attachment was not copied to the computer", {
@@ -417,6 +486,7 @@ export async function postedAttachmentHashes(
           botId: input.botId,
           runId: { in: runs.map((run) => run.id) },
           createdAt: { gte: since },
+          ...LISTED_ARTIFACT,
         },
         select: { hash: true },
       });
@@ -440,13 +510,23 @@ export async function postedAttachmentHashes(
       // The user's own uploads are theirs to have sent back; only the bot's side counts.
       if (!isRelayedOrBotMessage(message)) continue;
       for (const block of Array.isArray(message.blocks) ? message.blocks : []) {
-        const artifactId = (block as { artifactId?: unknown } | null)?.artifactId;
+        const attached = block as {
+          artifactId?: unknown;
+          kind?: unknown;
+          title?: unknown;
+        } | null;
+        const artifactId = attached?.artifactId;
         if (typeof artifactId === "string") artifactIds.add(artifactId);
+        // Saved pages have their own rows; their cards still suppress duplicate source files.
+        if (attached?.kind === "page" && typeof attached.title === "string") {
+          const titleKey = pageTitleKey(attached.title);
+          if (titleKey) keys.add(titleKey);
+        }
       }
     }
     if (artifactIds.size) {
       const rows = await prisma.artifact.findMany({
-        where: { spaceId: input.spaceId, id: { in: [...artifactIds] } },
+        where: { spaceId: input.spaceId, id: { in: [...artifactIds] }, ...LISTED_ARTIFACT },
         select: { hash: true, kind: true, name: true },
       });
       for (const row of rows) {
@@ -461,4 +541,97 @@ export async function postedAttachmentHashes(
     );
   }
   return keys;
+}
+
+type HiddenArtifactOwner = {
+  spaceId: string;
+  userId: string;
+  botId: string;
+  groupId?: string;
+  runId: string;
+  operationId: string;
+};
+
+/**
+ * Keeps bytes as a hidden artifact of the thread's bot or group: read back through the same
+ * authorized path as attachments, encrypted per space like them, but never listed, searched or
+ * versioned, because its type is one of HIDDEN_ARTIFACT_MIME_TYPES. One copy per content.
+ */
+async function storeHiddenArtifact(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  input: HiddenArtifactOwner,
+  file: { name: string; mimeType: string; bytes: Uint8Array },
+): Promise<string> {
+  const hash = createHash("sha256").update(file.bytes).digest("hex");
+  const owner = {
+    spaceId: input.spaceId,
+    userId: input.userId,
+    botId: input.botId,
+    groupId: input.groupId ?? null,
+  };
+  const existing = await deps.prisma.artifact.findFirst({
+    where: { ...owner, hash, mimeType: file.mimeType },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const name = file.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  const context = {
+    operationId: input.operationId,
+    traceId: input.operationId,
+    spaceId: input.spaceId,
+    userId: input.userId,
+    botId: input.botId,
+    signal: new AbortController().signal,
+  };
+  const stored = await deps.artifacts.put(
+    { name, mimeType: file.mimeType, bytes: file.bytes },
+    context,
+  );
+  // Its own one-version family: a file of the same name never versions it, nor it the file.
+  const row = await deps.prisma.artifact
+    .create({
+      data: {
+        ...owner,
+        runId: input.runId,
+        name,
+        mimeType: file.mimeType,
+        size: file.bytes.byteLength,
+        hash,
+        storageKey: stored.id,
+      },
+    })
+    .catch(async (error) => {
+      await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+      throw error;
+    });
+  return row.id;
+}
+
+/** Keeps an MCP app's HTML as a hidden artifact, so its chat card can load it later. */
+export function storeMcpAppHtml(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  input: HiddenArtifactOwner & { server: string; html: string },
+): Promise<string> {
+  return storeHiddenArtifact(deps, input, {
+    name: `${input.server} app.html`,
+    mimeType: MCP_APP_MIME_TYPE,
+    bytes: new TextEncoder().encode(input.html),
+  });
+}
+
+/**
+ * Keeps the screenshot a reply's call returned last, so the bot's later turns see it again. It is
+ * deleted with the run's messages when the chat is cleared.
+ */
+export function storeStepScreenshot(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  input: HiddenArtifactOwner & {
+    image: { mimeType: AttachmentImageMimeType; data: Uint8Array };
+  },
+): Promise<string> {
+  return storeHiddenArtifact(deps, input, {
+    name: "screenshot",
+    mimeType: stepScreenshotMimeType(input.image.mimeType),
+    bytes: input.image.data,
+  });
 }

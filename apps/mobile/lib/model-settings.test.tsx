@@ -53,6 +53,9 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
 
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async (spaceId = "space-fixture") => ({
@@ -96,7 +99,12 @@ vi.mock("./api", () => ({
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
       return [
-        { provider: "openai-compatible", id: "model-fixture", label: "Fixture" },
+        {
+          provider: "openai-compatible",
+          id: "model-fixture",
+          label: "Fixture",
+          endpointPresets: [{ name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" }],
+        },
         { provider: "anthropic", providerName: "Anthropic", id: "claude-fixture", label: "Claude" },
         // Deployment-funded models still leave room for a personal key.
         {
@@ -172,14 +180,6 @@ vi.mock("./native", () => ({
 vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
-vi.mock("./i18n", () => {
-  // Like the real t(), fill the product name every message may carry.
-  const t = (text: string, values: Record<string, string | number> = {}) => {
-    const replacements: Record<string, string | number> = { PRODUCT_NAME: "Gose Bot", ...values };
-    return text.replace(/\{(\w+)\}/g, (match, key: string) => String(replacements[key] ?? match));
-  };
-  return { useI18n: () => ({ t }) };
-});
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../components/native-switch", () => ({
   NativeSwitch: ({
@@ -395,7 +395,7 @@ it("does not offer Ollama Cloud again once it is the saved connection", async ()
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {
   await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1", credentialId: null }));
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
-  expect(field("API key")?.placeholder).toBe("Ollama API key");
+  expect(field("API key")?.placeholder).toBe("");
   expect(field("API key")?.type).toBe("password");
   expect(
     [...container.querySelectorAll("button")].filter((button) =>
