@@ -34,7 +34,7 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await expect(prompt).toBeVisible();
   await composer.fill("ask me which city to use again");
   await captureScreenshot(page, testInfo, "21-approval-custom-answer");
-  await composer.press("Enter");
+  await page.keyboard.press("Enter");
 
   await expect(prompt).toHaveCount(2, { timeout: 30_000 });
   const firstAnswer = page
@@ -51,7 +51,7 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
 
   await composer.fill("Paris");
   await captureScreenshot(page, testInfo, "23-second-approval-answer");
-  await composer.press("Enter");
+  await page.keyboard.press("Enter");
 
   const resumed = page.getByText(
     "on it. i will work this in the background and come back with a result.",
