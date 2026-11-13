@@ -38,7 +38,12 @@ import {
 } from "./session";
 import { authResponseErrorText, sessionSaveErrorText } from "./user-error";
 
-async function postAuth(path: string, input: Record<string, string>, apiBase = currentApiBase()) {
+async function postAuth(
+  path: string,
+  input: Record<string, string>,
+  apiBase = currentApiBase(),
+  captchaToken?: string,
+) {
   return fetchMobileJson<unknown>(
     `${apiBase}/api/auth/${path}`,
     {
@@ -51,6 +56,7 @@ async function postAuth(path: string, input: Record<string, string>, apiBase = c
         origin: "rakazo://",
         "accept-language": getActiveUiLocale(),
         [SIGNUP_SURFACE_HEADER]: Platform.OS,
+        ...(captchaToken ? { "x-captcha-response": captchaToken } : {}),
       },
       body: JSON.stringify(input),
     },
@@ -61,12 +67,13 @@ async function authenticate(
   path: string,
   input: Record<string, string>,
   missingSession: string,
+  captchaToken?: string,
 ): Promise<{ verificationRequired: boolean }> {
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
   // A switch replaces the stored headers, and the cleanup below may still need them for this server.
   const headers = serverHeaders(apiBase);
-  const { response, body, invalidJson } = await postAuth(path, input, apiBase);
+  const { response, body, invalidJson } = await postAuth(path, input, apiBase, captchaToken);
   if (!response.ok || invalidJson) {
     throw new Error(authResponseErrorText(response.status, body, invalidJson));
   }
@@ -107,19 +114,25 @@ async function authenticate(
 export function signIn(email: string, password: string) {
   return authenticate("sign-in/email", { email, password }, t`Sign-in did not return a session`);
 }
-export function signUp(email: string, password: string, name: string) {
+export function signUp(email: string, password: string, name: string, captchaToken?: string) {
   return authenticate(
     "sign-up/email",
     { email, password, name },
     t`Sign-up did not return a session`,
+    captchaToken,
   );
 }
 /** Always succeeds when the server accepts the request, whether or not an email was sent. */
-export async function sendSignInCode(email: string): Promise<void> {
-  const { response, body, invalidJson } = await postAuth("email-otp/send-verification-otp", {
-    email,
-    type: "sign-in",
-  });
+export async function sendSignInCode(email: string, captchaToken?: string): Promise<void> {
+  const { response, body, invalidJson } = await postAuth(
+    "email-otp/send-verification-otp",
+    {
+      email,
+      type: "sign-in",
+    },
+    currentApiBase(),
+    captchaToken,
+  );
   if (!response.ok) throw new Error(authResponseErrorText(response.status, body, invalidJson));
 }
 /** Signs in with an emailed code, creating the account (with `name`) when none exists. */

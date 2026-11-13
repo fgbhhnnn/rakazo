@@ -17,7 +17,7 @@ export function passwordSubmissionNote(pageBrowserAllowed: boolean): string {
 
 export function requestSecretGuidance(pageBrowserAllowed: boolean, browserActOffered: boolean) {
   const login = pageBrowserAllowed
-    ? `, or with auth type login when the user wants a website login saved${browserActOffered ? "; fill it with browser_act fill_secret, which only works on the saved site" : ""}`
+    ? `, or with auth type login when the user wants a website login saved${browserActOffered ? "; fill it with browser_act fill_secret, which only works on the saved site and its alsoOn sites" : ""}`
     : "";
   return `Use request_secret with a credential destination to save reusable API credentials${login}. When your shell commands need a secret value, use request_secret with auth type command; it is exported as the environment variable that request_secret and list_secrets report.${pageBrowserAllowed ? "" : ` ${WEBSITE_LOGIN_UNAVAILABLE}`}`;
 }

@@ -149,7 +149,6 @@ import { mountEmailInboundRoute } from "./email-inbound.js";
 import type { AppEnv } from "./env.js";
 import { loadEnv } from "./env.js";
 import { healthRoutes } from "./health.js";
-import { homeRetentionSweep } from "./home-retention.js";
 import { startHourlySweep } from "./hourly-sweep.js";
 import { trackInFlightRequests } from "./in-flight-requests.js";
 import { mountLocalComputerHost } from "./local-settings.js";
@@ -704,19 +703,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         )
       : undefined;
 
-  // Self-hosted deployments without billing keep every saved home.
-  const stopHomeRetention =
-    email && billingProvider && home instanceof ObjectAgentHomeStore
-      ? startHourlySweep(
-          homeRetentionSweep({
-            prisma,
-            email,
-            appUrl: new URL("/app", env.webOrigin).href,
-            onError: (error) => getLogger().error("saved home retention failed", error),
-          }),
-          (error) => getLogger().error("saved home retention failed", error),
-        )
-      : undefined;
+  // Fork: #3190 disabled. Never start the saved-home retention deletion sweep.
 
   const stopOrganizationDeletions = startHourlySweep(
     finishStalledOrganizationDeletions({
@@ -1174,7 +1161,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await oauthLogins.abortAll();
       await messagingRuntime?.stop();
       await stopReferralEmails?.();
-      await stopHomeRetention?.();
       await stopOrganizationDeletions();
       await reconciler?.stop();
       await oauthTokenUpgrade;

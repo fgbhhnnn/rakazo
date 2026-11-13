@@ -167,7 +167,7 @@ class RecoveryTest(unittest.TestCase):
         loader.exec_module(helper)
         client = helper.CdpClient("ws://127.0.0.1:9222/test")
         client._sock = Mock()
-        client._send_frame = Mock()
+        client._send = Mock()
         # Begin at zero, pass the while guard once, time out the read, then end at five.
         client._read_frame = Mock(side_effect=TimeoutError("socket"))
         with patch.object(helper.time, "time", side_effect=[0, 0, 0, 5]):

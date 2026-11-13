@@ -8,6 +8,7 @@
   "files": {
     "includes": [
       "**",
+      "!test-issues.md",
       "!**/node_modules",
       "!**/dist",
       "!**/build",

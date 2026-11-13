@@ -27,15 +27,15 @@ const EXPORT_MESSAGE_PAGE_SIZE = 500;
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
   return {
-    pages: {
-      list: authed.pages.list.handler(async ({ context, input }) => {
+    reportPages: {
+      list: authed.reportPages.list.handler(async ({ context, input }) => {
         if (input.botId) await repos.getBot(context.actor, input.botId);
         return listOwnedPages(deps, context.actor, input);
       }),
-      get: authed.pages.get.handler(({ context, input }) =>
+      get: authed.reportPages.get.handler(({ context, input }) =>
         getOwnedPage(deps, context.actor, input),
       ),
-      update: authed.pages.update.handler(({ context, input }) =>
+      update: authed.reportPages.update.handler(({ context, input }) =>
         updateOwnedPage(deps, context.actor, input),
       ),
     },

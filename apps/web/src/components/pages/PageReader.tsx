@@ -54,7 +54,7 @@ export function PageReader({
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    void rpc.pages
+    void rpc.reportPages
       .get({ pageId })
       .then((page) => {
         if (!cancelled) setState({ status: "ready", page });
@@ -130,7 +130,7 @@ export function PageReader({
     setSaving(true);
     setSaveError(null);
     try {
-      const saved = await rpc.pages.update({
+      const saved = await rpc.reportPages.update({
         pageId,
         markdown: draft,
         baseVersion: page.version,

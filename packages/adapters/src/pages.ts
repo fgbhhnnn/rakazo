@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "@rakazo/adapter-kit";
-import type { MessageBlock, Page, PageSummary } from "@rakazo/contracts";
+import type { MessageBlock, Page, ReportPageSummary } from "@rakazo/contracts";
 import {
   PAGE_ARTIFACT_KIND,
   PAGE_MARKDOWN_MAX_LENGTH,
@@ -76,7 +76,7 @@ export function pageBlock(row: PageRow, pageId: string): PageFileBlock {
   };
 }
 
-function summary(root: PageRow, latest: PageRow): PageSummary {
+function summary(root: PageRow, latest: PageRow): ReportPageSummary {
   return {
     id: root.id,
     artifactId: latest.id,
@@ -313,7 +313,7 @@ export async function updatePage(
 export async function listPages(
   prisma: PrismaClient,
   input: { spaceId: string; userId: string; botId?: string; limit?: number },
-): Promise<PageSummary[]> {
+): Promise<ReportPageSummary[]> {
   const limit = input.limit ?? 50;
   const where = {
     spaceId: input.spaceId,

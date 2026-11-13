@@ -1,4 +1,4 @@
-import type { PageSummary } from "@rakazo/contracts";
+import type { ReportPageSummary } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
@@ -12,7 +12,7 @@ const SHELF_LIMIT = 30;
 /** The reports and plans bots wrote as pages, newest first; hidden when there are none. */
 export function PagesShelf({ botId }: { botId?: string }) {
   const { t } = useI18n();
-  const [pages, setPages] = useState<PageSummary[]>([]);
+  const [pages, setPages] = useState<ReportPageSummary[]>([]);
 
   useEffect(() => {
     let cancelled = false;

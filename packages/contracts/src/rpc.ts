@@ -1421,6 +1421,7 @@ export const appContract = {
   },
   /** Pages bots built for the caller in this Space. */
   pages: {
+    update: reportPagesContract.update,
     /** Pinned first, then most recently updated. */
     list: oc
       .input(

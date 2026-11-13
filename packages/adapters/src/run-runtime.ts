@@ -306,7 +306,13 @@ export function createRunReconciler(
   },
   workerOnly: Pick<
     JobReconcilerDeps,
-    "leadership" | "reconcileRoutineRetryNotices" | "reconcileHomeStorage" | "reconcileDeadJobs"
+    | "leadership"
+    | "reconcileRoutineRetryNotices"
+    | "reconcileHomeStorage"
+    | "reconcileDeadJobs"
+    | "artifacts"
+    | "maxUploadSizeBytes"
+    | "reconcileTeammateQuestions"
   > = {},
   chat: { messagingDelivery?: MessagingDelivery; teamChat?: TeamChat } = {},
 ) {

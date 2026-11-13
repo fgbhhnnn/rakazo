@@ -8,6 +8,7 @@ import {
   removePage,
   renamePage,
   setPageVisibility,
+  updateOwnedPage,
 } from "../pages.js";
 import type { RouterContext } from "./context.js";
 
@@ -20,6 +21,9 @@ export function pagesRoutes(ctx: RouterContext) {
   });
   return {
     pages: {
+      update: authed.pages.update.handler(({ context, input }) =>
+        updateOwnedPage(deps, context.actor, input),
+      ),
       list: authed.pages.list.handler(async ({ context, input }) => {
         try {
           return await listPages(deps.prisma, context.actor, input);

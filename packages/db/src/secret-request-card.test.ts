@@ -1,7 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { pauseRunForInput } from "./events.js";
+import { pauseRunForInput } from "./thread-ask.js";
 
 const ask: MessageBlock = {
   kind: "ask",

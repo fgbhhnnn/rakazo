@@ -1,4 +1,4 @@
-appId: com.rakazo.app
+appId: com.ccxxyy.rakazo
 ---
 # A cold API 34 emulator can show a launcher ANR over the healthy app, and a relaunch
 # after clearState can take Maestro about half a minute to bring the app back.

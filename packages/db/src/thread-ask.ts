@@ -1,6 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type {
   BotSecretDestination,
+  LoginFailureReason,
   LoginFieldInput,
   MessageBlock,
   OneTimeCodeTarget,
@@ -36,11 +37,22 @@ import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
 import { createThreadMessageInTransaction, loadMessageAuthor } from "./messages.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
+import { supersedeSecretRequests } from "./secret-request-policy.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { createPendingSteeringRun } from "./thread-steering.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "./transaction-retry.js";
+import type { MirrorEvent } from "./worker-approval-mirror.js";
+import { settleWorkerApprovalMirrorsInTransaction } from "./worker-approval-mirror.js";
 
 export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
+
+/** An "always" answer saves an allow rule, which a locked deployment reserves for its admins. */
+export class ApprovalRulesLockedError extends Error {
+  constructor() {
+    super("Your administrator manages this setting.");
+    this.name = "ApprovalRulesLockedError";
+  }
+}
 
 /** A one-time answer longer than a saved value may be. Nothing is stored or echoed. */
 export class AnswerTooLongError extends Error {
@@ -64,6 +76,7 @@ export interface PauseRunForInput {
    * (not in message blocks) so clients still see redacted labels.
    */
   offeredActions?: Array<{ id: string; label: string }>;
+  secretRequest?: { userId: string; failureReason?: LoginFailureReason; replace?: boolean };
 }
 
 const CHOICE_ASK_CHECKPOINT_KIND = "choice_ask_v1";
@@ -118,6 +131,7 @@ export interface AnswerRunInput {
   runId: string;
   messageId: string;
   answeredByUserId: string;
+  mayChangeApprovalRules?: boolean;
   answer: string;
   /** Identifies a spoken answer as part of a live voice call. */
   clientNonce?: string;
@@ -189,6 +203,7 @@ async function commitAnswerRunInput(
   threadId: string;
   seq: number;
   approval?: { decision: string; effectKind: string };
+  mirror?: MirrorEvent | null;
 } | null> {
   // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
   // concurrent clear cannot deadlock against this transaction.
@@ -304,6 +319,7 @@ async function commitAnswerRunInput(
         return null;
     }
     if (input.answer === "always") {
+      if (input.mayChangeApprovalRules === false) throw new ApprovalRulesLockedError();
       if (run.userId !== input.answeredByUserId) return null;
       approvalUserId = input.answeredByUserId;
     }
@@ -482,7 +498,16 @@ async function commitAnswerRunInput(
     runId: input.runId,
     payload: { messageId: message.id, role: "bot", blocks },
   });
+  // A hidden worker's card has a copy in the main chat; it settles with this answer.
+  const mirror = approvalAsk
+    ? await settleWorkerApprovalMirrorsInTransaction(tx, {
+        runId: input.runId,
+        approvalEffectId: pendingAsk.approvalEffectId,
+        settle: { status: "answered", answer: recordedAnswer },
+      })
+    : null;
   return {
+    mirror,
     threadId: updated.threadId,
     seq: updated.seq,
     ...(approvalEffect
@@ -524,6 +549,8 @@ export async function answerRunInput(
     });
   }
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  if (committed.mirror)
+    await notifyRealtime(realtime, committed.mirror.threadId, committed.mirror.seq);
   return true;
 }
 
@@ -725,6 +752,20 @@ export async function pauseRunForInput(
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
+    const ask = input.blocks.find((block) => block.kind === "ask" && block.input === "secret");
+    const supersededSecretRunIds =
+      input.secretRequest && ask?.kind === "ask"
+        ? await supersedeSecretRequests(
+            tx,
+            { ...input, ...input.secretRequest, ask },
+            (messageId, blocks) =>
+              appendEventInTransaction(tx, {
+                ...input,
+                type: "thread.message.updated",
+                payload: { messageId, role: "bot", blocks },
+              }),
+          )
+        : [];
     const message = await createThreadMessageInTransaction(tx, {
       threadId: input.threadId,
       role: "bot",
@@ -760,6 +801,7 @@ export async function pauseRunForInput(
       threadId: waitingEvent.threadId,
       seq: waitingEvent.seq,
       continuationRunId,
+      supersededSecretRunIds,
       firstResponseRunId: response.firstResponse ? input.runId : undefined,
     };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
@@ -772,7 +814,12 @@ export async function pauseRunForInput(
     committed.seq,
     committed.firstResponseRunId,
   );
-  return { continuationRunId: committed.continuationRunId };
+  return {
+    continuationRunId: committed.continuationRunId,
+    ...(committed.supersededSecretRunIds.length
+      ? { supersededSecretRunIds: committed.supersededSecretRunIds }
+      : {}),
+  };
 }
 
 function alwaysAllowedSite(effect: {

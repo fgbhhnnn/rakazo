@@ -514,6 +514,7 @@ app.post("/computers/:id/browser", async (c) => {
   signal.throwIfAborted();
   const parsed = z
     .discriminatedUnion("command", [
+      z.object({ command: z.literal("restart"), downloads: downloadFolder }),
       z.object({
         command: z.literal("navigate"),
         url: z
@@ -657,7 +658,7 @@ app.post("/computers/:id/browser", async (c) => {
             ? [`RAKAZO_BROWSER_UPLOAD_MAX_BYTES=${process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES}`]
             : []),
         ],
-        timeoutMs: 25_000,
+        timeoutMs: body.command === "navigate" || body.command === "restart" ? 55_000 : 25_000,
         signal,
         stdin: `${JSON.stringify(body)}\n`,
       },
@@ -683,7 +684,7 @@ app.post("/computers/:id/browser", async (c) => {
           ? `Page browser timed out; the page may be busy or blocked by a dialog. ${
               body.command === "act"
                 ? "Inspect the screen before continuing."
-                : "Retry once before using other tools."
+                : "Retry once, then use browser_restart before using other tools."
             }`
           : "Page browser unavailable or interrupted",
       );
@@ -698,7 +699,7 @@ app.post("/computers/:id/browser", async (c) => {
       error:
         detail && detail !== "Page browser unavailable or interrupted"
           ? detail
-          : "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+          : "Page browser unavailable or interrupted. Use browser_restart, then inspect the screen before continuing.",
     });
   }
 });

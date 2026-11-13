@@ -2,8 +2,8 @@ import type {
   Page,
   PageBlockMeta,
   PageDetail,
-  PageSummary,
   PageVisibility,
+  ReportPageSummary,
 } from "@rakazo/contracts";
 import { pagePath } from "@rakazo/contracts";
 import { isServerUnreachable, pageViewerDocument } from "@rakazo/core";
@@ -269,12 +269,14 @@ export async function pageDocument(
   });
 }
 
-export function listPages(input: { botId?: string; limit?: number } = {}): Promise<PageSummary[]> {
-  return rpc("pages/list", input);
+export function listPages(
+  input: { botId?: string; limit?: number } = {},
+): Promise<ReportPageSummary[]> {
+  return rpc("reportPages/list", input);
 }
 
 export function getPage(pageId: string): Promise<Page> {
-  return rpc("pages/get", { pageId });
+  return rpc("reportPages/get", { pageId });
 }
 
 /** Saves the owner's edit as the next version; a newer saved version rejects it. */

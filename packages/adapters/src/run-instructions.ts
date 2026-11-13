@@ -231,9 +231,7 @@ function secretGuidance(pageBrowserAllowed: boolean, disabled?: ReadonlySet<stri
     builtinOffered(disabled, "request_secret") &&
     builtinOffered(disabled, "browser_act")
   ) {
-    clauses.push(
-      "For a code a site texts or emails, use request_secret oneTimeCode and browser_act fill_code, never chat.",
-    );
+    clauses.push();
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(

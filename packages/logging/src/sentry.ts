@@ -171,13 +171,6 @@ function reportTitle(event: LogEvent): string {
   return `${event.message} ${event["http.method"]} ${route} ${event["http.status"]}`;
 }
 
-/** A failed request with nothing else logged groups by what answered it, not as one issue. */
-function reportTitle(event: LogEvent): string {
-  const route = event["http.route"];
-  if (typeof route !== "string") return event.message;
-  return `${event.message} ${event["http.method"]} ${route} ${event["http.status"]}`;
-}
-
 function releaseFromGitSha(sha: string | undefined): string | undefined {
   const value = sha?.trim();
   return value && value !== "unknown" ? value : undefined;
