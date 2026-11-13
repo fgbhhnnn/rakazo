@@ -11,8 +11,11 @@ import {
   OFFICE_MIME_TYPE_EXTENSIONS,
 } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock } from "./action-approval.js";
+import { withoutCopiedToolSteps } from "./replayed-tool-text.js";
 import { SOURCE_TEXT_EXTENSIONS } from "./source-text-extensions.js";
 import { withoutWorkerSlot } from "./worker-names.js";
+
+export { withoutCopiedToolSteps } from "./replayed-tool-text.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -223,8 +226,15 @@ export function toolStepOutcomeText(step: { count: number; outcomes?: unknown })
   return counts.map(({ outcome, count }) => `${count} ${outcome}`).join(", ");
 }
 
-export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
-  return blocks.map(blockHistoryText).filter(Boolean).join("\n");
+/** Tool steps stay out of replayed prose; summaries and quoted messages opt in to them. */
+export function blocksToAgentHistoryText(
+  blocks: MessageBlock[],
+  { toolSteps = false, fromBot = false }: { toolSteps?: boolean; fromBot?: boolean } = {},
+): string {
+  return blocks
+    .map((block) => blockHistoryText(block, toolSteps, fromBot))
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** A reply in order, with its tool steps apart from the text around them. */
@@ -234,7 +244,10 @@ export type AgentHistorySegment = { text: string } | { steps: HistoryToolStep[] 
  * The same reply as blocksToAgentHistoryText, split at its tool steps so a runtime can replay
  * them as tool calls. Text between steps is joined as blocksToAgentHistoryText joins it.
  */
-export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHistorySegment[] {
+export function blocksToAgentHistorySegments(
+  blocks: MessageBlock[],
+  { fromBot = false }: { fromBot?: boolean } = {},
+): AgentHistorySegment[] {
   const segments: AgentHistorySegment[] = [];
   let text: string[] = [];
   const flush = () => {
@@ -252,18 +265,16 @@ export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHisto
       segments.push({ steps });
       continue;
     }
-    const rendered = blockHistoryText(block);
+    const rendered = blockHistoryText(block, false, fromBot);
     if (rendered) text.push(rendered);
   }
   flush();
   return segments;
 }
 
-function blockHistoryText(block: MessageBlock): string {
-  if (block.kind === "text") return block.text;
-  // The tools a reply used, and what the bot wrote before each, are kept out of its text;
-  // without them a later turn cannot tell what it already did.
-  if (block.kind === "steps") return toolStepsHistoryText(block.steps);
+function blockHistoryText(block: MessageBlock, toolSteps: boolean, fromBot: boolean): string {
+  if (block.kind === "text") return fromBot ? withoutCopiedToolSteps(block.text) : block.text;
+  if (block.kind === "steps") return toolSteps ? toolStepsHistoryText(block.steps) : "";
   if (block.kind === "chart") return `[chart: ${block.name}]`;
   if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
   if (block.kind === "image") return `[image: ${block.name}]`;

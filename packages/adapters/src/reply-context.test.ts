@@ -1,6 +1,7 @@
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { createDispatcherTurnLedger, guardDispatcherReply } from "./dispatcher-reply-guard.js";
 import { toHistory } from "./pi-runtime-history.js";
 import {
   loadReplyContext,
@@ -219,7 +220,7 @@ it("includes the server-derived first line and author role for an id-only reply"
 });
 
 describe("earlier turns' tool work", () => {
-  it("replays what an earlier reply did on the computer, not only its final text", () => {
+  it("keeps tool steps and copied step lists out of replayed prose", () => {
     const install = messageToAgentHistoryText({
       id: "bot-install",
       threadId: "thread-1",
@@ -233,7 +234,7 @@ describe("earlier turns' tool work", () => {
           ],
           durationMs: 9_000,
         },
-        { kind: "text", text: "Done." },
+        { kind: "text", text: "Done.\n[tool calls this reply made]\n- Shell (succeeded)" },
       ],
     });
     const [, replayed] = toHistory(
@@ -246,9 +247,44 @@ describe("earlier turns' tool work", () => {
     );
     expect(replayed).toMatchObject({ role: "assistant" });
     const text = JSON.stringify(replayed);
-    expect(text).toContain("Shell ×2: Installing the password manager extension.");
-    expect(text).toContain("Computer screenshot");
     expect(text).toContain("Done.");
+    expect(text).not.toContain("tool calls this reply made");
+    expect(text).not.toContain("Shell");
+    expect(text).not.toContain("Computer screenshot");
+  });
+
+  it("removes a copied dispatcher brief and list without changing a person's pasted report", () => {
+    const message = {
+      id: "copied-reply",
+      threadId: "thread-1",
+      role: "bot",
+      blocks: [
+        {
+          kind: "text",
+          text: "[to 测试助手 · 后台任务] 【后台任务】检查\n角色：测试\n任务：检查结果\n[tool calls this reply made]\n- Find tool: 收到。\n- Background task: 已在后台开始「检查 #AB12CD34」。",
+        },
+      ],
+    };
+    expect(messageToAgentHistoryText(message)).toBe("");
+    expect(messageToAgentHistoryText({ ...message, role: "user" })).toBe(message.blocks[0]!.text);
+  });
+
+  it("quotes a copied list and actual steps as the target someone reacted to", () => {
+    for (const blocks of [
+      [{ kind: "text", text: "[tool calls this reply made]\n- List files (succeeded)" }],
+      [{ kind: "steps", steps: [{ label: "List files", count: 1 }] }],
+    ]) {
+      const text = messageToAgentHistoryText({
+        id: "reaction",
+        threadId: "thread-1",
+        role: "user",
+        blocks: [{ kind: "text", text: "👍" }],
+        replyToMessageId: "bot-tools",
+        replyTo: { id: "bot-tools", threadId: "thread-1", role: "bot", blocks },
+      });
+      expect(text).toContain("reaction_target");
+      expect(text).toContain("List files");
+    }
   });
 
   it("replays the stored steps as the bot's own tool calls when the run has tools", () => {
@@ -269,7 +305,7 @@ describe("earlier turns' tool work", () => {
             },
           ],
         },
-        { kind: "text", text: "Done." },
+        { kind: "text", text: "Done.\n[tool calls this reply made]\n- Shell (succeeded)" },
       ],
     };
     const replayed = toHistory(
@@ -292,8 +328,56 @@ describe("earlier turns' tool work", () => {
         { type: "toolCall", name: "shell", arguments: { command: "ls ext" } },
       ],
     });
+    expect(JSON.stringify(replayed)).not.toContain("tool calls this reply made");
+    expect(replayed[2]).toMatchObject({ content: [{ type: "text", text: "Done." }] });
     expect(
       messageToAgentHistorySegments({ ...message, blocks: [{ kind: "text", text: "Hi." }] }),
     ).toBeUndefined();
+  });
+});
+
+describe("copied replay text before publication", () => {
+  const copied =
+    "[to 测试助手 · 后台任务] 【后台任务】检查\n[tool calls this reply made]\n- Find tool: 收到。\n- Background task: 已在后台开始「检查 #ZZ99YY88」。";
+  const context = { wokenByWorker: false, runId: "run-test" };
+
+  it("suppresses a fake dispatch reply and requests the existing corrective turn", () => {
+    const outcome = guardDispatcherReply(
+      true,
+      [{ kind: "text", text: copied }],
+      createDispatcherTurnLedger(),
+      context,
+    );
+    expect(outcome).toMatchObject({
+      blocks: [{ kind: "text", text: "收到。" }],
+      changed: true,
+      recheckClaim: true,
+      original: copied,
+    });
+  });
+
+  it("uses actual tool results for an acknowledgement when work really was dispatched", () => {
+    const ledger = createDispatcherTurnLedger();
+    ledger.record("background_task", {
+      status: "started",
+      task_ref: "AB12CD34",
+      name: "Check",
+    });
+    const outcome = guardDispatcherReply(true, [{ kind: "text", text: copied }], ledger, context);
+    expect(outcome.recheckClaim).toBe(false);
+    expect(JSON.stringify(outcome.blocks)).toContain("#AB12CD34");
+    expect(JSON.stringify(outcome.blocks)).not.toContain("#ZZ99YY88");
+    expect(JSON.stringify(outcome.blocks)).not.toContain("tool calls this reply made");
+  });
+
+  it("keeps remaining prose without restoring the copied list or worker claims", () => {
+    const outcome = guardDispatcherReply(
+      true,
+      [{ kind: "text", text: `${copied}\n\n已经安排后台去做了。请确认范围。` }],
+      createDispatcherTurnLedger(),
+      context,
+    );
+    expect(outcome.blocks).toEqual([{ kind: "text", text: "请确认范围。" }]);
+    expect(outcome.recheckClaim).toBe(true);
   });
 });
