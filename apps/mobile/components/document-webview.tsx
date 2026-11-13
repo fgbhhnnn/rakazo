@@ -24,7 +24,7 @@ export function DocumentWebView({
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
-  const webview = useRef<WebView>(null);
+  const webview = useRef<WebView<object>>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 

@@ -59,6 +59,7 @@ async function render(overlay: Parameters<typeof AppOverlays>[0]["overlay"], loc
         stdioEnabled={false}
         memberSettingsLocked={locked}
         onConnectedAppsChange={() => undefined}
+        onOpenBot={vi.fn()}
       />,
     ),
   );

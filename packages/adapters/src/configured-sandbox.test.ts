@@ -377,18 +377,18 @@ vi.mock(
 
 it("bills a kind only the primary runs the way the primary does", async () => {
   const primary = Object.assign(new FakeSandboxProvider(), {
-    billsWhileRunning: (computer: Pick<ComputerRef, "kind">) => computer.kind !== "kubernetes",
+    billsWhileRunning: (computer: Pick<ComputerRef, "kind">) => computer.kind !== "docker",
   });
   const sandbox = new ConfiguredSandbox(primary, async () => ({
     provider: "default",
     settings: null,
   }));
-  const local = {
+  const local: ComputerRef = {
     id: "c",
     botId: "a",
-    kind: "kubernetes",
-    providerRef: "k",
-  } as unknown as ComputerRef;
+    kind: "docker",
+    providerRef: "local",
+  };
   expect(sandbox.billsWhileRunning(local)).toBe(false);
 });
 

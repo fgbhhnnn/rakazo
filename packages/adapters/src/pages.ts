@@ -133,7 +133,6 @@ async function storeVersion(
       deps.prisma,
       {
         spaceId: input.spaceId,
-        userId: input.userId,
         botId: input.botId,
         groupId: input.groupId,
         name: input.name,

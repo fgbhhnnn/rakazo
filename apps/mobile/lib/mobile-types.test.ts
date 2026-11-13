@@ -228,6 +228,26 @@ describe("mobile thread event reduction", () => {
     );
   });
 
+  it("summarizes background task progress in message previews", () => {
+    expect(
+      blockText(
+        mobileMessage("tasks-1", [
+          {
+            kind: "task_progress",
+            botId: "bot-1",
+            updatedAt: "2026-11-01T00:00:00.000Z",
+            tasks: (["running", "done", "failed"] as const).map((state, index) => ({
+              ref: `task-${index}`,
+              name: `Task ${index}`,
+              state,
+              queuedAt: "2026-11-01T00:00:00.000Z",
+            })),
+          },
+        ]),
+      ),
+    ).toBe("后台任务进度：1 个进行中 · 1 个完成 · 1 个未完成");
+  });
+
   it("formats channel messages with their platform attribution", () => {
     expect(
       blockText(

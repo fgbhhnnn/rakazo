@@ -321,7 +321,8 @@ export function useUiLocale(): UiLocale {
 export function t(message: string, values?: Record<string, string | number>): string {
   const replacements = { PRODUCT_NAME, ...values };
   const descriptor = compatibilityMessages[message];
-  if (descriptor) return i18n._(descriptor, replacements).replaceAll("Rakazo", PRODUCT_NAME);
+  if (descriptor)
+    return i18n._({ ...descriptor, values: replacements }).replaceAll("Rakazo", PRODUCT_NAME);
   return translate(compatibilityTranslations[activeLocale], message, replacements);
 }
 

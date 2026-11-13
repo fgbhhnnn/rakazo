@@ -1,10 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import * as database from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
-import { asSystem } from "./system-db.js";
 
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
@@ -22,6 +22,9 @@ type RowsModule = typeof import("../../adapters/src/background-task-rows.ts");
 /** A fresh copy of the module: its own in-process locks and lease owner, like another process. */
 async function freshModule(): Promise<BgModule> {
   vi.resetModules();
+  // Separate adapter locks, but one process-wide RLS context and bypass-key registry.
+  // Reloading the DB helpers loses the key installed by createApp; unread card writes fail.
+  vi.doMock("@rakazo/db", () => database);
   return import("../../adapters/src/background-tasks.ts");
 }
 
@@ -43,7 +46,7 @@ describeIntegration("background task rows: claims, recovery, FIFO, attribution",
       defaultProvider: "scripted",
       defaultModel: "scripted",
     });
-    db = asSystem(handles.prisma);
+    db = database.asSystem(handles.prisma);
     rows = await import("../../adapters/src/background-task-rows.ts");
   });
 

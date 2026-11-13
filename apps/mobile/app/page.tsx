@@ -7,6 +7,7 @@ import { typeScale, webTokensForAppearance } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ScrollViewInstance } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -250,7 +251,7 @@ function ReportPageScreen() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<ScrollViewInstance>(null);
   const bodyTop = useRef(0);
   const sectionOffsets = useRef(new Map<string, number>());
 

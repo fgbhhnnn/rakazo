@@ -10,6 +10,7 @@ import type {
   SpaceNavigation,
   ThreadSnapshot,
 } from "@rakazo/contracts";
+import { taskProgressHeadline } from "@rakazo/contracts";
 import type { LiveThreadMessage, LiveThreadRun, ThreadHistory } from "@rakazo/core";
 import { channelMessageLine, prependThreadHistoryPage } from "@rakazo/core";
 
@@ -145,10 +146,7 @@ export function prependMobileMessagePage(
 export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
-      if (block.kind === "task_progress")
-        return block.tasks
-          .map((task) => `${task.name}: ${task.status}${task.progress ? ` ${task.progress}` : ""}`)
-          .join("\n");
+      if (block.kind === "task_progress") return taskProgressHeadline(block);
       if (block.kind === "channel_message") return channelMessageLine(block);
       if (block.kind === "cloud_agent")
         return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;

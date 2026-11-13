@@ -66,7 +66,12 @@ test("a chat opens with a New divider above replies that arrived while away", as
   const followUp = `Thanks ${stamp}`;
   await page.getByPlaceholder("Message Chief").fill(followUp);
   await page.keyboard.press("Enter");
-  await expect(page.locator("[data-message-id]").filter({ hasText: followUp })).toBeVisible();
+  // The scripted bot quotes the prompt in its reply; count only the human's message.
+  const followUpMessage = page
+    .getByTestId("message-user-bubble")
+    .filter({ hasText: new RegExp(`^Thanks ${stamp}$`) });
+  await expect(followUpMessage).toHaveCount(1);
+  await expect(followUpMessage).toBeVisible();
   await expect(divider).toHaveCount(0);
   // Let Chief answer here so its reply is read before leaving.
   await expect
@@ -84,6 +89,7 @@ test("a chat opens with a New divider above replies that arrived while away", as
     )
     .toBe(true);
 
+  await expect(followUpMessage).toHaveCount(1);
   // Once read, the next visit has no divider.
   await page.goto(`/app/${otherId}`);
   await expect(page.getByPlaceholder("Message Elsewhere")).toBeVisible();

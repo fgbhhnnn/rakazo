@@ -59,6 +59,7 @@ it.each([
     sendError: null,
     onOpenModels: vi.fn(),
     onOpenConnections: vi.fn(),
+    onOpenBilling: vi.fn(),
     runError: null,
     runErrorId: null,
     onRunErrorPresented: vi.fn(),

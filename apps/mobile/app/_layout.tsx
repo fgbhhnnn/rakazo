@@ -541,10 +541,6 @@ function LayoutContent() {
                       }}
                     />
                     <Stack.Screen
-                      name="page"
-                      options={{ title: t("Page"), presentation: "fullScreenModal" }}
-                    />
-                    <Stack.Screen
                       name="group-thread"
                       options={({ route }) => ({
                         title: t`Group`,

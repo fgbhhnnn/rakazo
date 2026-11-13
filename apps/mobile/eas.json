@@ -36,7 +36,8 @@
       },
       "environment": "production"
     },
-    "ios-testflight": {"pnpm": "12.18.0",
+    "ios-testflight": {
+      "pnpm": "12.18.0",
       "distribution": "store",
       "autoIncrement": true,
       "channel": "production",
