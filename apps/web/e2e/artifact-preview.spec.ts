@@ -9,27 +9,27 @@ test("agent-attached files appear as cards with previews and downloads", async (
   await completeOnboarding(page);
 
   const composer = page.getByPlaceholder(/Message/);
-  await composer.fill("write notes/result.txt and attach it to the thread");
+  await composer.fill("write path notes/result.txt and attach it to the thread says Result notes");
   await page.keyboard.press("Enter");
 
-  // Plain text opens the in-app viewer; the card's side button still downloads it.
-  // Exact names keep sidebar status (which can mention notes/result.txt) out of scope.
+  // Text files open in the viewer instead of downloading.
   const fileCard = page.getByRole("button", { name: "Preview result.txt" });
   await expect(fileCard).toBeVisible({ timeout: 30_000 });
   await captureScreenshot(page, testInfo, "current-file-card");
-
   await fileCard.click();
+
   const textDialog = page.getByRole("dialog", { name: "result.txt" });
-  await expect(textDialog).toBeVisible();
+  await expect(textDialog.getByText("Result notes")).toBeVisible();
   await expect(textDialog.getByRole("button", { name: "Close preview" })).toBeFocused();
+  await captureScreenshot(page, testInfo, "text-preview-open");
   await page.keyboard.press("Escape");
   await expect(textDialog).toHaveCount(0);
   await expect(fileCard).toBeFocused();
-
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download result.txt" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("result.txt");
+  await expect(textDialog).toHaveCount(0);
 
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
   await composer.fill(

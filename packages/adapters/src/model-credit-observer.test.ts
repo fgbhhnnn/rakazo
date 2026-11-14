@@ -17,8 +17,8 @@ beforeEach(() => {
 });
 
 describe("hosted model credit gate", () => {
-  it("refuses BYOK accounts even if old owner and subscription records exist", async () => {
-    vi.mocked(creditAccount).mockResolvedValue({ mode: "byok" } as never);
+  it("refuses unfunded BYOK accounts even if old owner and subscription records exist", async () => {
+    vi.mocked(creditAccount).mockResolvedValue({ mode: "byok", balanceMicros: 0n } as never);
     const findUnique = vi.fn(async () => ({ ownerUserId: scope.userId, status: "active" }));
     await expect(
       hostedModelCreditObserver(
@@ -29,24 +29,27 @@ describe("hosted model credit gate", () => {
     expect(findUnique).not.toHaveBeenCalled();
     expect(reserveModelCredits).not.toHaveBeenCalled();
   });
-  it("requires a reservation before a funded-mode account may use the server key", async () => {
-    vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);
-    vi.mocked(reserveModelCredits).mockRejectedValue(new Error("Not enough model credits"));
-    const observer = await hostedModelCreditObserver({} as never, scope);
-    const call = {
-      callId: "call-1",
-      maxCostUsd: 0.02,
-      provider: "test-provider",
-      modelId: "test-model",
-      runId: "run-1",
-    } as Parameters<ModelCallObserver["beforeCall"]>[0];
-    await expect(observer.beforeCall(call)).rejects.toThrow("Not enough model credits");
-    expect(reserveModelCredits).toHaveBeenCalledWith({}, "org-1", 0.02, {
-      ...scope,
-      callId: "call-1",
-      runId: "run-1",
-      provider: "test-provider",
-      model: "test-model",
-    });
-  });
+  it.each(["credits", "byok"])(
+    "requires a reservation before a funded %s account may use the server key",
+    async (mode) => {
+      vi.mocked(creditAccount).mockResolvedValue({ mode, balanceMicros: 1n } as never);
+      vi.mocked(reserveModelCredits).mockRejectedValue(new Error("Not enough model credits"));
+      const observer = await hostedModelCreditObserver({} as never, scope);
+      const call = {
+        callId: "call-1",
+        maxCostUsd: 0.02,
+        provider: "test-provider",
+        modelId: "test-model",
+        runId: "run-1",
+      } as Parameters<ModelCallObserver["beforeCall"]>[0];
+      await expect(observer.beforeCall(call)).rejects.toThrow("Not enough model credits");
+      expect(reserveModelCredits).toHaveBeenCalledWith({}, "org-1", 0.02, {
+        ...scope,
+        callId: "call-1",
+        runId: "run-1",
+        provider: "test-provider",
+        model: "test-model",
+      });
+    },
+  );
 });

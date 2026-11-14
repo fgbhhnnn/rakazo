@@ -46,7 +46,7 @@ export function SavedPasswordSettings() {
     <Disclosure
       summary={<Trans>Advanced</Trans>}
       className="rounded-xl border border-border"
-      summaryClassName="flex w-full items-center justify-between px-4 py-4 text-sm"
+      summaryClassName="flex w-full items-center justify-between px-4 py-4 text-body-sm"
     >
       <SettingsRow
         label={
@@ -65,13 +65,13 @@ export function SavedPasswordSettings() {
           />
         }
       >
-        <p id={`${id}-warning`} className="mt-2 text-sm text-muted-foreground">
+        <p id={`${id}-warning`} className="mt-2 text-body-sm text-muted-foreground">
           <Trans>
             Passwords go to your model provider and may appear in history. Enable only if needed.
           </Trans>
         </p>
         {error ? (
-          <p role="alert" className="mt-2 text-sm text-destructive">
+          <p role="alert" className="mt-2 text-body-sm text-destructive">
             {error}
           </p>
         ) : null}

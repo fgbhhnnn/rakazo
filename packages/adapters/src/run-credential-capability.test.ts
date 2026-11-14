@@ -38,6 +38,7 @@ describe("credential page capability context", () => {
           computer: { pageBrowserAllowed: !page },
           credentialPageBrowserAllowed: page,
           deps: { prisma },
+          secretScope: { userId: "user-1", spaceId: "space-1" },
           run: { userId: "user-1", spaceId: "space-1" },
           runId: "run-1",
           state: {},
@@ -49,7 +50,8 @@ describe("credential page capability context", () => {
           ? { saved: true, ...destination }
           : { error: WEBSITE_LOGIN_UNAVAILABLE, reason: "no_page_browser" },
       );
-      expect(prisma.vaultCredential.findFirst).toHaveBeenCalledTimes(page ? 1 : 0);
+      // Reuse reads the saved destination, then its login summary.
+      expect(prisma.vaultCredential.findFirst).toHaveBeenCalledTimes(page ? 2 : 0);
     },
   );
 
@@ -63,6 +65,7 @@ describe("credential page capability context", () => {
           computer: { pageBrowserAllowed: !page },
           credentialPageBrowserAllowed: page,
           deps: { prisma },
+          secretScope: { userId: "user-1", spaceId: "space-1" },
           run: { id: "run-1", userId: "user-1", spaceId: "space-1" },
         } as never,
         {
@@ -129,6 +132,7 @@ describe("credential page capability context", () => {
             secretStore: { load: async () => "fixture-password" },
           },
           run: { id: "run-1", userId: "user-1", spaceId: "space-1" },
+          secretScope: { userId: "user-1", spaceId: "space-1" },
           runId: "run-1",
           secrets: [],
           state: { reply: { pendingProgress: "", redactor: createStreamingRedactor([]) } },

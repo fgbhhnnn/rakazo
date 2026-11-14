@@ -4,7 +4,7 @@
     "slug": "bot",
     "owner": "ccxxyys-team",
     "scheme": "rakazo",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -55,12 +55,14 @@
       ],
       "expo-sharing",
       "./plugins/with-worklets-headers",
-      "./plugins/with-scene-lifecycle",
       "./plugins/with-lan-cleartext",
+      "./plugins/with-android-no-gwp-asan",
+      "./plugins/with-agent-notifications",
       "./plugins/with-app-intents"
     ],
     "locales": {
-      "es": "./locales/es.json"
+      "es": "./locales/es.json",
+      "pl": "./locales/pl.json"
     },
     "ios": {
       "bundleIdentifier": "com.ccxxyy.rakazo",
@@ -77,7 +79,13 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"],
+        "NSUserActivityTypes": ["INSendMessageIntent"],
         "CFBundleDisplayName": "Goes Bot"
+      },
+      "entitlements": {
+        "com.apple.developer.usernotifications.time-sensitive": true,
+        "com.apple.developer.usernotifications.communication": true
       }
     },
     "android": {
@@ -90,7 +98,7 @@
         "monochromeImage": "./assets/monochrome-icon.png",
         "backgroundImage": "./assets/icon-background.png"
       },
-      "runtimeVersion": "1.0.8"
+      "runtimeVersion": "1.0.10"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -107,6 +115,20 @@
                 {
                   "targetName": "RakazoWidgets",
                   "bundleIdentifier": "com.ccxxyy.rakazo.widgets"
+                },
+                {
+                  "targetName": "expo-sharing-extension",
+                  "bundleIdentifier": "com.ccxxyy.rakazo.expo-sharing-extension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.ccxxyy.rakazo"]
+                  }
+                },
+                {
+                  "targetName": "AgentNotifications",
+                  "bundleIdentifier": "com.ccxxyy.rakazo.notifications",
+                  "entitlements": {
+                    "com.apple.developer.usernotifications.communication": true
+                  }
                 }
               ]
             }

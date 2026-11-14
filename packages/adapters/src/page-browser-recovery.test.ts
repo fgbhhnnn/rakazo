@@ -56,16 +56,27 @@ describe("browser_restart", () => {
     const ctx = {
       deps: {
         prisma: {
+          computer: { findUnique: async () => ({ controlHolder: "none", controlFence: 0 }) },
           taughtSkill: { findFirst: async () => (mode === "teaching" ? { id: "skill" } : null) },
         },
       },
       run: { spaceId: "s", botId: "b1" },
       bot: { id: "b1" },
       context,
-      computer: { heldForTakeover: mode === "takeover", checkpoint: { markDirty: dirty }, get },
+      computer: {
+        stored: { id: "c1" },
+        heldForTakeover: mode === "takeover",
+        checkpoint: { markDirty: dirty },
+        get,
+      },
       providers: { browser: { restart } },
       secrets: new Set<string>(),
-      state: { screen: { unchangedVisualStreak: { count: 3 } } },
+      state: {
+        screen: {
+          turn: { controlFence: undefined, mustLook: false },
+          unchangedVisualStreak: { count: 3 },
+        },
+      },
     };
     const result = await pageBrowserTool(
       ctx as never,

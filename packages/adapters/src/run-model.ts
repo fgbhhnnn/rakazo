@@ -5,23 +5,33 @@ import type {
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
+import { sharedModelScope, withinScope } from "@rakazo/db";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
   cloudflareModelConfigMessage,
-  OPENAI_COMPATIBLE_PROVIDER_ID,
-} from "@rakazo/contracts";
-import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
-import { sharedModelScope, withinScope } from "@rakazo/db";
-import { cloudflareProviderEnv } from "./cloudflare-ai-gateway.js";
+  cloudflareProviderEnv,
+} from "./cloudflare-ai-gateway.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
+import {
+  kickModelCredentialRefresh,
+  persistStoredModelSecret,
+  refreshStoredModelCredential,
+  resolveStoredModelAuth,
+  retireToReconnectMarker,
+  withModelCredentialLock,
+} from "./model-credential-refresh.js";
 import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "./model-credit-observer.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
+import type { StoredModelSecret } from "./model-secret.js";
+import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -31,24 +41,12 @@ import {
   validateConnectedModelChoice,
   validateModelAuthAvailability,
 } from "./model-selection.js";
-import { modelIdSupportsImages } from "./model-vision.js";
+import { compatibleModelSeesImages } from "./model-vision.js";
 import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import { codexLiveModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
-import type { StoredModelSecret } from "./pi-oauth.js";
-import {
-  CHATGPT_OAUTH_PROVIDER,
-  isRetiredModelCredentialError,
-  kickModelCredentialRefresh,
-  parseModelSecret,
-  persistStoredModelSecret,
-  resolveModelAuth,
-  retireToReconnectMarker,
-  secretValuesToRedact,
-  serializeModelSecret,
-  withModelCredentialLock,
-} from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER, isRetiredModelCredentialError } from "./pi-oauth.js";
 import { botModelChoice } from "./worker-model.js";
 
 export function runtimeFallbackModel(runtime: AgentRuntime) {
@@ -167,11 +165,15 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
   const credential = args[3];
   // A member on the owner's shared model reads (and refreshes) the owner's key as the owner.
   const raw = await withinScope(scope, () => resolveModelKeyMaterial(...args));
-  const { persistOAuth, retireOAuth } = raw;
+  const { persistOAuth, refreshOAuth, retireOAuth } = raw;
   const material = {
     ...raw,
     persistOAuth: persistOAuth
       ? (next: AgentModelOAuthCredential) => withinScope(scope, () => persistOAuth(next))
+      : undefined,
+    refreshOAuth: refreshOAuth
+      ? (...refresh: Parameters<typeof refreshOAuth>) =>
+          withinScope(scope, () => refreshOAuth(...refresh))
       : undefined,
     retireOAuth: retireOAuth
       ? (...retire: Parameters<typeof retireOAuth>) =>
@@ -231,6 +233,7 @@ async function resolveModelKeyMaterial(
   maxImagesPerPrompt?: number;
   oauth?: AgentModelOAuthCredential;
   persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
+  refreshOAuth?: NonNullable<NonNullable<AgentRunRequest["model"]["oauth"]>["refresh"]>;
   retireOAuth?: (
     reason: ModelCredentialRetireReason,
     detail?: string,
@@ -271,7 +274,14 @@ async function resolveModelKeyMaterial(
         parseModelSecret(plaintext).maxTokens,
       );
       const resolveAuth = () =>
-        resolveModelAuth(plaintext, credential.provider, { persist, retire });
+        resolveStoredModelAuth(
+          deps.prisma,
+          deps.secretStore,
+          { userId, spaceId },
+          credential,
+          plaintext,
+          credential.provider,
+        );
       let resolved: Awaited<ReturnType<typeof resolveAuth>> | undefined;
       let liveCodex: Awaited<ReturnType<typeof codexLiveModel>> | undefined;
       const authError = validateModelAuthAvailability(provider, modelId, plaintext);
@@ -319,12 +329,7 @@ async function resolveModelKeyMaterial(
       const acceptsImages =
         credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
         resolved.secret.kind === "openai_compatible"
-          ? modelIdSupportsImages(resolved.secret.visionModelIds, modelId) ||
-            // Legacy secrets have no per-model list, so keep their existing
-            // capability scoped to the model saved in the space preference.
-            (resolved.secret.visionModelIds === undefined &&
-              credential.supportsImages === true &&
-              credential.defaultModel?.trim() === modelId.trim())
+          ? compatibleModelSeesImages(credential, resolved.secret, modelId)
           : liveCodex?.supportsImages;
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
@@ -383,6 +388,15 @@ async function resolveModelKeyMaterial(
               });
             }
           : undefined,
+        refreshOAuth: oauth
+          ? refreshStoredModelCredential(
+              deps.prisma,
+              deps.secretStore,
+              { userId, spaceId },
+              credential,
+              credential.provider,
+            )
+          : undefined,
         retireOAuth: retire,
         ownCredential: true,
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
@@ -419,6 +433,7 @@ export function resolvedModelRunFields(
       ? {
           credential: resolved.oauth,
           persist: resolved.persistOAuth,
+          refresh: resolved.refreshOAuth,
           retire: resolved.retireOAuth,
         }
       : undefined,
@@ -448,7 +463,7 @@ export async function resolveConnectedModelKey(
     scope,
     provider,
     modelId,
-    { hostedProvider, credentialId },
+    { hostedProvider, credentialId, codexCatalog: deps.codexCatalog },
   );
   if (validationError) throw new Error(validationError);
   const credential = await findConnectedModelCredential(
@@ -518,12 +533,12 @@ export async function resolveRunModel(
     botId?: string;
   },
 ): Promise<AgentRunRequest["model"]> {
+  // The bot's model is shared config; the credential that runs it stays the run user's.
   const override = scope.botId
     ? await deps.prisma.bot
         .findFirst({
           where: {
             id: scope.botId,
-            userId: scope.userId,
             spaceId: scope.spaceId,
           },
           select: {

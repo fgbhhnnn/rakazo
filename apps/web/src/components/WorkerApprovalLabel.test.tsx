@@ -84,7 +84,7 @@ it("shows which task asks and answers with the worker card's own controls", asyn
     (item) => item.textContent?.startsWith("Allow") && !item.textContent.includes("Always"),
   )!;
   await act(async () => allow.click());
-  expect(onAnswer).toHaveBeenCalledWith("allow", undefined);
+  expect(onAnswer).toHaveBeenCalledWith("allow");
   expect(onAnswer).toHaveBeenCalledTimes(1);
 });
 

@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { BILLING_CANCELLATION_REASONS } from "./billing.js";
 import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./domain.js";
 import { RUN_ERROR_KINDS, RunTriggerSchema } from "./runs.js";
+import { SignupAttribution } from "./signup-attribution.js";
 
-// No free-form properties: this is also the final allowlist at the external boundary.
+// Explicitly validated fields only: this is also the final allowlist at the external boundary.
 export const AnalyticsScreen = z.enum([
   "home",
   "chat",
@@ -40,6 +42,7 @@ export const AnalyticsBotSetting = z.enum([
   "cross_space",
   "daily_check_ins",
   "fleet_management",
+  "reply_mode",
   "tools",
 ]);
 export const AnalyticsTrigger = RunTriggerSchema;
@@ -55,7 +58,7 @@ const modelConnect = {
     .optional(),
 };
 export const AnalyticsEvent = z.discriminatedUnion("name", [
-  z.object({ name: z.literal("account_created") }).strict(),
+  SignupAttribution.extend({ name: z.literal("account_created") }).strict(),
   z.object({ name: z.literal("signed_in") }).strict(),
   z.object({ name: z.literal("screen_viewed"), ...AnalyticsScreenInput.shape }).strict(),
   z.object({ name: z.literal("message_sent"), trigger: AnalyticsTrigger }).strict(),
@@ -86,6 +89,14 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
       skipped: z.boolean(),
       use: z.enum(SIGNUP_SURVEY_USES).optional(),
       teamSize: z.enum(SIGNUP_SURVEY_TEAM_SIZES).optional(),
+    })
+    .strict(),
+  // Only the fixed reason; the comment stays in the database.
+  z
+    .object({
+      name: z.literal("subscription_cancel_feedback"),
+      reason: z.enum(BILLING_CANCELLATION_REASONS).optional(),
+      commented: z.boolean(),
     })
     .strict(),
 ]);

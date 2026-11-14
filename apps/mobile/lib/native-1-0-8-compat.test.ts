@@ -48,7 +48,7 @@ describe("OTA on the shipped 1.0.8 Android bridge", () => {
   it("resumes through the four-argument bridge without losing the locale", async () => {
     await expect(
       resumeLiveNotifications(`${endpoint}/api/`, "fake-token", "space-1"),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
     expect(native.resume.mock.calls).toEqual([
       [endpoint, "fake-token", "space-1", "de", headers],
       [endpoint, "fake-token", "space-1", "de"],

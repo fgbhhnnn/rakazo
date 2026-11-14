@@ -6,7 +6,11 @@ import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
 import { isContained } from "./home.js";
 import { PortableFileNames } from "./portable-file-names.js";
-import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
+import {
+  isTaggedCacheDirectory,
+  shouldSkipPortableWorkspaceFile,
+  WORKSPACE_SAVE_LIMITS,
+} from "./workspace-save-policy.js";
 
 /**
  * A home as one byte stream, so a revision is a single stored object however many files it
@@ -113,7 +117,7 @@ async function* packDirectory(
     if (!info || shouldSkipPortableWorkspaceFile(relative, info.isDirectory())) continue;
     const portable = names.path(relative);
     if (info.isDirectory()) {
-      if (visited.has(resolved)) continue;
+      if (visited.has(resolved) || (await isTaggedCacheDirectory(resolved))) continue;
       countEntry(counts, 0, limits);
       yield entryHeader(DIRECTORY, portable);
       yield* packDirectory(

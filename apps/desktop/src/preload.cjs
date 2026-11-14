@@ -12,6 +12,9 @@ function subscribe(channel) {
 contextBridge.exposeInMainWorld("rakazoDesktop", {
   platform: process.platform,
   nativeWindowFrame: process.platform === "win32",
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke("desktop.clipboard.write", text),
+  },
   badge: {
     set: (count) => ipcRenderer.invoke("desktop.badge.set", count),
   },
@@ -21,12 +24,26 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
     revokeAccess: () => ipcRenderer.invoke("desktop.computer.revokeAccess"),
     onConfigure: subscribe("desktop.computer.configure"),
   },
+  server: {
+    change: () => ipcRenderer.invoke("desktop.server.change"),
+  },
   settings: {
     onOpen: subscribe("desktop.settings.open"),
   },
   device: {
     state: () => ipcRenderer.invoke("desktop.device.state"),
     setAllowed: (allowed) => ipcRenderer.invoke("desktop.device.setAllowed", allowed),
+  },
+  locale: {
+    set: (locale) => ipcRenderer.invoke("desktop.locale.set", locale),
+  },
+  menu: {
+    onCommand: (listener) => {
+      // The IpcRendererEvent stays in the preload: the renderer only sees the command.
+      const handler = (_event, command) => listener(command);
+      ipcRenderer.on("desktop.menu.command", handler);
+      return () => ipcRenderer.off("desktop.menu.command", handler);
+    },
   },
   monitoring: {
     enabled: () => ipcRenderer.invoke("desktop.monitoring.enabled"),

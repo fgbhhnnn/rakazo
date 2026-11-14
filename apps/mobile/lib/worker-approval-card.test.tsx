@@ -6,6 +6,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { answerThreadMessage } from "./thread-answer";
 
+vi.mock("./haptics", () => ({ hapticSuccess: vi.fn() }));
+
 vi.mock("react-native", () => ({
   Text: (props: { children?: ReactNode; testID?: string }) =>
     createElement("span", { "data-testid": props.testID }, props.children),
@@ -74,6 +76,7 @@ it("answers the copy through the screen's handler with the worker's run", async 
     readOnly: false,
     rpc,
     isCurrentTarget: () => true,
+    isFocused: () => true,
     refresh,
     markRead: vi.fn(),
   };

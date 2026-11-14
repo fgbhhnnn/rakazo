@@ -61,7 +61,7 @@ struct AskBotIntent: AppIntent {
     }
     let sent = try await send(message, file: file, to: bot)
     guard let reply = try await reply(to: sent), !reply.isEmpty else {
-      return .result(value: "", dialog: "Sent. The reply will be in Rakazo.")
+      return .result(value: "", dialog: "Sent. The reply will be in Goes Bot.")
     }
     return .result(value: reply, dialog: "\(reply)")
   }
@@ -89,7 +89,7 @@ struct RunRoutineIntent: AppIntent {
 /// Opens a bot's chat through the app's own link, the same route a notification opens.
 struct OpenBotIntent: AppIntent {
   static let title: LocalizedStringResource = "Open Bot"
-  static let description = IntentDescription("Open a bot's chat in Rakazo.")
+  static let description = IntentDescription("Open a bot's chat in Goes Bot.")
   static let openAppWhenRun = true
 
   @Parameter(title: "Bot")
@@ -106,7 +106,7 @@ struct OpenBotIntent: AppIntent {
 /// modules/rakazo-voice-chat, since the chat link alone must never open the microphone.
 struct StartVoiceChatIntent: AppIntent {
   static let title: LocalizedStringResource = "Start Voice Chat"
-  static let description = IntentDescription("Open Rakazo and start a voice call with a bot.")
+  static let description = IntentDescription("Open Goes Bot and start a voice call with a bot.")
   static let openAppWhenRun = true
 
   @Parameter(title: "Bot", description: "Leave empty to use the chat you opened last.")
@@ -114,7 +114,7 @@ struct StartVoiceChatIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult {
-    guard let target = target(bot) else { throw MessageBotError.noBot }
+    guard let target = try await target(bot) else { throw MessageBotError.noBot }
     let botId = target.botId
     UserDefaults.standard.set(
       ["botId": botId, "at": String(Date().timeIntervalSince1970)],
@@ -125,12 +125,34 @@ struct StartVoiceChatIntent: AppIntent {
   }
 }
 
-/// The chosen bot, or the one whose chat was opened last, with the Space it was opened in.
-private func target(_ bot: BotEntity?) -> (botId: String, spaceId: String?)? {
+/// The single record written by lib/last-bot.ts; legacy ids have no verified owner.
+private struct SavedLastBot: Decodable {
+  let botId: String
+  let spaceId: String?
+  let apiBase: String
+  let userId: String
+}
+
+/// The chosen bot, or a saved bot owned by this authenticated account and server. Throws the
+/// verification failure (signed out, server unreachable), so a shortcut reports what went
+/// wrong; returns nil only when no bot was saved or the saved one is not this account's, which
+/// ask for a chat first.
+private func target(
+  _ bot: BotEntity?, with snapshot: RakazoSession? = nil
+) async throws -> (botId: String, spaceId: String?)? {
   if let bot { return (bot.botId, bot.spaceId) }
-  guard let last = secureStoreItem("rakazo.last_bot_id"), !last.isEmpty else { return nil }
-  let space = secureStoreItem("rakazo.last_bot_space_id")
-  return (last, space?.isEmpty == false ? space : nil)
+  let session = try snapshot ?? RakazoSession.load()
+  guard
+    let data = secureStoreItem("rakazo.last_bot_id")?.data(using: .utf8),
+    let last = try? JSONDecoder().decode(SavedLastBot.self, from: data),
+    !last.botId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    !last.userId.isEmpty, last.apiBase == session.apiBase
+  else { return nil }
+  let userId = try await session.currentUserId()
+  guard userId == last.userId else { return nil }
+  let current = try RakazoSession.load()
+  guard current.token == session.token, current.apiBase == session.apiBase else { return nil }
+  return (last.botId, last.spaceId)
 }
 
 @MainActor
@@ -151,8 +173,9 @@ private struct Delivery {
 /// Sends with the app's own session and the same procedures as the composer, so the bot runs it
 /// as a message the user sent. Without a chosen bot it goes to the one whose chat was opened last.
 private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) async throws -> Delivery {
-  guard let target = target(bot) else { throw MessageBotError.noBot }
-  return try await send(message, file: file, to: target, with: RakazoSession.load(), timeout: 60)
+  let session = try RakazoSession.load()
+  guard let target = try await target(bot, with: session) else { throw MessageBotError.noBot }
+  return try await send(message, file: file, to: target, with: session, timeout: 60)
 }
 
 private func send(
@@ -188,9 +211,9 @@ private func send(
 /// A voice message goes to the bot whose chat was opened last; its reply arrives as a notification.
 /// The bot and session are read now, while unlocked. Its island waits on the send, so a lost
 /// connection gives up sooner than a typed message would.
-func lastBotSender() throws -> (String) async throws -> Void {
-  guard let target = target(nil) else { throw MessageBotError.noBot }
+func lastBotSender() async throws -> (String) async throws -> Void {
   let session = try RakazoSession.load()
+  guard let target = try await target(nil, with: session) else { throw MessageBotError.noBot }
   return { message in
     _ = try await send(message, file: nil, to: target, with: session, timeout: 15)
   }
@@ -384,6 +407,24 @@ private struct RakazoSession {
     return saved.headers
   }
 
+  /// Verify the account using this exact server and bearer before using a saved shortcut.
+  func currentUserId() async throws -> String {
+    guard let url = URL(string: "\(apiBase)/api/auth/get-session") else {
+      throw MessageBotError.signedOut
+    }
+    var request = URLRequest(url: url, timeoutInterval: 5)
+    for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+    request.setValue("rakazo://", forHTTPHeaderField: "origin")
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+    let (data, response) = try await Self.transport.data(for: request)
+    try checkResponse(response)
+    // An expired bearer can answer 200 with no user; that is a sign-in prompt, not a retry.
+    guard let userId = try? JSONDecoder().decode(SessionIdentity.self, from: data).user.id,
+      !userId.isEmpty
+    else { throw MessageBotError.signedOut }
+    return userId
+  }
+
   /// The app asks before AI first sees the user's data; an action from here cannot ask.
   func requireConsent(
     _ target: [String: String], spaceId: String?, timeout: TimeInterval = 60
@@ -520,14 +561,19 @@ private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
 
   var localizedStringResource: LocalizedStringResource {
     switch self {
-    case .signedOut: "Sign in to Rakazo first."
-    case .noBot: "Open a chat in Rakazo first."
-    case .needsYou: "It needs you in Rakazo."
+    case .signedOut: "Sign in to Goes Bot first."
+    case .noBot: "Open a chat in Goes Bot first."
+    case .needsYou: "It needs you in Goes Bot."
     case .consentRequired: "Review AI data sharing in Account settings before continuing."
     case .server(let message?): "\(message)"
     case .server(nil): "Something went wrong. Try again."
     }
   }
+}
+
+private struct SessionIdentity: Decodable {
+  struct User: Decodable { let id: String }
+  let user: User
 }
 
 private struct SavedHeaders: Decodable {

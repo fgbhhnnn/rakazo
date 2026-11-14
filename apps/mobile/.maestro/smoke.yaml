@@ -1,4 +1,4 @@
-appId: com.rakazo.app
+appId: com.ccxxyy.rakazo
 name: Rakazo mobile smoke
 ---
 - launchApp:
@@ -24,6 +24,9 @@ name: Rakazo mobile smoke
     timeout: 30000
 - tapOn: "Create"
 - tapOn: "New bot"
+- tapOn: "Name your Bot"
+- inputText: "Smoke"
+- tapOn: "Create"
 
 - extendedWaitUntil:
     visible: "Message…"

@@ -54,7 +54,7 @@ export function PageReader({
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    void rpc.pages
+    void rpc.reportPages
       .get({ pageId })
       .then((page) => {
         if (!cancelled) setState({ status: "ready", page });
@@ -130,7 +130,7 @@ export function PageReader({
     setSaving(true);
     setSaveError(null);
     try {
-      const saved = await rpc.pages.update({
+      const saved = await rpc.reportPages.update({
         pageId,
         markdown: draft,
         baseVersion: page.version,
@@ -173,11 +173,11 @@ export function PageReader({
   ) : null;
 
   const headerTitle = inDialog ? (
-    <DialogTitle className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-muted-foreground">
+    <DialogTitle className="min-w-0 flex-1 truncate text-body leading-5 font-medium text-muted-foreground">
       {title}
     </DialogTitle>
   ) : (
-    <span className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-muted-foreground">
+    <span className="min-w-0 flex-1 truncate text-body leading-5 font-medium text-muted-foreground">
       {title}
     </span>
   );
@@ -228,7 +228,7 @@ export function PageReader({
         {close}
       </header>
       {copyError ? (
-        <p role="alert" className="shrink-0 px-5 pt-3 text-[13px] text-destructive">
+        <p role="alert" className="shrink-0 px-5 pt-3 text-body-sm text-destructive">
           <Trans>Could not copy the link.</Trans>
         </p>
       ) : null}
@@ -244,7 +244,7 @@ export function PageReader({
         ) : draft !== null ? (
           <div className="mx-auto flex h-full w-full max-w-[860px] flex-col gap-3 px-4 py-5 sm:px-8">
             {saveError ? (
-              <p role="alert" className="text-[13px] text-destructive">
+              <p role="alert" className="text-body-sm text-destructive">
                 {saveError}
               </p>
             ) : null}
@@ -252,17 +252,17 @@ export function PageReader({
               aria-label={t`Page markdown`}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              className="min-h-0 flex-1 resize-none [field-sizing:fixed] font-mono text-[13.5px] leading-6"
+              className="min-h-0 flex-1 resize-none [field-sizing:fixed] font-mono text-body leading-6"
               spellCheck
             />
           </div>
         ) : layout && page ? (
           <div className="mx-auto flex w-full max-w-[1120px] gap-14 px-6 pt-10 pb-24 sm:px-10 lg:pt-14">
             <article className="min-w-0 max-w-[720px] flex-1">
-              <h1 className="text-[30px] leading-[1.2] font-semibold tracking-tight text-foreground sm:text-[34px]">
+              <h1 className="text-display leading-[1.2] font-semibold tracking-tight text-foreground sm:text-display">
                 {page.title}
               </h1>
-              <p className="mt-2 text-[13px] text-muted-foreground">
+              <p className="mt-2 text-body-sm text-muted-foreground">
                 <Trans>Updated {updated}</Trans>
               </p>
               {layout.contents.length > 1 ? (
@@ -322,7 +322,7 @@ function PageContents({
   const { t } = useLingui();
   return (
     <nav aria-label={t`On this page`} className={className}>
-      <p className="mb-2 text-[12px] font-semibold tracking-wide text-muted-foreground uppercase">
+      <p className="mb-2 text-label font-semibold tracking-wide text-muted-foreground uppercase">
         <Trans>On this page</Trans>
       </p>
       <ul className="space-y-0.5">
@@ -336,7 +336,7 @@ function PageContents({
                 onJump(section.id);
               }}
               className={cn(
-                "block truncate rounded-md px-2 py-1 text-[13px] leading-5 text-muted-foreground hover:bg-accent hover:text-foreground",
+                "block truncate rounded-md px-2 py-1 text-body-sm leading-5 text-muted-foreground hover:bg-accent hover:text-foreground",
                 activeSection === section.id && "font-medium text-foreground",
               )}
             >

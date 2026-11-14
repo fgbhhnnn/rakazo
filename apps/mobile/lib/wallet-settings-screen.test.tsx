@@ -22,6 +22,9 @@ vi.mock("expo-router", () => ({
     useEffect(callback, [callback]);
   },
 }));
+vi.mock("./api-server", () => ({}));
+vi.mock("./api-auth", () => ({}));
+vi.mock("./api-live", () => ({}));
 vi.mock("./api", () => ({
   rpc: (method: string) => {
     if (method === "me") return mocks.me();
@@ -31,11 +34,11 @@ vi.mock("./api", () => ({
     throw new Error(`Unexpected ${method}`);
   },
 }));
-vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("../components/load-failure", () => ({
   LoadFailure: ({ message }: { message: string }) => <p role="alert">{message}</p>,
 }));
 vi.mock("../components/settings-group", () => ({
+  useStackedSettings: () => false,
   SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SettingsRow: ({
     title,

@@ -5,7 +5,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), writeText: vi.fn() }));
-vi.mock("../../lib/rpc", () => ({ rpc: { pages: { get: mocks.get, update: mocks.update } } }));
+vi.mock("../../lib/rpc", () => ({
+  rpc: { reportPages: { get: mocks.get, update: mocks.update } },
+}));
 vi.mock("@lingui/react/macro", () => {
   const t = (strings: TemplateStringsArray, ...values: unknown[]) =>
     strings.reduce((text, part, index) => text + part + (values[index] ?? ""), "");

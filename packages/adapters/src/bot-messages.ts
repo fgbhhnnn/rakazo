@@ -2,6 +2,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
+  BOT_MESSAGE_TOO_LONG,
   botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
@@ -15,6 +16,9 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   isHiddenBot,
+  isUniqueViolation,
+  spaceTakesWork,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -103,6 +107,8 @@ export async function messageBot(
     deliveryKey?: string;
     /** File/image blocks (artifacts of this space and user) delivered with the message. */
     attachments?: readonly MessageBlock[];
+    /** Attachments filed under the recipient's chat, shown there and copied to its computer. */
+    files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
   options?: {
     allowTerminalSource?: boolean;
@@ -115,10 +121,7 @@ export async function messageBot(
   const message = slotFree(isBackgroundWorkerName(sender.name))(String(input.message ?? "")).trim();
   if (!message) return { ok: false as const, error: "message is required" };
   if (message.length > BOT_MESSAGE_MAX_LENGTH) {
-    return {
-      ok: false as const,
-      error: `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit`,
-    };
+    return { ok: false as const, error: BOT_MESSAGE_TOO_LONG };
   }
 
   const sourceContext = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
@@ -126,7 +129,7 @@ export async function messageBot(
   const hop = nextBotMessageHop(sourceContext?.hop);
 
   const candidates = await deps.prisma.bot.findMany({
-    where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+    where: { spaceId: run.spaceId, archivedAt: null },
     select: {
       id: true,
       name: true,
@@ -193,6 +196,7 @@ export async function messageBot(
     text: message,
     intent,
   };
+  const files = attachmentBlocks([...(input.files ?? []), ...(input.attachments ?? [])]);
 
   let committed:
     | {
@@ -213,6 +217,8 @@ export async function messageBot(
   try {
     committed = await withTransactionRetry(() =>
       deps.prisma.$transaction(async (tx) => {
+        if (!(await spaceTakesWork(tx, run.spaceId)))
+          return { ok: false as const, error: "this Space is being deleted" };
         for (const threadId of [run.threadId, targetThreadId].sort()) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         }
@@ -253,7 +259,6 @@ export async function messageBot(
           where: {
             id: target.id,
             spaceId: run.spaceId,
-            userId: run.userId,
             archivedAt: null,
           },
           select: { id: true },
@@ -285,7 +290,7 @@ export async function messageBot(
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
           role: "user",
-          blocks: [inboundBlock, ...attachmentBlocks(input.attachments ?? [])],
+          blocks: [inboundBlock, ...files],
           replyToMessageId:
             sourceContext?.fromBotId === target.id && intent !== "fyi"
               ? sourceContext.returnToMessageId
@@ -323,7 +328,7 @@ export async function messageBot(
           botId: target.id,
           type: "thread.message.created",
           runId: nextRun.id,
-          payload: { messageId: inbound.id, role: "user", blocks: inbound.blocks },
+          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock, ...files] },
         });
         const outboundEvent = await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
@@ -341,12 +346,12 @@ export async function messageBot(
           targetEventSeq: inboundEvent.seq,
           senderEventSeq: outboundEvent.seq,
         };
-      }),
+      }, THREAD_LOCK_TRANSACTION_OPTIONS),
     );
   } catch (error) {
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
-    if (deliveryKey && isUniqueConstraintError(error)) {
+    if (deliveryKey && isUniqueViolation(error)) {
       const winner = await deps.prisma.message.findUnique({
         where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
         select: { id: true, runId: true },
@@ -446,10 +451,10 @@ export async function returnBotMessageOutcome(
     await markBotOutcomeReturned(deps, run.id);
     return true;
   }
-  // messageBot reaches only active bots of this space and user, so an archived or deleted
+  // messageBot reaches only active bots of this space, so an archived or deleted
   // requester can never take the outcome. Handled: nothing is left to deliver.
   const requester = await deps.prisma.bot.findFirst({
-    where: { id: source.fromBotId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+    where: { id: source.fromBotId, spaceId: run.spaceId, archivedAt: null },
     select: { id: true },
   });
   if (!requester) {
@@ -538,10 +543,6 @@ async function markBotOutcomeReturned(
     deps.events.notify(threadId, seq),
   );
   await refreshTaskProgressForWorkerRun(deps, runId);
-}
-
-function isUniqueConstraintError(error: unknown) {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
 /** A hidden worker run's task label (from its task row, not the mutable title); undefined for other bots. */

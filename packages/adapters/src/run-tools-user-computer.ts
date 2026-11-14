@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
+import { PRODUCT_NAME } from "@rakazo/contracts";
 import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "./host-computer-protocol.js";
@@ -35,11 +36,10 @@ export {
   userComputerAppName,
 };
 
-/** Whether the run's owner has their desktop connected, or paired but offline. */
+/** Whether the run's owner has their desktop connected, or could connect one. */
 export type UserComputerState = "connected" | "offline" | undefined;
 
-const USER_COMPUTER_UNAVAILABLE =
-  "The user's computer is not connected. Ask them to open the Rakazo desktop app.";
+const USER_COMPUTER_UNAVAILABLE = `The user's computer is not connected. If the task needs it, ask them to open the ${PRODUCT_NAME} desktop app and turn on "Let bots use this computer" in its settings.`;
 
 /**
  * Whose own computer this run may reach: the person whose message started it, when they own the

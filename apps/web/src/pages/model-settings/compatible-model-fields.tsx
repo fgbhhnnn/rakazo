@@ -1,6 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { isOllamaCloudBaseUrl, PRODUCT_NAME } from "@rakazo/contracts";
+import { PRODUCT_NAME } from "@rakazo/contracts";
 import { compatibleThinkingLevels, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
@@ -34,6 +34,7 @@ export function CompatibleModelFields({
   defaultModelOptions,
   effectiveBaseUrl,
   enabledModelIds,
+  endpointPreset,
   invalidatePreflight,
   maxImagesPerPrompt,
   maxTokens,
@@ -75,6 +76,7 @@ export function CompatibleModelFields({
   | "defaultModelOptions"
   | "effectiveBaseUrl"
   | "enabledModelIds"
+  | "endpointPreset"
   | "invalidatePreflight"
   | "maxImagesPerPrompt"
   | "maxTokens"
@@ -123,7 +125,7 @@ export function CompatibleModelFields({
   });
   const hasSearchQuery = query.trim().length > 0;
   return (
-    <div className="block text-[13.5px] text-muted-foreground">
+    <div className="block text-body text-muted-foreground">
       <label className="block" htmlFor="model-base-url">
         <Trans>Server URL</Trans>
         <Input
@@ -147,9 +149,9 @@ export function CompatibleModelFields({
           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
         </Button>
       </div>
-      {!isOllamaCloudBaseUrl(baseUrl) ? (
+      {!endpointPreset ? (
         <Disclosure
-          className="mt-3 text-[13.5px] text-muted-foreground"
+          className="mt-3 text-body text-muted-foreground"
           summary={<Trans>Setup help</Trans>}
         >
           <p className="mt-1">
@@ -242,7 +244,7 @@ export function CompatibleModelFields({
               />
             ) : null}
             {hiddenSelectedCount > 0 ? (
-              <p className="text-[13px] leading-[1.5] text-muted-foreground">
+              <p className="text-body-sm leading-[1.5] text-muted-foreground">
                 <Plural
                   value={hiddenSelectedCount}
                   one="# selected model is hidden by your search."
@@ -275,7 +277,7 @@ export function CompatibleModelFields({
           <Button
             type="button"
             variant="link"
-            className="mt-2 h-auto px-0 text-[13px] leading-[1.5] text-muted-foreground underline"
+            className="mt-2 h-auto px-0 text-body-sm leading-[1.5] text-muted-foreground underline"
             onClick={() => {
               invalidatePreflight();
               stageCompatibleModelId(probeModels[0] ?? "");

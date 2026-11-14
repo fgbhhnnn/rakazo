@@ -83,7 +83,7 @@ export async function settleStaleClaimWithProvider(
       controlLeaseId: null,
       controlLeaseExpiresAt: null,
       controlBotId: null,
-      controlRunId: null,
+      controlUserId: null,
     },
   });
   if (settled.count !== 1) return "superseded";

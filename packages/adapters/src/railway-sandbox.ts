@@ -15,20 +15,18 @@ import type {
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
-import type { ConnectOptions, SandboxStatus } from "railway";
-import {
-  RailwayGraphQLError,
-  Sandbox,
-  SandboxFailedError,
-  SandboxFileNotFoundError,
-  SandboxNotFoundError,
-  SandboxTimeoutError,
-} from "railway";
+import type * as Railway from "railway";
+import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
 import WebSocket from "ws";
 import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import {
+  normalizeWorkspacePath,
+  shellQuote,
+  workspaceCwd,
+  workspacePath,
+} from "./computer-support.js";
+import { PortableFileBatcher } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
@@ -37,10 +35,11 @@ import {
 } from "./linux-desktop.js";
 import { PortableFileNames, sanitizePortableFiles } from "./portable-file-names.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { abortedCommandEvents } from "./sandbox-command-events.js";
 import { readBodyCapped } from "./web-ssrf.js";
 import {
   shouldSkipPortableWorkspaceFile,
-  workspaceSaveFindExpression,
+  workspaceSaveFindCommand,
 } from "./workspace-save-policy.js";
 
 const DISPLAY_START = 1;
@@ -141,6 +140,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
+    const railway = await loadRailway();
     context.signal.throwIfAborted();
     if (request.providerRef && request.providerKind === "railway") {
       try {
@@ -156,15 +156,15 @@ export class RailwaySandboxProvider implements SandboxProvider {
         )
           throw new Error("Railway computer is still starting");
         // Replace stuck, ended, and non-PRIVATE sandboxes; the portable home restores the workspace.
-        await remove(sandbox);
+        await remove(railway, sandbox);
       } catch (error) {
-        if (!(error instanceof SandboxNotFoundError)) throw error;
+        if (!(error instanceof railway.SandboxNotFoundError)) throw error;
       }
     }
     let sandbox: Sandbox;
     let createdId: string | undefined;
     const create = (idleTimeoutMinutes?: number) =>
-      Sandbox.create({
+      railway.Sandbox.create({
         ...this.options,
         fetch: async (input, init) => {
           // Finish the bounded request so cancellation cannot hide a created sandbox's ID.
@@ -186,7 +186,8 @@ export class RailwaySandboxProvider implements SandboxProvider {
       } catch (error) {
         // Trial and Free plans allow 1-5 minutes and never 0, and Railway does not document how
         // it words that rejection. Retry with the plan default unless a retry cannot help.
-        if (createdId || context.signal.aborted || !retriesWithoutIdleTimeout(error)) throw error;
+        if (createdId || context.signal.aborted || !retriesWithoutIdleTimeout(railway, error))
+          throw error;
         sandbox = await create();
         // biome-ignore lint/suspicious/noConsole: Operators need to know idle work can be lost.
         console.warn(
@@ -197,8 +198,8 @@ export class RailwaySandboxProvider implements SandboxProvider {
       assertPrivateNetwork(sandbox);
     } catch (error) {
       if (
-        error instanceof SandboxFailedError ||
-        (error instanceof SandboxTimeoutError && error.resource === "sandbox")
+        error instanceof railway.SandboxFailedError ||
+        (error instanceof railway.SandboxTimeoutError && error.resource === "sandbox")
       ) {
         createdId = error.id;
       }
@@ -213,6 +214,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    const { SandboxNotFoundError } = await loadRailway();
     try {
       const sandbox = await this.lookup(computer, context);
       // Provisioning replaces a sandbox without PRIVATE networking.
@@ -236,7 +238,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     try {
       const sandbox = await this.connect(computer, context);
       const result = await sandbox.exec(sandboxCommandArgv(request).map(shellQuote).join(" "), {
-        cwd: railwayCwd(request.cwd),
+        cwd: workspaceCwd(WORKSPACE, request.cwd),
         env: { ...COMPUTER_CACHE_ENV, ...request.env },
         timeoutSec: boundedSandboxCommandTimeoutMs(request.timeoutMs) / 1_000,
         maxOutputBytes: MAX_RESPONSE_BYTES,
@@ -249,8 +251,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       yield { type: "exit", code: result.timedOut ? 124 : (result.exitCode ?? 1) };
     } catch (error) {
       if (!context.signal.aborted) throw error;
-      yield { type: "stderr", data: "command aborted\n" };
-      yield { type: "exit", code: 130 };
+      yield* abortedCommandEvents();
     }
   }
 
@@ -341,7 +342,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       [
         "set -euo pipefail",
         `cd ${shellQuote(WORKSPACE)}`,
-        `find . ${workspaceSaveFindExpression()} -print0 | while IFS= read -r -d "" entry; do`,
+        `${workspaceSaveFindCommand()} -print0 | while IFS= read -r -d "" entry; do`,
         '  if [ -x "$entry" ]; then mode=700; else mode=600; fi',
         `  printf '%s\\0%s\\0%s\\0' "\${entry#./}" "$mode" "$(wc -c < "$entry")"`,
         "done",
@@ -352,9 +353,10 @@ export class RailwaySandboxProvider implements SandboxProvider {
       throw new Error("could not list Railway workspace");
     const entries = result.stdout.split("\0");
     const sandbox = await this.connect(computer, context);
-    const batches: Array<Array<{ path: string; executable: boolean; size: number }>> = [];
-    let files: Array<{ path: string; executable: boolean; size: number }> = [];
-    let batchBytes = 0;
+    const { SandboxFileNotFoundError } = await loadRailway();
+    type ExportFile = { path: string; executable: boolean; size: number };
+    const batches: ExportFile[][] = [];
+    const batcher = new PortableFileBatcher<ExportFile>(4, (file) => file.size);
     for (let index = 0; index + 2 < entries.length; index += 3) {
       const filePath = entries[index];
       const mode = entries[index + 1];
@@ -364,22 +366,15 @@ export class RailwaySandboxProvider implements SandboxProvider {
         throw new Error(
           `Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes or has an invalid size`,
         );
-      if (
-        files.length &&
-        (files.length >= 4 || batchBytes + size > PORTABLE_TRANSFER_BATCH_BYTES)
-      ) {
-        batches.push(files);
-        files = [];
-        batchBytes = 0;
-      }
-      files.push({
+      const full = batcher.add({
         path: filePath,
         size,
         executable: (Number.parseInt(mode, 8) & 0o111) !== 0,
       });
-      batchBytes += size;
+      if (full?.length) batches.push(full);
     }
-    if (files.length) batches.push(files);
+    const last = batcher.take();
+    if (last.length) batches.push(last);
     const growing: Array<{ path: string; executable: boolean }> = [];
     for (const files of batches) {
       context.signal.throwIfAborted();
@@ -436,32 +431,27 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
     if (privacy.exitCode !== 0 || privacy.timedOut)
       throw new Error("could not protect Railway workspace permissions");
-    let batch: PortableFile[] = [];
-    let batchBytes = 0;
+    const batcher = new PortableFileBatcher<PortableFile>(4, (file) => file.content.byteLength);
     const permissions = new Map<number, string[]>([
       [0o600, []],
       [0o700, []],
     ]);
-    const flush = async () => {
+    const flush = async (batch: PortableFile[]) => {
       context.signal.throwIfAborted();
       // Passing mode makes the SDK open an exec connection for every file.
       await Promise.all(
         batch.map((file) => sandbox.files.write(workspacePath(WORKSPACE, file.path), file.content)),
       );
-      batch = [];
-      batchBytes = 0;
     };
     for await (const file of sanitizePortableFiles(files)) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       context.signal.throwIfAborted();
-      if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
-        await flush();
+      const full = batcher.add(file);
+      if (full) await flush(full);
       const target = workspacePath(WORKSPACE, file.path);
       permissions.get(file.executable ? 0o700 : 0o600)?.push(target);
-      batch.push(file);
-      batchBytes += file.content.byteLength;
     }
-    await flush();
+    await flush(batcher.take());
     for (const [mode, paths] of permissions) {
       for (let offset = 0; offset < paths.length; offset += 64) {
         const result = await sandbox.exec(
@@ -483,11 +473,15 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async keepAlive(computer: ComputerRef) {
-    const sandbox = usable(await connectSandbox(computer.providerRef, this.options));
+    const railway = await loadRailway();
+    const sandbox = usable(
+      railway,
+      await connectSandbox(railway, computer.providerRef, this.options),
+    );
     try {
       await sandbox.heartbeat();
     } catch (error) {
-      throw goneError(error, sandbox.id, sandbox.environmentId);
+      throw goneError(railway, error, sandbox.id, sandbox.environmentId);
     }
   }
 
@@ -497,21 +491,23 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext) {
+    const railway = await loadRailway();
     try {
       // Cleanup must still run when provisioning or preparation was canceled.
-      await remove(await connectSandbox(computer.providerRef, this.options));
+      await remove(railway, await connectSandbox(railway, computer.providerRef, this.options));
     } catch (error) {
-      if (!(error instanceof SandboxNotFoundError)) throw error;
+      if (!(error instanceof railway.SandboxNotFoundError)) throw error;
     }
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {
-    return usable(await this.lookup(computer, context));
+    const sandbox = await this.lookup(computer, context);
+    return usable(await loadRailway(), sandbox);
   }
 
   private async lookup(computer: ComputerRef, context: AdapterContext) {
     context.signal.throwIfAborted();
-    return connectSandbox(computer.providerRef, {
+    return connectSandbox(await loadRailway(), computer.providerRef, {
       ...this.options,
       fetch: (input, init) =>
         railwayFetch(input, {
@@ -563,36 +559,52 @@ function railwayIdleTimeoutMinutes() {
   return minutes <= MAX_IDLE_TIMEOUT_MINUTES ? minutes : 0;
 }
 
-async function connectSandbox(id: string, options: ConnectOptions) {
+let railwayModule: Promise<typeof Railway> | undefined;
+
+/** Deferred so deployments that never select this provider do not load the SDK at boot. */
+function loadRailway(): Promise<typeof Railway> {
+  railwayModule ??= import("railway");
+  return railwayModule;
+}
+
+async function connectSandbox(railway: typeof Railway, id: string, options: ConnectOptions) {
   try {
-    return await Sandbox.connect(id, options);
+    return await railway.Sandbox.connect(id, options);
   } catch (error) {
-    throw goneError(error, id, options.environmentId ?? "");
+    throw goneError(railway, error, id, options.environmentId ?? "");
   }
 }
 
 /** Ended sandboxes are gone: a heartbeat cannot revive them. */
-function usable(sandbox: Sandbox) {
+function usable(railway: typeof Railway, sandbox: Sandbox) {
   if (GONE_STATUSES.has(sandbox.status))
-    throw new SandboxNotFoundError({ id: sandbox.id, environmentId: sandbox.environmentId });
+    throw new railway.SandboxNotFoundError({
+      id: sandbox.id,
+      environmentId: sandbox.environmentId,
+    });
   assertPrivateNetwork(sandbox);
   return sandbox;
 }
 
-async function remove(sandbox: Sandbox) {
+async function remove(railway: typeof Railway, sandbox: Sandbox) {
   // Only CREATING and RUNNING sandboxes count toward Railway's per-environment cap.
   if (GONE_STATUSES.has(sandbox.status)) return;
   try {
     await sandbox.destroy();
   } catch (error) {
-    if (!(goneError(error, sandbox.id, sandbox.environmentId) instanceof SandboxNotFoundError))
+    if (
+      !(
+        goneError(railway, error, sandbox.id, sandbox.environmentId) instanceof
+        railway.SandboxNotFoundError
+      )
+    )
       throw error;
   }
 }
 
-function goneError(error: unknown, id: string, environmentId: string) {
-  return hasRailwayErrorCode(error, "NOT_FOUND")
-    ? new SandboxNotFoundError({ id, environmentId })
+function goneError(railway: typeof Railway, error: unknown, id: string, environmentId: string) {
+  return hasRailwayErrorCode(railway, error, "NOT_FOUND")
+    ? new railway.SandboxNotFoundError({ id, environmentId })
     : error;
 }
 
@@ -600,20 +612,20 @@ function goneError(error: unknown, id: string, environmentId: string) {
  * Only a rejection Railway answered proves nothing was created. A lost reply or a server error
  * can hide a created sandbox that a retry would leak, and is not a plan rejecting the timeout.
  */
-function retriesWithoutIdleTimeout(error: unknown) {
+function retriesWithoutIdleTimeout(railway: typeof Railway, error: unknown) {
   return (
-    error instanceof RailwayGraphQLError &&
+    error instanceof railway.RailwayGraphQLError &&
     error.status < 500 &&
     error.status !== 401 &&
     error.status !== 403 &&
-    !hasRailwayErrorCode(error, "LIMIT_EXCEEDED") &&
-    !hasRailwayErrorCode(error, "UNAUTHORIZED")
+    !hasRailwayErrorCode(railway, error, "LIMIT_EXCEEDED") &&
+    !hasRailwayErrorCode(railway, error, "UNAUTHORIZED")
   );
 }
 
-function hasRailwayErrorCode(error: unknown, code: string) {
+function hasRailwayErrorCode(railway: typeof Railway, error: unknown, code: string) {
   return (
-    error instanceof RailwayGraphQLError &&
+    error instanceof railway.RailwayGraphQLError &&
     error.errors.some((item) => item.extensions?.code === code)
   );
 }
@@ -693,14 +705,6 @@ function railwayErrorCode(error: unknown) {
   if (/\b(?:not authori[sz]ed|unauthori[sz]ed|forbidden)\b/i.test(message)) return "UNAUTHORIZED";
   if (/\b(?:limit|quota|maximum)\b/i.test(message)) return "LIMIT_EXCEEDED";
   return extensions?.code ?? "REQUEST_FAILED";
-}
-
-function railwayCwd(cwd: string | undefined) {
-  if (!cwd || cwd === "." || cwd === "/" || cwd === WORKSPACE) return WORKSPACE;
-  return workspacePath(
-    WORKSPACE,
-    cwd.startsWith(`${WORKSPACE}/`) ? cwd.slice(WORKSPACE.length + 1) : cwd,
-  );
 }
 
 const PREPARE_RAILWAY_DESKTOP = [

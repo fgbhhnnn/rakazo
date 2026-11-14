@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup, stopActiveWork } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  rpc,
+  signup,
+  stopActiveWork,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -15,28 +22,36 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   const prompt = page.locator("p").filter({ hasText: /^Which city should I use\?$/ });
   await expect(prompt).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Reply with one city name.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send it" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Edit first" })).toBeVisible();
+  const botId = activeBotId(page);
+  const readRun = async () =>
+    (await rpc<{ run: { id: string; status: string } }>(page, "threads/get", { botId })).run;
+  await expect.poll(async () => (await readRun()).status).toBe("waiting_input");
+  const pending = await readRun();
   await captureScreenshot(page, testInfo, "20-approval-input-request");
 
-  await page.getByRole("button", { name: "Edit first" }).click();
-  const answer = page.getByRole("textbox", { name: "Answer" });
-  await answer.fill("ask me which city to use again");
-  await expect(page.getByRole("button", { name: "Send answer" })).toBeEnabled();
+  // Questions take their answer through the composer, including after a reload.
+  await page.reload();
+  await expect(prompt).toBeVisible();
+  await composer.fill("ask me which city to use again");
   await captureScreenshot(page, testInfo, "21-approval-custom-answer");
-  await page.getByRole("button", { name: "Send answer" }).click();
+  await page.keyboard.press("Enter");
 
   await expect(prompt).toHaveCount(2, { timeout: 30_000 });
-  await expect(
-    page.getByTestId("ask-answer").filter({ hasText: "ask me which city to use again" }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send it" })).toHaveCount(1);
+  const firstAnswer = page
+    .getByTestId("message-user-bubble")
+    .filter({ hasText: /^ask me which city to use again$/ });
+  await expect(firstAnswer).toBeVisible();
+  const questions = page
+    .getByTestId("question-card")
+    .filter({ hasText: "Which city should I use?" });
+  await expect(questions.first()).toHaveClass(/opacity-50/);
+  // Answering resumes the original durable run rather than creating a replacement.
+  await expect.poll(readRun).toMatchObject({ id: pending.id, status: "waiting_input" });
   await captureScreenshot(page, testInfo, "22-second-approval-prompt");
 
-  await page.getByRole("button", { name: "Edit first" }).click();
-  await answer.fill("Paris");
+  await composer.fill("Paris");
   await captureScreenshot(page, testInfo, "23-second-approval-answer");
-  await page.getByRole("button", { name: "Send answer" }).click();
+  await page.keyboard.press("Enter");
 
   const resumed = page.getByText(
     "on it. i will work this in the background and come back with a result.",
@@ -45,12 +60,15 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await expect(resumed).toBeVisible({ timeout: 30_000 });
   const handledAnswer = page.getByText("done. i handled: Paris", { exact: true });
   await expect(handledAnswer).toBeVisible();
-  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible();
+  const cityAnswer = page.getByTestId("message-user-bubble").filter({ hasText: /^Paris$/ });
+  await expect(cityAnswer).toBeVisible();
+  await expect(questions.nth(1)).toHaveClass(/opacity-50/);
 
   await page.reload();
   await expect(resumed).toBeVisible({ timeout: 20_000 });
   await expect(handledAnswer).toBeVisible();
-  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible();
+  await expect(cityAnswer).toBeVisible();
+  await expect(questions.nth(1)).toHaveClass(/opacity-50/);
   await captureScreenshot(page, testInfo, "24-approval-resumed-after-reload");
 
   await composer.fill("ask me which city to use");
@@ -58,6 +76,6 @@ test("approval input resumes durable work", async ({ page }, testInfo) => {
   await expect(prompt).toHaveCount(3, { timeout: 30_000 });
   await stopActiveWork(page);
   await expect(page.getByText("No longer active", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send it" })).toHaveCount(0);
+  await expect(questions.nth(2)).toContainText("No longer active");
   await captureScreenshot(page, testInfo, "25-stopped-approval-prompt");
 });

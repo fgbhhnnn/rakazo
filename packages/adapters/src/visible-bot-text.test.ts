@@ -58,6 +58,8 @@ describe("internal handoff annotations at the visible boundary", () => {
     );
     expect(JSON.stringify(planned.blocks)).toContain("未实际交接");
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 1),
       thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
       run: { findUnique: vi.fn(async () => ({ status: "running", firstResponseAt: new Date() })) },
       message: { create: vi.fn(async () => ({ id: "m" })) },

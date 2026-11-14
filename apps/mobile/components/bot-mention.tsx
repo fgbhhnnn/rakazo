@@ -32,7 +32,7 @@ export function BotMention({
       accessibilityRole={openable ? "link" : undefined}
       onPress={openable ? () => onOpenBot(block.botId, block.name) : undefined}
       style={{
-        color: live ? resolvePersonaColorDef(block.botId, color).light : tokens.foreground,
+        color: live ? resolvePersonaColorDef(block.botId, color).hex : tokens.foreground,
         fontWeight: "500",
       }}
     >

@@ -258,7 +258,7 @@ postgres("human stop admission for a group team run (PostgreSQL)", () => {
       }),
   );
 
-  it("keeps ordinary routing without an active team, including after a new instruction", () =>
+  it("keeps ordinary routing without work and stops active work after a new instruction", () =>
     sys(async () => {
       const fx = await setup();
       await prisma.groupTeamRun.update({
@@ -276,7 +276,7 @@ postgres("human stop admission for a group team run (PostgreSQL)", () => {
       await active.send("新的普通消息");
       const later = await active.send("stop");
       expect(await prisma.run.findUniqueOrThrow({ where: { id: later.runId } })).toMatchObject({
-        status: "queued",
+        status: "cancelled",
       });
     }));
 });

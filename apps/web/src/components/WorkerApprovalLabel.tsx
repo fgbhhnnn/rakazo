@@ -8,7 +8,7 @@ export function WorkerApprovalLabel({ block }: { block: AskBlock }) {
   return (
     <div
       data-testid="worker-approval-label"
-      className="mb-1.5 text-[13px] leading-[1.4] text-muted-foreground"
+      className="mb-1.5 text-body-sm leading-[1.4] text-muted-foreground"
     >
       {block.workerApproval.label}
     </div>

@@ -6,8 +6,7 @@ import { appliedModelRole } from "./model-roles.js";
 import { asSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 // Models are account-wide with per-Space overrides, so a member borrowing the deployment
 // owner's models must find the owner's account copy, or an override, under row-level security.

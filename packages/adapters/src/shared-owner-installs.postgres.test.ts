@@ -13,8 +13,7 @@ vi.mock("./remote-mcp.js", async (importOriginal) => ({
 const { InstalledConnectorProvider } = await import("./installed-connectors.js");
 
 const databaseUrl = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 // A locked member borrows the owner's MCP sources: the owner's secret must be read as the
 // owner under row-level security, and nothing else of anyone else's may be reachable.

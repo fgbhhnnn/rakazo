@@ -12,6 +12,7 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   if (requested === "createos" && !optional(source.CREATEOS_SANDBOX_API_KEY)) return "none";
   if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
   if (requested === "boxd" && !optional(source.BOXD_API_KEY)) return "none";
+  if (requested === "instabox" && !optional(source.INSTABOX_API_KEY)) return "none";
   if (
     requested === "wuying" &&
     [
@@ -21,6 +22,15 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
       source.WUYING_END_USER_ID,
       source.WUYING_MCP_URL,
       source.WUYING_MCP_TOKEN,
+    ].some((value) => !optional(value))
+  )
+    return "none";
+  if (
+    requested === "incus" &&
+    [
+      source.INCUS_SANDBOX_URL,
+      source.INCUS_SANDBOX_CLIENT_CERT,
+      source.INCUS_SANDBOX_CLIENT_KEY,
     ].some((value) => !optional(value))
   )
     return "none";
@@ -64,6 +74,20 @@ export function sandboxProviderOptionsFromEnv(
   | "boatApiUrl"
   | "boxdApiKey"
   | "boxdOrg"
+  | "instaboxApiKey"
+  | "incusUrl"
+  | "incusClientCert"
+  | "incusClientKey"
+  | "incusServerCert"
+  | "incusProject"
+  | "incusComputerImage"
+  | "incusCpuLimit"
+  | "incusMemoryLimit"
+  | "incusProcessLimit"
+  | "localVmCli"
+  | "localVmComputerImage"
+  | "localVmCpus"
+  | "localVmMemory"
   | "wuyingAccessKeyId"
   | "wuyingAccessKeySecret"
   | "wuyingRegionId"
@@ -93,6 +117,20 @@ export function sandboxProviderOptionsFromEnv(
     boatApiUrl: boatApiUrlFromEnv(source),
     boxdApiKey: optional(source.BOXD_API_KEY),
     boxdOrg: optional(source.BOXD_ORG),
+    instaboxApiKey: optional(source.INSTABOX_API_KEY),
+    incusUrl: optional(source.INCUS_SANDBOX_URL),
+    incusClientCert: pem(source.INCUS_SANDBOX_CLIENT_CERT),
+    incusClientKey: pem(source.INCUS_SANDBOX_CLIENT_KEY),
+    incusServerCert: pem(source.INCUS_SANDBOX_SERVER_CERT),
+    incusProject: optional(source.INCUS_SANDBOX_PROJECT),
+    incusComputerImage: optional(source.INCUS_SANDBOX_COMPUTER_IMAGE),
+    incusCpuLimit: optional(source.INCUS_SANDBOX_CPU_LIMIT),
+    incusMemoryLimit: optional(source.INCUS_SANDBOX_MEMORY_LIMIT),
+    incusProcessLimit: optional(source.INCUS_SANDBOX_PROCESS_LIMIT),
+    localVmCli: optional(source.LOCAL_VM_CLI),
+    localVmComputerImage: optional(source.LOCAL_VM_COMPUTER_IMAGE),
+    localVmCpus: optional(source.LOCAL_VM_CPUS),
+    localVmMemory: optional(source.LOCAL_VM_MEMORY),
     wuyingAccessKeyId: optional(source.WUYING_ACCESS_KEY_ID),
     wuyingAccessKeySecret: optional(source.WUYING_ACCESS_KEY_SECRET),
     wuyingRegionId: optional(source.WUYING_REGION_ID),
@@ -101,6 +139,11 @@ export function sandboxProviderOptionsFromEnv(
     wuyingMcpUrl: optional(source.WUYING_MCP_URL),
     wuyingMcpToken: optional(source.WUYING_MCP_TOKEN),
   };
+}
+
+/** PEM text, with `\n` escapes allowed so it fits on one line of an env file. */
+function pem(value: string | undefined): string | undefined {
+  return optional(value)?.replace(/\\n/g, "\n");
 }
 
 function optional(value: string | undefined): string | undefined {

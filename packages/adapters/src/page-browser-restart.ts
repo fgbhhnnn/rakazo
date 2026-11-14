@@ -1,15 +1,7 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { browserResultForModel, redactBrowserResult } from "./browser-tools.js";
 import type { RunContext } from "./run-context.js";
 import { computerScreenToolResult } from "./run-lifecycle.js";
 import type { ToolCall } from "./run-tool-gate.js";
-
-export const browserRestartTool: ConnectorTool = {
-  name: "browser_restart",
-  description:
-    "Restart the page browser on this computer using its existing profile, keeping saved cookies and logins. Use after two consecutive page-browser timeouts, then navigate to the site again. Old element refs are invalid.",
-  inputSchema: { type: "object", properties: {}, additionalProperties: false },
-};
 
 /** The caller checks takeover/teaching before allowing any screen mutation. */
 export async function browserRestartFromTool(ctx: RunContext, call: ToolCall) {

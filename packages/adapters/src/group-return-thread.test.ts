@@ -90,6 +90,8 @@ describe("workerResultGroupThreadId", () => {
 describe("worker result delivery", () => {
   function harness(groupThread: { id: string } | null) {
     const tx = {
+      $executeRaw: vi.fn(async () => 1),
+      space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
       $queryRaw: vi.fn(async () => [{ id: "thread" }]),
       run: {
         findFirst: vi.fn(async () => ({ id: "worker-run" })),
@@ -189,6 +191,8 @@ describe("undelivered worker result notice", () => {
   };
   function db(groupThread: { id: string } | null, existing: unknown = null) {
     const tx = {
+      $executeRaw: vi.fn(async () => 1),
+      space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
       $queryRaw: vi.fn(async () => [{ id: "group-thread" }]),
       message: {
         findUnique: vi.fn(async () => existing),

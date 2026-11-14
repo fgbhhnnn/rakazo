@@ -1,4 +1,4 @@
-import { groupBotsForSidebar, sortByRosterRecency } from "@rakazo/core";
+import { chatSnoozed, chatWoke, groupBotsForSidebar, sortByRosterRecency } from "@rakazo/core";
 
 type SidebarChat = {
   id: string;
@@ -8,6 +8,7 @@ type SidebarChat = {
   sectionId: string | null;
   status?: string | null;
   updatedAt?: string | null;
+  snoozedUntil?: string | null;
 };
 
 type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
@@ -15,6 +16,7 @@ type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
   name: string;
   canRename?: boolean;
   canDelete?: boolean;
+  shared?: boolean;
   bots: readonly TBot[];
   groups: readonly TGroup[];
   botSections: readonly { id: string; name: string }[];
@@ -43,16 +45,18 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
   spaces: readonly SidebarSpace<TBot, TGroup>[],
   query: string,
   labels?: { pinned: string; unassigned: string },
+  now = Date.now(),
 ) {
   const needle = query.toLowerCase();
   const showSpaceNames = spaces.length > 1;
+  // Search still finds a snoozed chat; the list itself leaves it out until it wakes.
+  const listed = (chat: SidebarChat) =>
+    needle
+      ? `${chat.name} ${chat.preview ?? ""}`.toLowerCase().includes(needle)
+      : !chatSnoozed(chat, now);
   return spaces.flatMap((space) => {
-    const visibleBots = space.bots.filter((bot) =>
-      `${bot.name} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
-    );
-    const visibleGroups = space.groups.filter((group) =>
-      `${group.name} ${group.preview ?? ""}`.toLowerCase().includes(needle),
-    );
+    const visibleBots = space.bots.filter(listed);
+    const visibleGroups = space.groups.filter(listed);
     const grouped = groupBotsForSidebar(
       [
         ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
@@ -62,6 +66,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         id: item.chat.id,
         pinned: item.chat.pinned,
         sectionId: item.chat.sectionId,
+        woke: chatWoke(item.chat, now),
       })),
       space.botSections,
       // Newest reply or working bot first; pinned chats keep their place above.
@@ -94,6 +99,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       title: showSpaceNames ? space.name : index === 0 && !group.title ? space.name : group.title,
       subtitle: showSpaceNames && group.title ? group.title : undefined,
       showLock: showSpaceNames,
+      shared: space.shared === true,
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
       spaceName: space.name,
@@ -113,6 +119,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
           bots: [] as (typeof sections)[number]["bots"],
           sectionId: section.id as string | null,
           showLock: showSpaceNames,
+          shared: space.shared === true,
           emptySpaceId: undefined as string | undefined,
           spaceId: space.id,
           spaceName: space.name,
@@ -131,6 +138,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         bots: [],
         sectionId: null,
         showLock: showSpaceNames,
+        shared: space.shared === true,
         emptySpaceId: showSpaceNames ? space.id : undefined,
         spaceId: space.id,
         spaceName: space.name,

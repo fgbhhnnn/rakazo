@@ -2,6 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -66,7 +67,7 @@ export async function postDispatcherTaskMessage(
           allowCancelledRun: true,
           payload: { messageId: message.id, role: "bot", blocks },
         });
-      }),
+      }, THREAD_LOCK_TRANSACTION_OPTIONS),
     );
     if (event) await deps.events.notify(run.threadId, event.seq).catch(() => undefined);
   } catch (error) {

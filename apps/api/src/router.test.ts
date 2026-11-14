@@ -5,8 +5,12 @@ import type { InferRouterInitialContext } from "@orpc/server";
 import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
-import { ConnectorAuthUnavailableError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import type { McpOAuthSummary } from "@rakazo/adapters";
+import {
+  ConnectorAuthUnavailableError,
+  routineWakeupJob,
+  SecretStoreUnavailableError,
+} from "@rakazo/adapter-kit";
+import type { McpOAuthSummary, PiOAuthConnected, PiOAuthPersist } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
@@ -22,26 +26,31 @@ import {
   ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
+  SAVED_LOGIN_UNREADABLE,
   screenLeaseIdForRun,
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import {
+  BLOCKED_ITEM_ANSWER,
   CONNECTOR_AUTH_UNAVAILABLE,
   MCP_OAUTH_CLIENT_REQUIRED,
   MODEL_KEY_FORMAT_ERROR,
   REPLY_QUOTE_MAX_LENGTH,
+  UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import {
   AnswerTooLongError,
   configureProviderTransactionPool,
+  Prisma,
   runProviderTransaction,
 } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
+import { providerScopeKey } from "./connection-flows.js";
 import type { RouterDeps } from "./router.js";
 import {
   botIntroPrompt,
@@ -50,7 +59,6 @@ import {
   HEARTBEAT_MS,
   SESSION_RECHECK_MS,
 } from "./router.js";
-import { providerScopeKey } from "./routes/connections.js";
 
 const withRoleDeps = (deps: RouterDeps) => {
   withModelRoles(deps.prisma);
@@ -72,7 +80,13 @@ async function handle(handler: RouterHandler, ...args: Parameters<RouterHandler[
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
     const update = vi.fn().mockResolvedValue({});
-    const user = { email: "user@rakazo.test", name: "Test User", avatarStyle, timezone };
+    const user = {
+      email: "user@rakazo.test",
+      name: "Test User",
+      avatarStyle,
+      timezone,
+      secrets: [],
+    };
     const updateMany = vi.fn(
       async ({ where, data }: { where: { timezone: null }; data: { timezone: string } }) => {
         if (user.timezone !== where.timezone) return { count: 0 };
@@ -80,17 +94,61 @@ describe("account preferences", () => {
         return { count: 1 };
       },
     );
+    const botFindMany = vi.fn().mockResolvedValue([]);
+    const routines: Record<string, unknown>[] = [];
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
     const prisma = {
       user: {
         update,
         updateMany,
+        findUnique: vi.fn(async () => ({ timezone: user.timezone })),
         findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
+      bot: { findMany: botFindMany },
+      routine: {
+        findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+          routines.filter((row) => matches(row, where)),
+        ),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: Record<string, unknown>;
+            data: Record<string, unknown>;
+          }) => {
+            let count = 0;
+            for (const [index, row] of routines.entries()) {
+              if (!matches(row, where)) continue;
+              routines[index] = { ...row, ...data };
+              count += 1;
+            }
+            return { count };
+          },
+        ),
+      },
+      $transaction: vi.fn(async (run: (client: unknown) => Promise<unknown>) => run(prisma)),
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        if (sql.includes("FOR SHARE")) return [{ timezone: user.timezone }];
+        if (sql.includes('"routines"')) {
+          return routines
+            .filter((row) => matches(row, { userId: values[0], timezone: values[1] }))
+            .map((row) => ({ id: row.id }));
+        }
+        return [];
+      }),
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -106,7 +164,15 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return {
+      update,
+      updateMany,
+      botFindMany,
+      routines,
+      deps,
+      actor,
+      handler: new RPCHandler(createRouter(deps)),
+    };
   }
 
   it("records only validated screens under the authenticated actor", async () => {
@@ -320,6 +386,31 @@ describe("account preferences", () => {
     });
   });
 
+  it("saves the bot style and restyles only bots not pinned to another set", async () => {
+    const { update, botFindMany, actor, handler } = preferencesDeps("organic");
+
+    const response = await handle(
+      handler,
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botAvatarSet: "rakazo" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { botAvatarSet: "rakazo" },
+    });
+    expect(botFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", avatarSetPinned: false, avatarSet: { not: "rakazo" } },
+      }),
+    );
+  });
+
   it("rejects avatar styles outside robot|organic", async () => {
     const { update, actor, handler } = preferencesDeps("robot");
 
@@ -363,6 +454,64 @@ describe("account preferences", () => {
       where: { id: "user-1" },
       data: { timezone: "Pacific/Auckland" },
     });
+  });
+
+  it("saves the timezone and the language preference in one write", async () => {
+    const setup = preferencesDeps("organic", "Africa/Cairo");
+
+    const response = await updatePreferences(setup, {
+      timezone: "Europe/London",
+      locale: "pt-BR",
+    });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledTimes(1);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Europe/London", locale: "pt-BR" },
+    });
+  });
+
+  it("moves routines that took the account zone to the new one", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-04T12:00:00.000Z") });
+    try {
+      const setup = preferencesDeps("organic", "Africa/Cairo");
+      setup.routines.push(
+        {
+          id: "routine-1",
+          userId: "user-1",
+          crons: ["0 9 * * 1"],
+          timezone: "Africa/Cairo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date("2026-11-09T07:00:00.000Z"),
+        },
+        {
+          id: "routine-2",
+          userId: "user-1",
+          crons: ["0 9 * * 1"],
+          timezone: "Asia/Tokyo",
+          active: true,
+          watch: null,
+          nextRunAt: new Date("2026-11-09T00:00:00.000Z"),
+        },
+      );
+
+      const response = await updatePreferences(setup, { timezone: "Europe/London" });
+
+      expect(response.status).toBe(200);
+      // The routine that took the account zone keeps Monday 09:00 in London; the pinned one stays.
+      expect(setup.routines[0]).toMatchObject({
+        timezone: "Europe/London",
+        nextRunAt: new Date("2026-11-09T09:00:00.000Z"),
+      });
+      expect(setup.routines[1]).toMatchObject({ timezone: "Asia/Tokyo" });
+      expect(setup.deps.jobs.enqueue).toHaveBeenCalledWith(
+        routineWakeupJob("routine-1", new Date("2026-11-09T09:00:00.000Z")),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("saves the app language emails are written in", async () => {
@@ -443,6 +592,33 @@ describe("account preferences", () => {
       });
     },
   );
+
+  it("ends only the calling session's push registration, keeping another session's", async () => {
+    const { deps, actor } = preferencesDeps("robot");
+    const calls: string[] = [];
+    deps.pushTokens = {
+      load: vi.fn(async () => undefined),
+      save: vi.fn(async () => undefined),
+      importLegacy: vi.fn(async () => false),
+      endSession: vi.fn(async (userId: string, sessionId: string) => {
+        calls.push(`endSession ${userId} ${sessionId}`);
+      }),
+      remove: vi.fn(async (userId: string) => {
+        calls.push(`remove ${userId}`);
+      }),
+    };
+    // A tablet of the same account holds the registration; the phone's session signs out.
+    const phone = createRouterClient(createRouter(deps), {
+      context: { actor, sessionId: "session-phone" } as never,
+    });
+    await expect(phone.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`]);
+
+    // Without a session to end, the account-wide registration is still removed.
+    const sessionless = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(sessionless.notifications.unregisterPush()).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`endSession ${actor.userId} session-phone`, `remove ${actor.userId}`]);
+  });
 });
 
 describe("billing", () => {
@@ -462,6 +638,7 @@ describe("billing", () => {
           name: "Test User",
           avatarStyle: "robot",
           signupSurvey,
+          secrets: [],
         }),
       },
       signupSurvey: { upsert: upsertSignupSurvey },
@@ -607,6 +784,7 @@ describe("model setup gate", () => {
           email: "user@rakazo.test",
           name: "Test User",
           avatarStyle: "robot",
+          secrets: [],
         }),
       },
       // A bot that follows the main model.
@@ -882,9 +1060,26 @@ describe("thread answer delivery", () => {
   });
 });
 
-describe("oversized one-time answer", () => {
-  it("says the answer is too long, without echoing it", async () => {
-    const answerRunInput = vi.fn().mockRejectedValue(new AnswerTooLongError());
+describe("answers the server can't save", () => {
+  it.each([
+    ["too long", new AnswerTooLongError(), "This answer is too long.", 400],
+    // The person blocked bots from the item while the request waited.
+    ["for a blocked item", new Error(BLOCKED_ITEM_ANSWER), BLOCKED_ITEM_ANSWER, 400],
+    [
+      "for an item chosen for other bots",
+      new Error(UNCHOSEN_ITEM_ANSWER),
+      UNCHOSEN_ITEM_ANSWER,
+      400,
+    ],
+    // The saved login it replaces can't be read for now: a retry may save it.
+    [
+      "held back by a saved login it can't read",
+      new Error(SAVED_LOGIN_UNREADABLE),
+      SAVED_LOGIN_UNREADABLE,
+      409,
+    ],
+  ])("says why one is %s, without echoing it", async (_, error, message, status) => {
+    const answerRunInput = vi.fn().mockRejectedValue(error);
     const enqueue = vi.fn();
     const prisma = {
       // Not a mirrored worker approval: the ordinary answer path.
@@ -929,9 +1124,9 @@ describe("oversized one-time answer", () => {
       { prefix: "/rpc", context: { actor } },
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(status);
     const body = await response.text();
-    expect(body).toContain("This answer is too long.");
+    expect(body).toContain(message);
     expect(body).not.toContain("fake-code-");
     expect(enqueue).not.toHaveBeenCalled();
   });
@@ -1472,6 +1667,7 @@ describe("MCP pre-registered OAuth client", () => {
         }),
       },
       mcpServerSpace: { findMany: vi.fn(async () => []) },
+      mcpOAuthSession: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       secret: {
         create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
           secretRows.set(data.id, data);
@@ -1588,6 +1784,26 @@ describe("MCP pre-registered OAuth client", () => {
     });
     expect(secrets.put).not.toHaveBeenCalled();
     expect(prisma.mcpServer.create).not.toHaveBeenCalled();
+  });
+
+  it("does not report a stored credential for a lone OAuth generation marker", async () => {
+    const { client, server } = harness(true);
+
+    const created = await client.mcp.servers.create({
+      transport: "streamable_http",
+      slug: "gmail",
+      name: "Gmail",
+      endpoint: "http://localhost:3100/mcp",
+    });
+    expect(created.hasSecret).toBe(false);
+
+    await client.mcp.oauth.disconnect({ serverId: created.id });
+    // The disconnect of a never-connected server still leaves the generation marker row.
+    expect(server()?.secretId).not.toBeNull();
+
+    const checked = await client.mcp.servers.test({ id: created.id });
+    expect(checked.hasSecret).toBe(false);
+    expect(checked.oauthStatus).toBe("none");
   });
 
   describe("stdio server with host-managed OAuth", () => {
@@ -2153,9 +2369,10 @@ describe("MCP server health", () => {
     const recordHealth = async (patch: Row) => {
       if (server) server = { ...server, healthCheckedAt: new Date(5), ...patch };
     };
-    const updateMany = vi.fn(async ({ data }: { data: Row }) => {
+    const updateMany = vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
+      if (!matches(where)) return { count: 0 };
       await recordHealth(data);
-      return { count: server ? 1 : 0 };
+      return { count: 1 };
     });
     const matches = (where: Row): boolean =>
       Boolean(server) &&
@@ -2185,14 +2402,20 @@ describe("MCP server health", () => {
       secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
       user: {
         findUnique: vi.fn(async () => ({ email: "owner@rakazo.test", emailVerified: true })),
-        findUniqueOrThrow: vi.fn(async () => ({ email: "owner@rakazo.test", name: "Owner" })),
+        findUniqueOrThrow: vi.fn(async () => ({
+          email: "owner@rakazo.test",
+          name: "Owner",
+          secrets: [],
+        })),
       },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
       $executeRaw: vi.fn(async () => 1),
       $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
-    const summaryFor = vi.fn(async () => options.oauth ?? { status: "none", clientId: null });
+    const summaryFor = vi.fn(
+      async () => options.oauth ?? { status: "none", clientId: null, credential: true },
+    );
     const deps = {
       prisma,
       secrets: { put: vi.fn(), load: vi.fn() },
@@ -2389,7 +2612,7 @@ describe("MCP server health", () => {
 
     it("says why it did not probe when the server still needs its OAuth account", async () => {
       const { client, probe } = harness({
-        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
       });
 
       const tested = await client.mcp.servers.test({ id: "server-1" });
@@ -2409,7 +2632,7 @@ describe("MCP server health", () => {
       async (material, shouldProbe) => {
         const h = harness({
           row: baseRow({ secretId: "secret-1" }),
-          oauth: { status: "none", clientId: "fake-client" },
+          oauth: { status: "none", clientId: "fake-client", credential: true },
         });
         vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
           id: "secret-1",
@@ -2478,7 +2701,7 @@ describe("MCP server health", () => {
     it("does not probe a server whose OAuth account is not connected", async () => {
       const { client, probe, row } = harness({
         row: null,
-        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
       });
 
       const created = await client.mcp.servers.create(stdioInput);
@@ -2620,6 +2843,42 @@ describe("MCP server health", () => {
       expect(listed?.health).toMatchObject({ status: "error", code: MCP_OAUTH_CLIENT_REQUIRED });
     });
 
+    it.each([
+      "http://localhost:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5180/mcp/oauth/callback",
+      "https://127.0.0.1:5173/mcp/oauth/callback",
+      "http://127.0.0.1:5173/other-callback",
+    ])("rejects an unregistered callback before starting OAuth: %s", async (redirectUri) => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+        }),
+      });
+      const begin = vi.fn();
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), begin },
+      });
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await expect(
+        client.mcp.oauth.begin({ serverId: "server-1", redirectUri }),
+      ).rejects.toMatchObject({
+        code: "MCP_OAUTH_REDIRECT_MISMATCH",
+        status: 400,
+      });
+      expect(begin).not.toHaveBeenCalled();
+    });
+
     it("uses the registered web callback when a native client omits the redirect", async () => {
       const h = harness({
         row: baseRow({ transport: "streamable_http", endpoint: "https://mcp.example.test/mcp" }),
@@ -2649,16 +2908,13 @@ describe("MCP server health", () => {
 
     it("probes the server once its OAuth session completes", async () => {
       const h = harness({ row: baseRow() });
-      const complete = vi.fn(async () => undefined);
+      const complete = vi.fn(async () => ({ serverId: "server-1", revision: 1 }));
       Object.assign(h.deps, {
         mcpOAuth: {
           ...(h.deps.mcpOAuth as object),
           complete,
         },
       });
-      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
-        findFirst: vi.fn(async () => ({ serverId: "server-1" })),
-      };
       const client = createRouterClient(createRouter(h.deps), {
         context: {
           actor: {
@@ -2675,6 +2931,188 @@ describe("MCP server health", () => {
 
       expect(complete).toHaveBeenCalledTimes(1);
       expect(h.probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops a check from before sign-in as soon as its OAuth session completes", async () => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+          command: null,
+          args: [],
+          healthStatus: "error",
+          healthMessage: "HTTP 401",
+        }),
+        probe: () => new Promise(() => undefined),
+      });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
+        },
+      });
+      // A separate session lookup failing must not skip the reset: the completed sign-in names
+      // its server.
+      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
+        findFirst: vi.fn(async () => {
+          throw new Error("pool timeout");
+        }),
+      };
+
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+
+      // The new check is still running, so the list must not keep showing the old failure.
+      expect(h.row()).toMatchObject({ healthStatus: "unknown", healthMessage: null });
+      await flush();
+      expect(h.probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps an edit's failed check that lands while its OAuth session completes", async () => {
+      const h = harness({ row: baseRow({ revision: 1 }) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => {
+            // The sign-in wrote revision 2; an edit (revision 3) and its failed check land
+            // before the handler resets health.
+            Object.assign(h.row() as Row, {
+              revision: 3,
+              healthStatus: "error",
+              healthMessage: "HTTP 500",
+            });
+            return { serverId: "server-1", revision: 2 };
+          }),
+        },
+      });
+
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+
+      expect(h.row()).toMatchObject({
+        revision: 3,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
+      // The edit already checks its own settings.
+      expect(h.probe).not.toHaveBeenCalled();
+    });
+
+    // Each API health write below runs after its server row was read; an edit (revision 2)
+    // and its failed check that land in between must survive it.
+    const editLandsDuring = (h: { row: () => Row | null }) =>
+      Object.assign(h.row() as Row, {
+        revision: 2,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
+    const stillFailing = { revision: 2, healthStatus: "error", healthMessage: "HTTP 500" };
+
+    it("keeps an edit's failed check over a check of the old settings with no runtime", async () => {
+      const h = harness();
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "none", clientId: null, credential: true };
+          }),
+        },
+      });
+      await h.createRouterWithoutProbe().mcp.servers.test({ id: "server-1" });
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over a crashed check of the old settings", async () => {
+      const h = harness({
+        probe: async () => {
+          editLandsDuring(h);
+          throw new Error("crashed");
+        },
+      });
+      await h.client.mcp.servers.test({ id: "server-1" }).catch(() => undefined);
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over an account-pending write for the old settings", async () => {
+      const h = harness();
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "none", clientId: "client-1", credential: false };
+          }),
+        },
+      });
+      await h
+        .clientFor()
+        .mcp.servers.test({ id: "server-1" })
+        .catch(() => undefined);
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("keeps an edit's failed check over the reset that starts a check of the old settings", async () => {
+      const h = harness({ probe: () => new Promise(() => undefined) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
+          summaryFor: vi.fn(async () => {
+            editLandsDuring(h);
+            return { status: "connected", clientId: null, credential: true };
+          }),
+        },
+      });
+      await h
+        .clientFor()
+        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+      expect(h.row()).toMatchObject(stillFailing);
+    });
+
+    it("resets health to account-pending for the revision a disconnect committed", async () => {
+      const h = harness({ row: baseRow({ revision: 2, healthStatus: "ok" }) });
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), disconnect: vi.fn(async () => 2) },
+      });
+
+      await h.clientFor().mcp.oauth.disconnect({ serverId: "server-1" });
+
+      expect(h.row()).toMatchObject({
+        healthStatus: "unknown",
+        healthMessage: "Connect this server's account to check it.",
+      });
+    });
+
+    it("keeps a newer sign-in's failed check that lands before a disconnect resets health", async () => {
+      const h = harness({ row: baseRow({ revision: 1 }) });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          disconnect: vi.fn(async () => {
+            // The disconnect committed revision 2; a new sign-in (revision 3) and its failed
+            // check land before the handler resets health.
+            Object.assign(h.row() as Row, {
+              revision: 3,
+              healthStatus: "error",
+              healthMessage: "HTTP 500",
+            });
+            return 2;
+          }),
+        },
+      });
+
+      await h.clientFor().mcp.oauth.disconnect({ serverId: "server-1" });
+
+      expect(h.row()).toMatchObject({
+        revision: 3,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
     });
   });
 });
@@ -3519,7 +3957,7 @@ describe("connections.complete", () => {
       return { status: response.status, body: await response.json() };
     }
     const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
-    return { complete, revoke, connector, securityEvents, row, sink };
+    return { complete, revoke, connector, connection, securityEvents, row, sink };
   }
 
   it.each([
@@ -3555,6 +3993,34 @@ describe("connections.complete", () => {
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
     expect(securityEvents()).toEqual([]);
+  });
+
+  it("stores the account id on a poll after the catalog connected the row", async () => {
+    const { complete, connector, securityEvents, row } = pollFixture("connected");
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
+    expect(connector.complete).not.toHaveBeenCalled();
+    expect(securityEvents()).toEqual([]);
+  });
+
+  it("keeps the app-only ref while a sibling authorization for the same app is unresolved", async () => {
+    const { complete, connector, connection, row } = pollFixture("connected");
+    connection.findMany.mockResolvedValue([{ providerRef: "gmail", status: "pending" }] as never);
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-2") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("gmail");
+  });
+
+  it("stores the account id beside an abandoned sibling attempt", async () => {
+    const { complete, connector, connection, row } = pollFixture("connected");
+    connection.findMany.mockResolvedValue([{ providerRef: null, status: "error" }] as never);
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
   });
 
   it("stores the connected account a request id resolves to", async () => {
@@ -3703,6 +4169,7 @@ describe("updater owner gate", () => {
           email: "user@rakazo.test",
           name: "Test User",
           avatarStyle: "robot",
+          secrets: [],
         }),
       },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -3809,7 +4276,6 @@ describe("computer screen url", () => {
     controlLeaseId: null,
     controlLeaseExpiresAt: null,
     controlBotId: null,
-    controlRunId: null,
   };
 
   const callScreenUrl = async (
@@ -3945,7 +4411,11 @@ describe("computer terminal and file transfer", () => {
     controlBotId: "bot-1",
   };
 
-  function setup(computer: Record<string, unknown> = {}, maxUploadSizeBytes?: number) {
+  function setup(
+    computer: Record<string, unknown> = {},
+    maxUploadSizeBytes?: number,
+    home?: LocalAgentHomeStore,
+  ) {
     const sandbox = {
       execute: vi.fn(async function* () {
         yield { type: "exit" as const, code: 0 };
@@ -3958,6 +4428,7 @@ describe("computer terminal and file transfer", () => {
       writeFile: vi.fn().mockResolvedValue(undefined),
     };
     const prisma = {
+      spaceMember: { count: vi.fn(async () => 1) },
       bot: {
         findFirst: vi.fn().mockResolvedValue({
           id: "bot-1",
@@ -3975,18 +4446,31 @@ describe("computer terminal and file transfer", () => {
             controlLeaseId: null,
             controlLeaseExpiresAt: null,
             controlBotId: null,
-            controlRunId: null,
             ...computer,
           },
         }),
       },
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: vi.fn(),
+      },
       computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
       sandbox,
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      home,
+      jobs: {
+        enqueue: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
+      events: {
+        append: vi.fn().mockResolvedValue(undefined),
+        releaseUserControl: vi.fn().mockResolvedValue(true),
+        answerTakeoverRequest: vi.fn().mockResolvedValue(true),
+      },
       env: {
         maxUploadSizeBytes,
         webOrigin: "http://127.0.0.1:5173",
@@ -4008,7 +4492,7 @@ describe("computer terminal and file transfer", () => {
       );
       return { status: response.status, body: await response.json() };
     };
-    return { sandbox, prisma, call };
+    return { sandbox, prisma, deps, call };
   }
 
   it("prepares an unused bot's folders before listing a running Team Computer", async () => {
@@ -4036,6 +4520,153 @@ describe("computer terminal and file transfer", () => {
       expect.anything(),
       "bots/bot-1",
       expect.anything(),
+    );
+  });
+
+  it("tells a second person the computer is busy instead of taking it from the first", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("takeover", {})).resolves.toMatchObject({
+      status: 409,
+      body: { json: { message: "Someone else is using this computer" } },
+    });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("gives control while the bot is working, for as long as the page checks in, and counts the change", async () => {
+    const { prisma, call } = setup();
+    const before = Date.now();
+    await expect(call("takeover", {})).resolves.toMatchObject({ status: 200 });
+    const grant = vi.mocked(prisma.computer.updateMany).mock.calls[0]![0];
+    expect(grant.data).toMatchObject({
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlUserId: "user-1",
+      controlFence: { increment: 1 },
+    });
+    const expiresAt = (grant.data as { controlLeaseExpiresAt: Date }).controlLeaseExpiresAt;
+    expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(90_000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(90_000);
+  });
+
+  it("never lets holding the screen answer a request the bot made to someone else", async () => {
+    const { prisma, deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-2" } as never);
+    for (const reason of ["done", "skipped"]) {
+      await expect(call("release", { reason, runId: "run-1" })).resolves.toMatchObject({
+        status: 409,
+        body: { json: { message: "The bot is waiting for someone else" } },
+      });
+    }
+    expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
+    // A refused answer leaves this person's control as it was.
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
+  });
+
+  it("answers Done after the person's lease lapsed, ending that lease and granting nothing", async () => {
+    const lapsed = { ...controlled, controlUserId: "user-1", controlLeaseExpiresAt: new Date(0) };
+    const { prisma, deps, call } = setup(lapsed);
+    vi.mocked(prisma.run.findFirst).mockResolvedValue({ id: "run-1", userId: "user-1" } as never);
+    await expect(call("release", { reason: "done", runId: "run-1" })).resolves.toMatchObject({
+      status: 200,
+    });
+    // The lapsed lease is revoked and cleared before the answer lands; nothing is granted.
+    const released = vi.mocked(deps.events.releaseUserControl).mock.invocationCallOrder[0]!;
+    const answered = vi.mocked(deps.events.answerTakeoverRequest).mock.invocationCallOrder[0]!;
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+    expect(released).toBeLessThan(answered);
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves newer control alone when a late hand back names an older lease", async () => {
+    const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    await expect(call("release", { leaseId: "old-lease" })).resolves.toMatchObject({
+      status: 200,
+    });
+    expect(deps.events.releaseUserControl).not.toHaveBeenCalled();
+    await expect(call("release", { leaseId: "lease-1" })).resolves.toMatchObject({ status: 200 });
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+  });
+
+  it("hands control back on I'm done even when nothing is waiting any more", async () => {
+    const { deps, call } = setup({ ...controlled, controlUserId: "user-1" });
+    await expect(call("release", { reason: "done" })).resolves.toMatchObject({ status: 200 });
+    expect(deps.events.releaseUserControl).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1" }),
+    );
+    expect(deps.events.answerTakeoverRequest).not.toHaveBeenCalled();
+  });
+
+  it("takes control afresh when the held lease lapsed before it could be renewed", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-1" });
+    const held = (await prisma.bot.findFirst({} as never)) as unknown as { computer: object };
+    // The lease lapsed meanwhile: the renew finds nothing live, and the computer is free again.
+    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.mocked(prisma.bot.findFirst)
+      .mockResolvedValueOnce(held as never)
+      .mockResolvedValue({
+        ...held,
+        computer: {
+          ...held.computer,
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+        },
+      } as never);
+    const response = await call("takeover", {});
+    expect(response).toMatchObject({ status: 200 });
+    expect((response.body as { json: { leaseId: string } }).json.leaseId).not.toBe("lease-1");
+    expect(vi.mocked(prisma.computer.updateMany).mock.calls[1]?.[0].data).toMatchObject({
+      controlHolder: "user",
+      controlUserId: "user-1",
+    });
+  });
+
+  it("returns the holder's own lease to a second Take control", async () => {
+    const held = { ...controlled, controlUserId: "user-1" };
+    const { prisma, call } = setup();
+    vi.mocked(prisma.computer.updateMany).mockResolvedValueOnce({ count: 0 });
+    vi.mocked(prisma.computer.findUniqueOrThrow).mockResolvedValue({
+      id: "computer-1",
+      ...held,
+    } as never);
+    await expect(call("takeover", {})).resolves.toMatchObject({
+      status: 200,
+      body: { json: { leaseId: "lease-1" } },
+    });
+  });
+
+  it("renews the holder's control each time their page checks in", async () => {
+    const soon = new Date(Date.now() + 5_000);
+    const { prisma, call } = setup({
+      ...controlled,
+      controlUserId: "user-1",
+      controlLeaseExpiresAt: soon,
+    });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        controlHolder: "user",
+        controlLeaseId: "lease-1",
+        // Only a live lease renews; a lapsed one is on its way to revocation.
+        controlLeaseExpiresAt: { gt: expect.any(Date) },
+      },
+      data: { controlLeaseExpiresAt: expect.any(Date) },
+    });
+  });
+
+  it("does not renew someone else's control from a watcher's check-in", async () => {
+    const { prisma, call } = setup({ ...controlled, controlUserId: "user-2" });
+    await expect(call("heartbeat", {})).resolves.toMatchObject({ status: 200 });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { controlLeaseExpiresAt: expect.any(Date) },
+      }),
     );
   });
 
@@ -4208,6 +4839,19 @@ describe("computer terminal and file transfer", () => {
       status: 200,
       body: { json: { path: "notes.txt", content: "hello" } },
     });
+  });
+
+  it("answers 404 when a stopped computer's file is gone", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-computer-read-"));
+    try {
+      const { call } = setup({ state: "stopped" }, undefined, new LocalAgentHomeStore(root));
+      await expect(call("readFile", { path: "gone.json" })).resolves.toMatchObject({
+        status: 404,
+        body: { json: { message: "file not found" } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("downloads bytes from a running computer", async () => {
@@ -4743,6 +5387,32 @@ describe("model credential persistence", () => {
     return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
   }
 
+  /** A sign-in whose provider exchange returned `login`: begin hands over the save, and
+   *  finish returns what it saved. */
+  async function finishSignIn(
+    { deps, finish, handler }: ReturnType<typeof persistDeps>,
+    login: Omit<PiOAuthConnected, "signal">,
+  ) {
+    let persist: PiOAuthPersist<unknown> | undefined;
+    Object.assign(deps.oauthLogins, {
+      begin: vi.fn(async (input: { persist: PiOAuthPersist<unknown> }) => {
+        persist = input.persist;
+        return {
+          loginId: "login-1",
+          provider: login.provider,
+          mode: "device-code" as const,
+          userCode: "CODE",
+          verificationUri: "https://auth.example.com/device",
+          expiresInSeconds: 60,
+        };
+      }),
+    });
+    await call(handler, "models/beginOAuth", { provider: login.provider });
+    const value = await persist?.({ ...login, signal: new AbortController().signal });
+    finish.mockResolvedValue({ status: "connected", value, provider: login.provider });
+    return call(handler, "models/finishOAuth", { loginId: "login-1" });
+  }
+
   async function call(
     handler: RouterHandler,
     path: string,
@@ -4805,25 +5475,19 @@ describe("model credential persistence", () => {
   });
 
   it("does not persist a stringified null model id from subscription sign-in", async () => {
-    const { upsert, finish, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "anthropic",
-        modelId: "null",
-        label: "Anthropic",
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { upsert } = setup;
+    const response = await finishSignIn(setup, {
+      provider: "anthropic",
+      modelId: "null",
+      label: "Anthropic",
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
     expect(response.status).toBe(200);
     const persisted = upsert.mock.calls[0]?.[0] as {
       create: { modelId: string | null };
@@ -5355,6 +6019,19 @@ describe("model credential persistence", () => {
     expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
   });
 
+  it("answers a provider sign-in outage as a retryable 503", async () => {
+    const { deps, handler } = persistDeps();
+    Object.assign(deps.oauthLogins, {
+      begin: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('Device code request failed with status 503: {"error":{"code":503}}'),
+        ),
+    });
+    const response = await call(handler, "models/beginOAuth", { provider: "openai-codex" });
+    expect(response.status).toBe(503);
+  });
+
   it("tells the user to restart a pasted-code sign-in that is gone", async () => {
     const { deps, handler } = persistDeps();
     const message = "Sign-in session not found. Start sign-in again.";
@@ -5370,22 +6047,16 @@ describe("model credential persistence", () => {
   });
 
   it("names a second subscription account by the email it signed in with", async () => {
-    const { finish, deps, handler } = persistDeps();
+    const setup = persistDeps();
+    const { deps } = setup;
     const access = `fake.${Buffer.from(
       JSON.stringify({ "https://api.openai.com/profile": { email: "work@example.com" } }),
     ).toString("base64url")}.fake`;
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider: "openai-codex",
-        credentialId: null,
-        credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const response = await finishSignIn(setup, {
+      provider: "openai-codex",
+      credentialId: null,
+      credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
@@ -5400,23 +6071,17 @@ describe("model credential persistence", () => {
     ["openai-codex", "OpenAI Codex"],
     ["anthropic", "Anthropic"],
   ])("labels a %s subscription sign-in with its own provider name", async (provider, label) => {
-    const { finish, deps, handler } = persistDeps();
-    finish.mockImplementation(async (_loginId, _actor, persist) => ({
-      status: "connected" as const,
-      value: await persist({
-        status: "connected",
-        provider,
-        credential: {
-          type: "oauth",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-        },
-        signal: new AbortController().signal,
-      }),
-    }));
-
-    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    const setup = persistDeps();
+    const { deps } = setup;
+    const response = await finishSignIn(setup, {
+      provider,
+      credential: {
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 60_000,
+      },
+    });
 
     expect(response.status).toBe(200);
     expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
@@ -5608,6 +6273,10 @@ describe("bot intro run", () => {
     expect(enqueue).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ payload: { runId: "record-2" } }),
     );
+    // The intro locks the thread row, which snapshot reads hold for up to 15s.
+    expect(deps.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 20_000,
+    });
   });
 
   it("leaves a placeholder account name out of the intro", async () => {
@@ -5912,13 +6581,15 @@ describe("codex live catalog", () => {
     expect(ids).not.toContain("gpt-unknown-from-backend");
   });
 
-  it("never reads the catalog for an API-key credential and still lists Spark", async () => {
+  it("never reads the catalog for an API-key credential", async () => {
     const read = vi.fn().mockResolvedValue([liveModel(spark)]);
     const { handler } = catalogDeps({ read, apiKeyOnly: true });
 
     const ids = await listIds(handler);
 
-    expect(ids).toContain(spark);
+    // Pi no longer bundles Spark for Codex; only an account catalog can add it.
+    expect(ids).not.toContain(spark);
+    expect(ids).toContain(luna);
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -5999,7 +6670,8 @@ describe("codex live catalog", () => {
 
     // Spark's preference points at account B: only B's catalog can unlock it.
     const read = vi.fn(async (_userId: string, account: { accountId: string }) =>
-      account.accountId === "acct-b" ? [liveModel(spark)] : [liveModel(luna)],
+      // A catalog is trusted only when it shares a bundled slug, so B lists Luna too.
+      account.accountId === "acct-b" ? [liveModel(spark), liveModel(luna)] : [liveModel(luna)],
     );
     deps.codexCatalog = { read };
     const first = await listIds(new RPCHandler(createRouter(deps)));
@@ -6485,7 +7157,7 @@ describe("model set default auth", () => {
     expect(main[0]).toMatchObject({ credentialId: personal.id, thinkingLevel: "high" });
   });
 
-  it("does not rewrite a Spark API-key preference when another Codex model becomes the default", async () => {
+  it("rebinds a Spark API-key preference when another Codex model becomes the default", async () => {
     const older = new Date("2026-01-01T00:00:00.000Z");
     const newer = new Date("2026-02-01T00:00:00.000Z");
     const apiCredential = {
@@ -6560,12 +7232,14 @@ describe("model set default auth", () => {
     await expect(response.json()).resolves.toEqual({ json: { ok: true } });
     expect(load).toHaveBeenCalledWith("cipher-oauth", "secret-oauth");
     expect(upsert).toHaveBeenCalledTimes(1);
+    // Pi no longer bundles Spark for Codex, so its binding is no longer an auth-restricted
+    // model to protect and the older credential takes the new default.
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           userId_credentialId: {
             userId: actor.userId,
-            credentialId: "cred-oauth",
+            credentialId: "cred-api",
           },
         },
         create: expect.objectContaining({ modelId: luna }),
@@ -6723,7 +7397,7 @@ describe("bot model auth on save", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -6840,7 +7514,7 @@ describe("bot model auth on save", () => {
     );
   });
 
-  it("rejects setting Codex Spark on the space's ChatGPT subscription credential", async () => {
+  it("rejects setting Codex Spark, which Pi no longer bundles, on the space's ChatGPT credential", async () => {
     const oauthCredential = credentialRow("cred-oauth", "secret-oauth");
     const { preferenceFindFirst, handler } = saveDeps({
       modelId: luna,
@@ -6863,7 +7537,7 @@ describe("bot model auth on save", () => {
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({
         code: "BAD_REQUEST",
-        message: expect.stringMatching(/not available with your current sign-in/i),
+        message: "Unknown model for that provider",
       }),
     });
     expect(preferenceFindFirst).toHaveBeenCalledWith(
@@ -7017,7 +7691,13 @@ describe("group restore with archived bots", () => {
     const tx = {
       bot,
       chatGroup,
-      chatGroupMember: { findMany: vi.fn(async () => archivedBots.map((item) => ({ bot: item }))) },
+      chatGroupMember: {
+        findMany: vi.fn(async () =>
+          archivedBots.map(({ id, computerId }) => ({
+            bot: { id, computer: computerId ? { id: computerId, userId: "user-1" } : null },
+          })),
+        ),
+      },
       computer: {
         count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
       },
@@ -7128,7 +7808,13 @@ describe("routine live Codex model validation", () => {
         createRouter({
           prisma: {
             bot: { findFirst: vi.fn(async () => ({ id: "bot-1", computer: null })) },
-            routine: { findFirst: vi.fn(async () => row), create: save, update: save },
+            routine: {
+              findFirst: vi.fn(async () => row),
+              create: save,
+              update: save,
+              count: vi.fn(async () => 0),
+            },
+            run: { updateManyAndReturn: vi.fn(async () => []) },
             userModelPreference: { findMany: vi.fn(async () => []) },
             userModelCredential: {
               findMany: vi.fn(async () => [
@@ -7199,7 +7885,7 @@ describe("routine live Codex model validation", () => {
 });
 
 describe("routines.list", () => {
-  it("marks routines another Space member created as not editable", async () => {
+  it("lets every Space member change a routine, whoever created it", async () => {
     const actor = { userId: "user-1", spaceId: "space-1" };
     const row = (id: string, userId: string) => ({
       id,
@@ -7238,9 +7924,10 @@ describe("routines.list", () => {
     );
 
     const routines = await client.routines.list({ botId: "bot-1" });
+    // Nothing marks either one read-only: any member may change it.
     expect(routines.map(({ id, editable }) => ({ id, editable }))).toEqual([
-      { id: "mine", editable: true },
-      { id: "theirs", editable: false },
+      { id: "mine", editable: undefined },
+      { id: "theirs", editable: undefined },
     ]);
     expect(routines[0]).not.toHaveProperty("userId");
   });
@@ -7294,6 +7981,7 @@ describe("routines.update", () => {
     );
     const enqueue = vi.fn(async () => undefined);
     const cancel = vi.fn(async () => undefined);
+    const moveQueued = vi.fn(async (_args: unknown) => [] as Array<{ taskId: string }>);
     const prisma = {
       secret: { findFirst: vi.fn(async () => null) },
       userModelPreference: {
@@ -7315,7 +8003,9 @@ describe("routines.update", () => {
           botArchived && args.where.bot?.archivedAt === null ? null : savedRoutine,
         ),
         update,
+        count: vi.fn(async () => 0),
       },
+      run: { updateManyAndReturn: moveQueued },
       bot: {
         findFirst: vi.fn(async () =>
           botArchived ? null : { id: "bot-1", thread: { id: "thread-1" }, computer: null },
@@ -7347,7 +8037,7 @@ describe("routines.update", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { update, enqueue, cancel, call, findFirst: prisma.routine.findFirst };
+    return { update, enqueue, cancel, call, moveQueued, findFirst: prisma.routine.findFirst };
   }
 
   it("refuses to re-arm a routine on an archived bot without writing", async () => {
@@ -7377,6 +8067,32 @@ describe("routines.update", () => {
     const response = await call();
     expect(response.status).toBe(404);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("takes over a routine and restarts its watch baseline when someone else edits it", async () => {
+    const { call, update, moveQueued } = fixture(false, false, { userId: "user-2" });
+    expect((await call({ name: "Renamed" })).status).toBe(200);
+    const data = update.mock.calls[0]![0].data;
+    expect(data.userId).toBe("user-1");
+    expect(data).toHaveProperty("watchState", Prisma.DbNull);
+    // An occurrence already queued runs with the new owner's accounts.
+    expect(moveQueued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          routineId: routine.id,
+          userId: "user-2",
+          status: "queued",
+          routine: { userId: "user-1" },
+        },
+        data: { userId: "user-1" },
+      }),
+    );
+  });
+
+  it("keeps its watch baseline when the owner edits it", async () => {
+    const { call, update } = fixture(false);
+    expect((await call({ name: "Renamed" })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).not.toHaveProperty("watchState");
   });
 
   const ownModel = {
@@ -7577,18 +8293,23 @@ describe("routines.remove", () => {
       env: { sandboxProvider: "fake" },
       jobs: { cancel },
     } as unknown as RouterDeps);
-    const as = (userId: string) =>
+    const as = (userId: string, spaceId = "space-1") =>
       createRouterClient(router, {
-        context: { actor: { spaceId: "space-1", userId } } as never,
+        context: { actor: { spaceId, userId } } as never,
       });
     return { as, remove, cancel };
   }
 
-  it("does not let another Space member delete a routine", async () => {
+  it("lets another Space member delete a routine, but nobody outside the Space", async () => {
     const { as, remove, cancel } = fixture();
-    await expect(as("user-b").routines.remove({ routineId: "routine-1" })).rejects.toThrow();
+    await expect(
+      as("user-c", "space-2").routines.remove({ routineId: "routine-1" }),
+    ).rejects.toThrow();
     expect(remove).not.toHaveBeenCalled();
-    expect(cancel).not.toHaveBeenCalled();
+    await expect(as("user-b").routines.remove({ routineId: "routine-1" })).resolves.toEqual({
+      ok: true,
+    });
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("deletes the owner's routine", async () => {
@@ -7733,7 +8454,7 @@ describe("openai-compatible enabled models", () => {
       teamChatRules: "",
       webhookSecretId: null,
       spawnKey: null,
-      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      thread: { id: "thread-1", reads: [], messages: [], runs: [] },
       computer: null,
       runs: [],
     };
@@ -7871,6 +8592,7 @@ describe("openai-compatible enabled models", () => {
           email: actor.email,
           name: "User",
           avatarStyle: "organic",
+          secrets: [],
         })),
       },
       $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(prisma)),
@@ -8591,7 +9313,7 @@ describe("threads.answerCall and threads.declineCall", () => {
     expect((await call("answerCall", {})).status).not.toBe(200);
     expect(prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: "bot-1", userId: "user-1", spaceId: "space-1" }),
+        where: expect.objectContaining({ id: "bot-1", spaceId: "space-1" }),
       }),
     );
     expect(prisma.message.updateMany).not.toHaveBeenCalled();
@@ -8604,6 +9326,7 @@ describe("threads.endCall", () => {
     const events: { type: string; payload: Record<string, unknown> }[] = [];
     const tx = {
       $queryRaw: vi.fn(async () => []),
+      $executeRaw: vi.fn(async () => 0),
       thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
       message: {
         findUnique: vi.fn().mockResolvedValue(null),
@@ -8892,18 +9615,22 @@ describe("groups.remove", () => {
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       message: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
       chatGroup: {
         findUnique: vi.fn().mockResolvedValue({
           artifacts: [],
           members: [{ botId: "bot-1" }],
-          thread: { id: "thread-1" },
         }),
         delete: vi.fn(async () => {
           calls.push("delete group");
         }),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => {
           calls.push("cancel run");
           return where.id.in.map((id) => ({ id }));
@@ -8911,7 +9638,9 @@ describe("groups.remove", () => {
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
-      secret: { deleteMany: vi.fn() },
+      // No page in the group had a link, so there are no tokens to delete.
+      page: { updateMany: vi.fn(async () => ({ count: 0 })) },
+      secret: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
       computerExecutionLease: {
         findMany: vi
           .fn()
@@ -8940,6 +9669,7 @@ describe("groups.remove", () => {
       calls.push("expire lease");
     });
     const prisma = {
+      run: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       computerExecutionLease: { updateMany: leaseUpdate },
       computer: { updateMany: vi.fn() },
@@ -8951,8 +9681,18 @@ describe("groups.remove", () => {
       calls.push("cancel run work");
       return [];
     });
+    const purgeHistory = vi.fn(async (_request: { botId: string }) => ({
+      ok: true as const,
+      value: undefined,
+    }));
     const deps = {
       prisma,
+      memoryProviders: {
+        resolve: async () => ({
+          provider: { describe: () => ({ capabilities: { purgesByThread: true } }), purgeHistory },
+          defaultScope: "isolated",
+        }),
+      },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -8983,6 +9723,16 @@ describe("groups.remove", () => {
     );
 
     expect(response?.status).toBe(200);
+    expect(
+      purgeHistory.mock.calls.map(([request]) => (request as { botId: string }).botId).sort(),
+    ).toEqual(["bot-1", "past-bot"]);
+    expect(purgeHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-1", generations: [2, 3] }),
+      expect.any(Object),
+    );
+    expect(purgeHistory.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.chatGroup.delete.mock.invocationCallOrder[0]!,
+    );
     expect(releaseScreen).toHaveBeenCalledWith(
       expect.objectContaining({ id: "computer-1" }),
       expect.objectContaining({
@@ -9003,6 +9753,94 @@ describe("groups.remove", () => {
       "release screen",
       "expire lease",
     ]);
+  });
+
+  it("still removes the deleted group's files and page link secrets when expiring its leases fails", async () => {
+    const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      message: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      thread: {
+        findUnique: vi.fn().mockResolvedValue({ id: "thread-1", historyCompactionGeneration: 3 }),
+      },
+      chatGroup: {
+        findUnique: vi.fn().mockResolvedValue({
+          artifacts: [{ storageKey: "artifacts/group-1/report.pdf" }],
+          members: [{ botId: "bot-1" }],
+        }),
+        delete: vi.fn(async () => undefined),
+      },
+      run: {
+        findMany: vi.fn(async (args: { distinct?: string[] }) =>
+          args.distinct ? [{ botId: "past-bot" }] : [{ id: "run-1", taskId: "task-1" }],
+        ),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      page: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      secret: {
+        findMany: vi.fn(async () => [{ id: "secret-1", ciphertext: "vault-ref-1" }]),
+        deleteMany: vi.fn(),
+      },
+      computerExecutionLease: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      // The group is already gone when this fails, so a retry could no longer find these.
+      computerExecutionLease: {
+        updateMany: vi.fn().mockRejectedValue(new Error("database unavailable")),
+      },
+      computer: { updateMany: vi.fn() },
+    } as unknown as PrismaClient;
+    const removeArtifact = vi.fn(async () => undefined);
+    const deleteSecret = vi.fn(async () => undefined);
+    const deps = {
+      prisma,
+      memoryProviders: { resolve: async () => null },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+      sandbox: { releaseScreen: vi.fn(), execute: vi.fn(() => []) },
+      jobs: { cancel: vi.fn().mockResolvedValue(undefined) },
+      artifacts: { remove: removeArtifact },
+      secrets: { delete: deleteSecret },
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@example.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+
+    const response = await handle(
+      new RPCHandler(createRouter(deps)),
+      new Request("http://127.0.0.1/rpc/groups/remove", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { groupId: "group-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response?.status).toBe(500);
+    expect(tx.chatGroup.delete).toHaveBeenCalled();
+    expect(removeArtifact).toHaveBeenCalledWith(
+      "artifacts/group-1/report.pdf",
+      expect.objectContaining({ botId: "bot-1" }),
+    );
+    expect(deleteSecret).toHaveBeenCalledWith(
+      "vault-ref-1",
+      expect.objectContaining({ recordId: "secret-1" }),
+    );
   });
 });
 
@@ -9450,7 +10288,7 @@ describe("memory documents", () => {
     });
     await expect(client.memory.remove({ documentId: "doc-1" })).resolves.toEqual({ ok: true });
     expect(memoryDocument.findFirst).toHaveBeenCalledWith({
-      where: { id: "doc-1", spaceId: "space-1", userId: "user-1" },
+      where: { id: "doc-1", spaceId: "space-1" },
     });
     expect(memory.remove).toHaveBeenCalledWith(
       { id: "doc-1", scope: "bot", botId: "bot-1", path: "projects/retired.md" },
@@ -9541,7 +10379,7 @@ describe("routine watch creation boundaries", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("uses the owner boundary before creating or changing a command watch", async () => {
+  it("uses the space boundary before creating or changing a command watch", async () => {
     const { client, create, update, findBot, findRoutine } = fixture();
     findBot.mockResolvedValueOnce(null as never);
     const watch = {
@@ -9555,7 +10393,7 @@ describe("routine watch creation boundaries", () => {
     ).rejects.toBeDefined();
     expect(findBot).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+        where: expect.objectContaining({ spaceId: actor.spaceId }),
       }),
     );
     findRoutine.mockResolvedValueOnce(null as never);
@@ -9564,7 +10402,7 @@ describe("routine watch creation boundaries", () => {
     });
     expect(findRoutine).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+        where: expect.objectContaining({ spaceId: actor.spaceId }),
       }),
     );
     expect(create).not.toHaveBeenCalled();
@@ -9647,6 +10485,61 @@ describe("API-key live model catalog", () => {
   );
 });
 
+describe("shared space bot permissions", () => {
+  const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+
+  function sharedBotClient(role: string) {
+    const bot = {
+      id: "bot-1",
+      spaceId: "space-1",
+      userId: "user-2",
+      archivedAt: null,
+      webhookSecretId: null,
+      thread: { id: "thread-1" },
+      computer: null,
+    };
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => bot) },
+      spaceMember: { findUnique: vi.fn(async () => ({ role })) },
+    };
+    const secrets = { put: vi.fn() };
+    const deps = {
+      prisma,
+      secrets,
+      env: { webOrigin: "https://example.test", inboundEmailDomain: "bots.example.test" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return { client, prisma, secrets };
+  }
+
+  it("keeps a bot's email address with its creator", async () => {
+    const { client } = sharedBotClient("owner");
+    await expect(client.bots.emailAddress({ botId: "bot-1" })).resolves.toBeNull();
+    await expect(
+      client.bots.claimEmailAddress({ botId: "bot-1", name: "scout" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("lets only the bot's creator or the space owner delete a bot for good", async () => {
+    const { client, prisma } = sharedBotClient("member");
+    await expect(
+      client.bots.remove({ botId: "bot-1", deleteMemories: false }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(prisma.spaceMember.findUnique).toHaveBeenCalledWith({
+      where: { spaceId_userId: { spaceId: "space-1", userId: "user-1" } },
+      select: { role: true },
+    });
+  });
+
+  it("keeps a bot's webhook secret with its creator", async () => {
+    const { client, secrets } = sharedBotClient("owner");
+    await expect(client.bots.rotateWebhookSecret({ botId: "bot-1" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
+});
+
 describe("quarantined computer stop", () => {
   it.each(["already-quarantined", "before-claim", "during-stop"])(
     "preserves the recovery fence (%s)",
@@ -9661,7 +10554,6 @@ describe("quarantined computer stop", () => {
         controlHolder: "none",
         controlLeaseId: null,
         controlBotId: null,
-        controlRunId: null,
         homeRevision: "saved",
         screenGeneration: 1,
       };
@@ -9674,6 +10566,7 @@ describe("quarantined computer stop", () => {
         return { count: 1 };
       });
       const prisma = {
+        spaceMember: { count: vi.fn(async () => 1) },
         bot: {
           findFirst: vi.fn(async () => {
             const snapshot = { ...row };

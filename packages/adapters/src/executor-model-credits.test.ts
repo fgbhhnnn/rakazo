@@ -5,7 +5,14 @@ import { listPiCatalog } from "./pi-models.js";
 describe("funding selects credentials without deleting saved connections", () => {
   describe.each([false, true])("with stored-secret requirement=%s", (requireStoredSecret) => {
     it.each([
-      { billingEnabled: true, mode: "credits", provider: "openrouter", hosted: true },
+      { billingEnabled: true, mode: "credits", provider: "openrouter", hosted: false },
+      {
+        billingEnabled: true,
+        mode: "credits",
+        balanceMicros: 1_000_000n,
+        provider: "openrouter",
+        hosted: false,
+      },
       {
         billingEnabled: true,
         mode: "credits",
@@ -22,11 +29,35 @@ describe("funding selects credentials without deleting saved connections", () =>
         rejected: true,
       },
       { billingEnabled: true, mode: "byok", provider: "openrouter", hosted: false },
+      // A balance pays until the member connects the provider themselves.
+      {
+        billingEnabled: true,
+        mode: "byok",
+        balanceMicros: 1n,
+        provider: "openrouter",
+        hosted: true,
+        personal: false,
+      },
+      {
+        billingEnabled: true,
+        mode: "byok",
+        balanceMicros: 1n,
+        provider: "openrouter",
+        hosted: false,
+      },
       { billingEnabled: false, mode: "credits", provider: "openrouter", hosted: false },
       { billingEnabled: true, mode: "credits", provider: "openai", hosted: false },
     ])(
       "$mode funding for $provider with billing=$billingEnabled",
-      async ({ billingEnabled, mode, provider, hosted, personal = true, rejected = false }) => {
+      async ({
+        billingEnabled,
+        mode,
+        balanceMicros = 0n,
+        provider,
+        hosted,
+        personal = true,
+        rejected = false,
+      }) => {
         vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
         vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
         try {
@@ -49,7 +80,9 @@ describe("funding selects credentials without deleting saved connections", () =>
                       }
                     : null,
               },
-              userModelCredential: { findFirst: async () => null },
+              userModelCredential: {
+                findFirst: async () => (personal ? { id: "personal" } : null),
+              },
               secret: {
                 findFirst: async () => ({
                   id: "personal-secret",
@@ -57,12 +90,14 @@ describe("funding selects credentials without deleting saved connections", () =>
                 }),
               },
               space: {
-                findFirst: async () => ({ organization: { modelCredits: { mode } } }),
+                findFirst: async () => ({
+                  organization: { modelCredits: { mode, balanceMicros } },
+                }),
                 findUnique: async () => ({ organizationId: "org" }),
               },
               member: { findUnique: async () => ({ role: "owner" }) },
               billingAccount: { findUnique: async () => null },
-              modelCreditAccount: { upsert: async () => ({ mode }) },
+              modelCreditAccount: { upsert: async () => ({ mode, balanceMicros }) },
             },
           } as unknown as Parameters<typeof createRunExecutor>[0]);
           if (rejected) {

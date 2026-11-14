@@ -33,8 +33,15 @@ const resourceDirectories = {
   de: "values-de",
   nl: "values-nl",
   ja: "values-ja",
-  // Spanish UI ships in JS; 1.0.8 binaries use Android's default native resources.
+  // Installed Android binaries keep the default native resources for Spanish.
   es: "values",
+  pl: "values-pl",
+  fr: "values-fr",
+  he: "values-iw",
+  hi: "values-hi",
+  ko: "values-ko",
+  "pt-BR": "values-pt-rBR",
+  tr: "values-tr",
 } as const satisfies Record<(typeof UI_LOCALES)[number], string>;
 
 function strings(locale: (typeof UI_LOCALES)[number]) {
@@ -49,6 +56,22 @@ describe("Android notification resources", () => {
     }
   });
 
+  it("preserves every Polish notification format argument", () => {
+    const entries = (xml: string) =>
+      new Map(
+        [...xml.matchAll(/<string name="([^"]+)">([^<]*)<\/string>/g)].map((match) => [
+          match[1],
+          match[2],
+        ]),
+      );
+    const source = entries(strings("en"));
+    const polish = entries(strings("pl"));
+    for (const key of keys) {
+      const argumentsOf = (value: string) => value.match(/%\d+\$[sd]/g)?.sort() ?? [];
+      expect(argumentsOf(polish.get(key) ?? ""), key).toEqual(argumentsOf(source.get(key) ?? ""));
+    }
+  });
+
   it("keeps positional format arguments in translated strings", () => {
     expect(strings("de")).toContain("%1$s und %2$d");
     expect(strings("ru")).toContain("%1$s и ещё %2$d");
@@ -56,5 +79,6 @@ describe("Android notification resources", () => {
     expect(strings("nl")).toContain("%1$s en %2$d anderen");
     expect(strings("ja")).toContain("%1$sとほか%2$d件");
     expect(strings("es")).toContain("%1$s and %2$d more");
+    expect(strings("pl")).toContain("%1$s i jeszcze %2$d");
   });
 });

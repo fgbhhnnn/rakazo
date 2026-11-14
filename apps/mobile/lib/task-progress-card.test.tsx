@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { CHAT_CARD_RADIUS } from "./chat-card-shell";
-import { ZH_MESSAGES } from "./locales/zh";
+import { resetI18nForTests } from "./i18n";
 import { threadCardWidth } from "./message-presentation";
 
 declare global {
@@ -78,16 +78,6 @@ vi.mock("./native", () => ({
     warning: "warning",
   }),
 }));
-const translate = vi.hoisted(() => ({ catalog: {} as Record<string, string> }));
-vi.mock("./i18n", () => ({
-  useI18n: () => ({
-    t: (message: string, values: Record<string, string> = {}) =>
-      (translate.catalog[message] ?? message).replace(
-        /\{(\w+)\}/g,
-        (_, key: string) => values[key] ?? "",
-      ),
-  }),
-}));
 
 import { TaskProgressCard } from "../components/task-progress-card";
 
@@ -130,10 +120,10 @@ const block: TaskProgressBlock = {
   ],
 };
 
-let unmount = () => undefined as void;
+let unmount: () => void = () => undefined;
 afterEach(() => {
   unmount();
-  translate.catalog = {};
+  resetI18nForTests();
 });
 
 function mount(props: Parameters<typeof TaskProgressCard>[0]) {
@@ -210,7 +200,7 @@ it("keeps the thread card's full width on any phone, with no chevron", () => {
 it("counts up on its own and reads in Chinese", () => {
   vi.useFakeTimers();
   vi.setSystemTime(now);
-  translate.catalog = ZH_MESSAGES;
+  resetI18nForTests("zh-CN");
   try {
     const card = mount({ block: { ...block, tasks: [block.tasks[0]!] } });
     expect(card.textContent).toContain("后台任务");
@@ -237,7 +227,7 @@ it("draws the borderless chat-card shell shared with ChoiceCard and approvals", 
 });
 
 it("shows the continuing status label exactly once when step repeats it", () => {
-  translate.catalog = ZH_MESSAGES;
+  resetI18nForTests("zh-CN");
   const card = mount({
     block: {
       ...block,
@@ -262,7 +252,7 @@ it("shows the continuing status label exactly once when step repeats it", () => 
 });
 
 it("still shows a real continuing step when it differs from the status label", () => {
-  translate.catalog = ZH_MESSAGES;
+  resetI18nForTests("zh-CN");
   const card = mount({
     block: {
       ...block,
@@ -288,7 +278,7 @@ it("still shows a real continuing step when it differs from the status label", (
 });
 
 it("does not duplicate status for other states when step matches the label", () => {
-  translate.catalog = ZH_MESSAGES;
+  resetI18nForTests("zh-CN");
   const card = mount({
     block: {
       ...block,

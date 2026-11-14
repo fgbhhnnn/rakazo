@@ -1,5 +1,5 @@
 import { Trans } from "@lingui/react/macro";
-import type { PageSummary } from "@rakazo/contracts";
+import type { ReportPageSummary } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { PageCard } from "./PageCard";
@@ -8,12 +8,12 @@ const SHELF_LIMIT = 30;
 
 /** The reports and plans bots wrote as pages, newest first; hidden when there are none. */
 export function PagesShelf({ botId }: { botId?: string }) {
-  const [pages, setPages] = useState<PageSummary[]>([]);
+  const [pages, setPages] = useState<ReportPageSummary[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     setPages([]);
-    void rpc.pages
+    void rpc.reportPages
       .list({ botId, limit: SHELF_LIMIT })
       .then((items) => {
         if (!cancelled) setPages(items);
@@ -28,7 +28,7 @@ export function PagesShelf({ botId }: { botId?: string }) {
   if (pages.length === 0) return null;
   return (
     <section className="shrink-0 border-b border-border px-4 py-4 md:px-6">
-      <h2 className="mb-3 text-[13px] font-semibold text-muted-foreground">
+      <h2 className="mb-3 text-body-sm font-semibold text-muted-foreground">
         <Trans>Pages</Trans>
       </h2>
       <ul className="flex gap-3 overflow-x-auto pb-1">

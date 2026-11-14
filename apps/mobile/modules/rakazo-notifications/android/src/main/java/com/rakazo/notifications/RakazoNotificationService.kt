@@ -31,7 +31,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -43,6 +45,7 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 private class ApiException(val status: Int) : IOException()
+private const val MAX_RPC_RESPONSE_BYTES = 16 * 1024 * 1024
 
 class RakazoNotificationService : Service() {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -63,12 +66,12 @@ class RakazoNotificationService : Service() {
       manager.cancelAll()
       state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
     }
-    createChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(this)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // Channel names follow the current locale; recreating an existing channel updates its copy.
-    createChannels(localizedContext(NotificationStorage(this).locale))
+    createRakazoChannels(this)
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
       intent?.getStringExtra(EXTRA_MUTED_BOT_ID)?.let { botId ->
@@ -122,18 +125,18 @@ class RakazoNotificationService : Service() {
         return
       }
       val seeded = prepareHistorySpace(generation, storage.endpoint, storage.spaceId, token) ?: return
-      val copyContext = localizedContext(storage.locale)
+      val copyContext = localizedContext(this, storage.locale)
       var recentPageBusy = true
       try {
         if (generation != sessionGeneration.get()) return
         val avatarStyle = selectedAvatarStyle
-          ?: avatarStyle(storage.endpoint, token, storage.spaceId)
+          ?: avatarStyle(storage.endpoint, token, storage.spaceId, storage.headers)
             .also { selectedAvatarStyle = it }
         if (generation != sessionGeneration.get()) return
-        val active = runs(storage.endpoint, token, storage.spaceId, "active")
+        val active = runs(storage.endpoint, token, storage.spaceId, storage.headers, "active")
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         if (generation != sessionGeneration.get()) return
-        val recent = runs(storage.endpoint, token, storage.spaceId, "recent")
+        val recent = runs(storage.endpoint, token, storage.spaceId, storage.headers, "recent")
         var replyLookups = emptyList<RunRecord>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
@@ -161,7 +164,7 @@ class RakazoNotificationService : Service() {
         for (run in replyLookups) {
           if (generation != sessionGeneration.get()) return
           val reply = runCatching {
-            latestReply(storage.endpoint, token, storage.spaceId, run)
+            latestReply(storage.endpoint, token, storage.spaceId, storage.headers, run)
           }.getOrDefault("")
           if (!runIfCurrent(generation) {
               completions.complete(run, alreadyPosted = {
@@ -170,20 +173,23 @@ class RakazoNotificationService : Service() {
                 }
               }) {
                 if (reply != null) {
-                  post(
-                    run,
-                    NotificationCopy(
-                      title = when {
-                        run.trigger == "routine" ->
-                          copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
-                        run.groupName != null ->
-                          copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
-                        else -> copyContext.getString(R.string.rakazo_replied, run.botName)
-                      },
-                      body = reply.ifBlank { run.prompt },
-                      channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
-                    ),
-                  )
+                  val bodyText = reply.ifBlank { run.prompt }
+                  if (bodyText.isNotBlank()) {
+                    post(
+                      run,
+                      NotificationCopy(
+                        title = when {
+                          run.trigger == "routine" ->
+                            copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
+                          run.groupName != null ->
+                            copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
+                          else -> copyContext.getString(R.string.rakazo_replied, run.botName)
+                        },
+                        body = bodyText,
+                        channel = if (run.trigger == "routine") Channels.SCHEDULED else Channels.MESSAGES,
+                      ),
+                    )
+                  }
                 }
               }
               persistCompleted(true)
@@ -348,9 +354,7 @@ class RakazoNotificationService : Service() {
     manager.cancel(LIVE_NOTIFICATION_ID)
   }
 
-  private fun isOpenThread(run: RunRecord): Boolean = synchronized(sessionLock) {
-    if (openThreadId != null) openThreadId == run.threadId else openBotId == run.botId
-  }
+  private fun isOpenThread(run: RunRecord): Boolean = isOpenThread(run.botId, run.threadId)
 
   @Suppress("DEPRECATION")
   private fun builder(channel: String): Notification.Builder =
@@ -378,39 +382,6 @@ class RakazoNotificationService : Service() {
     )
   }
 
-  private fun localizedContext(tag: String): Context {
-    if (tag.isBlank()) return this
-    val configuration = Configuration(resources.configuration)
-    configuration.setLocale(Locale.forLanguageTag(tag))
-    return createConfigurationContext(configuration)
-  }
-
-  private fun createChannels(context: Context) {
-    if (Build.VERSION.SDK_INT < 26) return
-    listOf(
-      NotificationChannel(
-        Channels.LIVE,
-        context.getString(R.string.rakazo_channel_live),
-        NotificationManager.IMPORTANCE_LOW,
-      ),
-      NotificationChannel(
-        Channels.MESSAGES,
-        context.getString(R.string.rakazo_channel_messages),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.SCHEDULED,
-        context.getString(R.string.rakazo_channel_scheduled),
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ),
-      NotificationChannel(
-        Channels.ATTENTION,
-        context.getString(R.string.rakazo_channel_attention),
-        NotificationManager.IMPORTANCE_HIGH,
-      ),
-    ).forEach(manager::createNotificationChannel)
-  }
-
   private fun stop() {
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
@@ -432,7 +403,7 @@ class RakazoNotificationService : Service() {
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
     private const val SEEN_RUNS_SPACE_ID = "seen_runs_space_id"
-    private const val EXTRA_RUN_ID = "rakazo.runId"
+    internal const val EXTRA_RUN_ID = "rakazo.runId"
     private const val THREAD_NOTIFICATION_IDS = "thread_notification_ids"
     private val sessionLock = Any()
     private val sessionGeneration = AtomicLong()
@@ -453,13 +424,19 @@ class RakazoNotificationService : Service() {
       context.stopService(Intent(context, RakazoNotificationService::class.java))
     }
 
+    fun isOpenThread(botId: String, threadId: String): Boolean = synchronized(sessionLock) {
+      if (openThreadId != null) openThreadId == threadId else openBotId == botId
+    }
+
     fun setOpenThread(context: Context, botId: String?, threadId: String?) {
       synchronized(sessionLock) {
         openBotId = botId
         openThreadId = threadId
       }
       if (threadId != null) {
-        context.getSystemService(NotificationManager::class.java).cancel(threadId.hashCode())
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.cancel(threadId.hashCode())
+        manager.cancel(SenderPush.notificationId(threadId))
       }
       start(context, resetToken = false, action = ACTION_THREAD_CHANGED)
     }
@@ -498,15 +475,21 @@ private fun attentionCopy(context: Context, run: RunRecord): NotificationCopy = 
   )
 }
 
-private object Channels {
+internal object Channels {
   const val LIVE = "rakazo_live"
   const val MESSAGES = "rakazo_messages"
   const val SCHEDULED = "rakazo_scheduled"
   const val ATTENTION = "rakazo_attention"
 }
 
-private fun runs(endpoint: String, token: String, spaceId: String, filter: String): List<RunRecord> {
-  val root = rpc(endpoint, token, spaceId, "runs/list", JSONObject().put("filter", filter))
+private fun runs(
+  endpoint: String,
+  token: String,
+  spaceId: String,
+  headers: String,
+  filter: String,
+): List<RunRecord> {
+  val root = rpc(endpoint, token, spaceId, headers, "runs/list", JSONObject().put("filter", filter))
   val rows = root.optJSONArray("runs") ?: throw IOException("Invalid activity response")
   return List(rows.length()) { index ->
     val row = rows.optJSONObject(index) ?: throw IOException("Invalid activity response")
@@ -529,14 +512,20 @@ private fun runs(endpoint: String, token: String, spaceId: String, filter: Strin
 private fun isWorking(run: RunRecord): Boolean =
   run.status == "queued" || run.status == "leased" || run.status == "running"
 
-private fun avatarStyle(endpoint: String, token: String, spaceId: String): String =
-  rpc(endpoint, token, spaceId, "me", JSONObject()).optString("avatarStyle", "organic")
+private fun avatarStyle(endpoint: String, token: String, spaceId: String, headers: String): String =
+  rpc(endpoint, token, spaceId, headers, "me", JSONObject()).optString("avatarStyle", "organic")
 
-private fun latestReply(endpoint: String, token: String, spaceId: String, run: RunRecord): String? {
+private fun latestReply(
+  endpoint: String,
+  token: String,
+  spaceId: String,
+  headers: String,
+  run: RunRecord,
+): String? {
   val target = JSONObject().apply {
     if (run.groupId != null) put("groupId", run.groupId) else put("botId", run.botId)
   }
-  val root = rpc(endpoint, token, spaceId, "threads/get", target)
+  val root = rpc(endpoint, token, spaceId, headers, "threads/get", target)
   val messages = root.optJSONArray("messages") ?: return ""
   for (messageIndex in messages.length() - 1 downTo 0) {
     val message = messages.optJSONObject(messageIndex) ?: continue
@@ -742,6 +731,10 @@ private fun takeFencedCode(
 
 /** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. Mirrors htmlTagClose. */
 private fun htmlTagClose(text: String, open: Int): Int {
+  if (text.startsWith("<!--", open)) {
+    val close = text.indexOf("-->", open + 4)
+    return if (close == -1) text.length - 1 else close + 2
+  }
   var quote: Char? = null
   var gtInOpenQuote = -1
   for (i in open + 1 until text.length) {
@@ -1000,10 +993,11 @@ internal fun markdownToPreview(markdown: String): String {
   return restore(text).replace(Regex("\\s+"), " ").trim()
 }
 
-private fun rpc(
+internal fun rpc(
   endpoint: String,
   token: String,
   spaceId: String,
+  headers: String,
   procedure: String,
   input: JSONObject,
 ): JSONObject {
@@ -1014,6 +1008,10 @@ private fun rpc(
     connection.connectTimeout = 8_000
     connection.readTimeout = 15_000
     connection.doOutput = true
+    // An access proxy in front of the server answers a refused request with a redirect to its login
+    // page; following it would read that page as the server's answer.
+    connection.instanceFollowRedirects = false
+    serverHeaders(headers).forEach { (name, value) -> connection.setRequestProperty(name, value) }
     connection.setRequestProperty("Content-Type", "application/json")
     connection.setRequestProperty("Origin", "rakazo://")
     connection.setRequestProperty("Authorization", "Bearer $token")
@@ -1025,11 +1023,39 @@ private fun rpc(
     }
     val status = connection.responseCode
     if (status !in 200..299) throw ApiException(status)
-    val body = connection.inputStream.bufferedReader().use { it.readText() }
-    JSONObject(body).optJSONObject("json") ?: throw IOException("Invalid server response")
+    val body = connection.inputStream.use { stream ->
+      val bytes = ByteArrayOutputStream()
+      val buffer = ByteArray(8_192)
+      while (true) {
+        val count = stream.read(buffer, 0, minOf(buffer.size, MAX_RPC_RESPONSE_BYTES - bytes.size() + 1))
+        if (count == -1) break
+        if (bytes.size() + count > MAX_RPC_RESPONSE_BYTES) throw IOException("Server response too large")
+        bytes.write(buffer, 0, count)
+      }
+      bytes.toString(Charsets.UTF_8.name())
+    }
+    val root = try {
+      JSONObject(body)
+    } catch (_: JSONException) {
+      throw IOException("Invalid server response")
+    }
+    root.optJSONObject("json") ?: throw IOException("Invalid server response")
   } finally {
     connection.disconnect()
   }
+}
+
+/** The saved headers; a value that is not a JSON object of strings sends none. */
+private fun serverHeaders(headers: String): Map<String, String> {
+  if (headers.isBlank()) return emptyMap()
+  val root = try {
+    JSONObject(headers)
+  } catch (_: JSONException) {
+    return emptyMap()
+  }
+  return root.keys().asSequence().mapNotNull { name ->
+    (root.opt(name) as? String)?.let { name to it }
+  }.toMap()
 }
 
 private fun JSONObject.requiredString(name: String): String =
@@ -1037,3 +1063,37 @@ private fun JSONObject.requiredString(name: String): String =
 
 private fun JSONObject.optionalString(name: String): String? =
   if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)
+
+internal fun localizedContext(base: Context, tag: String): Context {
+  if (tag.isBlank()) return base
+  val configuration = Configuration(base.resources.configuration)
+  configuration.setLocale(Locale.forLanguageTag(tag))
+  return base.createConfigurationContext(configuration)
+}
+
+internal fun createRakazoChannels(base: Context) {
+  if (Build.VERSION.SDK_INT < 26) return
+  val context = localizedContext(base, NotificationStorage(base).locale)
+  listOf(
+    NotificationChannel(
+      Channels.LIVE,
+      context.getString(R.string.rakazo_channel_live),
+      NotificationManager.IMPORTANCE_LOW,
+    ),
+    NotificationChannel(
+      Channels.MESSAGES,
+      context.getString(R.string.rakazo_channel_messages),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.SCHEDULED,
+      context.getString(R.string.rakazo_channel_scheduled),
+      NotificationManager.IMPORTANCE_DEFAULT,
+    ),
+    NotificationChannel(
+      Channels.ATTENTION,
+      context.getString(R.string.rakazo_channel_attention),
+      NotificationManager.IMPORTANCE_HIGH,
+    ),
+  ).forEach(context.getSystemService(NotificationManager::class.java)::createNotificationChannel)
+}

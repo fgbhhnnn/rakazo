@@ -48,6 +48,7 @@ export function FileKindIcon({ size = 40, ...file }: FileRef & { size?: number }
       <Icon size={Math.round(size * 0.52)} strokeWidth={1.8} aria-hidden />
       {size >= 28 ? (
         <span
+          // off-scale: the file extension must fit inside the small document icon.
           className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-[4px] px-1 text-[9px] leading-[13px] font-bold tracking-wide text-white"
           style={{ backgroundColor: kind.color }}
         >
@@ -63,7 +64,7 @@ export function FileKindBadge(file: FileRef) {
   const kind = fileKindOf(file);
   return (
     <span
-      className="rounded-md px-2 py-1 text-[11px] font-semibold text-white"
+      className="rounded-md px-2 py-1 text-caption font-semibold text-white"
       style={{ backgroundColor: kind.color }}
     >
       {kind.badge}

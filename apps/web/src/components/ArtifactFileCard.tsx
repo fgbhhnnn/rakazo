@@ -1,9 +1,9 @@
 import { i18n } from "@lingui/core";
 import { t as translate } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { hasInAppFileViewer } from "@rakazo/chat-ui/file-kinds";
+import { fileKindOf, hasInAppFileViewer } from "@rakazo/chat-ui/file-kinds";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import { isAttachmentAudioMimeType } from "@rakazo/contracts";
+import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { fileSizeParts } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
 import { Download, Play, X } from "lucide-react";
@@ -27,17 +27,22 @@ type ArtifactFileCardProps = {
   size: number;
 };
 
-const PREVIEWABLE_MIME_TYPES = new Set([
-  "text/markdown",
-  "text/html",
-  "application/pdf",
-  "video/mp4",
-]);
-const TEXT_MIME_TYPES = new Set(["text/markdown", "text/html"]);
+function isTextPreview(mimeType: string) {
+  const kind = artifactPreviewKind(mimeType);
+  return kind === "markdown" || kind === "html" || kind === "text";
+}
+
+function isPreviewable(mimeType: string) {
+  return (
+    isTextPreview(mimeType) ||
+    artifactPreviewKind(mimeType) === "pdf" ||
+    artifactPreviewKind(mimeType) === "video"
+  );
+}
 
 export function ArtifactFileCard(props: ArtifactFileCardProps) {
   const { t } = useLingui();
-  const previewable = PREVIEWABLE_MIME_TYPES.has(props.mimeType) || hasInAppFileViewer(props);
+  const previewable = isPreviewable(props.mimeType) || hasInAppFileViewer(props);
   const previewButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -71,7 +76,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         <button
           type="button"
           onClick={() => void startDownload()}
-          className="flex items-center gap-3 rounded-[20px] bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
+          className="flex items-center gap-3 rounded-2xl bg-card px-4 py-3 text-left text-body text-foreground hover:bg-accent"
         >
           <FileKindIcon name={props.name} mimeType={props.mimeType} />
           <span className="min-w-0">
@@ -100,8 +105,8 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
           >
             <FileKindIcon name={props.name} mimeType={props.mimeType} />
             <span className="min-w-0">
-              <span className="block truncate text-[14px] font-medium">{props.name}</span>
-              <span className="mt-0.5 block text-[13px] text-muted-foreground">
+              <span className="block truncate text-body font-medium">{props.name}</span>
+              <span className="mt-0.5 block text-body-sm text-muted-foreground">
                 {formatSize(props.size)}
               </span>
             </span>
@@ -157,7 +162,7 @@ function FilePreview({
     void fetchArtifactBytes(artifactTarget, artifactId)
       .then((bytes) => {
         if (cancelled) return;
-        if (!TEXT_MIME_TYPES.has(mimeType)) {
+        if (fileKindOf({ name, mimeType }).table || !isTextPreview(mimeType)) {
           setState({ status: "ready", bytes });
           return;
         }
@@ -178,12 +183,13 @@ function FilePreview({
     return () => {
       cancelled = true;
     };
-  }, [artifactId, targetBotId, targetGroupId, mimeType, t]);
+  }, [artifactId, targetBotId, targetGroupId, mimeType, name, t]);
+  const kind = artifactPreviewKind(mimeType);
 
   return (
     <>
       <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-5">
-        <DialogTitle className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-foreground">
+        <DialogTitle className="min-w-0 flex-1 truncate text-body font-medium text-foreground">
           {name}
         </DialogTitle>
         <IconTooltip label={t`Download ${name}`}>
@@ -231,14 +237,18 @@ function FilePreview({
           <div className="m-5 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
             {state.message}
           </div>
-        ) : mimeType === "text/html" && state.text !== undefined ? (
+        ) : kind === "html" && state.text !== undefined ? (
           <SandboxedHtmlViewer html={state.text} title={name} />
-        ) : mimeType === "video/mp4" ? (
+        ) : kind === "video" ? (
           <VideoPreview bytes={state.bytes} name={name} />
-        ) : mimeType === "application/pdf" ? (
+        ) : kind === "pdf" ? (
           <PdfViewer bytes={state.bytes} title={name} />
+        ) : state.text !== undefined && kind === "text" ? (
+          <pre className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground sm:px-12 sm:py-12">
+            {state.text}
+          </pre>
         ) : state.text !== undefined ? (
-          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground sm:px-12 sm:py-12">
+          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground sm:px-12 sm:py-12">
             <ChatMarkdown>{state.text}</ChatMarkdown>
           </article>
         ) : (
@@ -308,7 +318,7 @@ function AudioArtifactPreview({
             <Play />
           </Button>
         ) : null}
-        <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-body font-medium">{name}</span>
         <Button
           variant="ghost"
           size="icon-lg"
@@ -320,7 +330,7 @@ function AudioArtifactPreview({
         </Button>
       </div>
       {state.status === "loading" ? (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           <Spinner aria-label={t`Loading preview…`} />
         </span>
       ) : state.status === "error" ? (
@@ -340,7 +350,7 @@ function AudioArtifactPreview({
   );
 }
 
-function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string }) {
+export function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string }) {
   const [src, setSrc] = useState<string>();
   useEffect(() => {
     const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "video/mp4" }));
@@ -362,7 +372,7 @@ function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string }) {
 
 function DownloadError({ message }: { message: string }) {
   return (
-    <div role="alert" className="mt-2 text-left text-[13px] text-destructive">
+    <div role="alert" className="mt-2 text-left text-body-sm text-destructive">
       {message}
     </div>
   );

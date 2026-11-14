@@ -1,6 +1,6 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { isToolActivityBlock } from "@rakazo/core";
+import { isToolActivityBlock, withoutCopiedToolSteps } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { LaunchedTask } from "./dispatch-acknowledgement.js";
 import { acknowledgementOf } from "./dispatch-acknowledgement.js";
@@ -154,14 +154,16 @@ export function guardDispatcherReply(
     .join("")
     .trim();
   if (!text) return { blocks, changed: false, recheckClaim: false };
-  let next = text;
-  let recheckClaim = false;
+  const replaySafeText = withoutCopiedToolSteps(text);
+  let next =
+    replaySafeText || (ledger.launchedNew ? acknowledgementOf("", ledger.launchedTasks) : "收到。");
+  let recheckClaim = replaySafeText !== text && !ledger.actedOnWorkers && !context.wokenByWorker;
   if (
     ledger.launchedNew &&
     !context.wokenByWorker &&
     context.acknowledgedMidTurn &&
-    !relaysOtherWork(text, ledger.launchedRefs) &&
-    !QUESTION.test(text)
+    !relaysOtherWork(next, ledger.launchedRefs) &&
+    !QUESTION.test(next)
   ) {
     // The lead-in it wrote before starting the task already acknowledged the request; a second,
     // reworded acknowledgement as the final reply only repeats it. A question still goes out.
@@ -179,24 +181,24 @@ export function guardDispatcherReply(
   if (
     !ledger.actedOnWorkers &&
     !context.wokenByWorker &&
-    claimsWorkerAction(text, context.exemptClaim)
+    claimsWorkerAction(next, context.exemptClaim)
   ) {
     getLogger().warn("dispatcher reply claims a worker action no tool performed", {
       runId: context.runId,
     });
-    next = withoutWorkerClaims(text, context.exemptClaim) || "收到。";
+    next = withoutWorkerClaims(next, context.exemptClaim) || "收到。";
     recheckClaim = true;
   } else if (
     ledger.launchedNew &&
     !context.wokenByWorker &&
-    text.length > DISPATCH_ACK_MAX_CHARS &&
-    !relaysOtherWork(text, ledger.launchedRefs)
+    next.length > DISPATCH_ACK_MAX_CHARS &&
+    !relaysOtherWork(next, ledger.launchedRefs)
   ) {
     getLogger().warn("dispatcher answered a request it dispatched; keeping the acknowledgement", {
       runId: context.runId,
       chars: text.length,
     });
-    next = acknowledgementOf(text, ledger.launchedTasks);
+    next = acknowledgementOf(next, ledger.launchedTasks);
   }
   next = withoutWorkerSlotMentions(next);
   if (next === text) return { blocks, changed: false, recheckClaim };

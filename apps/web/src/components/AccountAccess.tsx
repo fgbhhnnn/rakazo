@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account-security";
 import { authClient } from "../lib/auth";
 import { clearComposerDrafts } from "../lib/composer-draft";
+import { forgetSignedIn } from "../lib/returning-user";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText } from "../lib/user-error";
 import { SettingsRow } from "./SettingsRows";
@@ -15,8 +16,46 @@ export function AccountAccess({
   onSecurity?: (security: AccountSecurity) => void;
 }) {
   const { t } = useLingui();
-  const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const [open, setOpen] = useState(false);
+  return (
+    <SettingsRow
+      label={<Trans>Delete account</Trans>}
+      control={
+        <Button
+          variant="secondary"
+          size="sm"
+          data-testid="delete-account"
+          aria-label={t`Delete account`}
+          className="text-destructive hover:text-destructive"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Trans>Delete</Trans>
+        </Button>
+      }
+    >
+      <DeleteAccountForm open={open} onSecurity={onSecurity} />
+    </SettingsRow>
+  );
+}
+
+/** True when an SSO sign-in started to delete the account came back with an error. */
+export function hasDeleteRedirectError(): boolean {
+  return redirectError("delete") !== null;
+}
+
+/**
+ * Confirms it's the account owner, then deletes the account. Security is looked up while closed
+ * too, so settings can report it, and a redirect's error shows either way.
+ */
+export function DeleteAccountForm({
+  open,
+  onSecurity,
+}: {
+  open: boolean;
+  onSecurity?: (security: AccountSecurity) => void;
+}) {
+  const { t } = useLingui();
+  const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -54,24 +93,10 @@ export function AccountAccess({
     }
   }
   return (
-    <SettingsRow
-      label={<Trans>Delete account</Trans>}
-      control={
-        <Button
-          variant="secondary"
-          size="sm"
-          data-testid="delete-account"
-          aria-label={t`Delete account`}
-          className="text-destructive hover:text-destructive"
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Trans>Delete</Trans>
-        </Button>
-      }
-    >
+    <>
       {open ? (
         <div className="mt-3 space-y-3">
-          <p className="text-sm">
+          <p className="text-body">
             <Trans>This permanently deletes your account and data.</Trans>
           </p>
           {!security ? (
@@ -79,7 +104,7 @@ export function AccountAccess({
               <Trans>Retry</Trans>
             </Button>
           ) : security.hasPassword ? (
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="delete-password">
                 <Trans>Current password</Trans>
               </Label>
@@ -134,7 +159,7 @@ export function AccountAccess({
                 </Button>
               ) : null}
               {sent ? (
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="deletion-code">
                     <Trans>Deletion code</Trans>
                   </Label>
@@ -169,6 +194,7 @@ export function AccountAccess({
                 if (result.error)
                   throw new Error(authErrorText(result.error, t`Could not continue`));
                 clearComposerDrafts();
+                forgetSignedIn();
                 window.location.assign("/sign-in");
               })
             }
@@ -178,11 +204,11 @@ export function AccountAccess({
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+        <p role="alert" className="mt-2 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}
-    </SettingsRow>
+    </>
   );
 }
 
@@ -223,7 +249,7 @@ export function LinkSsoRow() {
       }
     >
       {error ? (
-        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+        <p role="alert" className="mt-2 text-body-sm text-destructive">
           {error}
         </p>
       ) : null}

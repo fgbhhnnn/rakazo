@@ -1,6 +1,9 @@
+import { ph, t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { fileKindOf, filePreviewMarkdown } from "@rakazo/chat-ui/file-kinds";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { ArtifactVersion, ArtifactWithContent } from "@rakazo/contracts";
-import { isAttachmentImageMimeType } from "@rakazo/contracts";
+import { artifactPreviewKind } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
@@ -9,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,7 +21,9 @@ import {
 } from "react-native";
 import { FileViewerBody, hasMobileFileViewer } from "../components/file-viewer";
 import { NativeSymbol } from "../components/native-symbol";
+import { PdfPreview } from "../components/pdf-preview";
 import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
+import { VideoPreview } from "../components/video-preview";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { mobileTokens } from "../lib/appearance";
 import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifact-open";
@@ -28,7 +34,6 @@ import {
   removeArtifact,
 } from "../lib/artifacts";
 import { useFloatingHeaderInset } from "../lib/floating-header";
-import { t, useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -38,8 +43,11 @@ import { errorText } from "../lib/user-error";
 type PreviewContent =
   | { kind: "html"; html: string }
   | { kind: "markdown"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "pdf"; uri: string }
   | { kind: "image"; uri: string }
   | { kind: "file"; uri: string; name: string; mimeType: string }
+  | { kind: "video"; uri: string }
   | { kind: "unsupported" };
 
 type ContentState =
@@ -47,21 +55,49 @@ type ContentState =
   | { status: "error"; message: string }
   | { status: "ready"; artifact: ArtifactWithContent; file: File; preview: PreviewContent };
 
+/** Past this a plain-text view gets slow to lay out; share the file to read the rest. */
+const TEXT_PREVIEW_LIMIT = 100_000;
+
 async function computePreview(mimeType: string, file: File, name: string): Promise<PreviewContent> {
-  if (mimeType === "text/html") return { kind: "html", html: await file.text() };
-  if (mimeType === "text/markdown") return { kind: "markdown", text: await file.text() };
-  if (isAttachmentImageMimeType(mimeType)) return { kind: "image", uri: file.uri };
-  if (hasMobileFileViewer({ name, mimeType }))
+  const fileKind = fileKindOf({ name, mimeType });
+  if (fileKind.viewer === "spreadsheet" || fileKind.viewer === "docx") {
     return { kind: "file", uri: file.uri, name, mimeType };
-  return { kind: "unsupported" };
+  }
+  switch (artifactPreviewKind(mimeType)) {
+    case "html":
+      return { kind: "html", html: await file.text() };
+    case "markdown":
+      return { kind: "markdown", text: await file.text() };
+    case "text": {
+      const text = await file.text();
+      const limited =
+        text.length > TEXT_PREVIEW_LIMIT ? `${text.slice(0, TEXT_PREVIEW_LIMIT)}\n…` : text;
+      return {
+        kind: hasMobileFileViewer({ name, mimeType }) ? "markdown" : "text",
+        text: hasMobileFileViewer({ name, mimeType })
+          ? filePreviewMarkdown(fileKind, limited)
+          : limited,
+      };
+    }
+    case "pdf":
+      return { kind: "pdf", uri: file.uri };
+    case "image":
+      return { kind: "image", uri: file.uri };
+    case "video":
+      return { kind: "video", uri: file.uri };
+    case "none":
+      return hasMobileFileViewer({ name, mimeType })
+        ? { kind: "file", uri: file.uri, name, mimeType }
+        : { kind: "unsupported" };
+  }
 }
 
 export default function ArtifactDetailScreen() {
-  const { artifactId } = useLocalSearchParams<{ artifactId: string }>();
+  const { artifactId, exact } = useLocalSearchParams<{ artifactId: string; exact?: string }>();
   const navigation = useNavigation();
   const router = useRouter();
   const headerInset = useFloatingHeaderInset();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const colorScheme = useResolvedAppearance();
   const styles = useThemedStyles(createStyles);
 
@@ -77,7 +113,9 @@ export default function ArtifactDetailScreen() {
       .then((list) => {
         if (cancelled) return;
         setVersions(list);
-        setSelectedVersionId(list[0]?.id ?? artifactId);
+        // A chat attachment opens its own version; the Files list opens the newest.
+        const attached = exact === "1" && list.some((version) => version.id === artifactId);
+        setSelectedVersionId(attached ? artifactId : (list[0]?.id ?? artifactId));
       })
       .catch(() => {
         if (!cancelled) setSelectedVersionId(artifactId);
@@ -85,7 +123,7 @@ export default function ArtifactDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [artifactId]);
+  }, [artifactId, exact]);
 
   useEffect(() => {
     if (!selectedVersionId) return;
@@ -102,7 +140,7 @@ export default function ArtifactDetailScreen() {
         if (!cancelled) {
           setContent({
             status: "error",
-            message: errorText(error, t("Could not load this artifact.")),
+            message: errorText(error, t`Could not load this artifact.`),
           });
         }
       });
@@ -116,22 +154,20 @@ export default function ArtifactDetailScreen() {
     const name = content.artifact.name;
     const versionCount = versions?.length ?? 1;
     Alert.alert(
-      t('Delete "{name}"?', { name }),
+      t`Delete "${name}"?`,
       versionCount > 1
-        ? t("This deletes all {count} versions of this artifact. This can't be undone.", {
-            count: versionCount,
-          })
-        : t("This can't be undone."),
+        ? t`This deletes all ${ph({ count: versionCount })} versions of this artifact. This can't be undone.`
+        : t`This can't be undone.`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: t("Delete"),
+          text: t`Delete`,
           style: "destructive",
           onPress: () =>
             void removeArtifact(artifactId)
               .then(() => router.back())
               .catch((error: unknown) =>
-                Alert.alert(t("Could not delete this artifact"), errorText(error, t("Try again."))),
+                Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`)),
               ),
         },
       ],
@@ -157,10 +193,10 @@ export default function ArtifactDetailScreen() {
   function pickVersion() {
     if (!versions || versions.length < 2) return;
     presentMessageActionSheet({
-      title: t("Versions"),
+      title: t`Versions`,
       selected: versions.findIndex((version) => version.id === selectedVersionId),
-      cancel: t("Cancel"),
-      more: t("More"),
+      cancel: t`Cancel`,
+      more: t`More`,
       colorScheme,
       actions: versions.map((version) => ({
         text: `v${version.version} (${formatActivityRelativeTime(version.createdAt)})`,
@@ -174,7 +210,7 @@ export default function ArtifactDetailScreen() {
     try {
       await shareLocalFile(content.file.uri, content.artifact.mimeType, content.artifact.name);
     } catch (error) {
-      Alert.alert(t("Could not share this artifact"), errorText(error, t("Try again.")));
+      Alert.alert(t`Could not share this artifact`, errorText(error, t`Try again.`));
     }
   }, [content, t]);
 
@@ -185,7 +221,7 @@ export default function ArtifactDetailScreen() {
         content.status === "ready" ? (
           <View style={styles.headerActions}>
             <Pressable
-              accessibilityLabel={t("Share")}
+              accessibilityLabel={t`Share`}
               hitSlop={8}
               onPress={() => void share()}
               style={styles.headerButton}
@@ -193,7 +229,7 @@ export default function ArtifactDetailScreen() {
               <NativeSymbol ios="square.and.arrow.up" android="share-social-outline" size={19} />
             </Pressable>
             <Pressable
-              accessibilityLabel={t("Delete")}
+              accessibilityLabel={t`Delete`}
               hitSlop={8}
               onPress={confirmDelete}
               style={styles.headerButton}
@@ -214,13 +250,13 @@ export default function ArtifactDetailScreen() {
                 ? [
                     {
                       type: "button" as const,
-                      label: t("Share"),
+                      label: t`Share`,
                       icon: { type: "sfSymbol" as const, name: "square.and.arrow.up" },
                       onPress: () => void share(),
                     },
                     {
                       type: "button" as const,
-                      label: t("Delete"),
+                      label: t`Delete`,
                       icon: { type: "sfSymbol" as const, name: "trash" },
                       tintColor: mobileTokens().destructive,
                       onPress: confirmDelete,
@@ -232,7 +268,9 @@ export default function ArtifactDetailScreen() {
     });
   }, [confirmDelete, content, navigation, share, styles, t]);
 
-  const scrolling = content.status === "ready" && content.preview.kind === "markdown";
+  const scrolling =
+    content.status === "ready" &&
+    (content.preview.kind === "markdown" || content.preview.kind === "text");
   const versionPicker =
     content.status === "ready" && versions && versions.length > 1 ? (
       <View style={styles.pillRow}>
@@ -266,7 +304,7 @@ export default function ArtifactDetailScreen() {
           <ArtifactPreview
             preview={content.preview}
             scrollHeader={scrolling ? versionPicker : undefined}
-            imageLabel={content.artifact.name}
+            name={content.artifact.name}
             onOpenImage={openImage}
           />
         )}
@@ -278,12 +316,12 @@ export default function ArtifactDetailScreen() {
 function ArtifactPreview({
   preview,
   scrollHeader,
-  imageLabel,
+  name,
   onOpenImage,
 }: {
   preview: PreviewContent;
   scrollHeader?: ReactNode;
-  imageLabel: string;
+  name: string;
   onOpenImage: (() => void) | null;
 }) {
   const sideInsets = useSideInsets();
@@ -311,11 +349,39 @@ function ArtifactPreview({
       </ScrollView>
     );
   }
+  if (preview.kind === "text") {
+    return (
+      <ScrollView
+        style={sideInsets}
+        contentContainerStyle={styles.markdownScroll}
+        contentInsetAdjustmentBehavior="automatic"
+      >
+        {scrollHeader}
+        <Text selectable style={styles.plainText}>
+          {preview.text}
+        </Text>
+      </ScrollView>
+    );
+  }
+  if (preview.kind === "pdf") {
+    return (
+      <View style={styles.previewCard}>
+        <PdfPreview uri={preview.uri} name={name} />
+      </View>
+    );
+  }
+  if (preview.kind === "video") {
+    return (
+      <View style={styles.previewCard}>
+        <VideoPreview uri={preview.uri} name={name} />
+      </View>
+    );
+  }
   if (preview.kind === "image") {
     return (
       <Pressable
         accessibilityRole="imagebutton"
-        accessibilityLabel={imageLabel}
+        accessibilityLabel={name}
         disabled={!onOpenImage}
         onPress={onOpenImage ?? undefined}
         style={styles.imageWrap}
@@ -333,7 +399,7 @@ function ArtifactPreview({
   }
   return (
     <View style={styles.centered}>
-      <Text style={styles.errorText}>{t("No preview for this file type.")}</Text>
+      <Text style={styles.errorText}>{t`No preview for this file type.`}</Text>
     </View>
   );
 }
@@ -360,6 +426,12 @@ function createStyles() {
     errorText: { color: native.secondaryLabel, fontSize: 14, textAlign: "center" },
     previewCard: { flex: 1, borderRadius: 18, overflow: "hidden" },
     markdownScroll: { padding: 20 },
+    plainText: {
+      color: native.label,
+      fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+      fontSize: 13,
+      lineHeight: 19,
+    },
     imageWrap: {
       flex: 1,
       alignItems: "center",

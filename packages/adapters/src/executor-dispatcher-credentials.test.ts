@@ -25,6 +25,8 @@ async function dispatcherTurn(page: boolean) {
   };
   const emptyRows = () => ({ findMany: vi.fn(async () => []) });
   const prisma = {
+    space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "membership-1" })) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
@@ -88,6 +90,7 @@ async function dispatcherTurn(page: boolean) {
       })),
     },
     $transaction: async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prisma),
+    $executeRaw: vi.fn(async () => 1),
     $queryRaw: vi.fn(async () => [{ locked: 1 }]),
   };
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {

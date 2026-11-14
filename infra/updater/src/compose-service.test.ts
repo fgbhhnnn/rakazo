@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -114,9 +115,9 @@ describe("the updater compose service", () => {
     }
   });
 
-  it("uses the official registry namespace and digest-pins third-party runtime images", () => {
-    expect(updater.image).toContain("ghcr.io/elie222/rakazo/updater");
-    expect(compose.services.api?.image).toContain("ghcr.io/elie222/rakazo/app");
+  it("uses the fork registry namespace and digest-pins third-party runtime images", () => {
+    expect(updater.image).toContain("ghcr.io/fgbhhnnn/rakazo/updater");
+    expect(compose.services.api?.image).toContain("ghcr.io/fgbhhnnn/rakazo/app");
     expect(compose.services.postgres?.image).toMatch(
       /^\$\{POSTGRES_IMAGE:-postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6\}$/,
     );
@@ -220,10 +221,14 @@ describe("the point-in-time recovery sidecar", () => {
 
   it("is tagged with a hash of what it is built from, so a deploy rebuilds it only on change", () => {
     const hash = createHash("sha256");
-    for (const file of ["Dockerfile.pitr", "pitr-agent.sh"]) {
+    for (const file of ["Dockerfile.pitr", "pitr-agent.sh", "apt-security.sh"]) {
       hash.update(readFileSync(path.join(composeDir, file)));
     }
     expect(pitr.image).toBe(`rakazo-pitr:${hash.digest("hex").slice(0, 16)}`);
+  });
+
+  it("runs the apt security helper smoke, including the copy equality check", () => {
+    execFileSync("bash", [path.join(composeDir, "apt-security.smoke.sh")], { stdio: "inherit" });
   });
 
   it("builds on the same pinned Postgres image as the database", () => {

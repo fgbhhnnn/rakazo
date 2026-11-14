@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { groupBackgroundTasks } from "./group-background-tasks.js";
-import { threadSnapshot } from "./thread-target.js";
+import { threadSnapshot } from "./thread-snapshot.js";
 
 describe("group background work", () => {
   it("includes background work in threads/get's snapshot when all foreground runs are idle", async () => {
@@ -9,10 +9,10 @@ describe("group background work", () => {
       message: { findMany: async () => [] },
       event: { findFirst: async () => null },
       run: { findMany: async () => [] },
+      backgroundTaskQueue: { groupBy: async () => [{ status: "started", _count: { _all: 1 } }] },
     };
     const prisma = {
       $transaction: async (callback: (value: typeof tx) => unknown) => callback(tx),
-      backgroundTaskQueue: { groupBy: async () => [{ status: "started", _count: { _all: 1 } }] },
     };
     const snapshot = await threadSnapshot({ prisma: prisma as never }, {
       kind: "group",

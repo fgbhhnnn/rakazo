@@ -15,8 +15,7 @@ import { RunJobPublisher, RunStarter, RunWorkerHost } from "./run-wakeup.js";
 import { releaseWorkerRunLeases } from "./worker-shutdown.js";
 
 const url = process.env.DATABASE_URL;
-const describePostgres =
-  process.env.VERIFY_DATABASE === "1" && url ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
 // Our shutdown lease release and dispatcher wake deferral on top of the direct run dispatcher.
 describePostgres("worker shutdown and wake deferral with direct dispatch (PostgreSQL)", () => {

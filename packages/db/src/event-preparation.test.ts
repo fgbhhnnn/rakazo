@@ -6,16 +6,16 @@ import { withContentEncryption } from "./content-encryption.js";
 import { ContentKeyRing, LocalKeyProvider } from "./content-keys.js";
 import { preparedEventArgs, withPreparedEventWrite } from "./event-preparation.js";
 import { appendEvent } from "./events.js";
-import { PrismaClient } from "./generated/prisma/client.js";
+import { Prisma, PrismaClient } from "./generated/prisma/client.js";
 import { asSystem } from "./row-security.js";
 
 const pool = new Pool({ connectionString: "postgres://offline:offline@127.0.0.1:9/offline" });
 afterAll(() => pool.end());
 
-function harness(encryptWrites = true, conflicts = 0) {
-  let inTransaction = false;
+function harness(encryptWrites = true) {
+  let writing = false;
   const keyAccess = vi.fn(() => {
-    expect(inTransaction).toBe(false);
+    expect(writing).toBe(false);
   });
   const ring = new ContentKeyRing(
     new LocalKeyProvider([{ id: "test", key: randomBytes(32) }]),
@@ -41,41 +41,35 @@ function harness(encryptWrites = true, conflicts = 0) {
   const writes: Record<string, unknown>[] = [];
   const readKey = ring.byId.bind(ring);
   const byId = vi.spyOn(ring, "byId").mockImplementation(async (id) => {
-    expect(inTransaction).toBe(false);
+    expect(writing).toBe(false);
     return readKey(id);
   });
-  const client = withContentEncryption(
-    new PrismaClient({ adapter: new PrismaPg(pool) }),
-    ring,
-  ).$extends({
-    query: {
-      $allModels: {
-        async $allOperations({ model, args }) {
-          if (model === "Thread") return { nextEventSeq: 3 };
-          if (model !== "Event") throw new Error(`Unexpected model: ${model}`);
-          const data = (args as { data: Record<string, unknown> }).data;
-          writes.push(structuredClone(data));
-          return { ...data, createdAt: new Date(0) };
-        },
-      },
-    },
+  const client = withContentEncryption(new PrismaClient({ adapter: new PrismaPg(pool) }), ring);
+  const transaction = vi.fn(() => {
+    throw new Error("events must use one autocommit statement");
   });
-  const transaction = vi.fn(async (callback: (tx: unknown) => unknown) => {
-    inTransaction = true;
+  const raw = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    writing = true;
     try {
-      const result = await callback(client);
-      if (conflicts-- > 0) throw Object.assign(new Error("conflict"), { code: "P2034" });
-      return result;
+      const sql = Prisma.sql(strings, ...values);
+      const payload = sql.values.find(
+        (value) => typeof value === "string" && value.startsWith("{"),
+      );
+      if (typeof payload !== "string") throw new Error("missing event payload");
+      writes.push({ payload: JSON.parse(payload) });
+      return [{ id: "event", seq: 2, createdAt: new Date(0), runId: null, firstResponse: false }];
     } finally {
-      inTransaction = false;
+      writing = false;
     }
   });
   const prisma = new Proxy(client, {
     get(target, prop, receiver) {
-      return prop === "$transaction" ? transaction : Reflect.get(target, prop, receiver);
+      if (prop === "$transaction") return transaction;
+      if (prop === "$queryRaw") return raw;
+      return Reflect.get(target, prop, receiver);
     },
   }) as unknown as PrismaClient;
-  return { prisma, writes, keyAccess, byId, transaction };
+  return { prisma, writes, keyAccess, byId, transaction, raw };
 }
 const input = {
   spaceId: "space",
@@ -93,7 +87,9 @@ describe("prepared event writes", () => {
     expect(h.writes[0]?.payload).toHaveProperty("$sealed");
     expect(JSON.stringify(h.writes)).not.toContain("secret content");
     expect(h.keyAccess).toHaveBeenCalled();
-    expect(h.byId).toHaveBeenCalled();
+    expect(h.byId).not.toHaveBeenCalled();
+    expect(h.raw).toHaveBeenCalledOnce();
+    expect(h.transaction).not.toHaveBeenCalled();
   });
   it("keeps key preparation failures outside a system-scoped transaction", async () => {
     const h = harness();
@@ -113,21 +109,28 @@ describe("prepared event writes", () => {
     expect(h.transaction).not.toHaveBeenCalled();
     expect(h.writes).toEqual([]);
   });
-  it("loads keys and seals before the transaction, storing ciphertext and returning plaintext", async () => {
+  it("loads keys before the autocommit write, storing ciphertext and returning plaintext", async () => {
     const h = harness();
     const event = await appendEvent(h.prisma, input);
     expect(event.payload).toEqual(input.payload);
     expect(JSON.stringify(h.writes)).not.toContain("secret content");
     expect(h.writes[0]?.payload).toHaveProperty("$sealed");
     expect(h.keyAccess).toHaveBeenCalled();
-    expect(h.byId).toHaveBeenCalled();
+    expect(h.byId).not.toHaveBeenCalled();
+    expect(h.raw).toHaveBeenCalledOnce();
+    expect(h.transaction).not.toHaveBeenCalled();
     expect(event.seq).toBe(2);
   });
-  it("reuses prepared ciphertext across a rolled-back transaction retry", async () => {
-    const h = harness(true, 1);
+  it("keeps a failed autocommit write encrypted when its caller retries", async () => {
+    const h = harness();
+    h.raw.mockRejectedValueOnce(new Error("write failed"));
+    await expect(appendEvent(h.prisma, input)).rejects.toThrow("write failed");
+    expect(h.writes).toEqual([]);
     expect((await appendEvent(h.prisma, input)).payload).toEqual(input.payload);
-    expect(h.transaction).toHaveBeenCalledTimes(2);
-    expect(h.writes[0]).toEqual(h.writes[1]);
+    expect(h.raw).toHaveBeenCalledTimes(2);
+    expect(h.transaction).not.toHaveBeenCalled();
+    expect(h.writes[0]?.payload).toHaveProperty("$sealed");
+    expect(JSON.stringify(h.writes)).not.toContain("secret content");
   });
   it("keeps encryption-off behavior and sanitizes invalid Unicode before preparing", async () => {
     const h = harness(false);

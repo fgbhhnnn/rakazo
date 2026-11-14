@@ -6,6 +6,9 @@ import { escapePromptData } from "./prompt-data.js";
 
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;
 
+/** Bots that hit the limit tend to resend the text in chunks; the error steers them to files. */
+export const BOT_MESSAGE_TOO_LONG = `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit. Nothing was sent. Save long content to a file and send it with files instead of splitting it across messages.`;
+
 /**
  * Default for how many bot-started deliveries may chain before the next one is
  * refused. Messaging is fire-and-forget, so nothing stops two bots replying to
@@ -58,7 +61,7 @@ export function botMessageAllowsSilence(
   return intent === "fyi" && !repliesToRequest;
 }
 
-/** Resolve a target by id first, then by exact name, then case-insensitively. */
+/** Resolve by id first, then an unambiguous exact name, then case-insensitively. */
 export function resolveBotAddress<T extends BotAddress>(
   bots: readonly T[],
   input: { botId?: string; name?: string },
@@ -67,8 +70,8 @@ export function resolveBotAddress<T extends BotAddress>(
   if (botId) return bots.find((bot) => bot.id === botId);
   const name = input.name?.trim();
   if (!name) return undefined;
-  const exact = bots.find((bot) => bot.name === name);
-  if (exact) return exact;
+  const exact = bots.filter((bot) => bot.name === name);
+  if (exact.length > 0) return exact.length === 1 ? exact[0] : undefined;
   const lower = name.toLowerCase();
   const matches = bots.filter((bot) => bot.name.toLowerCase() === lower);
   return matches.length === 1 ? matches[0] : undefined;
@@ -147,14 +150,18 @@ export function renderGroupMembersContext(
   groupName: string,
   members: readonly BotAddress[],
   self: Pick<BotAddress, "id" | "name">,
-  options: {
-    /** handoff_to_bot is in this run's tools; without it the prompt never mentions it. */
-    handoffTool?: boolean;
-    /** ask_teammate is in this run's tools (group-consult.ts). */
-    askTool?: boolean;
-  } = {},
+  options:
+    | boolean
+    | {
+        /** handoff_to_bot is in this run's tools; without it the prompt never mentions it. */
+        handoffTool?: boolean;
+        /** ask_teammate is in this run's tools (group-consult.ts). */
+        askTool?: boolean;
+        sharedSpace?: boolean;
+      } = {},
 ): string {
-  const handoffTool = options.handoffTool ?? true;
+  const settings = typeof options === "boolean" ? { sharedSpace: options } : options;
+  const handoffTool = settings.handoffTool ?? true;
   const name = escapeDirectoryField(groupName.trim());
   const selfName = escapeDirectoryField(self.name.trim());
   const selfId = escapeDirectoryField(self.id.trim());
@@ -165,9 +172,11 @@ export function renderGroupMembersContext(
     "<group_members>",
     ...formatBotRosterLines(members),
     "</group_members>",
-    'In the conversation so far, messages from other members start with "[Name]:", messages from the user start with "[User]:", and your own earlier messages carry no label. Never begin your replies with a label.',
+    settings.sharedSpace
+      ? 'In the conversation so far, messages from other members and from the people in this space start with "[Name]:", and your own earlier messages carry no label. Never begin your replies with a label.'
+      : 'In the conversation so far, messages from other members start with "[Name]:", messages from the user start with "[User]:", and your own earlier messages carry no label. Never begin your replies with a label.',
     ...groupTeamworkLines(handoffTool),
-    ...(options.askTool ? teammateQuestionPromptLines() : []),
+    ...(settings.askTool ? teammateQuestionPromptLines() : []),
     BOT_DELIBERATION_GUIDANCE,
   ].join("\n");
 }

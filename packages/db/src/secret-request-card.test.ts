@@ -1,7 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { pauseRunForInput } from "./events.js";
+import { pauseRunForInput } from "./thread-ask.js";
 
 const ask: MessageBlock = {
   kind: "ask",
@@ -33,6 +33,7 @@ function fixture() {
   let messageSeq = 0;
   let eventSeq = 0;
   const tx = {
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async (..._args: unknown[]) => []),
     run: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>

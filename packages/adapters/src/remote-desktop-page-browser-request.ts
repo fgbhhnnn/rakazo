@@ -4,6 +4,7 @@ import { z } from "zod";
 const downloadFolder = z.string().min(1).max(1024).optional();
 
 export const remotePageBrowserRequest = z.discriminatedUnion("command", [
+  z.object({ command: z.literal("restart"), downloads: downloadFolder }),
   z.object({
     command: z.literal("navigate"),
     url: z
@@ -22,7 +23,6 @@ export const remotePageBrowserRequest = z.discriminatedUnion("command", [
     query: z.string().max(200).optional(),
     downloads: downloadFolder,
   }),
-  z.object({ command: z.literal("restart") }),
   z.object({
     command: z.literal("purchase_check"),
     // Only clicks are looked at; `desktop` asks about a click or key on the screen instead.

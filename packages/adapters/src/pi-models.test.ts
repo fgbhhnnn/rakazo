@@ -1,7 +1,9 @@
 import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultCatalogModelId } from "./model-selection.js";
+import type { SpaceCatalogAuth } from "./model-selection.js";
+import { defaultCatalogModelId, spaceCanRunCatalogModel } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
+import { COMPATIBLE_ENDPOINT_PRESETS } from "./openai-compatible-url.js";
 import {
   catalogModelLabel,
   catalogModelServesAgents,
@@ -175,6 +177,8 @@ describe("catalog provider authentication", () => {
   it("bounds a stalled check and lets it through as inconclusive", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    // The app gives up on saving a connection after 60 seconds, so key checks ignore the setting.
+    vi.stubEnv("MODEL_CONNECT_TIMEOUT_MS", "90000");
     try {
       const result = verifyCatalogProviderApiKey(
         { provider: "openrouter", apiKey: "fixture-key" },
@@ -189,6 +193,7 @@ describe("catalog provider authentication", () => {
       await assertion;
     } finally {
       timeout.mockRestore();
+      vi.unstubAllEnvs();
     }
   });
 
@@ -226,7 +231,7 @@ describe("Pi model catalog", () => {
       expect.arrayContaining([
         { provider: "openai-codex", id: "gpt-6-luna" },
         { provider: "openai", id: "gpt-6-luna" },
-        { provider: "openrouter", id: "openai/gpt-6-luna" },
+        { provider: "openrouter", id: "anthropic/claude-haiku-5.5" },
         { provider: "anthropic", id: "claude-haiku-5-5" },
       ]),
     );
@@ -356,7 +361,11 @@ describe("Pi model catalog", () => {
       thinkingLevels: ["low", "medium", "high", "xhigh"],
     });
     const openAiCompatible = catalog.find((entry) => entry.provider === "openai-compatible");
-    expect(openAiCompatible).toMatchObject({ id: "custom", placeholder: true });
+    expect(openAiCompatible).toMatchObject({
+      id: "custom",
+      placeholder: true,
+      endpointPresets: COMPATIBLE_ENDPOINT_PRESETS,
+    });
     expect(openAiCompatible?.catalogProbe).toBeUndefined();
   });
 
@@ -376,6 +385,12 @@ describe("Pi model catalog", () => {
     expect(
       listPiCatalog().find((entry) => entry.provider === "cloudflare-workers-ai")?.catalogProbe,
     ).toBeUndefined();
+
+    const routing = (provider: string) =>
+      listPiCatalog().find((entry) => entry.provider === provider)?.routingFields;
+    expect(routing("cloudflare-workers-ai")).toEqual(["accountId"]);
+    expect(routing("cloudflare-ai-gateway")).toEqual(["accountId", "gatewayId"]);
+    expect(routing("anthropic")).toBeUndefined();
 
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";
@@ -565,6 +580,48 @@ describe("models agents can run", () => {
       { provider: "openrouter", id: "fixture/model:batch" },
     ];
     expect(offeredCatalog(entries, new Set(["google:gemini-2.5-flash"]))).toEqual([entries[0]]);
+  });
+
+  describe("models Rakazo credits cannot price", () => {
+    const credits: SpaceCatalogAuth = {
+      managedProvider: "openrouter",
+      byProvider: { openrouter: "api_key" },
+      byModel: {},
+      secretIdByProvider: {},
+      secretIdByModel: {},
+    };
+    const ownKey: SpaceCatalogAuth = {
+      byProvider: { openrouter: "api_key" },
+      byModel: {},
+      secretIdByProvider: { openrouter: "personal-secret" },
+      secretIdByModel: {},
+    };
+
+    it.each(["openrouter/free", "openrouter/pareto-code", "auto", "google/gemma-4-31b-it:free"])(
+      "keeps %s for an own key but not on credits",
+      (id) => {
+        const entry = { provider: "openrouter", id };
+        expect(spaceCanRunCatalogModel(credits, entry)).toBe(false);
+        expect(spaceCanRunCatalogModel(ownKey, entry)).toBe(true);
+        expect(
+          spaceCanRunCatalogModel(
+            { ...credits, secretIdByModel: { openrouter: { [id]: "model-secret" } } },
+            entry,
+          ),
+        ).toBe(true);
+      },
+    );
+
+    it("offers priced models on credits", () => {
+      const entry = { provider: "openrouter", id: "anthropic/claude-haiku-5.5" };
+      expect(spaceCanRunCatalogModel(credits, entry)).toBe(true);
+    });
+
+    it("treats a live id the registry does not price as unpriced on credits", () => {
+      expect(spaceCanRunCatalogModel(credits, { provider: "openrouter", id: "fixture/live" })).toBe(
+        false,
+      );
+    });
   });
 
   it("judges live ids the catalog does not bundle by their id", () => {

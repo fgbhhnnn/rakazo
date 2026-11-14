@@ -2,7 +2,7 @@ import type { BotSecretDestination } from "@rakazo/contracts";
 import { encodeLoginSecret } from "@rakazo/contracts";
 import { createStreamingRedactor, redactSecrets } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
-import { storeBotSecret } from "./bot-secrets.js";
+import { relabelVaultItem, storeBotSecret } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { applyDispatcherToolPolicy } from "./dispatcher-mode.js";
 import { passwordRevealAllowed, revealSecret } from "./reveal-secret.js";
@@ -114,6 +114,21 @@ describe("direct saved password access", () => {
       ),
     ).not.toContain("fake-password");
   });
+  it.each(["blocked", "other bots"])(
+    "withholds an item restricted to %s before reading the browser",
+    async (restriction) => {
+      const f = await fixture(true);
+      await relabelVaultItem(
+        f.prisma,
+        { userId: scope.userId, spaceId: scope.spaceId },
+        destination.name,
+        restriction === "blocked" ? { policy: "off" } : { bots: { botIds: ["bot-1"] } },
+      );
+      expect(await f.call()).toEqual({ error: "This saved website login is unavailable." });
+      expect(f.snapshot).not.toHaveBeenCalled();
+      expect(f.ctx.secrets).toEqual([]);
+    },
+  );
   it("rechecks consent on every call and fails closed on a settings outage", async () => {
     const f = await fixture(true);
     expect(await f.call()).toHaveProperty("value", password);
